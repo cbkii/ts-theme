@@ -6,25 +6,25 @@ The map is the primary surface. A single thin information strip sits above it; n
 overlays or obscures the map.
 
 Reference coordinate space: **1280 x 720**. The working assumptions are a 55 px system status region,
-an 18 px right system strip and a 96 px launcher hotseat.
+an 18 px right system strip and an 81 px launcher hotseat.
 
 ## Prototype geometry
 
 | Surface | X | Y | Width | Height | Content |
 | --- | ---: | ---: | ---: | ---: | --- |
 | Vertical hotseat | 0 | 55 | 81 | 647 | Five plain white generic icons |
-| Radio | 93 | 55 | 286 | 71 | `< 89.06 FM >` |
-| Music | 379 | 55 | 690 | 71 | Ticker on the left, previous/play-next controls on the right |
-| Date | 1069 | 55 | 178 | 71 | `22 AUG` |
-| Navigation window | 93 | 126 | 1154 | 576 | Fully visible and interactive |
+| Radio | 93 | 55 | 286 | 64 | `< 89.06 FM >` |
+| Music | 379 | 55 | 690 | 64 | Ticker on the left, previous/play-next controls on the right |
+| Date | 1069 | 55 | 178 | 64 | `22 AUG` |
+| Navigation window | 93 | 119 | 1154 | 583 | Fully visible and interactive |
 
-The three top widgets cover x=93..1247 and y=55..126. The map begins at y=126; their
+The three top widgets cover x=93..1247 and y=55..119. The map begins at y=119; their
 rectangles have no intersection. Compared with the previous 96 px hotseat and 18 px right reserve,
 this conservative layout frees 15 px on the left and leaves a 33 px right-side reserve to better
 tolerate stock right-edge overlays such as virtual buttons.
 
-FYD's map was 580 x 327 (189,660 px). The new unobstructed map is 1154 x 576 (664,704 px), about
-**3.50 times the visible area**.
+FYD's map was 580 x 327 (189,660 px). The new unobstructed map is 1154 x 583 (672,782 px), about
+**3.55 times the visible area**.
 
 ## Colour tokens
 
@@ -41,7 +41,7 @@ No cool cyan/blue accent or coloured icon background is permitted.
 
 ## Radio
 
-- Previous and next retain at least 54 x 54 px hit targets in the taller 71 px strip.
+- Previous and next retain at least 54 x 54 px hit targets in the 64 px strip.
 - The frequency is primary white text.
 - FM is a small warm-colour superscript.
 - MHz, source heading, artwork and play/pause are hidden.

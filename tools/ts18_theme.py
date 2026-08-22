@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Audit, validate and package the TS18 DoFun theme development probe.
+"""Audit APK interoperability evidence and validate the clean TS18 theme source.
 
-Python 3.9+; standard library only. The package command never signs an APK and
-accepts only the exact FYD SHA-256 recorded by this repository unless the code
-is deliberately updated after a new binary audit.
+Python 3.9+; standard library only. Vendor APKs are accepted only by the read-only
+``audit`` command and are never used as release build inputs.
 """
 
 from __future__ import annotations
@@ -11,13 +10,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import re
 import shutil
 import struct
 import subprocess
 import sys
-import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -26,10 +23,7 @@ from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
 THEME_ROOT = ROOT / "theme" / "src" / "main"
-FYD_SHA256 = "e2ad22069fd17c78e67f88de53026acdccedabbb34e671655287e628854f53cd"
-ORIGINAL_PACKAGE = "launcher.variety.theme.plugin.sfp_fyd18"
 CUSTOM_PACKAGE = "launcher.variety.theme.plugin.cbk_black"
-ORIGINAL_PLUGIN_ID = "sfp_fyd18"
 CUSTOM_PLUGIN_ID = "cbk_black"
 MAX_APK_SIZE = 64 * 1024 * 1024
 MAX_ENTRY_SIZE = 32 * 1024 * 1024
@@ -92,8 +86,9 @@ def inspect_zip(apk: Path) -> list[zipfile.ZipInfo]:
                     raise SafetyStop(f"Oversized APK entry: {info.filename}")
                 if expanded > MAX_EXPANDED_SIZE:
                     raise SafetyStop("APK expanded size exceeds audited bound")
-            if "AndroidManifest.xml" not in seen or "classes.dex" not in seen:
-                raise ValidationError("APK is missing AndroidManifest.xml or classes.dex")
+            dex_names = [name for name in seen if re.fullmatch(r"classes(?:[2-9][0-9]*)?\.dex", name)]
+            if "AndroidManifest.xml" not in seen or not dex_names:
+                raise ValidationError("APK is missing AndroidManifest.xml or DEX code")
             return infos
     except zipfile.BadZipFile as exc:
         raise ValidationError(f"Invalid APK ZIP: {apk}") from exc
@@ -283,6 +278,16 @@ def load_json(path: Path) -> Any:
         raise ValidationError(f"Invalid JSON: {path.relative_to(ROOT)}: {exc}") from exc
 
 
+def png_dimensions(path: Path) -> tuple[int, int]:
+    try:
+        header = path.read_bytes()[:24]
+    except OSError as exc:
+        raise ValidationError(f"Unable to read PNG {path}: {exc}") from exc
+    if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        raise ValidationError(f"Invalid PNG header: {path}")
+    return struct.unpack(">II", header[16:24])
+
+
 def require(condition: bool, message: str, errors: list[str]) -> None:
     if not condition:
         errors.append(message)
@@ -325,14 +330,14 @@ def validate_project() -> list[str]:
             "Navigation window is not substantially larger than FYD", errors)
     require(
         (window.get("width"), window.get("height"), window.get("gravity"))
-        == (1154, 576, "l_93|t_126"),
+        == (1154, 583, "l_93|t_119"),
         "Navigation window must occupy the unobstructed area below the top strip",
         errors,
     )
     expected_strip = {
-        "local_radio": (286, 71, "l_93|t_55"),
-        "local_music|bt_music": (690, 71, "l_379|t_55"),
-        "time": (178, 71, "l_1069|t_55"),
+        "local_radio": (286, 64, "l_93|t_55"),
+        "local_music|bt_music": (690, 64, "l_379|t_55"),
+        "time": (178, 64, "l_1069|t_55"),
     }
     for soft_type, expected in expected_strip.items():
         surface = next((item for item in pages if item.get("soft_type") == soft_type), {})
@@ -379,13 +384,107 @@ def validate_project() -> list[str]:
     identity = documents.get(Path("import_theme_info_config.json"), {})
     require(identity.get("themeId") == "202608220001", "Unexpected development theme ID", errors)
 
+    try:
+        release_config = load_json(ROOT / "release-config.json")
+    except ValidationError as exc:
+        errors.append(str(exc))
+        release_config = {}
+    require(release_config.get("application_id") == CUSTOM_PACKAGE,
+            "Release package authority does not match the DoFun plug-in package", errors)
+    require(release_config.get("plugin_id") == CUSTOM_PLUGIN_ID,
+            "Release plug-in authority does not match the DoFun metadata ID", errors)
+    require(release_config.get("gradle_task") == ":theme:assembleRelease",
+            "Release Gradle task authority is unexpected", errors)
+    require(release_config.get("apk_path") == "theme/build/outputs/apk/release/theme-release.apk",
+            "Release APK path authority is unexpected", errors)
+    require(release_config.get("sdk") == {"min": 16, "target": 26, "compile": 29},
+            "Release SDK authority does not match the audited DoFun contract", errors)
+    require(release_config.get("native_abis") == [],
+            "Declarative theme must not introduce a native ABI payload", errors)
+    try:
+        properties = {}
+        for raw in (ROOT / "gradle.properties").read_text(encoding="utf-8").splitlines():
+            if raw.strip() and not raw.lstrip().startswith(("#", "!")) and "=" in raw:
+                key, value = raw.split("=", 1)
+                properties[key.strip()] = value.strip()
+        require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", properties.get("VERSION_NAME", "")) is not None,
+                "VERSION_NAME must be strict X.Y.Z", errors)
+        require(int(properties.get("VERSION_CODE", "0")) > 0,
+                "VERSION_CODE must be a positive integer", errors)
+    except (OSError, ValueError) as exc:
+        errors.append(f"Invalid Gradle version authority: {exc}")
+
+    manifest_path = THEME_ROOT / "AndroidManifest.xml"
+    try:
+        manifest_root = ElementTree.parse(manifest_path).getroot()
+        android = "{http://schemas.android.com/apk/res/android}"
+        application = manifest_root.find("application")
+        metadata = {
+            item.get(f"{android}name"): item.get(f"{android}value")
+            for item in manifest_root.findall("./application/meta-data")
+        }
+        require(application is not None, "Android manifest has no application element", errors)
+        require(metadata.get("launcher.variety.theme.plugin") == CUSTOM_PLUGIN_ID,
+                "Android manifest has incorrect DoFun plug-in metadata", errors)
+        require(metadata.get("support_systemui") == "false",
+                "Theme must not claim SystemUI ownership", errors)
+        permissions = {
+            item.get(f"{android}name") for item in manifest_root.findall("uses-permission")
+        }
+        require(permissions == {
+                    "android.permission.WRITE_EXTERNAL_STORAGE",
+                    "android.permission.READ_PHONE_STATE",
+                    "android.permission.READ_EXTERNAL_STORAGE",
+                },
+                "Android manifest compatibility permission set changed", errors)
+        components = [
+            item.tag for item in manifest_root.findall("./application/*")
+            if item.tag != "meta-data"
+        ]
+        require(not components,
+                f"Declarative theme must not add Android components: {components}", errors)
+    except (OSError, ElementTree.ParseError) as exc:
+        errors.append(f"Invalid Android manifest: {exc}")
+
+    required_resources = {
+        "res/values/strings.xml",
+        "res/values/aliases.xml",
+        "res/drawable/selector_media_previous.xml",
+        "res/drawable/selector_media_play.xml",
+        "res/drawable/selector_media_stop.xml",
+        "res/drawable/selector_media_next.xml",
+        "res/drawable/selector_media_bt_pp.xml",
+        "res/drawable/selector_media_radio_pp.xml",
+    }
+    for relative in sorted(required_resources):
+        require((THEME_ROOT / relative).is_file(), f"Missing clean-build resource: {relative}", errors)
+
+    for path in sorted((THEME_ROOT / "res").rglob("*.xml")):
+        try:
+            ElementTree.parse(path)
+        except (OSError, ElementTree.ParseError) as exc:
+            errors.append(f"Invalid Android resource XML {path.relative_to(ROOT)}: {exc}")
+
+    expected_png_dimensions = {
+        "radio_bg.png": (286, 64),
+        "media_bg.png": (690, 64),
+        "time_bg.png": (178, 64),
+    }
+    for name, expected in expected_png_dimensions.items():
+        path = THEME_ROOT / "res" / "mipmap-mdpi-v4" / name
+        try:
+            actual = png_dimensions(path)
+            require(actual == expected, f"Unexpected {name} dimensions: {actual}", errors)
+        except ValidationError as exc:
+            errors.append(str(exc))
+
     for svg in sorted((ROOT / "design").rglob("*.svg")):
         try:
             ElementTree.parse(svg)
         except (OSError, ElementTree.ParseError) as exc:
             errors.append(f"Invalid SVG {svg.relative_to(ROOT)}: {exc}")
 
-    forbidden_suffixes = {".apk", ".aab", ".jks", ".keystore", ".p12", ".pem"}
+    forbidden_suffixes = {".apk", ".aab", ".aar", ".jks", ".keystore", ".p12", ".pem"}
     ignored_roots = {".git", ".local", "build", "dist", "__pycache__"}
     for path in ROOT.rglob("*"):
         relative = path.relative_to(ROOT)
@@ -396,108 +495,14 @@ def validate_project() -> list[str]:
     return errors
 
 
-def patch_identity(manifest: bytes) -> bytes:
-    if len(ORIGINAL_PACKAGE) != len(CUSTOM_PACKAGE) or len(ORIGINAL_PLUGIN_ID) != len(CUSTOM_PLUGIN_ID):
-        raise SafetyStop("Identity replacement lengths differ; binary XML patch is unsafe")
-    patched = manifest
-    replacements = ((ORIGINAL_PACKAGE, CUSTOM_PACKAGE), (ORIGINAL_PLUGIN_ID, CUSTOM_PLUGIN_ID))
-    for old, new in replacements:
-        count = 0
-        for encoding in ("utf-8", "utf-16le"):
-            old_bytes, new_bytes = old.encode(encoding), new.encode(encoding)
-            hits = patched.count(old_bytes)
-            if hits:
-                patched = patched.replace(old_bytes, new_bytes)
-                count += hits
-        if count != 1:
-            raise SafetyStop(f"Expected one manifest identity string {old!r}; found {count}")
-    summary = manifest_summary(parse_binary_manifest(patched))
-    if summary.get("package") != CUSTOM_PACKAGE:
-        raise ValidationError("Patched manifest package did not validate")
-    metadata = {item["name"]: item["value"] for item in summary.get("metadata", [])}
-    if metadata.get("launcher.variety.theme.plugin") != CUSTOM_PLUGIN_ID:
-        raise ValidationError("Patched manifest metadata did not validate")
-    return patched
-
-
-def overlay_files() -> dict[str, bytes]:
-    result: dict[str, bytes] = {}
-    for directory in (THEME_ROOT / "assets", THEME_ROOT / "res"):
-        for path in sorted(directory.rglob("*")):
-            if not path.is_file() or path.suffix.lower() in {".md", ".txt"}:
-                continue
-            relative = path.relative_to(THEME_ROOT).as_posix()
-            result[relative] = path.read_bytes()
-    return result
-
-
-def package_probe(base_apk: Path, output: Path, replace: bool) -> dict[str, Any]:
-    inspect_zip(base_apk)
-    actual_hash = sha256_file(base_apk)
-    if actual_hash != FYD_SHA256:
-        raise SafetyStop(
-            "Base APK is not the audited FYD binary. "
-            f"Expected {FYD_SHA256}, got {actual_hash}."
-        )
-    if output.exists() and not replace:
-        raise SafetyStop(f"Output exists; pass --replace to overwrite: {output}")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    overlays = overlay_files()
-    with zipfile.ZipFile(base_apk, "r") as source:
-        source_names = {item.filename for item in source.infolist()}
-        missing = sorted(set(overlays) - source_names)
-        if missing:
-            raise SafetyStop(
-                "Overlay introduces resource entries absent from the compiled template: "
-                + ", ".join(missing)
-            )
-        manifest = patch_identity(source.read("AndroidManifest.xml"))
-        fd, temp_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
-        os.close(fd)
-        temp_path = Path(temp_name)
-        try:
-            with zipfile.ZipFile(temp_path, "w", allowZip64=False) as destination:
-                for info in source.infolist():
-                    if info.filename.startswith("META-INF/"):
-                        continue
-                    if info.filename == "AndroidManifest.xml":
-                        data = manifest
-                    else:
-                        data = overlays.get(info.filename, source.read(info.filename))
-                    clean_info = zipfile.ZipInfo(info.filename, date_time=info.date_time)
-                    clean_info.compress_type = info.compress_type
-                    clean_info.comment = info.comment
-                    clean_info.extra = info.extra
-                    clean_info.external_attr = info.external_attr
-                    clean_info.internal_attr = info.internal_attr
-                    destination.writestr(clean_info, data)
-            inspect_zip(temp_path)
-            with zipfile.ZipFile(temp_path) as check:
-                summary = manifest_summary(parse_binary_manifest(check.read("AndroidManifest.xml")))
-                if any(name.startswith("META-INF/") for name in check.namelist()):
-                    raise ValidationError("Unsigned probe retained stale signature files")
-            os.replace(temp_path, output)
-        except BaseException:
-            try:
-                temp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-            raise
-    return {
-        "output": str(output),
-        "sha256": sha256_file(output),
-        "size_bytes": output.stat().st_size,
-        "package": summary.get("package"),
-        "signed": False,
-        "overlaid_entries": len(overlays),
-    }
-
-
 def audit_apk(apk: Path) -> dict[str, Any]:
     infos = inspect_zip(apk)
     with zipfile.ZipFile(apk) as archive:
         manifest = manifest_summary(parse_binary_manifest(archive.read("AndroidManifest.xml")))
-        classes = dex_classes(archive.read("classes.dex"))
+        dex_names = sorted(
+            info.filename for info in infos if re.fullmatch(r"classes(?:[2-9][0-9]*)?\.dex", info.filename)
+        )
+        classes = sorted({item for name in dex_names for item in dex_classes(archive.read(name))})
         json_entries = sorted(
             info.filename for info in infos if info.filename.startswith("assets/") and info.filename.endswith(".json")
         )
@@ -516,6 +521,7 @@ def audit_apk(apk: Path) -> dict[str, Any]:
         "json_entry_count": len(json_entries),
         "invalid_json_entries": invalid_json,
         "dex_class_count": len(classes),
+        "dex_file_count": len(dex_names),
         "dex_classes": classes,
         "signer_certificate_sha256": signer_fingerprint(apk),
     }
@@ -533,10 +539,6 @@ def build_parser() -> argparse.ArgumentParser:
     audit = subparsers.add_parser("audit", help="read-only static audit of a theme APK")
     audit.add_argument("--apk", type=Path, required=True)
 
-    package = subparsers.add_parser("package", help="create an unsigned unique-package development probe")
-    package.add_argument("--base-apk", type=Path, required=True)
-    package.add_argument("--output", type=Path, required=True)
-    package.add_argument("--replace", action="store_true", help="explicitly replace an existing output")
     return parser
 
 
@@ -555,14 +557,6 @@ def main(argv: Iterable[str] | None = None) -> int:
             return 0
         if args.command == "audit":
             write_json(audit_apk(args.apk.resolve()))
-            return 0
-        if args.command == "package":
-            errors = validate_project()
-            if errors:
-                raise ValidationError("Repository validation failed before packaging: " + "; ".join(errors))
-            result = package_probe(args.base_apk.resolve(), args.output.resolve(), args.replace)
-            write_json(result)
-            print("COMPLETED WITH WARNINGS: output is unsigned and must not be installed yet", file=sys.stderr)
             return 0
         parser.error("Unknown command")
     except SafetyStop as exc:

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hidden compatibility fields still need resolvable resource IDs in a clean APK. -->
+    <item name="media_music_default" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="media_bt_default" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="media_radio_default" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="media_module_icon_local_music" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="media_module_icon_radio" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="media_module_icon_bt" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="media_module_icon_kw" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="media_module_icon_kaola" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="media_module_icon_cyb" type="mipmap">@mipmap/media_img_bg</item>
+    <item name="time_spacing" type="mipmap">@mipmap/media_img_bg</item>
+</resources>

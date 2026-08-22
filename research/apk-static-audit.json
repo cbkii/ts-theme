@@ -30,6 +30,86 @@
       "dex_class_count": 48,
       "custom_executable_feature_classes": []
     },
+    "sfp_ts10": {
+      "package": "launcher.variety.theme.plugin.sfp_ts10",
+      "plugin_metadata_name": "launcher.variety.theme.plugin",
+      "plugin_metadata_value": "sfp_ts10",
+      "version_code": 161,
+      "version_name": "161_230609141148.land",
+      "min_sdk": 16,
+      "target_sdk": 26,
+      "compile_sdk": 29,
+      "theme_id": "20201030172202",
+      "oem_id": "190",
+      "dex_class_count": 60,
+      "json_file_count": 49,
+      "invalid_json_file_count": 2,
+      "custom_executable_feature_classes": []
+    },
+    "ts10_tw": {
+      "package": "launcher.variety.theme.plugin.ts10_tw",
+      "plugin_metadata_name": "launcher.variety.theme.plugin",
+      "plugin_metadata_value": "ts10_tw",
+      "version_code": 187,
+      "version_name": "187_230530104436.land",
+      "min_sdk": 16,
+      "target_sdk": 26,
+      "compile_sdk": 29,
+      "theme_id": "20200903164745",
+      "oem_id": "190",
+      "dex_class_count": 60,
+      "json_file_count": 137,
+      "invalid_json_file_count": 0,
+      "custom_executable_feature_classes": []
+    },
+    "tw23": {
+      "package": "launcher.variety.theme.plugin.tw23",
+      "plugin_metadata_name": "launcher.variety.theme.plugin",
+      "plugin_metadata_value": "tw23",
+      "version_code": 66,
+      "version_name": "66_240102114725.land",
+      "min_sdk": 16,
+      "target_sdk": 26,
+      "compile_sdk": 29,
+      "theme_id": "20220413171802",
+      "oem_id": "190",
+      "dex_class_count": 59,
+      "json_file_count": 22,
+      "invalid_json_file_count": 0,
+      "custom_executable_feature_classes": []
+    },
+    "carplay": {
+      "package": "launcher.variety.theme.plugin.carplay",
+      "plugin_metadata_name": "launcher.variety.theme.plugin",
+      "plugin_metadata_value": "carplay",
+      "version_code": 105,
+      "version_name": "105_230422170206.port",
+      "min_sdk": 16,
+      "target_sdk": 26,
+      "compile_sdk": 29,
+      "theme_id": "20230304101853",
+      "oem_id": "190",
+      "dex_class_count": 61,
+      "json_file_count": 179,
+      "invalid_json_file_count": 0,
+      "custom_executable_feature_classes": []
+    },
+    "t7_theme": {
+      "package": "launcher.variety.theme.plugin.t7_theme",
+      "plugin_metadata_name": "launcher.variety.theme.plugin",
+      "plugin_metadata_value": "t7_theme",
+      "version_code": 52,
+      "version_name": "52_200825103947",
+      "min_sdk": 16,
+      "target_sdk": 26,
+      "compile_sdk": null,
+      "theme_id": "20200825100808",
+      "oem_id": "190",
+      "dex_class_count": 48,
+      "json_file_count": 21,
+      "invalid_json_file_count": 0,
+      "custom_executable_feature_classes": []
+    },
     "dofun_host": {
       "package": "com.dofun.variety",
       "version_code": 367,
@@ -46,6 +126,12 @@
         "Lcom/tianyu/util/a;"
       ]
     }
+  },
+  "common_executable_payload": {
+    "coordinate": "com.qihoo360.replugin:replugin-plugin-lib:2.3.4",
+    "sha256": "0c3132e90dc372056bd9601788ee67a1c97fb64d15f6074826825addadf6a89f",
+    "library_class_count": 43,
+    "finding": "The common loader classes match the official Qihoo360 AAR; remaining classes are generated application resources."
   },
   "inference": "Theme visuals and composition are declarative. Generic media selection, ticker formatting and information-region app launching depend on protected host behaviour or executable integration outside the theme payload.",
   "limitations": [

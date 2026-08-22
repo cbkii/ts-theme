@@ -15,13 +15,13 @@
         {
           "soft_type": "desktop_window",
           "width": 1154,
-          "height": 576,
-          "gravity": "l_93|t_126"
+          "height": 583,
+          "gravity": "l_93|t_119"
         },
         {
           "soft_type": "local_radio",
           "width": 286,
-          "height": 71,
+          "height": 64,
           "gravity": "l_93|t_55",
           "config_file_path": "media/media_config.json",
           "view_config_path": "media/media_view_config.json",
@@ -30,7 +30,7 @@
         {
           "soft_type": "local_music|bt_music",
           "width": 690,
-          "height": 71,
+          "height": 64,
           "gravity": "l_379|t_55",
           "config_file_path": "media/media_config.json",
           "view_config_path": "media/media_view_config.json",
@@ -39,7 +39,7 @@
         {
           "soft_type": "time",
           "width": 178,
-          "height": 71,
+          "height": 64,
           "gravity": "l_1069|t_55",
           "config_file_path": "time/time2_config.json",
           "view_config_path": "time/view2_config.json",

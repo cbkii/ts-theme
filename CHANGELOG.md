@@ -1,22 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - 2026-08-22
 
-- Replaced the four application hotseat glyphs with matching Snow icon-pack vectors: Auxio, Bluetooth, Organic Maps and Video.
-- Retained the project-authored app-drawer and playback controls where Snow has no verified semantic control match.
-- Added exact Snow source revision, resource mapping and GPL-3.0 attribution under `third_party/snow/`.
-- Updated asset generation so checked-in SVG sources, rather than duplicate hand-drawn Pillow paths, produce the theme rasters.
-
-## 0.1.0 - 2026-08-22
-
-- Audited the FYD and GB2 theme plug-ins and the installed DoFun
-  `V9.7.2.367.260312` APK.
-- Added the flat-black 1280 x 720 prototype with a continuous radio/music/date strip and completely
-  unobstructed 1154 x 583 map.
-- Changed date to `DD MMM`, removed album art/visualiser and adopted a warm coral/orange/brown
-  accent palette.
-- Defined compact radio, `Artist - Track Name` ticker and information-region app-launch behaviour.
-- Reworked media integration as a broad Android/DoFun/Topway compatibility adapter informed by
-  Auxio-TS.
-- Added JSON/layout validation, tests, unsigned compatibility repackaging and read-only TS18 capture
-  tooling.
+- Added a clean Android/Gradle APK build with unique package and DoFun plug-in identities; release
+  APKs no longer repack or inherit code/resources from a vendor theme.
+- Cross-checked five additional Topway/Toparea/DoFun theme APKs and matched their shared manifest,
+  API and Qihoo360 RePlugin 2.3.4 interoperability contract without copying their UI or assets.
+- Corrected the layout to a 64 px radio/music/date strip and a completely unobstructed 1154 x 583
+  navigation window.
+- Added every selector, string and hidden fallback resource required for a closed clean build.
+- Replaced the four application hotseat glyphs with matching Snow icon-pack vectors: Auxio,
+  Bluetooth, Organic Maps and Video, while retaining project-authored app-drawer and playback
+  controls.
+- Added a manual build-once release workflow with exact signing/package/version validation,
+  deterministic checksums/metadata, draft-first publication, remote byte verification and safe
+  interrupted-release repair.
+- Added release planner, qualification and publication state-machine regression tests.
+- Retained the flat-black 1280 x 720 design, compact radio, `DD MMM` date, warm palette, wide media
+  title surface and broad generic-media integration boundary.

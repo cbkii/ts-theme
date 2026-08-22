@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "product_name": "TS18 Dashboard Theme",
+  "asset_stem": "TS18-Dashboard-Theme",
+  "application_id": "launcher.variety.theme.plugin.cbk_black",
+  "plugin_id": "cbk_black",
+  "module": "theme",
+  "gradle_task": ":theme:assembleRelease",
+  "apk_path": "theme/build/outputs/apk/release/theme-release.apk",
+  "version_file": "gradle.properties",
+  "version_name_property": "VERSION_NAME",
+  "version_code_property": "VERSION_CODE",
+  "sdk": {
+    "min": 16,
+    "target": 26,
+    "compile": 29
+  },
+  "native_abis": [],
+  "required_apk_entries": [
+    "assets/home/app_widget_view_config1.json",
+    "assets/home/view_config.json",
+    "assets/hotseat_config.json",
+    "assets/import_theme_info_config.json",
+    "assets/media/media_config.json",
+    "assets/media/media_view_config.json",
+    "assets/theme_config.json",
+    "assets/time/time2_config.json",
+    "assets/time/view2_config.json"
+  ],
+  "required_dex_classes": [
+    "Lcom/qihoo360/replugin/Entry;"
+  ]
+}

@@ -1,5 +1,7 @@
 .local/
 build/
+theme/build/
+.gradle/
 dist/
 *.apk
 *.aab

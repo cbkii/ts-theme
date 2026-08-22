@@ -9,10 +9,10 @@ those defaults for optional manual substitution later.
 
 from __future__ import annotations
 
+import argparse
 from io import BytesIO
 from pathlib import Path
 
-import cairosvg
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -26,7 +26,7 @@ ACCENT = "#FF6B57"
 SECONDARY = "#D7B7AA"
 WARM_ORANGE = "#FF9F43"
 WARM_BROWN = "#8A4F3D"
-TOP_STRIP_HEIGHT = 71
+TOP_STRIP_HEIGHT = 64
 TOP_STRIP_TOP = 55
 TOP_STRIP_BOTTOM = TOP_STRIP_TOP + TOP_STRIP_HEIGHT - 1
 SIDEBAR_WIDTH = 81
@@ -38,7 +38,7 @@ DATE_LEFT = CONTENT_LEFT + RADIO_WIDTH + MUSIC_WIDTH
 CONTENT_RIGHT = DATE_LEFT + DATE_WIDTH
 MAP_TOP = TOP_STRIP_BOTTOM + 1
 MAP_WIDTH = 1154
-MAP_HEIGHT = 576
+MAP_HEIGHT = 583
 
 
 def font(size: int) -> ImageFont.ImageFont:
@@ -49,6 +49,8 @@ def font(size: int) -> ImageFont.ImageFont:
 
 
 def render_svg(path: Path, size: int = 160, colour: str | None = None) -> Image.Image:
+    import cairosvg
+
     svg = path.read_text(encoding="utf-8")
     if colour is not None:
         svg = svg.replace("#FFFFFF", colour).replace("#ffffff", colour).replace("#FFFFFFFF", colour)
@@ -115,22 +117,18 @@ def pause(colour: str) -> Image.Image:
 
 
 def radio_previous(colour: str) -> Image.Image:
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
-  <path d="M98 40 62 80l36 40" fill="none" stroke="{colour}" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>'''
-    png = cairosvg.svg2png(bytestring=svg.encode("utf-8"), output_width=160, output_height=160)
-    image = Image.open(BytesIO(png)).convert("RGBA")
-    image.load()
+    image = Image.new("RGBA", (160, 160), (0, 0, 0, 0))
+    ImageDraw.Draw(image).line(
+        ((98, 40), (62, 80), (98, 120)), fill=colour, width=14, joint="curve"
+    )
     return image
 
 
 def radio_next(colour: str) -> Image.Image:
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
-  <path d="M62 40l36 40-36 40" fill="none" stroke="{colour}" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>'''
-    png = cairosvg.svg2png(bytestring=svg.encode("utf-8"), output_width=160, output_height=160)
-    image = Image.open(BytesIO(png)).convert("RGBA")
-    image.load()
+    image = Image.new("RGBA", (160, 160), (0, 0, 0, 0))
+    ImageDraw.Draw(image).line(
+        ((62, 40), (98, 80), (62, 120)), fill=colour, width=14, joint="curve"
+    )
     return image
 
 
@@ -139,7 +137,13 @@ def paste_resized(base: Image.Image, overlay: Image.Image, box: tuple[int, int, 
     base.paste(resized, box[:2], resized)
 
 
-def preview() -> Image.Image:
+def raster(name: str) -> Image.Image:
+    image = Image.open(OUT / name).convert("RGBA")
+    image.load()
+    return image
+
+
+def preview(*, existing_rasters: bool = False) -> Image.Image:
     image = Image.new("RGB", (1280, 720), BLACK)
     draw = ImageDraw.Draw(image)
     draw.rectangle((0, 0, 1279, 54), fill="#080706")
@@ -156,11 +160,16 @@ def preview() -> Image.Image:
     draw.text((CONTENT_LEFT + 166, 69), "FM", fill=ACCENT, font=font(12))
 
     music_left = CONTENT_LEFT + RADIO_WIDTH
-    for icon, box in (
-        (previous(WHITE), (music_left + 484, 62, music_left + 540, 118)),
-        (play(WHITE), (music_left + 552, 62, music_left + 608, 118)),
-        (next_icon(WHITE), (music_left + 620, 62, music_left + 676, 118)),
-    ):
+    controls = (
+        raster("btn_previous_icon.png") if existing_rasters else previous(WHITE),
+        raster("btn_play_icon.png") if existing_rasters else play(WHITE),
+        raster("btn_next_icon.png") if existing_rasters else next_icon(WHITE),
+    )
+    for icon, box in zip(controls, (
+        (music_left + 484, 62, music_left + 540, 118),
+        (music_left + 552, 62, music_left + 608, 118),
+        (music_left + 620, 62, music_left + 676, 118),
+    )):
         paste_resized(image, icon, box)
     draw.text((music_left + 18, 77), "Massive Attack – Teardrop   •", fill=WHITE, font=font(19))
     draw.text((DATE_LEFT + 41, 76), "22 AUG", fill=WHITE, font=font(22))
@@ -183,7 +192,11 @@ def preview() -> Image.Image:
     draw.polygon(((735, 386), (747, 414), (735, 407), (723, 414)), fill=ACCENT)
 
     draw.rectangle((0, 55, SIDEBAR_WIDTH - 1, 719), fill=BLACK)
-    hotseat = [generic_music(), generic_bluetooth(), generic_navigation(), generic_video(), apps()]
+    hotseat = (
+        [raster(name) for name in ("music.png", "bt.png", "navi.png", "video.png", "apps.png")]
+        if existing_rasters
+        else [generic_music(), generic_bluetooth(), generic_navigation(), generic_video(), apps()]
+    )
     positions = ((10, 77, 70, 137), (10, 181, 70, 241), (10, 285, 70, 345), (10, 389, 70, 449), (4, 628, 76, 700))
     for icon, box in zip(hotseat, positions):
         paste_resized(image, icon, box)
@@ -196,8 +209,28 @@ def save_png(image: Image.Image, name: str, size: tuple[int, int] | None = None)
     image.save(OUT / name, format="PNG", optimize=True)
 
 
+def write_previews(image: Image.Image) -> None:
+    image.resize((614, 360), Image.Resampling.LANCZOS).save(
+        OUT / "icon_local_theme_details_public_02.jpg", format="JPEG", quality=92, optimize=True
+    )
+    image.resize((400, 234), Image.Resampling.LANCZOS).save(
+        OUT / "icon_local_theme_details_public_01.jpg", format="JPEG", quality=92, optimize=True
+    )
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--preview-only",
+        action="store_true",
+        help="refresh catalogue previews from checked-in rasters without CairoSVG",
+    )
+    args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
+    if args.preview_only:
+        write_previews(preview(existing_rasters=True))
+        print("SUCCESS: refreshed catalogue previews from checked-in raster resources")
+        return 0
     save_png(Image.new("RGB", (1280, 750), BLACK), "page_bg_01.png")
     save_png(Image.new("RGB", (1280, 750), BLACK), "apps_bg_01.png")
     for name, size in (("time_bg.png", (178, TOP_STRIP_HEIGHT)), ("radio_bg.png", (286, TOP_STRIP_HEIGHT)), ("media_bg.png", (690, TOP_STRIP_HEIGHT))):
@@ -219,13 +252,7 @@ def main() -> int:
     ):
         save_png(maker(WHITE), f"{stem}.png")
         save_png(maker(ACCENT), f"{stem}_press.png")
-    image = preview()
-    image.resize((614, 360), Image.Resampling.LANCZOS).save(
-        OUT / "icon_local_theme_details_public_02.jpg", format="JPEG", quality=92, optimize=True
-    )
-    image.resize((400, 234), Image.Resampling.LANCZOS).save(
-        OUT / "icon_local_theme_details_public_01.jpg", format="JPEG", quality=92, optimize=True
-    )
+    write_previews(preview())
     print("SUCCESS: generated compatibility resources from checked-in vector sources")
     return 0
 
