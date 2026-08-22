@@ -66,4 +66,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle --no-daemon --stacktrace :theme:lintDebug :theme:assembleDebug
+          if ! gradle --no-daemon --stacktrace :theme:lintDebug :theme:assembleDebug; then
+            report="theme/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+            if [[ -f "$report" ]]; then
+              cat "$report"
+            fi
+            exit 1
+          fi

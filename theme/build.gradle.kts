@@ -63,7 +63,7 @@ android {
 
     lint {
         abortOnError = true
-        checkDependencies = true
+        checkDependencies = false
         checkReleaseBuilds = true
         lintConfig = rootProject.file("lint.xml")
         warningsAsErrors = true

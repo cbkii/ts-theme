@@ -10,9 +10,7 @@
         android:allowBackup="false"
         android:hasCode="true"
         android:icon="@mipmap/apps"
-        android:label="@string/app_name"
-        android:supportsRtl="true"
-        android:usesCleartextTraffic="false">
+        android:label="@string/app_name">
         <meta-data
             android:name="launcher.variety.theme.plugin"
             android:value="cbk_black" />

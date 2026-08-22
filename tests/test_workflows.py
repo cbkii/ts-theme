@@ -41,6 +41,12 @@ class WorkflowContractTests(unittest.TestCase):
         build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
         self.assertEqual(2, build.count("JavaVersion.VERSION_1_8"))
 
+    def test_lint_is_strict_for_owned_source_but_not_the_pinned_legacy_aar(self):
+        build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn("warningsAsErrors = true", build)
+        self.assertIn("checkDependencies = false", build)
+        self.assertIn("lint-results-debug.txt", VALIDATE)
+
     def test_only_existing_signing_secrets_are_referenced(self):
         secrets = set(re.findall(r"secrets\.([A-Z0-9_]+)", MANUAL))
         self.assertEqual(
