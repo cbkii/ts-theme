@@ -5,15 +5,16 @@
 The revised dashboard is feasible, but the final media behaviour crosses the boundary between a
 declarative skin and the protected DoFun host.
 
-The FYD skin contains JSON/resources plus RePlugin loader scaffolding. It has no feature service or
-custom media controller. The installed DoFun APK supplies the runtime widgets and media adapters.
+Seven audited skins contain JSON/resources plus the same small RePlugin loader scaffolding. None has
+a feature service or custom media controller. The installed DoFun APK supplies the runtime widgets
+and media adapters.
 
 ## Feature matrix
 
 | Requirement | Finding |
 | --- | --- |
-| Unobstructed large map | Theme-only. `desktop_window` has explicit geometry. The prototype gives it 1154 x 576 px below the strip. |
-| One unbroken top strip | Theme-only. Three adjacent widgets occupy the same 71 px row with no gaps and a larger right-side reserve. |
+| Unobstructed large map | Theme-only. `desktop_window` has explicit geometry. The prototype gives it 1154 x 583 px below the strip. |
+| One unbroken top strip | Theme-only. Three adjacent widgets occupy the same 64 px row with no gaps and a larger right-side reserve. |
 | Compact radio | Theme-only for layout. Known fields expose frequency, band and previous/next; play/pause and MHz are hidden. |
 | Previous/next saved station | Runtime semantics unknown. FYD's `step` mode may mean preset, seek or frequency step. |
 | `DD MMM` date | Theme-only configuration using `format: "dd MMM"`; physical render still needs validation. |
@@ -75,8 +76,8 @@ action and must not create another playback service, queue, session or notificat
 
 ## Signing and discovery
 
-Both reference themes and the installed host share a vendor certificate. Static analysis cannot tell
-whether DoFun enforces that signer or only discovers:
+All seven reference themes and the installed host share a vendor certificate. Static analysis cannot
+tell whether DoFun enforces that signer or only discovers:
 
 ```text
 meta-data name  = launcher.variety.theme.plugin
@@ -84,12 +85,13 @@ meta-data value = <plugin id>
 package         = launcher.variety.theme.plugin.<plugin id>
 ```
 
-The development probe therefore uses:
+The clean project build therefore uses:
 
 ```text
 plugin id = cbk_black
 package   = launcher.variety.theme.plugin.cbk_black
 ```
 
-Independent distribution remains unknown until install, catalogue discovery, apply, restart and
-reboot all pass on the TS18.
+The project does not copy that vendor certificate or use a vendor APK as a template. Independent
+distribution remains unknown until install, catalogue discovery, apply, restart and reboot all pass
+on the TS18.

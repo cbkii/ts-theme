@@ -1,13 +1,13 @@
 # Development roadmap
 
-## Phase 0 — repository baseline (complete)
+## Phase 0 — repository and clean-build baseline (complete)
 
-- Audit FYD, GB2 and the supplied installed DoFun APK.
+- Audit FYD, GB2, five additional theme samples and the supplied installed DoFun APK.
 - Separate declarative theme work from executable media integration.
-- Add deterministic validation, unsigned compatibility repackaging and an exact visual prototype.
+- Add deterministic validation, a clean RePlugin-compatible Gradle APK and an exact visual prototype.
 - Exclude vendor binaries, assets, credentials and signing keys.
 
-## Phase 1 — user-signed discovery
+## Phase 1 — user-signed v1.0.0 discovery
 
 Acceptance:
 

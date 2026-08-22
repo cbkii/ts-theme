@@ -14,11 +14,15 @@ Nothing is passed until it is run on CB's exact TS18.
 ## Stage A — theme discovery
 
 1. Confirm FYD remains installed/selectable.
-2. Install the separately signed `cbk_black` probe.
-3. Restart only `com.dofun.variety`.
-4. Apply the theme and capture a screenshot plus a bounded log window.
-5. Reboot and confirm selection.
-6. Uninstall the probe and confirm the previous themes still work.
+2. Download the APK and `.sha256` assets from the same GitHub Release and verify the checksum.
+3. Confirm the APK package is `launcher.variety.theme.plugin.cbk_black`, its version matches the
+   Release tag and its signer matches the `.metadata.txt` asset.
+4. Install the separately signed `cbk_black` release APK with `adb install` or the device installer.
+5. Record the install result and `dumpsys package launcher.variety.theme.plugin.cbk_black`.
+6. Restart only `com.dofun.variety`.
+7. Apply the theme and capture a screenshot plus a bounded log window.
+8. Reboot and confirm selection.
+9. Uninstall `cbk_black` and confirm the previous themes still work.
 
 Rollback: uninstall only `launcher.variety.theme.plugin.cbk_black`.
 

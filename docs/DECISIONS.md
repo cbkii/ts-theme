@@ -5,10 +5,11 @@
 Record hashes and use ignored local compatibility inputs. Do not redistribute vendor APKs, extracted
 assets or decrypted implementation code.
 
-## ADR-002: prove template compatibility before a clean build
+## ADR-002: clean build, never vendor repackaging
 
-First use a unique-package FYD-based probe to isolate discovery, schema and geometry from old
-RePlugin build-tool uncertainty.
+Build the unique-package plug-in from project-authored sources. Reproduce only the cross-sample
+contract and the checksum-pinned open-source RePlugin loader; never use a vendor APK as a build
+template. Physical discovery remains a separate acceptance gate.
 
 ## ADR-003: the map is never an underlay
 
@@ -34,3 +35,15 @@ Album art and visualiser surfaces are hidden. The media information region displ
 
 Radio previous/next stays with the DoFun/Topway radio source. Stock radio, NavRadio+, MCU routing and
 Android media are different authorities; saved-preset semantics require physical proof.
+
+## ADR-008: version and release identity have one authority
+
+`gradle.properties` owns `VERSION_CODE` and `VERSION_NAME`; `release-config.json` declares their
+property names plus the package, task and expected APK. The manual release workflow accepts only a
+strict `vX.Y.Z` tag matching `VERSION_NAME`, builds once, and never moves an existing tag.
+
+## ADR-009: publication is transactional
+
+Qualification is read-only. Publication creates or repairs a draft, uploads only the closed bundle,
+re-downloads and hashes every remote asset, and changes release state last. A failed run may leave an
+immutable tag or draft as recoverable evidence; repair mode must reconcile that exact state.

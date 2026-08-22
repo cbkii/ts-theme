@@ -16,9 +16,11 @@ class ProjectTests(unittest.TestCase):
     def test_repository_validates(self):
         self.assertEqual([], MODULE.validate_project())
 
-    def test_identity_lengths_are_patchable(self):
-        self.assertEqual(len(MODULE.ORIGINAL_PACKAGE), len(MODULE.CUSTOM_PACKAGE))
-        self.assertEqual(len(MODULE.ORIGINAL_PLUGIN_ID), len(MODULE.CUSTOM_PLUGIN_ID))
+    def test_strip_background_dimensions_match_geometry(self):
+        resources = ROOT / "theme" / "src" / "main" / "res" / "mipmap-mdpi-v4"
+        self.assertEqual((286, 64), MODULE.png_dimensions(resources / "radio_bg.png"))
+        self.assertEqual((690, 64), MODULE.png_dimensions(resources / "media_bg.png"))
+        self.assertEqual((178, 64), MODULE.png_dimensions(resources / "time_bg.png"))
 
     def test_unsafe_zip_names_are_rejected(self):
         for name in ("../escape", "/absolute", "dir\\file", "C:/drive"):
@@ -33,6 +35,11 @@ class ProjectTests(unittest.TestCase):
             with self.subTest(path=path):
                 json.loads(path.read_text(encoding="utf-8"))
 
+    def test_android_res_contains_only_compilable_resource_types(self):
+        allowed = {".xml", ".png", ".jpg", ".jpeg", ".webp"}
+        paths = (ROOT / "theme" / "src" / "main" / "res").rglob("*")
+        self.assertFalse([path for path in paths if path.is_file() and path.suffix not in allowed])
+
     def test_map_and_top_strip_do_not_overlap(self):
         config = json.loads(
             (ROOT / "theme" / "src" / "main" / "assets" / "theme_config.json").read_text(
@@ -42,10 +49,10 @@ class ProjectTests(unittest.TestCase):
         surfaces = {
             item["soft_type"]: item for item in config["config"][0]["page_config"]
         }
-        self.assertEqual(126, 55 + surfaces["time"]["height"])
-        self.assertEqual("l_93|t_126", surfaces["desktop_window"]["gravity"])
+        self.assertEqual(119, 55 + surfaces["time"]["height"])
+        self.assertEqual("l_93|t_119", surfaces["desktop_window"]["gravity"])
         self.assertEqual(1154, surfaces["desktop_window"]["width"])
-        self.assertEqual(576, surfaces["desktop_window"]["height"])
+        self.assertEqual(583, surfaces["desktop_window"]["height"])
 
     def test_compact_information_formats(self):
         time_config = json.loads(
@@ -63,7 +70,7 @@ class ProjectTests(unittest.TestCase):
         self.assertGreaterEqual(media["tv_media_name"]["width"], 430)
         self.assertFalse(media["tv_radio_unit"]["visibility"])
 
-    def test_unknown_base_is_stopped(self):
+    def test_malformed_apk_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             fake = Path(directory) / "fake.apk"
             fake.write_bytes(b"not an apk")

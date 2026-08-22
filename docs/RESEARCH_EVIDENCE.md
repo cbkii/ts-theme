@@ -23,8 +23,37 @@ Static inspection was completed on 22 August 2026. Exact hashes are in
 - theme/OEM IDs `20200818154716`/`190`;
 - same vendor certificate and 48-class structural pattern.
 
-Theme schema establishes explicit geometry, independent date/time fields, radio frequency/band/unit
-and media title/control views. No supplied JSON exposes a marquee/ticker property.
+### Additional random samples
+
+| Local evidence name | Package / plug-in ID | Version | SDK min/target/compile | Theme/OEM ID | DEX classes |
+| --- | --- | --- | --- | --- | --- |
+| `theme_spf_ts10.apk` | `launcher.variety.theme.plugin.sfp_ts10` / `sfp_ts10` | `161_230609141148.land` | 16/26/29 | `20201030172202` / `190` | 60 |
+| `theme_ts10_tw.apk` | `launcher.variety.theme.plugin.ts10_tw` / `ts10_tw` | `187_230530104436.land` | 16/26/29 | `20200903164745` / `190` | 60 |
+| `launcher.variety.theme.plugin.tw23.apk` | `launcher.variety.theme.plugin.tw23` / `tw23` | `66_240102114725.land` | 16/26/29 | `20220413171802` / `190` | 59 |
+| `launcher.variety.theme.plugin.carplay.apk` | `launcher.variety.theme.plugin.carplay` / `carplay` | `105_230422170206.port` | 16/26/29 | `20230304101853` / `190` | 61 |
+| `launcher.variety.theme.plugin.t7_theme.apk` | `launcher.variety.theme.plugin.t7_theme` / `t7_theme` | `52_200825103947` | 16/26/not recorded | `20200825100808` / `190` | 48 |
+
+All five share the same minimal no-component plug-in manifest pattern, three shared compatibility
+permissions and the same vendor certificate as FYD/GB2. Their JSON/resource inventories vary widely,
+which confirms the skin itself is declarative rather than a fixed UI implementation. One sample also
+contains two malformed vendor JSON files; those files are recorded as evidence, not treated as a
+quality baseline. This repository requires every maintained JSON file to parse.
+
+### Executable-payload provenance
+
+The common non-resource classes were compared with Qihoo360's official
+`replugin-plugin-lib:2.3.4` AAR. Its 43 loader/library classes exactly account for the executable
+payload in the smallest sample; the remaining sample classes are generated application `R` classes.
+The official AAR used by this project has SHA-256
+`0c3132e90dc372056bd9601788ee67a1c97fb64d15f6074826825addadf6a89f`.
+
+The repository fetches that AAR from Qihoo360's documented Maven host into ignored build storage and
+verifies the digest before Gradle sees it. No DEX, resource, layout, image or signing material is
+copied from any supplied APK.
+
+Across all seven samples, theme schema establishes explicit geometry, independent date/time fields,
+radio frequency/band/unit and media title/control views. No supplied JSON exposes a marquee/ticker
+property.
 
 ## Installed DoFun host
 

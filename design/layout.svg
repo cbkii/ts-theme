@@ -12,26 +12,26 @@
     <text x="1220" y="34">12:22</text>
   </g>
 
-  <rect x="108" y="55" width="1154" height="64" fill="#000000" stroke="#8A4F3D"/>
-  <path d="M394 55v64M1084 55v64" stroke="#8A4F3D"/>
+  <rect x="93" y="55" width="1154" height="64" fill="#000000" stroke="#8A4F3D"/>
+  <path d="M379 55v64M1069 55v64" stroke="#8A4F3D"/>
 
   <g fill="#FFFFFF">
-    <path d="M128 87l16-11v22zM374 76l16 11-16 11z"/>
-    <text x="186" y="96" font-family="sans-serif" font-size="24">89.06</text>
-    <text x="255" y="79" fill="#FF6B57" font-family="sans-serif" font-size="12">FM</text>
+    <path d="M113 87l16-11v22zM359 76l16 11-16 11z"/>
+    <text x="171" y="96" font-family="sans-serif" font-size="24">89.06</text>
+    <text x="240" y="79" fill="#FF6B57" font-family="sans-serif" font-size="12">FM</text>
   </g>
 
   <g fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M414 72v30m26-29-22 14 22 14z"/>
-    <path d="M470 72v30m16-30v30"/>
-    <path d="M540 72v30m-26-29 22 14-22 14z"/>
+    <path d="M863 72v30m26-29-22 14 22 14z"/>
+    <path d="M931 72l26 15-26 15z"/>
+    <path d="M1041 72v30m-26-29 22 14-22 14z"/>
   </g>
-  <text x="568" y="96" fill="#FFFFFF" font-family="sans-serif" font-size="19">Massive Attack – Teardrop   •</text>
-  <text x="1168" y="96" fill="#FFFFFF" font-family="sans-serif" font-size="20">22 AUG</text>
+  <text x="397" y="96" fill="#FFFFFF" font-family="sans-serif" font-size="19">Massive Attack – Teardrop   •</text>
+  <text x="1110" y="96" fill="#FFFFFF" font-family="sans-serif" font-size="20">22 AUG</text>
 
-  <clipPath id="mapClip"><rect x="108" y="119" width="1154" height="583"/></clipPath>
+  <clipPath id="mapClip"><rect x="93" y="119" width="1154" height="583"/></clipPath>
   <g clip-path="url(#mapClip)">
-    <rect x="108" y="119" width="1154" height="583" fill="#EEE8E4"/>
+    <rect x="93" y="119" width="1154" height="583" fill="#EEE8E4"/>
     <g fill="none" stroke="#D3C2BA" stroke-width="14">
       <path d="M65 650C250 520 330 610 485 430S820 390 1015 220 1270 200 1350 120"/>
       <path d="M180 80C270 230 400 215 495 345S745 510 955 460 1120 550 1300 640"/>
@@ -57,7 +57,7 @@
     <path d="M735 386l12 28-12-7-12 7z" fill="#FF6B57"/>
   </g>
 
-  <rect x="0" y="55" width="96" height="665" fill="#000000"/>
+  <rect x="0" y="55" width="81" height="665" fill="#000000"/>
   <g fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
     <path d="M29 102v26m0-13c19-8 27-4 27 10V98c-9 3-18 3-27 4zm0 26c0 8-14 8-14 1s14-9 14-1zm27-3c0 8-14 8-14 1s14-9 14-1"/>
     <path d="M31 206l28 24-28 24v-48zm0 0 21 48m0-48-21 48"/>

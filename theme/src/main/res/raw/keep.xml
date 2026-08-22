@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DoFun resolves these theme resources by name from JSON rather than through this APK's code. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/*,@mipmap/*,@string/theme_name" />

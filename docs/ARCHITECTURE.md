@@ -11,29 +11,29 @@
 | Generic media | DoFun media services, Android MediaSession and observed Topway compatibility paths |
 | Status/navigation bars | SystemUI, outside this theme |
 
-## Lane A — declarative theme
+## Lane A — clean declarative RePlugin theme
 
-`theme/src/main/assets` contains the custom overlay. The compatibility packager applies it to a
-locally supplied exact FYD APK. It proves:
+The `theme` Android application module compiles the project-authored JSON, compatibility resource
+names and visual assets into a unique package. It reproduces only the cross-sample host contract:
 
-- separate signing and plug-in discovery;
-- exact geometry and resource replacement;
-- date/radio/media field rendering;
-- touch-region ownership exposed by the host.
+- `launcher.variety.theme.plugin` metadata and matching plug-in/package ID;
+- Android 10-compatible min/target/compile SDK values;
+- the declarative theme entry point and resource aliases DoFun resolves at runtime;
+- the small Apache-2.0 Qihoo360 RePlugin 2.3.4 loader payload used by all audited samples.
 
-An overlay cannot add a compiled resource ID or executable ticker/controller logic.
+The RePlugin AAR is fetched from its official repository and accepted only at its pinned SHA-256.
+No vendor APK, resource, DEX or signing identity is a build input. The output is signed with the
+project's own key and must pass package/version/signer/resource/loader checks before publication.
 
-## Lane B — clean RePlugin build
+Lane A can prove clean packaging and source geometry in CI. The TS18 must still prove third-party
+signer acceptance, discovery, rendering, persistence and host-owned touch behaviour.
 
-Start only after Lane A passes. Reproduce the manifest metadata, resource names consumed by DoFun,
-Android 10/API 29 compatibility and a unique package/theme ID. Do not redistribute vendor assets.
+A declarative theme cannot add executable ticker/controller logic.
 
-The original plug-ins use an old RePlugin toolchain. A build-system migration is a separate
-compatibility change and must not be mixed with the first device proof.
+## Lane B — broad media integration adapter
 
-## Lane C — broad media integration adapter
-
-This lane is used when the installed host's native behaviour does not satisfy the fixed strip.
+This separately developed lane is used only if the installed host's native behaviour does not
+satisfy the fixed strip. It must not be folded into the theme merely to reach v1.0.0.
 
 ### Inputs
 

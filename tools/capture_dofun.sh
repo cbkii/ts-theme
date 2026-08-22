@@ -13,7 +13,7 @@ finish() {
 trap finish EXIT
 trap 'exit 130' INT TERM HUP
 
-for required in su timeout sha256sum date sed head id grep; do
+for required in su timeout sha256sum date sed head id grep content; do
     if ! command -v "$required" >/dev/null 2>&1; then
         printf 'ERROR: required command missing: %s\nFAILED\n' "$required" >&2
         exit 1
@@ -60,12 +60,23 @@ if [[ $status -ne 0 ]]; then
 fi
 
 stage="bounded media observations"
-timeout 20 content query +    --uri content://com.dofun.variety.ExportedProvider/hotseat_app_music +    > "$output_dir/provider-selection-app-uid.txt" 2>&1 || true
-timeout 20 su -c +    "content query --uri content://com.dofun.variety.ExportedProvider/hotseat_app_music" +    > "$output_dir/provider-selection-root-observation.txt" 2>&1 || true
-timeout 20 su -c "dumpsys media_session" +    > "$output_dir/media-session.txt" 2>&1 || true
-timeout 20 su -c +    "dumpsys notification --noredact | grep -i -E 'com.dofun.variety|com.tw.media|com.tw.music|NotifyService|notification listener'" +    > "$output_dir/notification-media-filtered.txt" 2>&1 || true
-timeout 20 su -c +    "dumpsys activity services com.dofun.variety | grep -i -E 'NotifyService|MediaSourceService|RemoteMediaService|music|media|listener'" +    > "$output_dir/dofun-media-services-filtered.txt" 2>&1 || true
-timeout 20 su -c +    "cmd package resolve-activity --user 0 --brief -c android.intent.category.LAUNCHER -a android.intent.action.MAIN com.tw.media" +    > "$output_dir/resolve-com.tw.media.txt" 2>&1 || true
+timeout 20 content query \
+    --uri content://com.dofun.variety.ExportedProvider/hotseat_app_music \
+    > "$output_dir/provider-selection-app-uid.txt" 2>&1 || true
+timeout 20 su -c \
+    "content query --uri content://com.dofun.variety.ExportedProvider/hotseat_app_music" \
+    > "$output_dir/provider-selection-root-observation.txt" 2>&1 || true
+timeout 20 su -c "dumpsys media_session" \
+    > "$output_dir/media-session.txt" 2>&1 || true
+timeout 20 su -c \
+    "dumpsys notification --noredact | grep -i -E 'com.dofun.variety|com.tw.media|com.tw.music|NotifyService|notification listener'" \
+    > "$output_dir/notification-media-filtered.txt" 2>&1 || true
+timeout 20 su -c \
+    "dumpsys activity services com.dofun.variety | grep -i -E 'NotifyService|MediaSourceService|RemoteMediaService|music|media|listener'" \
+    > "$output_dir/dofun-media-services-filtered.txt" 2>&1 || true
+timeout 20 su -c \
+    "cmd package resolve-activity --user 0 --brief -c android.intent.category.LAUNCHER -a android.intent.action.MAIN com.tw.media" \
+    > "$output_dir/resolve-com.tw.media.txt" 2>&1 || true
 chmod 0644 "$output_dir"/*.txt 2>/dev/null || true
 
 stage="hash and context"
