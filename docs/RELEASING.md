@@ -107,8 +107,11 @@ leave it untouched and inspect it before selecting repair or explicit draft repl
 
 ## Validation boundary
 
-CI can validate and assemble the debug APK. The manual workflow validates the exact signed release
-APK, but the theme has no launcher Activity and depends on the protected DoFun host, so an emulator
-launch smoke test would not exercise the product. Installation, catalogue discovery, apply/restart,
-reboot persistence, map interaction and media/radio behaviour must be tested on the TS18 using
-[TS18 physical validation](TS18_VALIDATION.md).
+CI validates and assembles the debug APK, then exercises `:theme:assembleRelease` with a disposable
+CI-only keystore and Gradle's configuration cache enabled. That build covers release configuration
+and the fail-closed signing gate without producing a publishable asset or using the production
+signer. The manual workflow separately validates the exact production-signed release APK. The theme
+has no launcher Activity and depends on the protected DoFun host, so an emulator launch smoke test
+would not exercise the product. Installation, catalogue discovery, apply/restart, reboot
+persistence, map interaction and media/radio behaviour must be tested on the TS18 using [TS18
+physical validation](TS18_VALIDATION.md).

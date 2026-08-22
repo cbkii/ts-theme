@@ -5,6 +5,10 @@
 - Made the Manual Release dispatch version authoritative for the Git tag and APK package version.
 - Added deterministic blank-input version selection, SemVer-derived Android version codes and
   regression coverage for explicit, automatic and immutable-tag repair releases.
+- Made the release-signing guard compatible with Gradle's configuration cache and added a signed
+  release-path CI build so the exact escaped failure is caught before Manual Release.
+- Added transaction-level publisher tests proving all three assets are remotely reverified before
+  promotion and that a remote byte mismatch leaves the Release safely in draft.
 
 ## 1.0.0 - 2026-08-22
 

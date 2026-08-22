@@ -77,12 +77,20 @@ android {
 val verifyReleaseSigningEnvironment = tasks.register("verifyReleaseSigningEnvironment") {
     group = "verification"
     description = "Fails closed when a release build lacks one of the four signing inputs."
+
+    // Resolve Project/provider-backed values while configuring the task. The task action must
+    // capture only serialisable plain values; capturing this Kotlin build-script object makes
+    // Gradle's configuration cache reject an otherwise successful release build.
+    val missingSigningInputs = signingValues.filterValues { it.isNullOrBlank() }.keys.sorted()
+    val keystoreFile = signingValues["TS_THEME_KEYSTORE_FILE"]
+        ?.takeIf { it.isNotBlank() }
+        ?.let { rootProject.file(it) }
+
     doLast {
-        val missing = signingValues.filterValues { it.isNullOrBlank() }.keys.sorted()
-        require(missing.isEmpty()) {
-            "Release signing environment is incomplete; missing: ${missing.joinToString(", ")}"
+        require(missingSigningInputs.isEmpty()) {
+            "Release signing environment is incomplete; missing: ${missingSigningInputs.joinToString(", ")}"
         }
-        require(rootProject.file(signingValues.getValue("TS_THEME_KEYSTORE_FILE")!!).isFile) {
+        require(keystoreFile?.isFile == true) {
             "TS_THEME_KEYSTORE_FILE does not identify a regular file"
         }
     }
