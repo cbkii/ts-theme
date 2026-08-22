@@ -38,9 +38,11 @@ Android media are different authorities; saved-preset semantics require physical
 
 ## ADR-008: version and release identity have one authority
 
-`gradle.properties` owns `VERSION_CODE` and `VERSION_NAME`; `release-config.json` declares their
-property names plus the package, task and expected APK. The manual release workflow accepts only a
-strict `vX.Y.Z` tag matching `VERSION_NAME`, builds once, and never moves an existing tag.
+The Manual Release dispatch owns the release version. An explicit strict `X.Y.Z`/`vX.Y.Z` input
+controls both the canonical tag and APK `versionName`; blank create mode deterministically selects
+the initial checked-in baseline or increments the highest remote SemVer patch. Android `versionCode`
+is a deterministic SemVer encoding, so repair can rebuild the immutable tag without changing source.
+`gradle.properties` remains the local-development default and initial auto-version baseline.
 
 ## ADR-009: publication is transactional
 

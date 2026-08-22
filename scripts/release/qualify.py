@@ -20,12 +20,12 @@ sys.path.insert(0, str(SCRIPT_ROOT))
 from tools.ts18_theme import audit_apk  # noqa: E402
 
 from release_lib import (  # noqa: E402
+    ALLOWED_VERSION_SOURCES,
     ReleaseError,
     SemVer,
     load_config,
     load_manifest,
     sha256_file,
-    source_version,
     write_json,
 )
 
@@ -113,13 +113,20 @@ def changelog_notes(source_root: Path, version_name: str, product_name: str) -> 
         re.MULTILINE,
     )
     match = heading.search(text)
-    if not match:
-        raise ReleaseError(f"CHANGELOG.md has no maintained {version_name} section")
-    next_heading = re.search(r"^##\s+", text[match.end() :], re.MULTILINE)
-    end = match.end() + next_heading.start() if next_heading else len(text)
-    body = text[match.end() : end].strip()
+    if match:
+        next_heading = re.search(r"^##\s+", text[match.end() :], re.MULTILINE)
+        end = match.end() + next_heading.start() if next_heading else len(text)
+        body = text[match.end() : end].strip()
+    else:
+        unreleased = re.search(r"^##\s+(?:\[)?Unreleased(?:\])?\s*$", text, re.MULTILINE)
+        if unreleased:
+            next_heading = re.search(r"^##\s+", text[unreleased.end() :], re.MULTILINE)
+            end = unreleased.end() + next_heading.start() if next_heading else len(text)
+            body = text[unreleased.end() : end].strip()
+        else:
+            body = "- Built and qualified from the selected source commit."
     if not body:
-        raise ReleaseError(f"CHANGELOG.md section {version_name} is empty")
+        body = "- Built and qualified from the selected source commit."
     return (
         f"# {product_name} {version_name}\n\n"
         f"{body}\n\n"
@@ -162,6 +169,8 @@ def create_bundle(
         "source_sha",
         "release_state",
         "replace_existing_assets",
+        "version_code",
+        "version_source",
     }
     if required_plan - set(plan):
         raise ReleaseError("Release plan is incomplete")
@@ -169,11 +178,14 @@ def create_bundle(
     if parsed_tag is None:
         raise ReleaseError("Release plan contains a malformed tag")
 
-    version_name, version_code = source_version(source_root, config)
-    if version_name != parsed_tag.version_name or version_name != plan["version_name"]:
-        raise ReleaseError("Tagged version, release plan and source version disagree")
-    if plan.get("version_code") not in (None, version_code):
-        raise ReleaseError("Release plan and source versionCode disagree")
+    version_name = plan["version_name"]
+    version_code = plan["version_code"]
+    if version_name != parsed_tag.version_name:
+        raise ReleaseError("Tagged version and release plan disagree")
+    if version_code != parsed_tag.android_version_code:
+        raise ReleaseError("Tagged version and release plan versionCode disagree")
+    if plan["version_source"] not in ALLOWED_VERSION_SOURCES:
+        raise ReleaseError("Release plan version source is invalid")
 
     expected_apk = source_root / config["apk_path"]
     if apk.resolve() != expected_apk.resolve():

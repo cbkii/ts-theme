@@ -39,7 +39,7 @@ def main() -> int:
     try:
         root = args.root.resolve()
         config = load_config(root)
-        version_name, version_code = source_version(root, config)
+        version_name, _ = source_version(root, config)
         client = GitHubClient(os.environ.get("GITHUB_TOKEN", ""), args.repository)
         plan = resolve_plan(
             mode=args.mode,
@@ -48,13 +48,12 @@ def main() -> int:
             replace_existing=args.replace_existing,
             current_source_sha=args.source_sha,
             current_version_name=version_name,
-            current_version_code=version_code,
             snapshot=client.snapshot(),
         )
         write_json(args.output.resolve(), plan)
         print(
             f"SUCCESS: {plan['mode']} {plan['tag']} at {plan['source_sha']} "
-            f"from {plan['observed_remote_state']}"
+            f"from {plan['observed_remote_state']} ({plan['version_source']})"
         )
         return 0
     except ReleaseError as exc:
