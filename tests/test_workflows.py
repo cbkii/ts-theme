@@ -1,6 +1,7 @@
 import re
 import unittest
 from pathlib import Path
+from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +47,20 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("warningsAsErrors = true", build)
         self.assertIn("checkDependencies = false", build)
         self.assertIn("lint-results-debug.txt", VALIDATE)
+        lint = ElementTree.parse(ROOT / "lint.xml").getroot()
+        ignored = {item.get("id") for item in lint.findall("issue")}
+        self.assertEqual(
+            {
+                "ExpiredTargetSdkVersion",
+                "OldTargetApi",
+                "GradleDependency",
+                "ObsoleteSdkInt",
+                "IconDuplicates",
+            },
+            ignored,
+        )
+        self.assertNotIn("UnusedResources", ignored)
+        self.assertTrue((ROOT / "theme" / "src" / "main" / "res" / "raw" / "keep.xml").is_file())
 
     def test_only_existing_signing_secrets_are_referenced(self):
         secrets = set(re.findall(r"secrets\.([A-Z0-9_]+)", MANUAL))
