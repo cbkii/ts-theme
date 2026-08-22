@@ -9,9 +9,8 @@
 - Corrected the layout to a 64 px radio/music/date strip and a completely unobstructed 1154 x 583
   navigation window.
 - Added every selector, string and hidden fallback resource required for a closed clean build.
-- Replaced the four application hotseat glyphs with matching Snow icon-pack vectors: Auxio,
-  Bluetooth, Organic Maps and Video, while retaining project-authored app-drawer and playback
-  controls.
+- Retained simple project-authored white hotseat and playback glyphs, with separately licensed Snow
+  exact-app icons available only as optional alternate resources.
 - Added a manual build-once release workflow with exact signing/package/version validation,
   deterministic checksums/metadata, draft-first publication, remote byte verification and safe
   interrupted-release repair.

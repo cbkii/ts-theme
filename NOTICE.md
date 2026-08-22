@@ -25,15 +25,14 @@ archive.
 
 Auxio-TS is referenced as interoperability evidence. No Auxio-TS source or binary is copied into this repository.
 
-## Snow hotseat icons
+## Optional Snow icon alternates
 
-Four hotseat application icons are derived from the FOSS **Snow** icon pack by
+Four optional exact-app resources are derived from the FOSS **Snow** icon pack by
 `baitmooth/snow`: Auxio, Bluetooth, Organic Maps and Video. These assets are
 separately licensed under **GNU GPL v3** and are not covered by this repository's
 Apache-2.0 licence. The exact source revision recorded by the supplied Snow 7 APK
 is `edc24150a787c14e082e72f55bbce7dca6239cdd`.
 
-Corresponding editable SVG source, the mapping from the supplied APK resources,
-and a copy of GPL v3 are retained under `third_party/snow/`. Generated PNGs in
-`theme/src/main/res/mipmap-mdpi-v4/` that correspond to those four icons are
-derived from those GPL-3.0 assets.
+Corresponding editable SVG source and a copy of GPL v3 are retained under `third_party/snow/`.
+Only the four generated `alt_*` PNGs in `theme/src/main/res/mipmap-mdpi-v4/` derive from those
+GPL-3.0 assets; the selected default hotseat icons are project-authored simple white glyphs.

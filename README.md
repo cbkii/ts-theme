@@ -24,7 +24,7 @@ that open-source loader from its official repository and verifies its pinned SHA
 | --- | --- |
 | Seven supplied theme plug-ins statically cross-checked | Complete |
 | Installed DoFun `V9.7.2.367.260312` statically audited | Complete for unprotected manifest/configuration |
-| Clean Gradle APK, unique package and declarative resources | Implemented; CI-qualified for release |
+| Clean Gradle APK, unique package and declarative resources | Debug build passes CI; signed release awaits the manual workflow |
 | 64 px strip and unobstructed 1154 x 583 map | Source-validated; physical rendering pending |
 | `DD MMM`, compact radio and media field | Configured; physical rendering pending |
 | Separately signed theme discovery and persistence | Requires the physical TS18 |
