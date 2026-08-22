@@ -465,6 +465,12 @@ def validate_project() -> list[str]:
         except (OSError, ElementTree.ParseError) as exc:
             errors.append(f"Invalid Android resource XML {path.relative_to(ROOT)}: {exc}")
 
+    allowed_resource_suffixes = {".xml", ".png", ".jpg", ".jpeg", ".webp"}
+    for path in sorted((THEME_ROOT / "res").rglob("*")):
+        if path.is_file():
+            require(path.suffix.lower() in allowed_resource_suffixes,
+                    f"Non-Android file inside res/: {path.relative_to(ROOT)}", errors)
+
     expected_png_dimensions = {
         "radio_bg.png": (286, 64),
         "media_bg.png": (690, 64),

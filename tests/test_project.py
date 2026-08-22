@@ -35,6 +35,11 @@ class ProjectTests(unittest.TestCase):
             with self.subTest(path=path):
                 json.loads(path.read_text(encoding="utf-8"))
 
+    def test_android_res_contains_only_compilable_resource_types(self):
+        allowed = {".xml", ".png", ".jpg", ".jpeg", ".webp"}
+        paths = (ROOT / "theme" / "src" / "main" / "res").rglob("*")
+        self.assertFalse([path for path in paths if path.is_file() and path.suffix not in allowed])
+
     def test_map_and_top_strip_do_not_overlap(self):
         config = json.loads(
             (ROOT / "theme" / "src" / "main" / "assets" / "theme_config.json").read_text(
