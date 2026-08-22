@@ -1,0 +1,70 @@
+{
+  "evidence_class": "APK-STATIC",
+  "captured_on": "2026-08-22",
+  "source_filename": "com.dofun.variety uid_10093.apk",
+  "sha256": "75e7ea9b46d68754253aa385e6ac750aae957a5b72196fec5449ccf2782c60b1",
+  "size_bytes": 27981164,
+  "package": "com.dofun.variety",
+  "version_code": 367,
+  "version_name": "V9.7.2.367.260312",
+  "release_time": "20260312-11:47:52",
+  "min_sdk": 16,
+  "target_sdk": 24,
+  "compile_sdk": 34,
+  "signer_certificate_sha256": "5B88187716D74BCA641B35DA261CFA52F86467DDDA0AC6099083184DF842999D",
+  "code_protection": {
+    "scheme": "360 Jiagu",
+    "visible_dex_class_count": 4,
+    "visible_classes_are_loader_only": true,
+    "ordinary_static_main_code_analysis": false
+  },
+  "media_permissions_requested": [
+    "android.permission.MEDIA_CONTENT_CONTROL",
+    "android.permission.RECORD_AUDIO",
+    "android.permission.MODIFY_AUDIO_SETTINGS"
+  ],
+  "media_components": [
+    {
+      "class": "cn.cardoor.basic.media.NotifyService",
+      "role": "notification_listener",
+      "bind_permission": "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+    },
+    {
+      "class": "cn.cardoor.libs.media.impl.MediaSourceService",
+      "exported": true,
+      "action": "cn.cardoor.libs.media.RemoteMediaService"
+    }
+  ],
+  "selection_provider": {
+    "authority": "com.dofun.variety.ExportedProvider",
+    "exported": true,
+    "music_probe_uri": "content://com.dofun.variety.ExportedProvider/hotseat_app_music",
+    "write_permission": "com.dofun.variety.permission.provider.exported.WRITE_KV_CONFIG"
+  },
+  "fixed_music_candidates": [
+    "com.tw.media/com.tw.music.MusicActivity",
+    "com.tw.music/com.tw.music.MusicActivity"
+  ],
+  "radio_candidate": "com.tw.radio",
+  "built_in_theme": {
+    "package": "launcher.variety.theme.plugin.kp",
+    "version": 247,
+    "payload": "assets/plugins/kp.jar",
+    "dex_class_count": 62,
+    "custom_media_feature_classes": [],
+    "declared_media_headers": [
+      "local_music",
+      "local_radio",
+      "bt_music",
+      "spotify",
+      "apple_music",
+      "youtube_music"
+    ]
+  },
+  "conclusions": [
+    "The host has a broader media architecture than the supplied skins.",
+    "The compact FYD local_music widget is not statically proven to consume every generic source.",
+    "No supplied theme schema proves marquee/ticker or information-region click routing.",
+    "Runtime binding, selected-target and physical control evidence are still required."
+  ]
+}

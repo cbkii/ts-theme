@@ -1,0 +1,60 @@
+{
+  "source": "theme",
+  "width": 81,
+  "height": 647,
+  "image_path": "mipmap",
+  "background": "",
+  "gravity": "t_55|left",
+  "config": [
+    {
+      "soft_type": "app",
+      "width": 60,
+      "height": 60,
+      "gravity": "l_10|t_22",
+      "use_app_widget": true,
+      "view_config_path": "home/app_widget_view_config1.json",
+      "background": "music",
+      "editable": false
+    },
+    {
+      "soft_type": "app",
+      "width": 60,
+      "height": 60,
+      "gravity": "l_10|t_126",
+      "use_app_widget": true,
+      "view_config_path": "home/app_widget_view_config1.json",
+      "background": "bt",
+      "editable": false
+    },
+    {
+      "soft_type": "app",
+      "width": 60,
+      "height": 60,
+      "gravity": "l_10|t_230",
+      "use_app_widget": true,
+      "view_config_path": "home/app_widget_view_config1.json",
+      "background": "navi",
+      "editable": false
+    },
+    {
+      "soft_type": "app",
+      "width": 60,
+      "height": 60,
+      "gravity": "l_10|t_334",
+      "use_app_widget": true,
+      "view_config_path": "home/app_widget_view_config1.json",
+      "background": "video",
+      "editable": false
+    },
+    {
+      "soft_type": "app",
+      "width": 72,
+      "height": 72,
+      "gravity": "l_4|bottom|b_20",
+      "use_app_widget": true,
+      "view_config_path": "home/app_widget_view_config1.json",
+      "background": "apps",
+      "editable": false
+    }
+  ]
+}

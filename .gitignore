@@ -1,0 +1,12 @@
+.local/
+build/
+dist/
+*.apk
+*.aab
+*.jks
+*.keystore
+*.pem
+*.p12
+__pycache__/
+*.pyc
+.DS_Store

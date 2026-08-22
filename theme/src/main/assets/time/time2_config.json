@@ -1,0 +1,11 @@
+{
+  "source": "local",
+  "image_path": "mipmap",
+  "background": "",
+  "image_time_spacing": "time_spacing",
+  "format": "dd MMM",
+  "visibility": false,
+  "config_file_path": "time/view2_config",
+  "use_system_am_pm": false,
+  "use_system_week": false
+}

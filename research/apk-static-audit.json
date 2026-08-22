@@ -1,0 +1,56 @@
+{
+  "evidence_class": "APK-STATIC",
+  "temporal_status": "CURRENT_FOR_SUPPLIED_BINARIES",
+  "completeness": "STATIC-EXTRACT",
+  "references": {
+    "fyd18": {
+      "package": "launcher.variety.theme.plugin.sfp_fyd18",
+      "plugin_metadata_name": "launcher.variety.theme.plugin",
+      "plugin_metadata_value": "sfp_fyd18",
+      "version_code": 235,
+      "version_name": "235_230411170935.land",
+      "min_sdk": 16,
+      "target_sdk": 26,
+      "compile_sdk": 29,
+      "theme_id": "20221031103531",
+      "oem_id": "1132",
+      "dex_class_count": 48,
+      "custom_executable_feature_classes": []
+    },
+    "gb2": {
+      "package": "launcher.variety.theme.plugin.sfp_gb2",
+      "plugin_metadata_name": "launcher.variety.theme.plugin",
+      "plugin_metadata_value": "sfp_gb2",
+      "version_code": 94,
+      "version_name": "94_210616135406",
+      "min_sdk": 16,
+      "target_sdk": 26,
+      "theme_id": "20200818154716",
+      "oem_id": "190",
+      "dex_class_count": 48,
+      "custom_executable_feature_classes": []
+    },
+    "dofun_host": {
+      "package": "com.dofun.variety",
+      "version_code": 367,
+      "version_name": "V9.7.2.367.260312",
+      "min_sdk": 16,
+      "target_sdk": 24,
+      "compile_sdk": 34,
+      "dex_protection": "360 Jiagu loader",
+      "visible_dex_class_count": 4,
+      "visible_dex_classes": [
+        "Lcom/stub/StubApp;",
+        "Lcom/tianyu/util/Configuration;",
+        "Lcom/tianyu/util/DtcLoader;",
+        "Lcom/tianyu/util/a;"
+      ]
+    }
+  },
+  "inference": "Theme visuals and composition are declarative. Generic media selection, ticker formatting and information-region app launching depend on protected host behaviour or executable integration outside the theme payload.",
+  "limitations": [
+    "The supplied DoFun host is Jiagu-protected; its main runtime classes are not available to ordinary static inspection.",
+    "Signer enforcement and OEM/theme ID acceptance require a physical device probe.",
+    "Declared permissions, services and configuration do not establish runtime selection or execution."
+  ]
+}

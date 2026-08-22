@@ -1,0 +1,26 @@
+{
+  "captured_on": "2026-08-22",
+  "files": {
+    "launcher.variety.theme.plugin.sfp_fyd18.apk": {
+      "sha256": "e2ad22069fd17c78e67f88de53026acdccedabbb34e671655287e628854f53cd",
+      "size_bytes": 9051458
+    },
+    "launcher.variety.theme.plugin.sfp_gb2.apk": {
+      "sha256": "89ab281f0f911e0bb0f8a8d717e185ccf15cddf8a6581a9e20aefd0fe876df24",
+      "size_bytes": 3427698
+    },
+    "launcher.variety.theme.plugin.sfp_fyd18.jpg": {
+      "sha256": "b4ab454a654bff1c1a47634e34d71fd7a05d8f60b785fa12b5912d8a80044122",
+      "size_bytes": 67832
+    },
+    "launcher.variety.theme.plugin.sfp_gb.jpg": {
+      "sha256": "6a1d2e68ea01e167b082b24cd6a9982060488b94b01f585f955482d86c691537",
+      "size_bytes": 84748
+    },
+    "com.dofun.variety uid_10093.apk": {
+      "sha256": "75e7ea9b46d68754253aa385e6ac750aae957a5b72196fec5449ccf2782c60b1",
+      "size_bytes": 27981164
+    }
+  },
+  "signer_certificate_sha256": "5B88187716D74BCA641B35DA261CFA52F86467DDDA0AC6099083184DF842999D"
+}

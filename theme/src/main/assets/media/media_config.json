@@ -1,0 +1,32 @@
+{
+  "source": "theme",
+  "image_path": "mipmap",
+  "btn_img_path": "drawable",
+  "background": "",
+  "media_layout_background": "media_bg",
+  "radio_layout_background": "radio_bg",
+  "pre_btn_name": "selector_media_previous",
+  "play_btn_name": "selector_media_play",
+  "stop_btn_name": "selector_media_stop",
+  "next_btn_name": "selector_media_next",
+  "bt_btn_name": "selector_media_bt_pp",
+  "radio_btn_name": "selector_media_radio_pp",
+  "media_img_name": "media_music_default",
+  "bt_img_name": "media_bt_default",
+  "radio_img_name": "media_radio_default",
+  "media_img_rotate": false,
+  "duration": 20000,
+  "local_music_head": "media_module_icon_local_music",
+  "local_radio_head": "media_module_icon_radio",
+  "bt_music_head": "media_module_icon_bt",
+  "kw_music_head": "media_module_icon_kw",
+  "kl_radio_head": "media_module_icon_kaola",
+  "car_media_head": "media_module_icon_cyb",
+  "media_img_bg": "media_img_bg",
+  "media_img_bg_rotate": false,
+  "media_img_bg_rotate_duration": 8000,
+  "radio": {
+    "": "The exact saved-preset semantics of step must be validated on stock radio and NavRadio+.",
+    "freq_switching_type": "step"
+  }
+}

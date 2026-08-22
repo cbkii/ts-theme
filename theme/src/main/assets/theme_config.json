@@ -1,0 +1,51 @@
+{
+  "source": "theme",
+  "animation_type": "alpha",
+  "background": "page_bg_01",
+  "wallpaper_support": "false",
+  "width": -1,
+  "height": -1,
+  "view_config_path": "home/view_config.json",
+  "gravity": "l_0|t_0",
+  "config": [
+    {
+      "page_bg": "",
+      "apps_bg": "apps_bg_01",
+      "page_config": [
+        {
+          "soft_type": "desktop_window",
+          "width": 1154,
+          "height": 576,
+          "gravity": "l_93|t_126"
+        },
+        {
+          "soft_type": "local_radio",
+          "width": 286,
+          "height": 71,
+          "gravity": "l_93|t_55",
+          "config_file_path": "media/media_config.json",
+          "view_config_path": "media/media_view_config.json",
+          "background": "radio_bg"
+        },
+        {
+          "soft_type": "local_music|bt_music",
+          "width": 690,
+          "height": 71,
+          "gravity": "l_379|t_55",
+          "config_file_path": "media/media_config.json",
+          "view_config_path": "media/media_view_config.json",
+          "background": "media_bg"
+        },
+        {
+          "soft_type": "time",
+          "width": 178,
+          "height": 71,
+          "gravity": "l_1069|t_55",
+          "config_file_path": "time/time2_config.json",
+          "view_config_path": "time/view2_config.json",
+          "background": "time_bg"
+        }
+      ]
+    }
+  ]
+}
