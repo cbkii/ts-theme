@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Made the Manual Release dispatch version authoritative for the Git tag and APK package version.
+- Added deterministic blank-input version selection, SemVer-derived Android version codes and
+  regression coverage for explicit, automatic and immutable-tag repair releases.
+
 ## 1.0.0 - 2026-08-22
 
 - Added a clean Android/Gradle APK build with unique package and DoFun plug-in identities; release

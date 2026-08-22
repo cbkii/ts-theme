@@ -38,7 +38,8 @@ service, queue, MediaSession or notification and does not modify `com.dofun.vari
 ## Repository map
 
 - `theme/` — Android application module, manifest, custom JSON and project-authored resources.
-- `release-config.json` and `gradle.properties` — release identity and version authorities.
+- `release-config.json` — release identity/build contract; `gradle.properties` — development version
+  defaults and the first automatic-release baseline.
 - `design/` — editable layout and fallback/control vector sources.
 - `third_party/snow/` — optional GPL-3.0 Snow hotseat icon sources and provenance.
 - `tools/ts18_theme.py` — dependency-free source/APK audit and source validation.
@@ -75,7 +76,8 @@ keystore, APK or fetched AAR. GitHub Actions performs the supported signed relea
 Use the repository's **Manual Release** workflow. It builds the signed APK exactly once, qualifies
 the exact bytes, transfers only a closed release bundle to a separate publisher job, creates a draft
 first, verifies every remote asset by download/hash, and changes the requested release state last.
-It never moves or deletes a tag.
+The optional dispatch version is authoritative for the tag and APK; a blank create value resolves a
+deterministic next version. The workflow never moves or deletes a tag.
 
 Normal and repair procedures, asset names, failure semantics and secret requirements are documented
 in [Releasing](docs/RELEASING.md). Do not create releases manually in parallel with the workflow.

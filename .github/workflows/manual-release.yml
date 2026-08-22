@@ -1,7 +1,7 @@
 name: Manual Release
 
 run-name: >-
-  Manual Release · ${{ inputs.release_mode }} · ${{ inputs.version_tag }} ·
+  Manual Release · ${{ inputs.release_mode }} · ${{ inputs.version_tag || 'auto' }} ·
   ${{ inputs.release_state }}
 
 on:
@@ -16,8 +16,8 @@ on:
           - create_new_release
           - repair_existing_release
       version_tag:
-        description: Strict vX.Y.Z; must equal the checked-in version for a new release
-        required: true
+        description: X.Y.Z or vX.Y.Z; blank creates the next automatic version; required for repair
+        required: false
         type: string
       release_state:
         description: Final GitHub Release state
@@ -52,6 +52,9 @@ jobs:
       release_tag: ${{ steps.plan.outputs.release_tag }}
       source_sha: ${{ steps.plan.outputs.source_sha }}
       release_state: ${{ steps.plan.outputs.release_state }}
+      version_name: ${{ steps.plan.outputs.version_name }}
+      version_code: ${{ steps.plan.outputs.version_code }}
+      version_source: ${{ steps.plan.outputs.version_source }}
 
     steps:
       - name: Checkout release orchestration
@@ -125,6 +128,9 @@ jobs:
           print(f"release_tag={plan['tag']}")
           print(f"source_sha={plan['source_sha']}")
           print(f"release_state={plan['release_state']}")
+          print(f"version_name={plan['version_name']}")
+          print(f"version_code={plan['version_code']}")
+          print(f"version_source={plan['version_source']}")
           PY
 
       - name: Checkout exact release source
@@ -162,9 +168,14 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RELEASE_VERSION_NAME: ${{ steps.plan.outputs.version_name }}
+          RELEASE_VERSION_CODE: ${{ steps.plan.outputs.version_code }}
         run: |
           set -euo pipefail
-          gradle --project-dir release-source --no-daemon --stacktrace :theme:assembleRelease
+          gradle --project-dir release-source --no-daemon --stacktrace \
+            -PVERSION_NAME="$RELEASE_VERSION_NAME" \
+            -PVERSION_CODE="$RELEASE_VERSION_CODE" \
+            :theme:assembleRelease
 
       - name: Qualify APK and construct closed publication bundle
         shell: bash
@@ -262,6 +273,9 @@ jobs:
             echo
             echo "- Mode: \`${{ inputs.release_mode }}\`"
             echo "- Tag: \`${{ needs.qualify.outputs.release_tag }}\`"
+            echo "- APK versionName: \`${{ needs.qualify.outputs.version_name }}\`"
+            echo "- APK versionCode: \`${{ needs.qualify.outputs.version_code }}\`"
+            echo "- Version source: \`${{ needs.qualify.outputs.version_source }}\`"
             echo "- Source: \`${{ needs.qualify.outputs.source_sha }}\`"
             echo "- Requested state: \`${{ needs.qualify.outputs.release_state }}\`"
             echo

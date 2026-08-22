@@ -49,7 +49,6 @@ def plan(**overrides):
         replace_existing=False,
         current_source_sha=SHA_A,
         current_version_name="1.0.0",
-        current_version_code=1,
         snapshot=snapshot(),
     )
     values.update(overrides)
@@ -69,11 +68,51 @@ class VersionPlanTests(unittest.TestCase):
         self.assertIsNone(SemVer.from_tag("6.10.0"))
         self.assertIsNone(SemVer.from_tag("v01.0.0"))
 
-    def test_create_uses_checked_in_version_and_source(self):
-        resolved = plan(requested_state="draft")
-        self.assertEqual("v1.0.0", resolved["tag"])
+    def test_explicit_dispatch_version_controls_apk_and_tag(self):
+        resolved = plan(
+            requested_tag="2.4.6",
+            requested_state="draft",
+            current_version_name="1.0.0",
+        )
+        self.assertEqual("v2.4.6", resolved["tag"])
+        self.assertEqual("2.4.6", resolved["version_name"])
+        self.assertEqual(2_004_006, resolved["version_code"])
+        self.assertEqual("workflow_dispatch", resolved["version_source"])
         self.assertEqual(SHA_A, resolved["source_sha"])
         self.assertEqual("draft", resolved["release_state"])
+
+    def test_blank_create_uses_baseline_when_no_remote_version_exists(self):
+        resolved = plan(requested_tag="")
+        self.assertEqual("v1.0.0", resolved["tag"])
+        self.assertEqual(1_000_000, resolved["version_code"])
+        self.assertEqual("auto_baseline", resolved["version_source"])
+
+    def test_blank_create_increments_highest_remote_patch(self):
+        remote = snapshot(
+            tags=(TagRecord("v1.2.9", SHA_B),),
+            releases=(ReleaseRecord(1, "v1.2.9", False, False),),
+        )
+        resolved = plan(requested_tag="  ", snapshot=remote)
+        self.assertEqual("v1.2.10", resolved["tag"])
+        self.assertEqual(1_002_010, resolved["version_code"])
+        self.assertEqual("auto_increment", resolved["version_source"])
+
+    def test_blank_repair_is_rejected_as_ambiguous(self):
+        with self.assertRaisesRegex(ReleaseError, "explicit existing version_tag"):
+            plan(mode="repair_existing_release", requested_tag="")
+
+    def test_blank_create_does_not_skip_an_interrupted_tag(self):
+        remote = snapshot(tags=(TagRecord("v1.0.0", SHA_B),))
+        with self.assertRaisesRegex(ReleaseError, "interrupted tag-only transaction v1.0.0"):
+            plan(requested_tag="", snapshot=remote)
+
+    def test_android_version_code_mapping_is_bounded(self):
+        self.assertEqual(1_999_999, SemVer(1, 999, 999).android_version_code)
+        self.assertEqual(SemVer(2, 0, 0), SemVer(1, 999, 999).next_patch())
+        with self.assertRaisesRegex(ReleaseError, "between 0 and 999"):
+            plan(requested_tag="v1.1000.0")
+        with self.assertRaisesRegex(ReleaseError, "Android versionCode"):
+            plan(requested_tag="v2101.0.0")
 
     def test_all_release_states_participate_in_authority(self):
         for release in (
@@ -105,6 +144,7 @@ class VersionPlanTests(unittest.TestCase):
             current_version_name="2.0.0",
         )
         self.assertEqual(SHA_B, repaired["source_sha"])
+        self.assertEqual(1_000_000, repaired["version_code"])
         self.assertEqual("tag_only", repaired["observed_remote_state"])
 
     def test_release_without_tag_fails_closed(self):
@@ -311,7 +351,7 @@ class QualificationParserTests(unittest.TestCase):
 
     def test_source_version_authority(self):
         config = json.loads((ROOT / "release-config.json").read_text(encoding="utf-8"))
-        self.assertEqual(("1.0.0", 1), source_version(ROOT, config))
+        self.assertEqual(("1.0.0", 1_000_000), source_version(ROOT, config))
 
     def test_changelog_notes_extracts_one_version_section(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -325,6 +365,17 @@ class QualificationParserTests(unittest.TestCase):
             self.assertEqual(1, notes.count("- Candidate."))
             self.assertNotIn("- Old.", notes)
             self.assertIn("Validation boundary", notes)
+
+    def test_changelog_notes_have_a_deterministic_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "CHANGELOG.md").write_text(
+                "# Log\n\n## 1.0.0\n\n- Existing release.\n",
+                encoding="utf-8",
+            )
+            notes = QUALIFY.changelog_notes(root, "1.0.1", "Theme")
+            self.assertIn("Built and qualified from the selected source commit", notes)
+            self.assertNotIn("Existing release", notes)
 
     def test_missing_duplicate_and_retired_apk_candidates_fail(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -350,7 +401,7 @@ class QualificationParserTests(unittest.TestCase):
                 "product_name": "Theme",
                 "tag": "v1.0.0",
                 "version_name": "1.0.0",
-                "version_code": 1,
+                "version_code": 1_000_000,
                 "source_sha": SHA_A,
                 "package_id": "launcher.variety.theme.plugin.cbk_black",
                 "plugin_id": "cbk_black",
@@ -388,6 +439,12 @@ class QualificationParserTests(unittest.TestCase):
             manifest_path = root / "release-manifest.json"
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             load_manifest(manifest_path)
+            manifest["version_code"] = 1
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ReleaseError, "tag and versionCode disagree"):
+                load_manifest(manifest_path)
+            manifest["version_code"] = 1_000_000
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             (root / "unexpected.txt").write_text("x", encoding="utf-8")
             with self.assertRaisesRegex(ReleaseError, "Unplanned"):
                 load_manifest(manifest_path)

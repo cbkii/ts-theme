@@ -5,13 +5,19 @@ repository `GITHUB_TOKEN`; no PAT, deploy key, environment bypass or ruleset byp
 
 ## Authorities and prerequisites
 
-- `gradle.properties` is the version authority. `VERSION_NAME` is strict `X.Y.Z`; `VERSION_CODE` is
-  a positive integer. For v1, these are `1.0.0` and `1`.
+- For a release build, the Manual Release form is the version authority. An explicit `version_tag`
+  accepts strict `X.Y.Z` or `vX.Y.Z`; the workflow normalises it to tag `vX.Y.Z` and builds the APK
+  with `versionName=X.Y.Z`.
+- The workflow deterministically derives Android `versionCode` as
+  `major × 1,000,000 + minor × 1,000 + patch`. Minor and patch must each be `0..999`, and the result
+  must fit Android's `1..2,100,000,000` range. This makes create and repair builds reproduce the same
+  package version without modifying or committing source metadata.
+- `gradle.properties` contains local-development defaults and the initial automatic release
+  baseline. For v1, these are `VERSION_NAME=1.0.0` and the matching `VERSION_CODE=1000000`.
 - `release-config.json` owns the application ID, plug-in ID, Gradle task, expected APK path, SDK
   contract and exact public asset stem.
-- `CHANGELOG.md` must contain a non-empty section for the exact `VERSION_NAME`.
-- A new release must be dispatched from the latest default-branch HEAD with a strict matching tag,
-  such as `v1.0.0`. The tag must be newer than every SemVer tag or Release in the repository.
+- A new release must be dispatched from the latest default-branch HEAD. Its resolved tag must be
+  newer than every SemVer tag or Release in the repository.
 - The repository must have the existing secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`
   and `KEY_PASSWORD`. `KEYSTORE_BASE64` is the base64 text of the whole keystore, without a data-URL
   prefix. No additional secret is used.
@@ -23,7 +29,12 @@ The workflow has a repository-wide release lock and does not cancel an in-progre
 1. Merge the release-ready change to the default branch and confirm **Validate** is green there.
 2. Open **Actions → Manual Release → Run workflow** and select the default branch.
 3. Choose `create_new_release`.
-4. Enter the exact tag matching `VERSION_NAME`, for v1: `v1.0.0`.
+4. Either enter the intended version (`1.0.0` and `v1.0.0` are equivalent), or leave it blank:
+   - with no existing SemVer tag or Release, blank selects the checked-in `VERSION_NAME` baseline;
+   - otherwise, blank increments the highest remote SemVer patch (`v1.2.9` → `v1.2.10`), rolling
+     `999` into the next minor component;
+   - if a SemVer tag has no matching Release, blank fails and requires explicit repair instead of
+     skipping the interrupted transaction.
 5. Choose `stable`, `prerelease` or `draft` as the final state.
 6. Leave `replace_existing_assets` disabled and run the workflow.
 
@@ -45,14 +56,15 @@ tag at the qualified source, creates a draft Release, uploads the exact assets, 
 uploaded state, checks GitHub's digest when supplied, downloads and hashes every asset, then changes
 the Release to the requested state as its final API call.
 
-The public asset set is deterministic:
+The public asset set is deterministic for the resolved version, for example:
 
 - `TS18-Dashboard-Theme-v1.0.0.apk`
 - `TS18-Dashboard-Theme-v1.0.0.apk.sha256`
 - `TS18-Dashboard-Theme-v1.0.0.apk.metadata.txt`
 
-Release notes are generated from the matching changelog section. Internal plan, manifest and notes
-files remain in the 14-day workflow recovery artifact and are not uploaded as public assets.
+Release notes use the matching changelog section when present, then `Unreleased`, then a bounded
+generated fallback. Internal plan, manifest and notes files remain in the 14-day workflow recovery
+artifact and are not uploaded as public assets.
 
 ## Repair an interrupted release
 
@@ -61,7 +73,8 @@ recoverable states are an immutable tag with no Release, a draft with missing as
 some identical assets already uploaded.
 
 1. Open **Actions → Manual Release → Run workflow**.
-2. Choose `repair_existing_release` and enter the existing exact tag.
+2. Choose `repair_existing_release` and enter the existing exact version. Blank auto-increment is
+   deliberately unavailable in repair mode because repair must bind to one known immutable tag.
 3. Select the intended final state. A stable Release cannot be demoted; a published prerelease
    cannot return to draft.
 4. Keep `replace_existing_assets` disabled for normal retry. Identical assets are reused and only
@@ -70,9 +83,10 @@ some identical assets already uploaded.
    deliberately chosen to replace it. The workflow downloads the old expected asset into a 14-day
    recovery artifact before deletion. Published Release assets are never replaced.
 
-Repair always rebuilds from the commit already named by the immutable tag, then requalifies those
-bytes. It never changes the tag to the current branch. Unrelated historical assets on a repaired
-Release are preserved; new-release mode rejects every unplanned asset.
+Repair always rebuilds from the commit already named by the immutable tag and reapplies the version
+derived from that tag, then requalifies those bytes. It never changes the tag to the current branch.
+Unrelated historical assets on a repaired Release are preserved; new-release mode rejects every
+unplanned asset.
 
 If a run fails after tag creation, the tag is intentionally retained as recovery evidence. Inspect
 the draft and rerun in repair mode. Do not delete or move the tag to make create mode pass.

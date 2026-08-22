@@ -17,10 +17,14 @@ from typing import Any, Iterable
 
 
 STRICT_TAG = re.compile(r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+STRICT_VERSION = re.compile(r"^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 SHA1 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ALLOWED_STATES = {"draft", "prerelease", "stable"}
 ALLOWED_MODES = {"create_new_release", "repair_existing_release"}
+ALLOWED_VERSION_SOURCES = {"workflow_dispatch", "auto_increment", "auto_baseline"}
+ANDROID_VERSION_CODE_MAX = 2_100_000_000
+VERSION_COMPONENT_BASE = 1_000
 
 
 class ReleaseError(RuntimeError):
@@ -40,6 +44,13 @@ class SemVer:
             return None
         return cls(*(int(part) for part in match.groups()))
 
+    @classmethod
+    def from_dispatch(cls, value: str) -> "SemVer | None":
+        match = STRICT_VERSION.fullmatch(value.strip())
+        if not match:
+            return None
+        return cls(*(int(part) for part in match.groups()))
+
     @property
     def tag(self) -> str:
         return f"v{self.major}.{self.minor}.{self.patch}"
@@ -47,6 +58,29 @@ class SemVer:
     @property
     def version_name(self) -> str:
         return f"{self.major}.{self.minor}.{self.patch}"
+
+    @property
+    def android_version_code(self) -> int:
+        if self.minor >= VERSION_COMPONENT_BASE or self.patch >= VERSION_COMPONENT_BASE:
+            raise ReleaseError("minor and patch versions must each be between 0 and 999")
+        value = (
+            self.major * VERSION_COMPONENT_BASE * VERSION_COMPONENT_BASE
+            + self.minor * VERSION_COMPONENT_BASE
+            + self.patch
+        )
+        if value < 1 or value > ANDROID_VERSION_CODE_MAX:
+            raise ReleaseError(
+                f"{self.tag} cannot be represented as an Android versionCode between 1 and "
+                f"{ANDROID_VERSION_CODE_MAX}"
+            )
+        return value
+
+    def next_patch(self) -> "SemVer":
+        if self.patch + 1 < VERSION_COMPONENT_BASE:
+            return SemVer(self.major, self.minor, self.patch + 1)
+        if self.minor + 1 < VERSION_COMPONENT_BASE:
+            return SemVer(self.major, self.minor + 1, 0)
+        return SemVer(self.major + 1, 0, 0)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -209,36 +243,61 @@ def resolve_plan(
     replace_existing: bool,
     current_source_sha: str,
     current_version_name: str,
-    current_version_code: int,
     snapshot: RemoteSnapshot,
 ) -> dict[str, Any]:
     if mode not in ALLOWED_MODES:
         raise ReleaseError(f"Unsupported release mode: {mode}")
     if requested_state not in ALLOWED_STATES:
         raise ReleaseError(f"Unsupported release state: {requested_state}")
-    requested = SemVer.from_tag(requested_tag)
-    if requested is None:
-        raise ReleaseError("version_tag must use strict vX.Y.Z syntax")
     if not SHA1.fullmatch(current_source_sha):
         raise ReleaseError("Current source SHA is not a full 40-character commit SHA")
 
     tags = snapshot.tag_map()
     releases = snapshot.release_map()
-    exact_tag = tags.get(requested_tag)
-    exact_release = releases.get(requested_tag)
+    for release_tag in releases:
+        if SemVer.from_tag(release_tag) is not None and release_tag not in tags:
+            raise ReleaseError(f"Release {release_tag} exists without its matching tag")
     remote_versions = [
         parsed
         for value in set(tags) | set(releases)
         if (parsed := SemVer.from_tag(value)) is not None
     ]
 
-    if mode == "create_new_release":
-        if requested.version_name != current_version_name:
+    requested_text = requested_tag.strip()
+    if requested_text:
+        requested = SemVer.from_dispatch(requested_text)
+        if requested is None:
+            raise ReleaseError("version_tag must use strict X.Y.Z or vX.Y.Z syntax")
+        version_source = "workflow_dispatch"
+    elif mode == "repair_existing_release":
+        raise ReleaseError("Repair requires an explicit existing version_tag")
+    elif remote_versions:
+        tag_only_versions = sorted(
+            parsed
+            for tag_name in set(tags) - set(releases)
+            if (parsed := SemVer.from_tag(tag_name)) is not None
+        )
+        if tag_only_versions:
             raise ReleaseError(
-                f"Requested {requested_tag} disagrees with source version {current_version_name}"
+                f"Automatic versioning found interrupted tag-only transaction "
+                f"{tag_only_versions[-1].tag}; repair it explicitly before creating another release"
             )
-        if exact_release is not None and exact_tag is None:
-            raise ReleaseError(f"Release {requested_tag} exists without its matching tag")
+        requested = max(remote_versions).next_patch()
+        version_source = "auto_increment"
+    else:
+        requested = SemVer.from_dispatch(current_version_name)
+        if requested is None:
+            raise ReleaseError(
+                f"Checked-in auto-version baseline is not strict X.Y.Z: {current_version_name}"
+            )
+        version_source = "auto_baseline"
+
+    requested_tag = requested.tag
+    version_code = requested.android_version_code
+    exact_tag = tags.get(requested_tag)
+    exact_release = releases.get(requested_tag)
+
+    if mode == "create_new_release":
         if exact_tag is not None or exact_release is not None:
             raise ReleaseError(
                 f"{requested_tag} is already an interrupted or completed transaction; use repair"
@@ -250,8 +309,6 @@ def resolve_plan(
         source_sha = current_source_sha
         remote_state = "absent"
     else:
-        if exact_release is not None and exact_tag is None:
-            raise ReleaseError(f"Release {requested_tag} exists without its matching tag")
         if exact_tag is None:
             raise ReleaseError(f"Repair requires the existing immutable tag {requested_tag}")
         if not SHA1.fullmatch(exact_tag.source_sha):
@@ -264,7 +321,8 @@ def resolve_plan(
         "mode": mode,
         "tag": requested_tag,
         "version_name": requested.version_name,
-        "version_code": current_version_code if mode == "create_new_release" else None,
+        "version_code": version_code,
+        "version_source": version_source,
         "source_sha": source_sha,
         "release_state": requested_state,
         "replace_existing_assets": bool(replace_existing),
@@ -321,6 +379,8 @@ def load_manifest(path: Path, verify_files: bool = True) -> dict[str, Any]:
         raise ReleaseError("Publication manifest tag and versionName disagree")
     if not isinstance(manifest["version_code"], int) or manifest["version_code"] < 1:
         raise ReleaseError("Publication manifest versionCode is invalid")
+    if manifest["version_code"] != parsed_tag.android_version_code:
+        raise ReleaseError("Publication manifest tag and versionCode disagree")
     if not SHA1.fullmatch(str(manifest["source_sha"])):
         raise ReleaseError("Publication manifest source SHA is invalid")
     if manifest["release_mode"] not in ALLOWED_MODES or manifest["release_state"] not in ALLOWED_STATES:

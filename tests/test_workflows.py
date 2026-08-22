@@ -28,9 +28,21 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_release_build_occurs_once_and_never_in_publish_job(self):
         self.assertEqual(1, MANUAL.count(":theme:assembleRelease"))
+        self.assertEqual(1, MANUAL.count('-PVERSION_NAME="$RELEASE_VERSION_NAME"'))
+        self.assertEqual(1, MANUAL.count('-PVERSION_CODE="$RELEASE_VERSION_CODE"'))
         publish = MANUAL.split("  publish:", 1)[1]
         self.assertNotIn("assemble", publish.lower())
         self.assertNotIn("gradle ", publish.lower())
+
+    def test_dispatch_version_is_optional_and_controls_the_release_build(self):
+        version_input = MANUAL.split("      version_tag:", 1)[1].split(
+            "      release_state:", 1
+        )[0]
+        self.assertIn("required: false", version_input)
+        self.assertIn("blank creates the next automatic version", version_input)
+        for field in ("version_name", "version_code", "version_source"):
+            self.assertIn(f"{field}: ${{{{ steps.plan.outputs.{field} }}}}", MANUAL)
+        self.assertNotIn("must equal the checked-in version", MANUAL)
 
     def test_release_assembly_has_a_fail_closed_signing_gate(self):
         build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
