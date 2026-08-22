@@ -83,7 +83,7 @@ val verifyReleaseSigningEnvironment = tasks.register("verifyReleaseSigningEnviro
     }
 }
 
-tasks.named("preReleaseBuild").configure {
+tasks.matching { it.name == "assembleRelease" }.configureEach {
     dependsOn(verifyReleaseSigningEnvironment)
 }
 

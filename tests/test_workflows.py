@@ -31,6 +31,12 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("assemble", publish.lower())
         self.assertNotIn("gradle ", publish.lower())
 
+    def test_release_assembly_has_a_fail_closed_signing_gate(self):
+        build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
+        self.assertIn('it.name == "assembleRelease"', build)
+        self.assertIn("dependsOn(verifyReleaseSigningEnvironment)", build)
+        self.assertNotIn('tasks.named("preReleaseBuild")', build)
+
     def test_only_existing_signing_secrets_are_referenced(self):
         secrets = set(re.findall(r"secrets\.([A-Z0-9_]+)", MANUAL))
         self.assertEqual(
