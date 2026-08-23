@@ -50,6 +50,18 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("dependsOn(verifyReleaseSigningEnvironment)", build)
         self.assertNotIn('tasks.named("preReleaseBuild")', build)
 
+    def test_validate_exercises_the_signed_configuration_cache_path(self):
+        self.assertIn("Exercise signed release build with configuration cache", VALIDATE)
+        self.assertIn(":theme:assembleRelease", VALIDATE)
+        self.assertIn("ci-release-validation.jks", VALIDATE)
+        self.assertNotIn("--no-configuration-cache", VALIDATE)
+
+    def test_signing_gate_does_not_capture_gradle_script_objects(self):
+        build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
+        action = build.split("    doLast {", 1)[1].split("    }\n}", 1)[0]
+        self.assertNotIn("signingValues", action)
+        self.assertNotIn("rootProject", action)
+
     def test_java_bytecode_remains_compatible_with_compile_sdk_29(self):
         build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
         self.assertEqual(2, build.count("JavaVersion.VERSION_1_8"))

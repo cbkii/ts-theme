@@ -73,3 +73,27 @@ jobs:
             fi
             exit 1
           fi
+
+      - name: Exercise signed release build with configuration cache
+        shell: bash
+        env:
+          TS_THEME_KEYSTORE_FILE: ${{ runner.temp }}/ci-release-validation.jks
+          KEYSTORE_PASSWORD: ci-release-validation
+          KEY_ALIAS: ci-release-validation
+          KEY_PASSWORD: ci-release-validation
+        run: |
+          set -euo pipefail
+          umask 077
+          keytool -genkeypair -noprompt \
+            -alias "$KEY_ALIAS" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 1 \
+            -keystore "$TS_THEME_KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            -dname "CN=CI release validation"
+          gradle --no-daemon --stacktrace \
+            -PVERSION_NAME=9.9.9 \
+            -PVERSION_CODE=9009009 \
+            :theme:assembleRelease

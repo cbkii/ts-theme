@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import sys
@@ -30,6 +31,13 @@ assert QUALIFY_SPEC and QUALIFY_SPEC.loader
 QUALIFY = importlib.util.module_from_spec(QUALIFY_SPEC)
 QUALIFY_SPEC.loader.exec_module(QUALIFY)
 
+PUBLISH_SPEC = importlib.util.spec_from_file_location(
+    "publish", RELEASE_SCRIPTS / "publish.py"
+)
+assert PUBLISH_SPEC and PUBLISH_SPEC.loader
+PUBLISH = importlib.util.module_from_spec(PUBLISH_SPEC)
+PUBLISH_SPEC.loader.exec_module(PUBLISH)
+
 
 SHA_A = "a" * 40
 SHA_B = "b" * 40
@@ -60,6 +68,62 @@ def expected_assets():
         {"name": "Theme-v1.0.0.apk", "size": 100, "sha256": DIGEST_A},
         {"name": "Theme-v1.0.0.apk.sha256", "size": 90, "sha256": DIGEST_B},
     ]
+
+
+class FakePublishingClient:
+    """In-memory GitHub boundary used to test the complete publication transaction."""
+
+    def __init__(self, *, corrupt_download: bool = False):
+        self.operations: list[tuple] = []
+        self.assets: list[dict[str, object]] = []
+        self.asset_bytes: dict[int, bytes] = {}
+        self.corrupt_download = corrupt_download
+
+    def snapshot(self):
+        self.operations.append(("snapshot",))
+        return snapshot()
+
+    def create_tag(self, tag, source_sha):
+        self.operations.append(("create_tag", tag, source_sha))
+
+    def create_draft_release(self, tag, source_sha, name, body):
+        self.operations.append(("create_draft_release", tag, source_sha, name, body))
+        return {"id": 77}
+
+    def list_assets(self, release_id):
+        self.operations.append(("list_assets", release_id))
+        return [dict(item) for item in self.assets]
+
+    def upload_asset(self, release_id, name, path):
+        payload = path.read_bytes()
+        asset_id = len(self.assets) + 100
+        item = {
+            "id": asset_id,
+            "name": name,
+            "state": "uploaded",
+            "size": len(payload),
+            "digest": f"sha256:{hashlib.sha256(payload).hexdigest()}",
+        }
+        self.operations.append(("upload_asset", release_id, name))
+        self.assets.append(item)
+        self.asset_bytes[asset_id] = payload
+        return dict(item)
+
+    def download_asset(self, asset_id, destination):
+        self.operations.append(("download_asset", asset_id))
+        payload = self.asset_bytes[asset_id]
+        if self.corrupt_download:
+            payload += b"corrupt"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+        return hashlib.sha256(payload).hexdigest()
+
+    def delete_asset(self, asset_id):
+        self.operations.append(("delete_asset", asset_id))
+
+    def update_release_state(self, release_id, state, *, name, body):
+        self.operations.append(("update_release_state", release_id, state, name, body))
+        return {"id": release_id}
 
 
 class VersionPlanTests(unittest.TestCase):
@@ -303,6 +367,96 @@ class AssetStateTests(unittest.TestCase):
             replace_existing=False,
         )
         self.assertEqual(["old-notes.txt"], result["preserve"])
+
+
+class PublicationTransactionTests(unittest.TestCase):
+    def transaction_fixture(self, root: Path):
+        names = (
+            "TS-Theme-v1.0.0.apk",
+            "TS-Theme-v1.0.0.apk.sha256",
+            "TS-Theme-v1.0.0.apk.metadata.txt",
+        )
+        assets = []
+        for index, name in enumerate(names, 1):
+            path = root / name
+            path.write_bytes(f"asset-{index}".encode())
+            assets.append(
+                {
+                    "name": name,
+                    "role": "fixture",
+                    "destination": "release",
+                    "size": path.stat().st_size,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                }
+            )
+        resolved = plan()
+        manifest = {
+            "product_name": "TS Theme",
+            "tag": resolved["tag"],
+            "source_sha": resolved["source_sha"],
+            "release_mode": resolved["mode"],
+            "release_state": resolved["release_state"],
+            "replace_existing_assets": resolved["replace_existing_assets"],
+            "assets": assets,
+        }
+        preflight = {
+            "tag": resolved["tag"],
+            "source_sha": resolved["source_sha"],
+            "release_id": None,
+            "release_state": "absent",
+            "remote_assets": [],
+        }
+        return root / "release-manifest.json", manifest, resolved, preflight, names
+
+    def test_create_uploads_and_redownloads_every_asset_before_promotion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path, manifest, resolved, preflight, names = self.transaction_fixture(
+                root
+            )
+            client = FakePublishingClient()
+
+            PUBLISH.publish_transaction(
+                client=client,
+                manifest_path=manifest_path,
+                manifest=manifest,
+                plan=resolved,
+                preflight=preflight,
+                verify_dir=root / "verified",
+                notes="release notes",
+            )
+
+            uploaded = [
+                item[2] for item in client.operations if item[0] == "upload_asset"
+            ]
+            downloaded = [item for item in client.operations if item[0] == "download_asset"]
+            self.assertEqual(list(names), uploaded)
+            self.assertEqual(3, len(downloaded))
+            self.assertEqual("create_tag", client.operations[1][0])
+            self.assertEqual("create_draft_release", client.operations[2][0])
+            self.assertEqual("update_release_state", client.operations[-1][0])
+            self.assertEqual("stable", client.operations[-1][2])
+
+    def test_failed_remote_byte_verification_never_promotes_draft(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path, manifest, resolved, preflight, _ = self.transaction_fixture(root)
+            client = FakePublishingClient(corrupt_download=True)
+
+            with self.assertRaisesRegex(ReleaseError, "Downloaded remote bytes differ"):
+                PUBLISH.publish_transaction(
+                    client=client,
+                    manifest_path=manifest_path,
+                    manifest=manifest,
+                    plan=resolved,
+                    preflight=preflight,
+                    verify_dir=root / "verified",
+                    notes="release notes",
+                )
+
+            self.assertNotIn(
+                "update_release_state", [operation[0] for operation in client.operations]
+            )
 
 
 class QualificationParserTests(unittest.TestCase):

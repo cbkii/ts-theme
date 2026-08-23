@@ -123,6 +123,84 @@ def verified_remote_assets(
     return verified
 
 
+def publish_transaction(
+    *,
+    client: GitHubClient,
+    manifest_path: Path,
+    manifest: dict[str, object],
+    plan: dict[str, object],
+    preflight: dict[str, object],
+    verify_dir: Path,
+    notes: str,
+) -> None:
+    """Publish one already-qualified bundle, with final promotion as the last API write."""
+    require_same_transaction(manifest, plan, preflight)
+    release_name = f"{manifest['product_name']} {manifest['tag']}"
+
+    _, release = validate_remote_for_plan(plan, client.snapshot())
+    if (release.release_id if release else None) != preflight.get("release_id"):
+        raise ReleaseError("Remote Release identity changed after preflight")
+    if (release.state if release else "absent") != preflight.get("release_state"):
+        raise ReleaseError("Remote Release state changed after preflight")
+
+    if plan["mode"] == "create_new_release":
+        client.create_tag(plan["tag"], plan["source_sha"])
+        created = client.create_draft_release(
+            plan["tag"], plan["source_sha"], release_name, notes
+        )
+        release_id = int(created["id"])
+        release_published = False
+        fresh_assets: list[dict[str, object]] = []
+    else:
+        if release is None:
+            created = client.create_draft_release(
+                plan["tag"], plan["source_sha"], release_name, notes
+            )
+            release_id = int(created["id"])
+            release_published = False
+            fresh_assets = []
+        else:
+            release_id = release.release_id
+            release_published = release.published
+            if release.state == "stable" and plan["release_state"] != "stable":
+                raise ReleaseError("A stable Release cannot be demoted")
+            if release.state == "prerelease" and plan["release_state"] == "draft":
+                raise ReleaseError("A published prerelease cannot be returned to draft")
+            fresh_assets = attach_preflight_hashes(
+                client.list_assets(release_id), preflight.get("remote_assets", [])
+            )
+
+    decision = classify_assets(
+        expected_assets=manifest["assets"],
+        remote_assets=fresh_assets,
+        mode=plan["mode"],
+        release_published=release_published,
+        replace_existing=bool(plan["replace_existing_assets"]),
+    )
+    remote_by_name = {item["name"]: item for item in fresh_assets}
+    for name in decision["replace"]:
+        client.delete_asset(int(remote_by_name[name]["id"]))
+    for name in decision["upload"] + decision["replace"]:
+        client.upload_asset(release_id, name, manifest_path.parent / name)
+
+    verified_remote_assets(
+        client,
+        release_id,
+        manifest,
+        plan["mode"],
+        verify_dir,
+    )
+
+    # This final state transition is intentionally the final remote API call.
+    if not release_published or (release is not None and release.state != plan["release_state"]):
+        client.update_release_state(
+            release_id,
+            plan["release_state"],
+            name=release_name,
+            body=notes,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -136,73 +214,18 @@ def main() -> int:
         manifest = load_manifest(manifest_path)
         plan = read_json(args.plan.resolve(), "release plan")
         preflight = read_json(args.preflight.resolve(), "publication preflight")
-        require_same_transaction(manifest, plan, preflight)
         notes = (manifest_path.parent / "release-notes.md").read_text(encoding="utf-8")
-        release_name = f"{manifest['product_name']} {manifest['tag']}"
 
         client = GitHubClient(os.environ.get("GITHUB_TOKEN", ""), args.repository)
-        _, release = validate_remote_for_plan(plan, client.snapshot())
-        if (release.release_id if release else None) != preflight.get("release_id"):
-            raise ReleaseError("Remote Release identity changed after preflight")
-        if (release.state if release else "absent") != preflight.get("release_state"):
-            raise ReleaseError("Remote Release state changed after preflight")
-
-        if plan["mode"] == "create_new_release":
-            client.create_tag(plan["tag"], plan["source_sha"])
-            created = client.create_draft_release(
-                plan["tag"], plan["source_sha"], release_name, notes
-            )
-            release_id = int(created["id"])
-            release_published = False
-            fresh_assets: list[dict[str, object]] = []
-        else:
-            if release is None:
-                created = client.create_draft_release(
-                    plan["tag"], plan["source_sha"], release_name, notes
-                )
-                release_id = int(created["id"])
-                release_published = False
-                fresh_assets = []
-            else:
-                release_id = release.release_id
-                release_published = release.published
-                if release.state == "stable" and plan["release_state"] != "stable":
-                    raise ReleaseError("A stable Release cannot be demoted")
-                if release.state == "prerelease" and plan["release_state"] == "draft":
-                    raise ReleaseError("A published prerelease cannot be returned to draft")
-                fresh_assets = attach_preflight_hashes(
-                    client.list_assets(release_id), preflight.get("remote_assets", [])
-                )
-
-        decision = classify_assets(
-            expected_assets=manifest["assets"],
-            remote_assets=fresh_assets,
-            mode=plan["mode"],
-            release_published=release_published,
-            replace_existing=bool(plan["replace_existing_assets"]),
+        publish_transaction(
+            client=client,
+            manifest_path=manifest_path,
+            manifest=manifest,
+            plan=plan,
+            preflight=preflight,
+            verify_dir=args.verify_dir.resolve(),
+            notes=notes,
         )
-        remote_by_name = {item["name"]: item for item in fresh_assets}
-        for name in decision["replace"]:
-            client.delete_asset(int(remote_by_name[name]["id"]))
-        for name in decision["upload"] + decision["replace"]:
-            client.upload_asset(release_id, name, manifest_path.parent / name)
-
-        verified_remote_assets(
-            client,
-            release_id,
-            manifest,
-            plan["mode"],
-            args.verify_dir.resolve(),
-        )
-
-        # This final state transition is intentionally the final remote API call.
-        if not release_published or (release is not None and release.state != plan["release_state"]):
-            client.update_release_state(
-                release_id,
-                plan["release_state"],
-                name=release_name,
-                body=notes,
-            )
         print(
             f"SUCCESS: remotely verified {len(manifest['assets'])} assets for {manifest['tag']} "
             f"with final state {plan['release_state']}"
