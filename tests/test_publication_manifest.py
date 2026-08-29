@@ -3,12 +3,14 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts" / "release"))
 from publication_manifest import load_publication_manifest  # noqa: E402
-from release_lib import ReleaseError  # noqa: E402
+from qualify import deterministic_install_zip  # noqa: E402
+from release_lib import ReleaseError, sha256_file  # noqa: E402
 
 class PublicationManifestTests(unittest.TestCase):
     def fixture(self, root: Path, four: bool):
@@ -28,4 +30,20 @@ class PublicationManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path=self.fixture(Path(td),False); data=json.loads(path.read_text()); data["package_id"]="launcher.variety.theme.plugin.sfp_cbk_black"; path.write_text(json.dumps(data))
             with self.assertRaisesRegex(ReleaseError,"must include installer_tools"): load_publication_manifest(path)
+    def test_manifest_rejects_invalid_transaction_state_and_signer(self):
+        with tempfile.TemporaryDirectory() as td:
+            path=self.fixture(Path(td),True); data=json.loads(path.read_text()); data["release_state"]="published"; path.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ReleaseError,"mode or state"): load_publication_manifest(path)
+        with tempfile.TemporaryDirectory() as td:
+            path=self.fixture(Path(td),True); data=json.loads(path.read_text()); data["signer_sha256"]="bad"; path.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ReleaseError,"signer"): load_publication_manifest(path)
+    def test_install_tools_zip_is_deterministic_and_contains_no_apk(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); source=root/"source"; source.mkdir(); (source/"a.sh").write_text("#!/bin/sh\necho ok\n",encoding="utf-8"); (source/"README.md").write_text("readme\n",encoding="utf-8")
+            config={"asset_stem":"Theme","install_tools":["a.sh","README.md"]}; install={"schema_version":1,"tag":"v1.2.3","apk_sha256":"a"*64}
+            out1=root/"one"; out1.mkdir(); out2=root/"two"; out2.mkdir()
+            z1=deterministic_install_zip(source,out1,config,install,"v1.2.3"); z2=deterministic_install_zip(source,out2,config,install,"v1.2.3")
+            self.assertIsNotNone(z1); self.assertIsNotNone(z2); self.assertEqual(sha256_file(z1),sha256_file(z2))
+            with zipfile.ZipFile(z1) as archive:
+                self.assertEqual({"a.sh","README.md","install-manifest.json"},set(archive.namelist())); self.assertFalse(any(name.endswith(".apk") for name in archive.namelist()))
 if __name__=="__main__": unittest.main()

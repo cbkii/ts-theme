@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
-from release_lib import ReleaseError, SHA1, SHA256, SemVer, safe_asset_name, sha256_file
+from release_lib import ALLOWED_MODES, ALLOWED_STATES, ReleaseError, SHA1, SHA256, SemVer, safe_asset_name, sha256_file
 
 LEGACY_ROLES = {"installable_apk", "sha256_sidecar", "metadata_sidecar"}
 CURRENT_ROLES = LEGACY_ROLES | {"installer_tools"}
@@ -26,12 +27,19 @@ def load_publication_manifest(path: Path, verify_files: bool = True) -> dict[str
         raise ReleaseError("Publication manifest schema or tag is invalid")
     if manifest["version_name"] != parsed.version_name:
         raise ReleaseError("Publication manifest tag and versionName disagree")
-    if manifest["version_code"] != parsed.android_version_code:
+    if not isinstance(manifest["version_code"], int) or manifest["version_code"] != parsed.android_version_code:
         raise ReleaseError("Publication manifest tag and versionCode disagree")
     if not SHA1.fullmatch(str(manifest["source_sha"])):
         raise ReleaseError("Publication manifest source SHA is invalid")
+    if manifest["release_mode"] not in ALLOWED_MODES or manifest["release_state"] not in ALLOWED_STATES:
+        raise ReleaseError("Publication manifest mode or state is invalid")
     if not isinstance(manifest["replace_existing_assets"], bool):
         raise ReleaseError("Publication manifest replacement authority is invalid")
+    for field in ("product_name", "package_id", "plugin_id"):
+        if not isinstance(manifest[field], str) or not manifest[field]:
+            raise ReleaseError(f"Publication manifest {field} is invalid")
+    if re.fullmatch(r"[0-9A-F]{64}", str(manifest["signer_sha256"])) is None:
+        raise ReleaseError("Publication manifest signer SHA-256 is invalid")
     assets = manifest["assets"]
     if not isinstance(assets, list) or not assets:
         raise ReleaseError("Publication manifest assets are missing")

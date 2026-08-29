@@ -12,6 +12,7 @@
   "version_code_property": "VERSION_CODE",
   "layout_profile": "config/ts18-layout.json",
   "install_tools": [
+    "scripts/termux/README.md",
     "scripts/termux/ts18-theme-install.sh",
     "scripts/termux/ts18-theme-preflight.sh",
     "scripts/termux/ts18-theme-rollback.sh",

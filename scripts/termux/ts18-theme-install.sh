@@ -5,6 +5,11 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 APK=""
 NON_INTERACTIVE=0
+DONOR_TARGET=""
+DONOR_BACKUP=""
+DONOR_ORIGINAL_SHA=""
+DONOR_RECOVERY_ARMED=0
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apk) [[ $# -ge 2 ]] || { fail "--apk needs a path"; exit 1; }; APK="$2"; shift 2 ;;
@@ -19,11 +24,34 @@ log "Verified/staged APK SHA-256: $APK_HASH"
 
 run_preflight() { bash "$SCRIPT_DIR/ts18-theme-preflight.sh" --apk "$APK"; }
 
+restore_interrupted_donor() {
+  local restored=""
+  trap - INT TERM HUP
+  warn "Interrupted during donor mutation; attempting automatic restoration before exit."
+  if [[ $DONOR_RECOVERY_ARMED -eq 1 && -n "$DONOR_TARGET" && -n "$DONOR_BACKUP" && -n "$DONOR_ORIGINAL_SHA" ]]; then
+    if safe_local_path "$DONOR_BACKUP/donor-original.jar" && su -c "cat '$DONOR_BACKUP/donor-original.jar' > '$DONOR_TARGET'; sync" 2>/dev/null; then
+      restored="$(su -c "sha256sum '$DONOR_TARGET'" 2>/dev/null | awk '{print $1}')"
+      if [[ "$restored" == "$DONOR_ORIGINAL_SHA" ]]; then
+        warn "Automatic donor restoration verified."
+      else
+        warn "Automatic donor restoration hash verification FAILED; keep DoFun stopped and use standalone rollback."
+      fi
+    else
+      warn "Automatic donor restoration FAILED; keep DoFun stopped and use standalone rollback."
+    fi
+  fi
+  final_status 130
+  exit 130
+}
+
 direct_install() {
   root_available || { stop_safety "Direct PackageManager install requires working root in this Termux context"; return 2; }
   log "Installing the staged independently-signed package; DoFun remains HOME."
   su -c "pm install -r '$TS18_FIXED_STAGE'" || return 1
   su -c "dumpsys package '$TS18_THEME_PACKAGE'" 2>/dev/null | grep -E 'versionName=|versionCode=|codePath=|userId=' | head -n 20
+  if su -c "dumpsys package '$TS18_LEGACY_THEME_PACKAGE'" 2>/dev/null | grep -q 'versionName='; then
+    warn "Legacy cbk_black package is also installed. Leave it untouched for now; test the new sfp_cbk_black catalogue entry separately."
+  fi
   read -r -p 'Restart only DoFun now? [y/N] ' ANSWER
   if [[ "$ANSWER" =~ ^[Yy]$ ]]; then su -c 'am force-stop com.dofun.variety'; fi
   log "Open DoFun Theme/downloaded themes and check for sfp_cbk_black."
@@ -42,53 +70,72 @@ prepare_udisk() {
 
 donor_install() {
   root_available || { stop_safety "Root is required for donor substitution"; return 2; }
-  local app_pa donor_list=() pick donor stamp back donor_sha backup_sha new_sha
-  app_pa="$(find_app_pa)" || { stop_safety "DoFun app_p_a not found in the inspected root namespace"; return 2; }
+  confirm_mutation_compatibility || return $?
+  local app_pa records=() pick selected package donor stamp back donor_sha backup_sha new_sha pl_before pl_after restored
+  app_pa="$(find_app_pa)" || { stop_safety "DoFun app_p_a/p.l not found in the inspected root namespace"; return 2; }
+  [[ "$app_pa" == "/data/user/0/com.dofun.variety/app_p_a" || "$app_pa" == "/data/data/com.dofun.variety/app_p_a" ]] || { stop_safety "Unexpected DoFun plug-in directory"; return 2; }
   [[ -f "$TS18_FIXED_STAGE" ]] || { fail "Fixed staged APK is missing"; return 1; }
-  mapfile -t donor_list < <(candidate_donor_basenames "$app_pa")
-  [[ ${#donor_list[@]} -gt 0 ]] || { stop_safety "No imported sfp_* donor JAR was found in p.l"; return 2; }
-  log "Candidate donor JARs (prefer the FYD/TS10S tile when its record is visible in p.l):"
-  for i in "${!donor_list[@]}"; do printf '  %d) %s\n' "$((i+1))" "${donor_list[$i]}" >&2; done
+  mapfile -t records < <(donor_candidates "$app_pa")
+  [[ ${#records[@]} -gt 0 ]] || { stop_safety "No imported sfp_* donor JAR was parsed from p.l"; return 2; }
+  log "Ranked donor candidates (FYD first, then TS10/TS10S, then other sfp_* themes):"
+  for i in "${!records[@]}"; do printf '  %d) %s\n' "$((i+1))" "${records[$i]}" >&2; done
   read -r -p 'Select donor: ' pick
   [[ "$pick" =~ ^[0-9]+$ ]] || { stop_safety "Invalid donor selection"; return 2; }
-  pick=$((pick-1)); [[ $pick -ge 0 && $pick -lt ${#donor_list[@]} ]] || { stop_safety "Donor selection out of range"; return 2; }
-  donor="${donor_list[$pick]}"
+  pick=$((pick-1)); [[ $pick -ge 0 && $pick -lt ${#records[@]} ]] || { stop_safety "Donor selection out of range"; return 2; }
+  selected="${records[$pick]}"; package="${selected%%|*}"; donor="${selected##*|}"
   safe_donor_basename "$donor" || { stop_safety "Unsafe donor basename"; return 2; }
   su -c "test -f '$app_pa/$donor' && test ! -L '$app_pa/$donor'" || { stop_safety "Donor is missing, not regular, or a symlink"; return 2; }
   stamp="$(date +%Y%m%d-%H%M%S)"; back="$TS18_EXPORT_ROOT/backup-$stamp"
+  safe_local_path "$back" || { stop_safety "Unsafe backup path"; return 2; }
   mkdir -p -- "$back" || return 1
   su -c "cat '$app_pa/$donor'" > "$back/donor-original.jar" || { fail "Cannot export donor backup"; return 1; }
   su -c "cat '$app_pa/p.l'" > "$back/p.l" || { fail "Cannot export p.l backup"; return 1; }
   printf '%s\n' "$donor" > "$back/target-basename.txt"
+  printf '%s\n' "$package" > "$back/donor-package.txt"
   donor_sha="$(su -c "sha256sum '$app_pa/$donor'" | awk '{print $1}')"
   backup_sha="$(sha256_file "$back/donor-original.jar")"
   [[ "$donor_sha" == "$backup_sha" ]] || { stop_safety "Backup hash does not match live donor"; return 2; }
   printf '%s\n' "$donor_sha" > "$back/original-sha256.txt"
+  pl_before="$(sha256_file "$back/p.l")"
+  printf '%s\n' "$pl_before" > "$back/p.l-sha256.txt"
   su -c "ls -lZ '$app_pa/$donor'; stat '$app_pa/$donor'" > "$back/donor-metadata.txt" 2>&1 || warn "Could not capture all donor metadata"
   dumpsys package "$TS18_DOFUN_PACKAGE" > "$back/dofun-package.txt" 2>&1 || warn "Could not capture full DoFun package summary"
-  printf 'apk_sha256=%s\ntheme_package=%s\nplugin_id=sfp_cbk_black\n' "$APK_HASH" "$TS18_THEME_PACKAGE" > "$back/install-metadata.txt"
+  printf 'apk_sha256=%s\ntheme_package=%s\nplugin_id=sfp_cbk_black\ndonor_package=%s\n' "$APK_HASH" "$TS18_THEME_PACKAGE" "$package" > "$back/install-metadata.txt"
   log "Verified rollback set: $back"
-  read -r -p 'Type REPLACE to overwrite this donor in place: ' CONFIRM
+  read -r -p 'Type REPLACE to force-stop DoFun and overwrite this donor in place: ' CONFIRM
   [[ "$CONFIRM" == "REPLACE" ]] || { log "Cancelled"; return 0; }
-  trap 'warn "Interrupted during donor operation; run ts18-theme-rollback.sh with the verified backup."; exit 130' INT TERM HUP
-  su -c "am force-stop com.dofun.variety; cat '$TS18_FIXED_STAGE' > '$app_pa/$donor'; sync" || { fail "Donor replacement command failed"; return 1; }
-  new_sha="$(su -c "sha256sum '$app_pa/$donor'" | awk '{print $1}')"
+  su -c 'am force-stop com.dofun.variety' || { fail "Unable to force-stop DoFun"; return 1; }
+  pl_after="$(su -c "sha256sum '$app_pa/p.l'" | awk '{print $1}')"
+  [[ "$pl_after" == "$pl_before" ]] || { stop_safety "p.l changed after backup; no donor bytes were written"; return 2; }
+  DONOR_TARGET="$app_pa/$donor"; DONOR_BACKUP="$back"; DONOR_ORIGINAL_SHA="$donor_sha"; DONOR_RECOVERY_ARMED=1
+  trap restore_interrupted_donor INT TERM HUP
+  if ! su -c "cat '$TS18_FIXED_STAGE' > '$DONOR_TARGET'; sync"; then
+    warn "Donor write failed; attempting immediate restoration."
+    restore_interrupted_donor
+  fi
+  new_sha="$(su -c "sha256sum '$DONOR_TARGET'" | awk '{print $1}')"
   if [[ "$new_sha" != "$APK_HASH" ]]; then
     warn "Replacement verification failed; attempting immediate restoration."
-    su -c "cat '$back/donor-original.jar' > '$app_pa/$donor'; sync" || { stop_safety "Automatic restoration failed; use standalone rollback before launching DoFun"; return 2; }
-    local restored
-    restored="$(su -c "sha256sum '$app_pa/$donor'" | awk '{print $1}')"
+    su -c "cat '$back/donor-original.jar' > '$DONOR_TARGET'; sync" || { DONOR_RECOVERY_ARMED=0; stop_safety "Automatic restoration failed; use standalone rollback before launching DoFun"; return 2; }
+    restored="$(su -c "sha256sum '$DONOR_TARGET'" | awk '{print $1}')"
+    DONOR_RECOVERY_ARMED=0; trap - INT TERM HUP
     [[ "$restored" == "$donor_sha" ]] || { stop_safety "Automatic restoration hash mismatch"; return 2; }
-    fail "Replacement rejected and original donor restored"
-    return 1
+    fail "Replacement rejected and original donor restored"; return 1
   fi
-  trap - INT TERM HUP
-  log "Replacement hash verified. p.l was not changed. The donor tile/preview may still show its original identity."
+  pl_after="$(su -c "sha256sum '$app_pa/p.l'" | awk '{print $1}')"
+  if [[ "$pl_after" != "$pl_before" ]]; then
+    warn "p.l changed unexpectedly; restoring donor bytes before stopping."
+    su -c "cat '$back/donor-original.jar' > '$DONOR_TARGET'; sync" || true
+    DONOR_RECOVERY_ARMED=0; trap - INT TERM HUP
+    stop_safety "p.l changed despite the no-mutation contract; inspect backup before relaunching DoFun"; return 2
+  fi
+  DONOR_RECOVERY_ARMED=0; trap - INT TERM HUP
+  log "Replacement hash verified. p.l hash is unchanged. The donor tile/preview may still show its original identity."
   log "Reboot/restart DoFun only when you are ready to test the selected donor tile."
 }
 
 validation_record() {
-  local stamp file
+  local stamp file value item
   stamp="$(date +%Y%m%d-%H%M%S)"; file="$TS18_EXPORT_ROOT/physical-validation-$stamp.txt"
   {
     printf 'apk_sha256=%s\n' "$APK_HASH"
