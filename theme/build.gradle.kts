@@ -18,7 +18,7 @@ android {
     compileSdk = 29
 
     defaultConfig {
-        applicationId = "launcher.variety.theme.plugin.cbk_black"
+        applicationId = "launcher.variety.theme.plugin.sfp_cbk_black"
         minSdk = 16
         targetSdk = 26
         versionCode = versionCodeAuthority
@@ -77,10 +77,6 @@ android {
 val verifyReleaseSigningEnvironment = tasks.register("verifyReleaseSigningEnvironment") {
     group = "verification"
     description = "Fails closed when a release build lacks one of the four signing inputs."
-
-    // Resolve Project/provider-backed values while configuring the task. The task action must
-    // capture only serialisable plain values; capturing this Kotlin build-script object makes
-    // Gradle's configuration cache reject an otherwise successful release build.
     val missingSigningInputs = signingValues.filterValues { it.isNullOrBlank() }.keys.sorted()
     val keystoreFile = signingValues["TS_THEME_KEYSTORE_FILE"]
         ?.takeIf { it.isNotBlank() }
