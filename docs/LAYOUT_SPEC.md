@@ -1,30 +1,49 @@
 # Layout specification
 
-## Design intent
+## Controlling evidence
 
-The map is the primary surface. A single thin information strip sits above it; no theme element
-overlays or obscures the map.
+The physical panel is **1280 x 720**. Last exact-device evidence showed the application-visible right boundary at **x=1225**, leaving a 55 px right Topway/SystemUI/navigation region. The top system region is approximately 55 px high. These direct device bounds supersede the earlier 18 px right-reserve design assumption.
 
-Reference coordinate space: **1280 x 720**. The working assumptions are a 55 px system status region,
-an 18 px right system strip and an 81 px launcher hotseat.
+The declarative DoFun theme has no Activity and cannot safely introduce Android `WindowInsets` code merely to emulate responsiveness. Instead, layout is generated/validated from an explicit profile and the installer re-checks current display evidence before any rooted donor mutation.
 
-## Prototype geometry
+## Exact TS18 layout profile
 
-| Surface | X | Y | Width | Height | Content |
-| --- | ---: | ---: | ---: | ---: | --- |
-| Vertical hotseat | 0 | 55 | 81 | 647 | Five plain white generic icons |
-| Radio | 93 | 55 | 286 | 64 | `< 89.06 FM >` |
-| Music | 379 | 55 | 690 | 64 | Ticker on the left, previous/play-next controls on the right |
-| Date | 1069 | 55 | 178 | 64 | `22 AUG` |
-| Navigation window | 93 | 119 | 1154 | 583 | Fully visible and interactive |
+```text
+physical width       1280
+physical height       720
+top system inset       55
+right system inset     55
+safe right            1225
+hotseat width           81
+strip height            64
+content left            81
+strip/map split y      119
+safe bottom            702
+```
 
-The three top widgets cover x=93..1247 and y=55..119. The map begins at y=119; their
-rectangles have no intersection. Compared with the previous 96 px hotseat and 18 px right reserve,
-this conservative layout frees 15 px on the left and leaves a 33 px right-side reserve to better
-tolerate stock right-edge overlays such as virtual buttons.
+Every visible or interactive theme-controlled rectangle must finish at or before x=1225 for this profile. No theme element may occupy the 55 px right SystemUI region.
 
-FYD's map was 580 x 327 (189,660 px). The new unobstructed map is 1154 x 583 (672,782 px), about
-**3.55 times the visible area**.
+## Hardened geometry
+
+| Surface | X | Y | Width | Height | Right/Bottom | Content |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Vertical hotseat | 0 | 55 | 81 | 647 | 81 / 702 | Five plain white generic icons |
+| Radio | 81 | 55 | 286 | 64 | 367 / 119 | `< 89.06 FM >` |
+| Music | 367 | 55 | 680 | 64 | 1047 / 119 | Title field plus previous/play-next |
+| Date | 1047 | 55 | 178 | 64 | 1225 / 119 | `22 AUG` |
+| Navigation window | 81 | 119 | 1144 | 583 | 1225 / 702 | Fully visible and interactive |
+
+Radio/music/date exactly tile x=81..1225 with no gaps or overlap. The map occupies the same full safe width below the strip. The map area is **666,952 px²**, still about 3.52 times FYD's recorded 580 x 327 map area while remaining completely outside the observed right SystemUI.
+
+The previous x=93..1247 geometry is historical and unsafe for the exact-device 55 px right inset because its final 22 px could fall beneath SystemUI.
+
+## Responsiveness policy
+
+- `tools/ts18_theme.py` owns/validates the safe-area profile and derived geometry.
+- The right-system-inset must be centralised so a later device profile can be generated without editing several unrelated JSON files.
+- Use only DoFun gravity/anchoring forms actually observed in audited working themes. Do not invent responsive JSON keys.
+- If present-state preflight shows materially different usable bounds, report the mismatch. Do not silently mutate DoFun's private plug-in storage under an incompatible profile.
+- Do not add executable window/inset code to the declarative theme solely for layout responsiveness.
 
 ## Colour tokens
 
@@ -45,24 +64,19 @@ No cool cyan/blue accent or coloured icon background is permitted.
 - The frequency is primary white text.
 - FM is a small warm-colour superscript.
 - MHz, source heading, artwork and play/pause are hidden.
-- The information region between the buttons opens the selected/default radio app.
+- The information region between the buttons should open the selected/default radio app if the host supports that action.
 
-The exact result of previous/next remains a physical validation item.
+The exact previous/next semantics and surrounding click routing remain physical validation items.
 
 ## Music
 
-- Previous, play/pause and next move to the right side of the 690 px strip with 56 x 56 px hit targets and extra inter-button spacing.
-- The remaining left-side field renders `Artist - Track Name`.
-- Text is static when it fits and horizontally scrolls when it does not.
+- Previous, play/pause and next retain at least 56 x 56 px hit targets.
+- The remaining title field renders `Artist - Track Name`.
 - No artwork, source subtitle or visualiser is shown.
-- Tapping ticker/unused media space opens the selected/default music app.
-
-The supplied JSON controls the wide text field, but does not expose a proven marquee or click-routing
-property. Those behaviours may be supplied by the host or the broad media adapter.
+- A true marquee and information-region app launch remain host/runtime behaviours unless a later separate compatibility adapter is proven necessary.
 
 ## Date
 
-`tv_time_day` is the only visible field and uses `dd MMM`. Weekday, year, time and AM/PM are
-hidden.
+`tv_time_day` is the only visible field and uses `dd MMM`. Weekday, year, time and AM/PM are hidden.
 
 The checked-in SVG/JPEG is a visual specification, not proof of DoFun runtime rendering.

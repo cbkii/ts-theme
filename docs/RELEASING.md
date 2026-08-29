@@ -1,117 +1,80 @@
 # Manual APK releases
 
-The supported release path is `.github/workflows/manual-release.yml`. It is manual-only and uses the
-repository `GITHUB_TOKEN`; no PAT, deploy key, environment bypass or ruleset bypass is required.
+The supported release path is `.github/workflows/manual-release.yml`. It is manual-only and uses the repository `GITHUB_TOKEN`; no PAT, deploy key, environment bypass or ruleset bypass is required.
 
 ## Authorities and prerequisites
 
-- For a release build, the Manual Release form is the version authority. An explicit `version_tag`
-  accepts strict `X.Y.Z` or `vX.Y.Z`; the workflow normalises it to tag `vX.Y.Z` and builds the APK
-  with `versionName=X.Y.Z`.
-- The workflow deterministically derives Android `versionCode` as
-  `major × 1,000,000 + minor × 1,000 + patch`. Minor and patch must each be `0..999`, and the result
-  must fit Android's `1..2,100,000,000` range. This makes create and repair builds reproduce the same
-  package version without modifying or committing source metadata.
-- `gradle.properties` contains local-development defaults and the initial automatic release
-  baseline. For v1, these are `VERSION_NAME=1.0.0` and the matching `VERSION_CODE=1000000`.
-- `release-config.json` owns the application ID, plug-in ID, Gradle task, expected APK path, SDK
-  contract and exact public asset stem.
-- A new release must be dispatched from the latest default-branch HEAD. Its resolved tag must be
-  newer than every SemVer tag or Release in the repository.
-- The repository must have the existing secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`
-  and `KEY_PASSWORD`. `KEYSTORE_BASE64` is the base64 text of the whole keystore, without a data-URL
-  prefix. No additional secret is used.
+- The Manual Release form is the release version authority. An explicit `version_tag` accepts strict `X.Y.Z` or `vX.Y.Z`; the workflow normalises it to tag `vX.Y.Z` and builds the APK with `versionName=X.Y.Z`.
+- Android `versionCode` is derived as `major × 1,000,000 + minor × 1,000 + patch` within Android's supported range.
+- `release-config.json` owns the application ID `launcher.variety.theme.plugin.sfp_cbk_black`, plug-in ID `sfp_cbk_black`, SDK contract, expected APK path, release asset stem and install-tools bundle contract.
+- A new release must be dispatched from the latest default-branch HEAD and use a version newer than every SemVer tag/Release.
+- Existing signing secrets are `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`; no vendor signer is used or accepted into the repository.
 
 The workflow has a repository-wide release lock and does not cancel an in-progress publication.
+
+## Qualification contract
+
+The qualify job checks out the immutable source SHA, fetches only the checksum-pinned RePlugin AAR, validates sources, decodes the ephemeral keystore, builds `:theme:assembleRelease` exactly once and qualifies those exact APK bytes.
+
+Qualification fails unless all of the following agree:
+
+- application ID `launcher.variety.theme.plugin.sfp_cbk_black` and plug-in ID `sfp_cbk_black`;
+- requested `versionName`, `versionCode`, min/target/compile SDK;
+- v1/v2 APK signature validity and expected release certificate;
+- ZIP integrity/alignment, empty native ABI set, required theme assets and RePlugin entry class;
+- compatibility/geometry validators, including safe-right x=1225 for the exact release profile;
+- install manifest identity/version/source SHA/APK SHA-256.
+
+The installation-tools ZIP is built deterministically from repository scripts/docs plus the qualified release/install manifest. It does **not** duplicate the APK.
+
+## Public assets
+
+For resolved version `vX.Y.Z` the planned public assets are exactly:
+
+- `TS18-Dashboard-Theme-vX.Y.Z.apk`
+- `TS18-Dashboard-Theme-vX.Y.Z.apk.sha256`
+- `TS18-Dashboard-Theme-vX.Y.Z.apk.metadata.txt`
+- `TS18-Dashboard-Theme-vX.Y.Z-install-tools.zip`
+
+Every planned public asset participates in remote state verification. The publisher creates/uses a draft, uploads/reuses only expected bytes, waits for GitHub's uploaded state, checks GitHub's digest when supplied, downloads and hashes every expected asset, and changes the Release state only as the final API write.
+
+A mismatch must leave the Release safely draft; expanding the asset set must not weaken the existing transaction guarantees.
 
 ## Normal release
 
 1. Merge the release-ready change to the default branch and confirm **Validate** is green there.
 2. Open **Actions → Manual Release → Run workflow** and select the default branch.
 3. Choose `create_new_release`.
-4. Either enter the intended version (`1.0.0` and `v1.0.0` are equivalent), or leave it blank:
-   - with no existing SemVer tag or Release, blank selects the checked-in `VERSION_NAME` baseline;
-   - otherwise, blank increments the highest remote SemVer patch (`v1.2.9` → `v1.2.10`), rolling
-     `999` into the next minor component;
-   - if a SemVer tag has no matching Release, blank fails and requires explicit repair instead of
-     skipping the interrupted transaction.
-5. Choose `stable`, `prerelease` or `draft` as the final state.
-6. Leave `replace_existing_assets` disabled and run the workflow.
-
-The qualify job has read-only repository permission. It resolves the transaction, checks out the
-immutable source SHA, fetches only the checksum-pinned RePlugin AAR, validates the sources, decodes
-the ephemeral keystore, builds `:theme:assembleRelease` exactly once and qualifies that exact APK.
-
-Qualification fails unless all of the following agree exactly:
-
-- one maintained APK and no retired APK variants in the output directory;
-- application ID `launcher.variety.theme.plugin.cbk_black`;
-- `versionName`, `versionCode`, min/target/compile SDK and requested tag;
-- v1/v2 APK signature validity and keystore-alias certificate SHA-256;
-- ZIP integrity, alignment, the exact empty native-ABI set, required theme assets, plug-in metadata
-  and RePlugin entry class.
-
-The publisher receives only the closed, checksummed qualification bundle. It creates the immutable
-tag at the qualified source, creates a draft Release, uploads the exact assets, waits for GitHub's
-uploaded state, checks GitHub's digest when supplied, downloads and hashes every asset, then changes
-the Release to the requested state as its final API call.
-
-The public asset set is deterministic for the resolved version, for example:
-
-- `TS18-Dashboard-Theme-v1.0.0.apk`
-- `TS18-Dashboard-Theme-v1.0.0.apk.sha256`
-- `TS18-Dashboard-Theme-v1.0.0.apk.metadata.txt`
-
-Release notes use the matching changelog section when present, then `Unreleased`, then a bounded
-generated fallback. Internal plan, manifest and notes files remain in the 14-day workflow recovery
-artifact and are not uploaded as public assets.
+4. Enter the intended version, or leave it blank for deterministic next-version resolution.
+5. Choose `stable`, `prerelease` or `draft`.
+6. Leave replacement disabled for a normal new release and run the workflow.
+7. Confirm all four public assets are present and the published release state matches the requested state.
 
 ## Repair an interrupted release
 
-Use repair only after inspecting the failed workflow and the exact tag/Release on GitHub. Typical
-recoverable states are an immutable tag with no Release, a draft with missing assets, or a draft with
-some identical assets already uploaded.
+Use repair only after inspecting the failed workflow and exact immutable tag/Release. Repair binds to that tag, rebuilds/requalifies from its commit and never moves or deletes the tag.
 
-1. Open **Actions → Manual Release → Run workflow**.
-2. Choose `repair_existing_release` and enter the existing exact version. Blank auto-increment is
-   deliberately unavailable in repair mode because repair must bind to one known immutable tag.
-3. Select the intended final state. A stable Release cannot be demoted; a published prerelease
-   cannot return to draft.
-4. Keep `replace_existing_assets` disabled for normal retry. Identical assets are reused and only
-   missing assets are uploaded.
-5. Enable replacement only when an expected asset in an existing **draft** differs and you have
-   deliberately chosen to replace it. The workflow downloads the old expected asset into a 14-day
-   recovery artifact before deletion. Published Release assets are never replaced.
+Identical existing assets are reused; missing assets are uploaded. Replacement of an expected mismatched asset is permitted only for an existing draft and only when explicitly requested. Published release assets are not blindly replaced.
 
-Repair always rebuilds from the commit already named by the immutable tag and reapplies the version
-derived from that tag, then requalifies those bytes. It never changes the tag to the current branch.
-Unrelated historical assets on a repaired Release are preserved; new-release mode rejects every
-unplanned asset.
-
-If a run fails after tag creation, the tag is intentionally retained as recovery evidence. Inspect
-the draft and rerun in repair mode. Do not delete or move the tag to make create mode pass.
+If a run fails after tag creation, retain the tag as recovery evidence. Do not delete/move it merely to make create mode pass.
 
 ## Failure and retry semantics
 
-- Read-only GitHub calls use bounded retry for rate limits, transient 5xx responses and transport
-  failures. Mutating POST/PATCH/DELETE calls are not blindly replayed.
-- A fresh remote inventory is taken before publication and again inside the publisher to detect a
-  race or changed tag/Release identity.
-- Mismatched tags, missing tags for Releases, duplicate assets, changed preflight assets, incomplete
-  uploads, size/digest/download-hash mismatches and illegal state transitions fail closed.
-- The valid tag is never updated or deleted. Draft-first ordering prevents a public partial Release.
-- A failed run's `qualified-release-*` and `release-preflight-*` artifacts are retained for 14 days.
+- Read-only GitHub calls use bounded retry for known transient failures; mutating API calls are not blindly replayed.
+- Fresh remote inventory is taken before publication and again inside the publisher.
+- Mismatched tags, duplicate/unplanned assets, changed preflight state, incomplete uploads, size/digest/download-hash mismatches and illegal state transitions fail closed.
+- A valid tag is never updated or deleted.
+- Draft-first ordering prevents a public partial Release.
+- Failed-run qualification/preflight artifacts remain available for bounded recovery inspection.
 
-Do not manually mutate the same Release while the workflow is running. If remote state is unclear,
-leave it untouched and inspect it before selecting repair or explicit draft replacement.
+## Installation-tools boundary
+
+The ZIP contains Termux scripts, a concise README/install document and an immutable release/install manifest with tag/version, source SHA, application ID, plug-in ID, safe-area profile and expected APK SHA-256. Runtime scripts read that manifest rather than guessing release identity.
+
+No APK, keystore, vendor asset, device log or donor bytes are packaged into the public install-tools ZIP.
 
 ## Validation boundary
 
-CI validates and assembles the debug APK, then exercises `:theme:assembleRelease` with a disposable
-CI-only keystore and Gradle's configuration cache enabled. That build covers release configuration
-and the fail-closed signing gate without producing a publishable asset or using the production
-signer. The manual workflow separately validates the exact production-signed release APK. The theme
-has no launcher Activity and depends on the protected DoFun host, so an emulator launch smoke test
-would not exercise the product. Installation, catalogue discovery, apply/restart, reboot
-persistence, map interaction and media/radio behaviour must be tested on the TS18 using [TS18
-physical validation](TS18_VALIDATION.md).
+CI validates source, geometry, Termux scripts/tests and debug/release configuration. The manual workflow validates the exact production-signed release bytes and all public assets. The theme has no launcher Activity and depends on the protected DoFun host, so emulator launch success would not prove the product.
+
+Installation, catalogue discovery, U-disk import acceptance, donor substitution, map interaction, right-SystemUI behaviour, media/radio behaviour and lifecycle persistence must be tested on the exact TS18 using [TS18 physical validation](TS18_VALIDATION.md).
