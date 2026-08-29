@@ -8,8 +8,6 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts" / "termux"
 
 class TermuxToolkitTests(unittest.TestCase):
-    def bash(self, code, *, input_text="", env=None):
-        return subprocess.run(["bash","-c",code],input=input_text,capture_output=True,text=True,env=env,timeout=10)
     def test_bash_syntax(self):
         paths=list(SCRIPTS.glob("*.sh"))+list((SCRIPTS/"lib").glob("*.sh"))
         for path in paths:
@@ -29,7 +27,7 @@ class TermuxToolkitTests(unittest.TestCase):
             reports=list((Path(td)/"out").glob("preflight-*.txt")); self.assertEqual(1,len(reports)); self.assertIn("root=no",reports[0].read_text(encoding="utf-8"))
     def test_escaped_pl_paths_are_parsed_and_ranked(self):
         payload='[{"path":"\\/data\\/user\\/0\\/com.dofun.variety\\/app_p_a\\/333.jar","pkgname":"launcher.variety.theme.plugin.sfp_other"},{"path":"\\/data\\/user\\/0\\/com.dofun.variety\\/app_p_a\\/111.jar","pkgname":"launcher.variety.theme.plugin.sfp_fyd18"},{"path":"/data/user/0/com.dofun.variety/app_p_a/222.jar","pkgname":"launcher.variety.theme.plugin.sfp_ts10s"}]'
-        result=self.bash('. "$1"; parse_donor_records',input_text=payload,env=os.environ.copy() | {"DUMMY":"1"}) if False else subprocess.run(["bash","-c",'. "$1"; parse_donor_records',"_",str(SCRIPTS/"lib/dofun.sh")],input=payload,capture_output=True,text=True,timeout=10)
+        result=subprocess.run(["bash","-c",'. "$1"; parse_donor_records',"_",str(SCRIPTS/"lib/dofun.sh")],input=payload,capture_output=True,text=True,timeout=10)
         self.assertEqual(0,result.returncode,result.stderr); self.assertEqual(["launcher.variety.theme.plugin.sfp_fyd18|111.jar","launcher.variety.theme.plugin.sfp_ts10s|222.jar","launcher.variety.theme.plugin.sfp_other|333.jar"],result.stdout.splitlines())
     def test_malformed_pl_has_no_candidates(self):
         result=subprocess.run(["bash","-c",'. "$1"; parse_donor_records',"_",str(SCRIPTS/"lib/dofun.sh")],input='not json and no donor path',capture_output=True,text=True,timeout=10); self.assertEqual("",result.stdout.strip())
