@@ -5,7 +5,9 @@ TS18_EXPORT_ROOT="${TS18_EXPORT_ROOT:-/storage/emulated/0/Download/TS18-theme-in
 TS18_PRIVATE_ROOT="${TS18_PRIVATE_ROOT:-${HOME}/.local/state/ts18-theme-install}"
 TS18_DOFUN_PACKAGE="com.dofun.variety"
 TS18_EXPECTED_DOFUN_VERSION="V9.7.2.367.260312"
+# shellcheck disable=SC2034 # Consumed by scripts that source this library.
 TS18_THEME_PACKAGE="launcher.variety.theme.plugin.sfp_cbk_black"
+# shellcheck disable=SC2034 # Consumed by scripts that source this library.
 TS18_LEGACY_THEME_PACKAGE="launcher.variety.theme.plugin.cbk_black"
 TS18_EXPECTED_PHYSICAL_SIZE="1280x720"
 TS18_EXPECTED_SAFE_RIGHT=1225
@@ -18,8 +20,8 @@ stop_safety() { printf 'STOP: %s\nSTOPPED FOR SAFETY\n' "$*" >&2; return 2; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
 sha256_file() {
-  if have sha256sum; then sha256sum -- "$1" | awk '{print $1}'; return ${PIPESTATUS[0]}; fi
-  if have toybox; then toybox sha256sum "$1" | awk '{print $1}'; return ${PIPESTATUS[0]}; fi
+  if have sha256sum; then sha256sum -- "$1" | awk '{print $1}'; return "${PIPESTATUS[0]}"; fi
+  if have toybox; then toybox sha256sum "$1" | awk '{print $1}'; return "${PIPESTATUS[0]}"; fi
   fail "sha256sum is unavailable"
 }
 
@@ -102,7 +104,7 @@ compatibility_mismatches() {
 }
 
 confirm_mutation_compatibility() {
-  local mismatches
+  local mismatches answer
   mismatches="$(compatibility_mismatches)"
   if [[ -z "$mismatches" ]]; then return 0; fi
   warn "Current device evidence differs from the qualified release profile:"

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_DIR="$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/dofun.sh
 . "$SCRIPT_DIR/lib/dofun.sh"
 
 APK=""

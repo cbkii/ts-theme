@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_DIR="$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/dofun.sh
 . "$SCRIPT_DIR/lib/dofun.sh"
 
 APK=""
@@ -58,7 +60,8 @@ direct_install() {
 }
 
 prepare_udisk() {
-  local target="/storage/emulated/0/theme/$(basename -- "$APK")" actual
+  local target actual
+  target="/storage/emulated/0/theme/$(basename -- "$APK")"
   mkdir -p /storage/emulated/0/theme || return 1
   cp -- "$APK" "$target" || return 1
   actual="$(sha256_file "$target")" || return 1
