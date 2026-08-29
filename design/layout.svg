@@ -1,68 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
   <rect width="1280" height="720" fill="#000000"/>
-  <rect x="0" y="0" width="1280" height="55" fill="#080706"/>
-  <g fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
-    <path d="M24 28h18m-9-9-9 9 9 9"/>
-    <path d="M72 34V23l10-8 10 8v11z"/>
-    <path d="M112 19h17v17h-17z"/>
-  </g>
-  <g fill="#FFFFFF" font-family="sans-serif" font-size="15">
-    <text x="1100" y="34">LTE</text>
-    <text x="1155" y="34">Wi-Fi</text>
-    <text x="1220" y="34">12:22</text>
-  </g>
-
-  <rect x="93" y="55" width="1154" height="64" fill="#000000" stroke="#8A4F3D"/>
-  <path d="M379 55v64M1069 55v64" stroke="#8A4F3D"/>
-
-  <g fill="#FFFFFF">
-    <path d="M113 87l16-11v22zM359 76l16 11-16 11z"/>
-    <text x="171" y="96" font-family="sans-serif" font-size="24">89.06</text>
-    <text x="240" y="79" fill="#FF6B57" font-family="sans-serif" font-size="12">FM</text>
-  </g>
-
-  <g fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M863 72v30m26-29-22 14 22 14z"/>
-    <path d="M931 72l26 15-26 15z"/>
-    <path d="M1041 72v30m-26-29 22 14-22 14z"/>
-  </g>
-  <text x="397" y="96" fill="#FFFFFF" font-family="sans-serif" font-size="19">Massive Attack – Teardrop   •</text>
-  <text x="1110" y="96" fill="#FFFFFF" font-family="sans-serif" font-size="20">22 AUG</text>
-
-  <clipPath id="mapClip"><rect x="93" y="119" width="1154" height="583"/></clipPath>
-  <g clip-path="url(#mapClip)">
-    <rect x="93" y="119" width="1154" height="583" fill="#EEE8E4"/>
-    <g fill="none" stroke="#D3C2BA" stroke-width="14">
-      <path d="M65 650C250 520 330 610 485 430S820 390 1015 220 1270 200 1350 120"/>
-      <path d="M180 80C270 230 400 215 495 345S745 510 955 460 1120 550 1300 640"/>
-      <path d="M140 350C380 320 420 190 650 195S880 350 1190 310"/>
-    </g>
-    <g fill="none" stroke="#FFFFFF" stroke-width="8">
-      <path d="M65 650C250 520 330 610 485 430S820 390 1015 220 1270 200 1350 120"/>
-      <path d="M180 80C270 230 400 215 495 345S745 510 955 460 1120 550 1300 640"/>
-      <path d="M140 350C380 320 420 190 650 195S880 350 1190 310"/>
-    </g>
-    <path d="M130 645C285 520 350 590 493 425S770 392 1017 220" fill="none" stroke="#FF6B57" stroke-width="9"/>
-    <g fill="#C9A99B" opacity="0.85">
-      <rect x="180" y="145" width="120" height="65" rx="6"/>
-      <rect x="350" y="130" width="170" height="72" rx="6"/>
-      <rect x="615" y="152" width="145" height="58" rx="6"/>
-      <rect x="260" y="285" width="155" height="85" rx="6"/>
-      <rect x="560" y="265" width="135" height="76" rx="6"/>
-      <rect x="770" y="295" width="175" height="70" rx="6"/>
-      <rect x="180" y="450" width="140" height="95" rx="6"/>
-      <rect x="520" y="505" width="185" height="80" rx="6"/>
-    </g>
-    <circle cx="735" cy="402" r="22" fill="#FFFFFF" stroke="#FF6B57" stroke-width="5"/>
-    <path d="M735 386l12 28-12-7-12 7z" fill="#FF6B57"/>
-  </g>
-
-  <rect x="0" y="55" width="81" height="665" fill="#000000"/>
-  <g fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M29 102v26m0-13c19-8 27-4 27 10V98c-9 3-18 3-27 4zm0 26c0 8-14 8-14 1s14-9 14-1zm27-3c0 8-14 8-14 1s14-9 14-1"/>
-    <path d="M31 206l28 24-28 24v-48zm0 0 21 48m0-48-21 48"/>
-    <path d="M48 305c-13 0-23 10-23 23 0 18 23 36 23 36s23-18 23-36c0-13-10-23-23-23zm0 14a9 9 0 1 0 0 18 9 9 0 0 0 0-18z"/>
-    <path d="M25 415h46v36H25zm18 10 15 8-15 8z"/>
-    <path d="M21 626h20v20H21zm34 0h20v20H55zM21 660h20v20H21zm34 0h20v20H55z"/>
-  </g>
+  <rect x="0" y="0" width="1280" height="55" fill="#111111"/>
+  <rect x="1225" y="55" width="55" height="665" fill="#181818"/>
+  <rect x="0" y="55" width="81" height="647" fill="#0b0b0b"/>
+  <rect x="81" y="55" width="286" height="64" fill="#8A4F3D"/>
+  <rect x="367" y="55" width="680" height="64" fill="#000000" stroke="#8A4F3D"/>
+  <rect x="1047" y="55" width="178" height="64" fill="#000000" stroke="#8A4F3D"/>
+  <rect x="81" y="119" width="1144" height="583" fill="#101010" stroke="#FF6B57"/>
+  <text x="224" y="94" fill="#FFFFFF" text-anchor="middle" font-size="22">RADIO</text>
+  <text x="707" y="94" fill="#FFFFFF" text-anchor="middle" font-size="22">ARTIST - TRACK</text>
+  <text x="1136" y="94" fill="#FFFFFF" text-anchor="middle" font-size="22">22 AUG</text>
+  <text x="653" y="420" fill="#FFFFFF" text-anchor="middle" font-size="28">NAVIGATION WINDOW 1144 × 583</text>
+  <text x="1252" y="360" fill="#FFFFFF" text-anchor="middle" font-size="13" transform="rotate(90 1252 360)">TOPWAY SYSTEMUI 55 px</text>
 </svg>

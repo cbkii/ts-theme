@@ -2,7 +2,6 @@
   "source": "theme",
   "attributes": [
     {
-      "": "Plain glyph; background resource supplies the icon.",
       "id_name": "iv_app_icon",
       "width": 0,
       "height": 0,
@@ -10,7 +9,6 @@
       "visibility": false
     },
     {
-      "": "No hotseat text label.",
       "id_name": "tv_item",
       "width": 0,
       "height": 0,

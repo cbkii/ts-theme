@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "profile": "ts18-rhd-1280x720",
+  "physical_width": 1280,
+  "physical_height": 720,
+  "top_system_inset": 55,
+  "right_system_inset": 55,
+  "bottom_reserve": 18,
+  "hotseat_width": 81,
+  "strip_height": 64,
+  "safe_right": 1225,
+  "safe_bottom": 702,
+  "content_left": 81,
+  "strip_top": 55,
+  "map_top": 119,
+  "surfaces": {
+    "radio": {"x": 81, "y": 55, "width": 286, "height": 64},
+    "music": {"x": 367, "y": 55, "width": 680, "height": 64},
+    "date": {"x": 1047, "y": 55, "width": 178, "height": 64},
+    "map": {"x": 81, "y": 119, "width": 1144, "height": 583}
+  }
+}

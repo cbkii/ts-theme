@@ -26,7 +26,6 @@
   "media_img_bg_rotate": false,
   "media_img_bg_rotate_duration": 8000,
   "radio": {
-    "": "The exact saved-preset semantics of step must be validated on stock radio and NavRadio+.",
     "freq_switching_type": "step"
   }
 }
