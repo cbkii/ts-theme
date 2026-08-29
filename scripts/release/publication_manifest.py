@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validation for the four-asset TS18 publication manifest."""
+"""Validation for current four-asset and historical three-asset release manifests."""
 from __future__ import annotations
 
 import json
@@ -8,7 +8,8 @@ from typing import Any
 
 from release_lib import ReleaseError, SHA1, SHA256, SemVer, safe_asset_name, sha256_file
 
-EXPECTED_ROLES = {"installable_apk", "sha256_sidecar", "metadata_sidecar", "installer_tools"}
+LEGACY_ROLES = {"installable_apk", "sha256_sidecar", "metadata_sidecar"}
+CURRENT_ROLES = LEGACY_ROLES | {"installer_tools"}
 
 
 def load_publication_manifest(path: Path, verify_files: bool = True) -> dict[str, Any]:
@@ -23,20 +24,25 @@ def load_publication_manifest(path: Path, verify_files: bool = True) -> dict[str
     parsed = SemVer.from_tag(str(manifest["tag"]))
     if manifest["schema_version"] != 1 or parsed is None:
         raise ReleaseError("Publication manifest schema or tag is invalid")
-    if manifest["version_name"] != parsed.version_name or manifest["version_code"] != parsed.android_version_code:
-        raise ReleaseError("Publication manifest version authority disagrees with its tag")
+    if manifest["version_name"] != parsed.version_name:
+        raise ReleaseError("Publication manifest tag and versionName disagree")
+    if manifest["version_code"] != parsed.android_version_code:
+        raise ReleaseError("Publication manifest tag and versionCode disagree")
     if not SHA1.fullmatch(str(manifest["source_sha"])):
         raise ReleaseError("Publication manifest source SHA is invalid")
     if not isinstance(manifest["replace_existing_assets"], bool):
         raise ReleaseError("Publication manifest replacement authority is invalid")
-    if not isinstance(manifest["assets"], list) or not manifest["assets"]:
+    assets = manifest["assets"]
+    if not isinstance(assets, list) or not assets:
         raise ReleaseError("Publication manifest assets are missing")
     names: set[str] = set(); roles: set[str] = set()
-    for item in manifest["assets"]:
+    for item in assets:
+        if not isinstance(item, dict):
+            raise ReleaseError("Publication manifest asset is not an object")
         name = item.get("name"); role = item.get("role")
         if not isinstance(name, str) or not safe_asset_name(name) or name in names:
             raise ReleaseError(f"Unsafe or duplicate publication asset name: {name!r}")
-        if role not in EXPECTED_ROLES or role in roles:
+        if role not in CURRENT_ROLES or role in roles:
             raise ReleaseError(f"Unsupported or duplicate publication asset role: {role!r}")
         if item.get("destination") != "release":
             raise ReleaseError(f"Unsupported asset destination for {name}")
@@ -47,10 +53,14 @@ def load_publication_manifest(path: Path, verify_files: bool = True) -> dict[str
         names.add(name); roles.add(role)
         if verify_files:
             file_path = path.parent / name
-            if not file_path.is_file() or file_path.stat().st_size != item["size"] or sha256_file(file_path) != item["sha256"]:
-                raise ReleaseError(f"Publication asset changed or is missing: {name}")
-    if roles != EXPECTED_ROLES:
-        raise ReleaseError("Publication manifest does not contain the exact four maintained asset roles")
+            if not file_path.is_file():
+                raise ReleaseError(f"Publication asset is missing: {name}")
+            if file_path.stat().st_size != item["size"] or sha256_file(file_path) != item["sha256"]:
+                raise ReleaseError(f"Publication asset changed: {name}")
+    if roles not in (LEGACY_ROLES, CURRENT_ROLES):
+        raise ReleaseError("Publication manifest must contain either the historical three roles or the current four roles")
+    if manifest.get("package_id") == "launcher.variety.theme.plugin.sfp_cbk_black" and roles != CURRENT_ROLES:
+        raise ReleaseError("Hardened sfp_cbk_black releases must include installer_tools")
     if verify_files:
         allowed = names | {path.name, "release-notes.md", "release-plan.json", "install-manifest.json"}
         actual = {item.name for item in path.parent.iterdir() if item.is_file()}
