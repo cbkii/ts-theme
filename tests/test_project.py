@@ -16,8 +16,10 @@ class ProjectTests(unittest.TestCase):
 
     def test_strip_background_dimensions_match_geometry(self):
         resources = ROOT / "theme" / "src" / "main" / "res" / "mipmap-mdpi-v4"
+        release_resources = ROOT / "theme" / "src" / "release" / "res" / "mipmap-mdpi-v4"
         self.assertEqual((286, 64), MODULE.png_dimensions(resources / "radio_bg.png"))
         self.assertEqual((680, 64), MODULE.png_dimensions(resources / "media_bg.png"))
+        self.assertEqual((680, 64), MODULE.png_dimensions(release_resources / "media_bg.png"))
         self.assertEqual((178, 64), MODULE.png_dimensions(resources / "time_bg.png"))
 
     def test_safe_area_geometry(self):
