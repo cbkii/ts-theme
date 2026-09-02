@@ -121,6 +121,10 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertNotIn('logcat -b all -v threadtime -T 1 >"$LOGCAT_FILTERED_TMP"', text)
         self.assertIn("SHARING_NOTICE.txt", text)
 
+        worker = text[text.index("run_worker() {") : text.index("\nservice_entry() {")]
+        self.assertLess(worker.index("acquire_slot;"), worker.index("trap cleanup EXIT"))
+        self.assertLess(worker.index("trap cleanup EXIT"), worker.index("clean_stale_runtime_temp"))
+
 
 if __name__ == "__main__":
     unittest.main()
