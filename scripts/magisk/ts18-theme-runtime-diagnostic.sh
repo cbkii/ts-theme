@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# shellcheck shell=sh disable=SC2016,SC2046
+# shellcheck shell=sh disable=SC2016,SC2046,SC2317
 # TS18 / DoFun activation diagnostic for Magisk service.d.
 # Read-only against DoFun/package state. Version 3.0.0.
 
@@ -31,7 +31,7 @@ now() { date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null ||
 log() { line="$(now) $*"; [ -n "$LIVE" ] && printf '%s\n' "$line" >>"$LIVE" 2>/dev/null; printf '%s\n' "$line" 2>/dev/null; }
 warn() { WARNINGS=$((WARNINGS + 1)); log "WARNING: $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
-boot_id() { cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '\r\n'; }
+boot_id() { tr -d '\r\n' </proc/sys/kernel/random/boot_id 2>/dev/null; }
 
 run_timeout() {
   rt_s="$1"; shift
@@ -157,8 +157,8 @@ package_state() {
   mkdir -p "$RUN_DIR/packages" "$RUN_DIR/mounts" 2>/dev/null
   capture 'DoFun package' 8 "$RUN_DIR/packages/dofun.txt" "dumpsys package '$DOFUN_PACKAGE'" >/dev/null 2>&1 || warn 'dumpsys package DoFun failed; continuing'
   capture 'custom package' 6 "$RUN_DIR/packages/custom.txt" "dumpsys package '$CUSTOM_PACKAGE'" >/dev/null 2>&1 || warn 'custom package dumpsys not available; continuing'
-  capture 'theme-related package list' 8 "$RUN_DIR/packages/theme-packages.txt" "if command -v pm >/dev/null 2>&1; then pm list packages -f; elif command -v cmd >/dev/null 2>&1; then cmd package list packages -f; else exit 127; fi | grep -Ei 'dofun|variety|theme|sfp_|launcher\\.variety' | head -n 2000" >/dev/null 2>&1 || warn 'pm/cmd package list unavailable; continuing'
-  capture 'init mountinfo' 6 "$RUN_DIR/mounts/init.txt" "grep -E '(/data/adb|magisk|com\\.dofun\\.variety|app_p_)' /proc/1/mountinfo | head -n 5000" >/dev/null 2>&1 || warn 'init mountinfo filter failed; continuing'
+  capture 'theme-related package list' 8 "$RUN_DIR/packages/theme-packages.txt" "if command -v pm >/dev/null 2>&1; then pm list packages -f; elif command -v cmd >/dev/null 2>&1; then cmd package list packages -f; else exit 127; fi | grep -Ei 'dofun|variety|theme|sfp_|launcher\\\\variety' | head -n 2000" >/dev/null 2>&1 || warn 'pm/cmd package list unavailable; continuing'
+  capture 'init mountinfo' 6 "$RUN_DIR/mounts/init.txt" "grep -E '(/data/adb|magisk|com\\\.dofun\\\.variety|app_p_)' /proc/1/mountinfo | head -n 5000" >/dev/null 2>&1 || warn 'init mountinfo filter failed; continuing'
 }
 
 capture_environment() {
@@ -179,7 +179,7 @@ sample_once() {
     case "$cmd" in *com.dofun.variety*) ;; *) continue;; esac
     pid="${d#/proc/}"; printf 'PROC\t%s\t%s\t%s\n' "$ts" "$pid" "$cmd"
     if [ -r "$d/maps" ]; then
-      awk -v t="$ts" -v p="$pid" -v c="$cmd" '{x=$NF; low=tolower($0); if (x ~ /^\/data\// || low ~ /(app_p_|dofun|variety|plugin|theme|sfp_|\.jar$|\.apk$|\.dex$|\.odex$|\.vdex$|\.so$)/) print "MAP\t" t "\t" p "\t" c "\t" x}' "$d/maps" 2>/dev/null | head -n 1000
+      awk -v t="$ts" -v p="$pid" -v c="$cmd" '{x=$NF; low=tolower($0); if (x ~ /^\\/data\\// || low ~ /(app_p_|dofun|variety|plugin|theme|sfp_|\\.jar$|\\.apk$|\\.dex$|\\.odex$|\\.vdex$|\\.so$)/) or int "MAP\t" t "\t" p "\t" c "\t" x}' "$d/maps" 2>/dev/null | head -n 1000
     fi
     if [ -d "$d/fd" ]; then
       for fd in "$d"/fd/*; do target="$(readlink "$fd" 2>/dev/null)"; case "$target" in *com.dofun.variety*|*app_p_*|*.jar|*.apk|*.dex|*.odex|*.vdex|*.so|*theme*|*plugin*|*sfp_*) printf 'FD\t%s\t%s\t%s\t%s\n' "$ts" "$pid" "$cmd" "$target";; esac; done
@@ -193,7 +193,7 @@ start_sampler() {
 }
 
 stop_bg() {
-  for p in "$LOGCAT_PID" "$SAMPLER_PID"; do [ -n "$p" ] || continue; kill -TERM "$p" 2>/dev/null; wait "$p" 2>/dev/null; done
+  for p in "$LOGCAT_PID" "$SAMPLER_PID"; do [ -n "$p" ] || continue; Kill -TERM "$p" 2>/dev/null; wait "$p" 2>/dev/null; done
   LOGCAT_PID=""; SAMPLER_PID=""
 }
 
@@ -203,10 +203,11 @@ make_analysis() {
   diff -u "$RUN_DIR/snapshots/refs-before.txt" "$RUN_DIR/snapshots/refs-after.txt" 2>/dev/null | head -n 8000 >"$RUN_DIR/analysis/theme-refs.diff"
   diff -u "$RUN_DIR/plugins/plugin-files-before.tsv" "$RUN_DIR/plugins/plugin-files-after.tsv" 2>/dev/null | head -n 10000 >"$RUN_DIR/analysis/plugin-files.diff"
   diff -u "$RUN_DIR/plugins/p.l-before-normalised.txt" "$RUN_DIR/plugins/p.l-after-normalised.txt" 2>/dev/null | head -n 8000 >"$RUN_DIR/analysis/p.l.diff"
-  : >"$RUN_DIR/analysis/overlay-candidates.tsv"
-  printf 'source\tpath\n' >>"$RUN_DIR/analysis/overlay-candidates.tsv"
-  awk -F '\t' '$1=="MAP" || $1=="FD" {print $1 "\t" $5}' "$RUN_DIR/runtime/process-paths.tsv" 2>/dev/null | grep -E 'app_p_|com\.dofun\.variety|\.jar$|\.apk$|\.dex$|\.odex$|\.vdex$|\.so$' >>"$RUN_DIR/analysis/overlay-candidates.tsv"
-  grep -aoE '/data/[^[:space:]"}]+app_p_[^[:space:]"}]+' "$RUN_DIR/plugins/p.l-after-normalised.txt" 2>/dev/null | sort -u | sed 's/^/P_L\t/' >>"$RUN_DIR/analysis/overlay-candidates.tsv"
+  {
+    printf 'source\tpath\n'
+    awk -F '\t' '$1=="MAP" || $1=="FD" {print $1 "\t" $5}' "$RUN_DIR/runtime/process-paths.tsv" 2>/dev/null | grep -E 'app_p_|com\.dofun\.variety|\.jar$|\.apk$|\.dex$|\.odex$|\.vdex$|\.so$'
+    grep -aoE '/data/[^[:space:]"}]+app_p_[^[:space:]"}]+' "$RUN_DIR/plugins/p.l-after-normalised.txt" 2>/dev/null | sort -u | sed 's/^/P_L\t/'
+  } >"$RUN_DIR/analysis/overlay-candidates.tsv"
   sort -u "$RUN_DIR/analysis/overlay-candidates.tsv" -o "$RUN_DIR/analysis/overlay-candidates.tsv" 2>/dev/null
   capture 'kernel tail' 5 "$RUN_DIR/runtime/kernel-filtered.txt" "dmesg 2>/dev/null | tail -n 1800 | grep -Ei 'avc: denied|dofun|variety|replugin|plugin|theme|sfp_|app_p_' | tail -n 1000" >/dev/null 2>&1 || warn 'kernel log unavailable; continuing'
 }
@@ -234,7 +235,11 @@ with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
 PY
     run_timeout 15 "$PACKAGER_PATH" "$helper" "$RUN_DIR" "$zipfile" >/dev/null 2>&1; rc=$?
   fi
-  [ "$rc" -eq 0 ] && [ -s "$zipfile" ] || { rm -f "$zipfile" 2>/dev/null; warn 'ZIP creation failed; live folder retained'; return 1; }
+  if [ "$rc" -ne 0 ] || [ ! -s "$zipfile" ]; then
+    rm -f "$zipfile" 2>/dev/null
+    warn 'ZIP creation failed; live folder retained'
+    return 1
+  fi
   h="$(sha_file "$zipfile")"; printf '%s  %s\n' "$h" "$(basename "$zipfile")" >"${zipfile}.sha256.txt" 2>/dev/null
   log "ZIP_READY=$zipfile"; log "ZIP_SHA256=$h"; return 0
 }
@@ -244,7 +249,11 @@ cleanup() {
   [ -n "$WATCHDOG_PID" ] && kill -TERM "$WATCHDOG_PID" 2>/dev/null && wait "$WATCHDOG_PID" 2>/dev/null
   rm -rf "$STATE_DIR/lock" 2>/dev/null
   if [ -n "$LIVE" ]; then
-    if [ "$rc" -eq 0 ]; then [ "$WARNINGS" -gt 0 ] && log 'FINAL_STATUS=COMPLETED WITH WARNINGS' || log 'FINAL_STATUS=SUCCESS'; else log "FINAL_STATUS=FAILED rc=$rc"; fi
+    if [ "$rc" -eq 0 ]; then
+      if [ "$WARNINGS" -gt 0 ]; then log 'FINAL_STATUS=COMPLETED WITH WARNINGS'; else log 'FINAL_STATUS=SUCCESS'; fi
+    else
+      log "FINAL_STATUS=FAILED rc=$rc"
+    fi
   fi
   exit "$rc"
 }
@@ -255,7 +264,7 @@ acquire_slot() {
   if [ -d "$STATE_DIR/lock" ]; then old="$(cat "$STATE_DIR/lock/boot-id" 2>/dev/null)"; [ "$old" = "$bid" ] && return 2; rm -rf "$STATE_DIR/lock" 2>/dev/null; fi
   mkdir "$STATE_DIR/lock" 2>/dev/null || return 2; printf '%s\n' "$bid" >"$STATE_DIR/lock/boot-id"
   last="$(cat "$STATE_DIR/last-boot" 2>/dev/null)"; [ "$last" = "$bid" ] && { rm -rf "$STATE_DIR/lock"; return 2; }
-  count="$(cat "$STATE_DIR/run-count" 2>/dev/null | tr -d '\r\n')"; case "$count" in ''|*[!0-9]*) count=0;; esac
+  count="$(tr -d '\r\n' <"$STATE_DIR/run-count" 2>/dev/null)"; case "$count" in ''|*[!0-9]*) count=0;; esac
   [ "$count" -ge "$MAX_RUNS" ] 2>/dev/null && { rm -rf "$STATE_DIR/lock"; return 3; }
   RUN_NO=$((count + 1)); BOOT_ID="$bid"; return 0
 }
@@ -295,7 +304,7 @@ run_worker() {
 
 service_entry() {
   [ "$(id -u 2>/dev/null)" = 0 ] || return 0
-  c="$(cat "$STATE_DIR/run-count" 2>/dev/null | tr -d '\r\n')"; case "$c" in ''|*[!0-9]*) c=0;; esac
+  c="$(tr -d '\r\n' <"$STATE_DIR/run-count" 2>/dev/null)"; case "$c" in ''|*[!0-9]*) c=0;; esac
   [ "$c" -ge "$MAX_RUNS" ] 2>/dev/null && return 0
   /system/bin/sh "$SERVICE_PATH" --worker >/dev/null 2>&1 &
 }
