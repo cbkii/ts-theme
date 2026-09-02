@@ -1,9 +1,9 @@
 #!/system/bin/sh
 # shellcheck shell=sh disable=SC2016,SC2046,SC2317
 # TS18 / DoFun activation diagnostic for Magisk service.d.
-# Read-only against DoFun/package state. Version 3.0.2.
+# Read-only against DoFun/package state. Version 3.0.3.
 
-SCRIPT_VERSION="3.0.2"
+SCRIPT_VERSION="3.0.3"
 SERVICE_PATH="/data/adb/service.d/99-ts18-theme-runtime-diag.sh"
 STATE_DIR="/data/adb/ts18-theme-runtime-diag-state"
 EXPORT_ROOT="/storage/emulated/0/Download/TS18-theme-runtime-diagnostic"
@@ -368,10 +368,10 @@ wait_download() {
 
 run_worker() {
   [ "$(id -u 2>/dev/null)" = 0 ] || { printf 'FAILED: worker requires UID 0\n' >&2; return 1; }
+  acquire_slot; slot=$?; case "$slot" in 0) ;; 2|3) return 0;; *) return 1;; esac
   trap cleanup EXIT; trap 'exit 130' INT TERM HUP
   clean_stale_runtime_temp
-  acquire_slot; slot=$?; case "$slot" in 0) ;; 2|3) return 0;; *) return 1;; esac
-  download_ready || { rm -rf "$STATE_DIR/lock" 2>/dev/null; return 0; }
+  download_ready || return 0
   stamp="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"; RUN_DIR="$EXPORT_ROOT/live-run${RUN_NO}-$stamp"
   mkdir -p "$RUN_DIR/runtime" "$RUN_DIR/snapshots" "$RUN_DIR/analysis" "$RUN_DIR/plugins" "$RUN_DIR/packages" "$RUN_DIR/mounts" || return 1
   LIVE="$RUN_DIR/LIVE.txt"; : >"$LIVE"
