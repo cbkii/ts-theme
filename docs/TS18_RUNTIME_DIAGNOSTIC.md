@@ -10,7 +10,11 @@ The diagnostic is read-only against DoFun and package state. It does not edit `p
 
 Persistent state under `/data/adb/ts18-theme-runtime-diag-state` enforces **at most two runs**. Each active worker has a **170-second hard watchdog**, so total possible diagnostic-worker time is at most **340 seconds (5m40s)**. Reinstalling the script does not reset the counter. The service launcher can wait up to **90 seconds** for `/storage/emulated/0/Download` to become writable before it starts a worker; if shared storage never becomes ready, no run is consumed.
 
-Each discovered `p.l` registry is captured up to **256 KiB**, with an explicit truncation marker when the source is larger. Unfiltered logcat is written only to private `/data/adb/ts18-theme-runtime-diag-state` while the worker is active, then filtered into the exported evidence and deleted. The exported folder/ZIP intentionally contains targeted DoFun package/process paths, plug-in registration metadata, hashes and filtered activation logs needed for RePlugin diagnosis. Nothing is uploaded automatically; review `SHARING_NOTICE.txt` before manually sharing an archive.
+`p.l` evidence is explicitly bounded. The diagnostic records discovered registry paths up to 512 entries, captures the content of at most 64 registries, and captures at most **256 KiB per registry**. It writes coverage metadata and a separate omitted-path list whenever more than 64 registries are discovered, so the content cap cannot be mistaken for complete negative evidence.
+
+Logcat is also bounded while it is collected. The worker streams logcat through a private FIFO and retains only matching activation/RePlugin lines, capped at 12,000 lines. It does **not** persist an unfiltered all-buffer logcat file. Stale diagnostic FIFO/filter/sampler intermediates are deleted before a new worker starts and again during cleanup.
+
+The exported folder/ZIP intentionally contains targeted DoFun package/process paths, plug-in registration metadata, hashes and filtered activation logs needed for RePlugin diagnosis. Nothing is uploaded automatically; review `SHARING_NOTICE.txt` before manually sharing an archive.
 
 ## One-time installation
 
@@ -57,6 +61,6 @@ On the second reboot, repeat a shorter comparison: working SFP_TW/TS10-family th
 
 ## What is captured
 
-The ZIP contains bounded, timestamped evidence for all discoverable DoFun user/data roots and every `p.l` registry; plug-in-like `app_p_*` JAR/APK/DEX/ODEX/VDEX/SO paths; hashes and metadata; relevant DoFun/custom package state with `dumpsys` first and bounded `pm`/`cmd package` fallbacks; built-in DoFun theme/plugin archive names; theme/plugin preference references before and after activation; all observed `com.dofun.variety*` processes; relevant `/proc/<pid>/maps`, FDs and mountinfo; filtered logcat and kernel/SELinux evidence; and before/after metadata diffs.
+The ZIP contains bounded, timestamped evidence for all discoverable DoFun user/data roots; `p.l` path/coverage information plus bounded registry contents; plug-in-like `app_p_*` JAR/APK/DEX/ODEX/VDEX/SO paths; hashes and metadata; relevant DoFun/custom package state with `dumpsys` first and bounded `pm`/`cmd package` fallbacks; built-in DoFun theme/plugin archive names; theme/plugin preference references before and after activation; all observed `com.dofun.variety*` processes; relevant `/proc/<pid>/maps`, FDs and mountinfo; filtered logcat and kernel/SELinux evidence; and before/after metadata diffs.
 
-`analysis/overlay-candidates.tsv` records paths that were actually mapped/opened or registered in `p.l`. It is evidence for a later Magisk bind-overlay design, **not** an instruction to mount every listed path. Absence from sampled MAP/FD output is not proof a short-lived file open did not occur; correlate both runs with `p.l`, filtered logcat and file-state changes.
+`analysis/overlay-candidates.tsv` records paths that were actually mapped/opened or registered in captured `p.l` content. It is evidence for a later Magisk bind-overlay design, **not** an instruction to mount every listed path. Absence from sampled MAP/FD output is not proof a short-lived file open did not occur; correlate both runs with registry coverage, filtered logcat and file-state changes.
