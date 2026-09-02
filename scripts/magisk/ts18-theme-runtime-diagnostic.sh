@@ -1,9 +1,9 @@
 #!/system/bin/sh
 # shellcheck shell=sh disable=SC2016,SC2046,SC2317
 # TS18 / DoFun activation diagnostic for Magisk service.d.
-# Read-only against DoFun/package state. Version 3.0.0.
+# Read-only against DoFun/package state. Version 3.0.1.
 
-SCRIPT_VERSION="3.0.0"
+SCRIPT_VERSION="3.0.1"
 SERVICE_PATH="/data/adb/service.d/99-ts18-theme-runtime-diag.sh"
 STATE_DIR="/data/adb/ts18-theme-runtime-diag-state"
 EXPORT_ROOT="/storage/emulated/0/Download/TS18-theme-runtime-diagnostic"
@@ -12,16 +12,20 @@ CUSTOM_PACKAGE="launcher.variety.theme.plugin.sfp_cbk_black"
 MAX_RUNS=2
 HARD_SECONDS=170
 RUNTIME_SECONDS=90
-STORAGE_WAIT_SECONDS=25
+STORAGE_WAIT_SECONDS=90
 MAX_TREE_LINES=30000
 MAX_LOG_LINES=12000
 MAX_RUNTIME_LINES=16000
+MAX_PL_FILES=64
+MAX_PL_BYTES=262144
 
 RUN_NO=0
 RUN_DIR=""
 LIVE=""
 LOGCAT_PID=""
+LOGCAT_RAW=""
 SAMPLER_PID=""
+SAMPLER_RAW=""
 WATCHDOG_PID=""
 PACKAGER_KIND=""
 PACKAGER_PATH=""
@@ -126,14 +130,27 @@ snapshot_tree() {
   done >"$out"
 }
 
+capture_pl_file() {
+  pl_path="$1"; pl_out="$2"
+  pl_size="$(stat -c '%s' "$pl_path" 2>/dev/null)"
+  case "$pl_size" in ''|*[!0-9]*) pl_size=unknown;; esac
+  printf '\n### %s\n' "$pl_path" >>"$pl_out"
+  dd if="$pl_path" bs=4096 count=64 2>/dev/null >>"$pl_out"
+  if [ "$pl_size" != unknown ] && [ "$pl_size" -gt "$MAX_PL_BYTES" ] 2>/dev/null; then
+    printf '\n### TRUNCATED original_bytes=%s limit_bytes=%s\n' "$pl_size" "$MAX_PL_BYTES" >>"$pl_out"
+  fi
+}
+
 capture_plugins() {
   tag="$1"
   mkdir -p "$RUN_DIR/plugins" 2>/dev/null
   : >"$RUN_DIR/plugins/p.l-${tag}.txt"; : >"$RUN_DIR/plugins/plugin-files-${tag}.tsv"
   for root in $(find_roots); do
-    find "$root" -xdev -maxdepth 6 -type f -name 'p.l' -print 2>/dev/null | while IFS= read -r p; do
-      printf '\n### %s\n' "$p" >>"$RUN_DIR/plugins/p.l-${tag}.txt"; cat "$p" >>"$RUN_DIR/plugins/p.l-${tag}.txt" 2>/dev/null
-    done
+    find "$root" -xdev -maxdepth 6 -type f -name 'p.l' -print 2>/dev/null
+  done | sort -u | head -n "$MAX_PL_FILES" | while IFS= read -r p; do
+    capture_pl_file "$p" "$RUN_DIR/plugins/p.l-${tag}.txt"
+  done
+  for root in $(find_roots); do
     find "$root" -xdev -maxdepth 6 -type f \( -name '*.jar' -o -name '*.apk' -o -name '*.dex' -o -name '*.odex' -o -name '*.vdex' -o -name '*.so' -o -name 'p.l' -o -iname '*theme*' -o -iname '*plugin*' -o -iname '*sfp*' \) -print 2>/dev/null | head -n 10000 | while IFS= read -r p; do
       st="$(stat -c '%s\t%Y\t%i\t%a\t%u\t%g' "$p" 2>/dev/null)"; h="$(sha_file "$p")"; printf '%s\t%s\t%s\n' "$p" "$st" "$h"
     done >>"$RUN_DIR/plugins/plugin-files-${tag}.tsv"
@@ -157,18 +174,21 @@ package_state() {
   mkdir -p "$RUN_DIR/packages" "$RUN_DIR/mounts" 2>/dev/null
   capture 'DoFun package' 8 "$RUN_DIR/packages/dofun.txt" "dumpsys package '$DOFUN_PACKAGE'" >/dev/null 2>&1 || warn 'dumpsys package DoFun failed; continuing'
   capture 'custom package' 6 "$RUN_DIR/packages/custom.txt" "dumpsys package '$CUSTOM_PACKAGE'" >/dev/null 2>&1 || warn 'custom package dumpsys not available; continuing'
-  capture 'theme-related package list' 8 "$RUN_DIR/packages/theme-packages.txt" "if command -v pm >/dev/null 2>&1; then pm list packages -f; elif command -v cmd >/dev/null 2>&1; then cmd package list packages -f; else exit 127; fi | grep -Ei 'dofun|variety|theme|sfp_|launcher\\\\variety' | head -n 2000" >/dev/null 2>&1 || warn 'pm/cmd package list unavailable; continuing'
-  capture 'init mountinfo' 6 "$RUN_DIR/mounts/init.txt" "grep -E '(/data/adb|magisk|com\\\.dofun\\\.variety|app_p_)' /proc/1/mountinfo | head -n 5000" >/dev/null 2>&1 || warn 'init mountinfo filter failed; continuing'
+  capture 'theme-related package list' 8 "$RUN_DIR/packages/theme-packages.txt" "if command -v pm >/dev/null 2>&1; then pm list packages -f; elif command -v cmd >/dev/null 2>&1; then cmd package list packages -f; else exit 127; fi | grep -Ei 'dofun|variety|theme|sfp_|launcher\\.variety' | head -n 2000" >/dev/null 2>&1 || warn 'pm/cmd package list unavailable; continuing'
+  capture 'init mountinfo' 6 "$RUN_DIR/mounts/init.txt" "grep -E '(/data/adb|magisk|com\\.dofun\\.variety|app_p_)' /proc/1/mountinfo | head -n 5000" >/dev/null 2>&1 || warn 'init mountinfo filter failed; continuing'
 }
 
 capture_environment() {
   capture 'environment' 8 "$RUN_DIR/environment.txt" 'echo "id=$(id 2>/dev/null)"; echo "context=$(cat /proc/self/attr/current 2>/dev/null)"; echo "getenforce=$(getenforce 2>/dev/null)"; echo "self_mntns=$(readlink /proc/self/ns/mnt 2>/dev/null)"; echo "init_mntns=$(readlink /proc/1/ns/mnt 2>/dev/null)"; echo "android=$(getprop ro.build.version.release 2>/dev/null)"; echo "sdk=$(getprop ro.build.version.sdk 2>/dev/null)"; echo "tw=$(getprop ro.tw.version 2>/dev/null)"; echo "wm_size=$(wm size 2>/dev/null | tr "\n" ";")"; echo "wm_density=$(wm density 2>/dev/null | tr "\n" ";")"' >/dev/null 2>&1 || warn 'environment probe incomplete'
 }
 
+LOGCAT_PATTERN='dofun|variety|replugin|plugin|theme|skin|sfp_|app_p_|launcher\.variety|PluginInfo|PluginManager|PluginFastInstall|PackageParser|PackageManager|ClassLoader|DexPathList|Resources\$NotFound|InflateException|ClassNotFound|NoClassDefFound|VerifyError|NoSuchMethod|NoSuchField|IllegalAccess|JSONException|SecurityException|certificate|signature|verify|AndroidRuntime|FATAL EXCEPTION|avc: denied'
+
 start_logcat() {
   if ! have logcat; then printf '# logcat unavailable\n' >"$RUN_DIR/runtime/logcat-filtered.txt"; LOGCAT_PID=""; return 0; fi
-  pat='dofun|variety|replugin|plugin|theme|skin|sfp_|app_p_|launcher\.variety|PluginInfo|PluginManager|PluginFastInstall|PackageParser|PackageManager|ClassLoader|DexPathList|Resources\$NotFound|InflateException|ClassNotFound|NoClassDefFound|VerifyError|NoSuchMethod|NoSuchField|IllegalAccess|JSONException|SecurityException|certificate|signature|verify|AndroidRuntime|FATAL EXCEPTION|avc: denied'
-  ( logcat -b all -v threadtime -T 1 2>/dev/null | grep -Ei "$pat" | head -n "$MAX_LOG_LINES" >"$RUN_DIR/runtime/logcat-filtered.txt" ) & LOGCAT_PID=$!
+  LOGCAT_RAW="$STATE_DIR/logcat-run${RUN_NO}.$$"
+  rm -f "$LOGCAT_RAW" 2>/dev/null
+  logcat -b all -v threadtime -T 1 >"$LOGCAT_RAW" 2>&1 & LOGCAT_PID=$!
 }
 
 sample_once() {
@@ -179,7 +199,7 @@ sample_once() {
     case "$cmd" in *com.dofun.variety*) ;; *) continue;; esac
     pid="${d#/proc/}"; printf 'PROC\t%s\t%s\t%s\n' "$ts" "$pid" "$cmd"
     if [ -r "$d/maps" ]; then
-      awk -v t="$ts" -v p="$pid" -v c="$cmd" '{x=$NF; low=tolower($0); if (x ~ /^\\/data\\// || low ~ /(app_p_|dofun|variety|plugin|theme|sfp_|\\.jar$|\\.apk$|\\.dex$|\\.odex$|\\.vdex$|\\.so$)/) or int "MAP\t" t "\t" p "\t" c "\t" x}' "$d/maps" 2>/dev/null | head -n 1000
+      awk -v t="$ts" -v p="$pid" -v c="$cmd" '{x=$NF; low=tolower($0); if (x ~ /^\/data\// || low ~ /(app_p_|dofun|variety|plugin|theme|sfp_|\.jar$|\.apk$|\.dex$|\.odex$|\.vdex$|\.so$)/) print "MAP\t" t "\t" p "\t" c "\t" x}' "$d/maps" 2>/dev/null | head -n 1000
     fi
     if [ -d "$d/fd" ]; then
       for fd in "$d"/fd/*; do target="$(readlink "$fd" 2>/dev/null)"; case "$target" in *com.dofun.variety*|*app_p_*|*.jar|*.apk|*.dex|*.odex|*.vdex|*.so|*theme*|*plugin*|*sfp_*) printf 'FD\t%s\t%s\t%s\t%s\n' "$ts" "$pid" "$cmd" "$target";; esac; done
@@ -189,12 +209,42 @@ sample_once() {
 }
 
 start_sampler() {
-  ( i=0; while [ "$i" -lt 18 ]; do sample_once; i=$((i + 1)); sleep 5; done ) | head -n "$MAX_RUNTIME_LINES" >"$RUN_DIR/runtime/process-paths.tsv" & SAMPLER_PID=$!
+  SAMPLER_RAW="$STATE_DIR/process-paths-run${RUN_NO}.$$"
+  rm -f "$SAMPLER_RAW" 2>/dev/null
+  ( i=0; while [ "$i" -lt 18 ]; do sample_once; i=$((i + 1)); [ "$i" -lt 18 ] && sleep 5; done ) >"$SAMPLER_RAW" 2>/dev/null & SAMPLER_PID=$!
+}
+
+stop_pid() {
+  sp_pid="$1"; [ -n "$sp_pid" ] || return 0
+  if kill -0 "$sp_pid" 2>/dev/null; then
+    kill -TERM "$sp_pid" 2>/dev/null
+    sp_i=0
+    while kill -0 "$sp_pid" 2>/dev/null && [ "$sp_i" -lt 4 ]; do sleep 1; sp_i=$((sp_i + 1)); done
+    if kill -0 "$sp_pid" 2>/dev/null; then kill -KILL "$sp_pid" 2>/dev/null; fi
+  fi
+  wait "$sp_pid" 2>/dev/null || :
 }
 
 stop_bg() {
-  for p in "$LOGCAT_PID" "$SAMPLER_PID"; do [ -n "$p" ] || continue; Kill -TERM "$p" 2>/dev/null; wait "$p" 2>/dev/null; done
+  stop_pid "$LOGCAT_PID"; stop_pid "$SAMPLER_PID"
   LOGCAT_PID=""; SAMPLER_PID=""
+}
+
+finalize_runtime_capture() {
+  if [ -n "$LOGCAT_RAW" ] && [ -f "$LOGCAT_RAW" ]; then
+    grep -Ei "$LOGCAT_PATTERN" "$LOGCAT_RAW" 2>/dev/null | head -n "$MAX_LOG_LINES" >"$RUN_DIR/runtime/logcat-filtered.txt"
+    rm -f "$LOGCAT_RAW" 2>/dev/null
+  elif [ ! -f "$RUN_DIR/runtime/logcat-filtered.txt" ]; then
+    printf '# logcat capture unavailable\n' >"$RUN_DIR/runtime/logcat-filtered.txt"
+  fi
+  LOGCAT_RAW=""
+  if [ -n "$SAMPLER_RAW" ] && [ -f "$SAMPLER_RAW" ]; then
+    head -n "$MAX_RUNTIME_LINES" "$SAMPLER_RAW" >"$RUN_DIR/runtime/process-paths.tsv"
+    rm -f "$SAMPLER_RAW" 2>/dev/null
+  else
+    : >"$RUN_DIR/runtime/process-paths.tsv"
+  fi
+  SAMPLER_RAW=""
 }
 
 make_analysis() {
@@ -246,7 +296,8 @@ PY
 
 cleanup() {
   rc=$?; trap - EXIT INT TERM HUP; stop_bg
-  [ -n "$WATCHDOG_PID" ] && kill -TERM "$WATCHDOG_PID" 2>/dev/null && wait "$WATCHDOG_PID" 2>/dev/null
+  rm -f "$LOGCAT_RAW" "$SAMPLER_RAW" 2>/dev/null
+  if [ -n "$WATCHDOG_PID" ]; then stop_pid "$WATCHDOG_PID"; fi
   rm -rf "$STATE_DIR/lock" 2>/dev/null
   if [ -n "$LIVE" ]; then
     if [ "$rc" -eq 0 ]; then
@@ -269,16 +320,34 @@ acquire_slot() {
   RUN_NO=$((count + 1)); BOOT_ID="$bid"; return 0
 }
 
-wait_download() { i=0; while [ "$i" -lt "$STORAGE_WAIT_SECONDS" ]; do [ -d /storage/emulated/0/Download ] && [ -w /storage/emulated/0/Download ] && { mkdir -p "$EXPORT_ROOT" 2>/dev/null; return $?; }; i=$((i + 1)); sleep 1; done; return 1; }
+download_ready() {
+  [ -d /storage/emulated/0/Download ] && [ -w /storage/emulated/0/Download ] || return 1
+  mkdir -p "$EXPORT_ROOT" 2>/dev/null
+}
+
+wait_download() {
+  wd_i=0
+  while [ "$wd_i" -lt "$STORAGE_WAIT_SECONDS" ]; do
+    download_ready && return 0
+    wd_i=$((wd_i + 1)); sleep 1
+  done
+  return 1
+}
 
 run_worker() {
   [ "$(id -u 2>/dev/null)" = 0 ] || { printf 'FAILED: worker requires UID 0\n' >&2; return 1; }
   trap cleanup EXIT; trap 'exit 130' INT TERM HUP
   acquire_slot; slot=$?; case "$slot" in 0) ;; 2|3) return 0;; *) return 1;; esac
-  wait_download || { rm -rf "$STATE_DIR/lock" 2>/dev/null; return 0; }
+  download_ready || { rm -rf "$STATE_DIR/lock" 2>/dev/null; return 0; }
   stamp="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"; RUN_DIR="$EXPORT_ROOT/live-run${RUN_NO}-$stamp"
   mkdir -p "$RUN_DIR/runtime" "$RUN_DIR/snapshots" "$RUN_DIR/analysis" "$RUN_DIR/plugins" "$RUN_DIR/packages" "$RUN_DIR/mounts" || return 1
   LIVE="$RUN_DIR/LIVE.txt"; : >"$LIVE"
+  cat >"$RUN_DIR/SHARING_NOTICE.txt" <<'NOTICE'
+This diagnostic is local-only and never uploads data automatically.
+The shareable output intentionally contains targeted DoFun package/process paths, plugin registration metadata, hashes, and filtered activation logs needed for TS18/RePlugin diagnosis.
+Unfiltered logcat is captured only in private /data/adb state and deleted after filtering.
+Review the ZIP contents before sharing them outside your own diagnostic workflow.
+NOTICE
   printf '%s\n' "$RUN_NO" >"$STATE_DIR/run-count" || return 1; printf '%s\n' "$BOOT_ID" >"$STATE_DIR/last-boot" || return 1
   ( sleep "$HARD_SECONDS"; kill -TERM $$ 2>/dev/null ) & WATCHDOG_PID=$!
   log "TS18 activation diagnostic v$SCRIPT_VERSION run=$RUN_NO/$MAX_RUNS hard_cap=${HARD_SECONDS}s"
@@ -287,13 +356,14 @@ run_worker() {
   capture_environment; package_state; capture_plugins before
   snapshot_tree "$RUN_DIR/snapshots/tree-before.tsv"; capture_theme_refs "$RUN_DIR/snapshots/refs-before.txt"
   log "Runtime capture active for ${RUNTIME_SECONDS}s. Perform the theme-selection sequence now."
-  start_logcat; start_sampler; sleep "$RUNTIME_SECONDS"; stop_bg
+  start_logcat; start_sampler; sleep "$RUNTIME_SECONDS"; stop_bg; finalize_runtime_capture
   log 'Runtime window ended; collecting after-state.'
   snapshot_tree "$RUN_DIR/snapshots/tree-after.tsv"; capture_theme_refs "$RUN_DIR/snapshots/refs-after.txt"; capture_plugins after; make_analysis
   {
     printf 'script_version=%s\nrun=%s/%s\nboot_id=%s\nhard_limit_seconds=%s\nruntime_seconds=%s\nwarnings=%s\n' "$SCRIPT_VERSION" "$RUN_NO" "$MAX_RUNS" "$BOOT_ID" "$HARD_SECONDS" "$RUNTIME_SECONDS" "$WARNINGS"
     printf 'interpretation=DoFun preview/listing succeeded previously; this capture targets local activation/RePlugin failure while offline.\n'
     printf 'overlay_note=overlay-candidates.tsv is evidence only; do not mount every listed path.\n'
+    printf 'sharing_note=See SHARING_NOTICE.txt before sharing the archive.\n'
   } >"$RUN_DIR/SUMMARY.txt"
   package_zip
   zip_rc=$?
@@ -306,7 +376,7 @@ service_entry() {
   [ "$(id -u 2>/dev/null)" = 0 ] || return 0
   c="$(tr -d '\r\n' <"$STATE_DIR/run-count" 2>/dev/null)"; case "$c" in ''|*[!0-9]*) c=0;; esac
   [ "$c" -ge "$MAX_RUNS" ] 2>/dev/null && return 0
-  /system/bin/sh "$SERVICE_PATH" --worker >/dev/null 2>&1 &
+  ( wait_download && exec /system/bin/sh "$SERVICE_PATH" --worker ) >/dev/null 2>&1 &
 }
 
 usage() { printf 'TS18 activation diagnostic v%s\n  sh %s --install\n  sh %s --status\n' "$SCRIPT_VERSION" "$0" "$0"; }

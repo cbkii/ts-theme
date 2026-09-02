@@ -179,11 +179,20 @@ jobs:
 
       - name: Verify minimal RePlugin runtime envelope
         shell: bash
+        env:
+          RELEASE_MODE: ${{ inputs.release_mode }}
         run: |
           set -euo pipefail
-          python3 release-source/scripts/release/runtime_envelope.py \
-            --apk release-source/theme/build/outputs/apk/release/theme-release.apk \
-            --config release-source/release-config.json
+          if python3 -c 'import json; from pathlib import Path; config=json.loads(Path("release-source/release-config.json").read_text(encoding="utf-8")); raise SystemExit(0 if isinstance(config.get("runtime_envelope"), dict) else 1)'; then
+            python3 scripts/release/runtime_envelope.py \
+              --apk release-source/theme/build/outputs/apk/release/theme-release.apk \
+              --config release-source/release-config.json
+          elif [[ "$RELEASE_MODE" == "repair_existing_release" ]]; then
+            echo "::notice::Historical release source predates the runtime-envelope contract; preserving its immutable repair path."
+          else
+            echo "::error::New release source is missing runtime_envelope."
+            exit 1
+          fi
 
       - name: Qualify APK and construct closed publication bundle
         shell: bash

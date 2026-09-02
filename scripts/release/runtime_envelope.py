@@ -17,7 +17,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.ts18_theme import audit_apk  # noqa: E402
+from tools.ts18_theme import ThemeError, audit_apk  # noqa: E402
 
 
 class RuntimeEnvelopeError(RuntimeError):
@@ -106,7 +106,7 @@ def main() -> int:
         config = load_config(args.config.resolve())
         audit = audit_apk(args.apk.resolve())
         result = validate_runtime_envelope(audit, config)
-    except RuntimeEnvelopeError as exc:
+    except (RuntimeEnvelopeError, ThemeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     print(

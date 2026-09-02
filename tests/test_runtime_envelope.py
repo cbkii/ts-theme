@@ -1,8 +1,10 @@
 import importlib.util
+import io
 import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_SCRIPTS = ROOT / "scripts" / "release"
@@ -17,6 +19,9 @@ SPEC.loader.exec_module(RUNTIME)
 class RuntimeEnvelopeTests(unittest.TestCase):
     def setUp(self):
         self.config = json.loads((ROOT / "release-config.json").read_text(encoding="utf-8"))
+        envelope = self.config["runtime_envelope"]
+        self.expected_dex_files = envelope["expected_dex_files"]
+        self.max_dex_classes = envelope["max_dex_classes"]
         self.good_classes = [
             "Lcom/qihoo360/replugin/Entry;",
             "Lcom/qihoo360/replugin/RePlugin;",
@@ -25,17 +30,17 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             "Llauncher/variety/theme/plugin/R;",
         ]
 
-    def audit(self, classes=None, *, dex_files=1):
+    def audit(self, classes=None, *, dex_files=None):
         values = list(self.good_classes if classes is None else classes)
         return {
-            "dex_file_count": dex_files,
+            "dex_file_count": self.expected_dex_files if dex_files is None else dex_files,
             "dex_class_count": len(values),
             "dex_classes": values,
         }
 
     def test_minimal_replugin_envelope_passes(self):
         result = RUNTIME.validate_runtime_envelope(self.audit(), self.config)
-        self.assertEqual(1, result["dex_file_count"])
+        self.assertEqual(self.expected_dex_files, result["dex_file_count"])
         self.assertEqual(len(self.good_classes), result["dex_class_count"])
 
     def test_kotlin_or_other_runtime_payload_is_rejected(self):
@@ -49,21 +54,39 @@ class RuntimeEnvelopeTests(unittest.TestCase):
             ):
                 RUNTIME.validate_runtime_envelope(self.audit(self.good_classes + [extra]), self.config)
 
-    def test_multidex_is_rejected(self):
-        with self.assertRaisesRegex(RUNTIME.RuntimeEnvelopeError, "expected 1 DEX"):
-            RUNTIME.validate_runtime_envelope(self.audit(dex_files=2), self.config)
+    def test_multidex_contract_is_rejected(self):
+        found = self.expected_dex_files + 1
+        with self.assertRaisesRegex(
+            RUNTIME.RuntimeEnvelopeError,
+            rf"expected {self.expected_dex_files} DEX file\(s\), found {found}",
+        ):
+            RUNTIME.validate_runtime_envelope(self.audit(dex_files=found), self.config)
 
     def test_class_budget_is_bounded(self):
-        classes = ["Llibrary/C%03d;" % index for index in range(65)]
-        classes[0] = "Lcom/qihoo360/replugin/Entry;"
-        with self.assertRaisesRegex(RUNTIME.RuntimeEnvelopeError, "at most 64 DEX classes"):
+        classes = ["Llibrary/C%03d;" % index for index in range(self.max_dex_classes + 1)]
+        classes[0] = self.config["required_dex_classes"][0]
+        with self.assertRaisesRegex(
+            RUNTIME.RuntimeEnvelopeError,
+            rf"at most {self.max_dex_classes} DEX classes",
+        ):
             RUNTIME.validate_runtime_envelope(self.audit(classes), self.config)
+
+    def test_cli_reports_apk_audit_errors_without_traceback(self):
+        stderr = io.StringIO()
+        argv = ["runtime_envelope.py", "--apk", "broken.apk", "--config", str(ROOT / "release-config.json")]
+        with (
+            mock.patch.object(RUNTIME, "audit_apk", side_effect=RUNTIME.ThemeError("malformed APK")),
+            mock.patch.object(sys, "argv", argv),
+            mock.patch("sys.stderr", stderr),
+        ):
+            self.assertEqual(1, RUNTIME.main())
+        self.assertEqual("ERROR: malformed APK\n", stderr.getvalue())
 
     def test_agp_builtin_kotlin_is_disabled(self):
         properties = (ROOT / "gradle.properties").read_text(encoding="utf-8")
         self.assertIn("android.builtInKotlin=false", properties.splitlines())
 
-    def test_runtime_diagnostic_is_bundled_and_bounded(self):
+    def test_runtime_diagnostic_is_bundled_bounded_and_parse_safe(self):
         tools = self.config["install_tools"]
         script_path = "scripts/magisk/ts18-theme-runtime-diagnostic.sh"
         playbook_path = "docs/TS18_RUNTIME_DIAGNOSTIC.md"
@@ -73,10 +96,22 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertIn("MAX_RUNS=2", text)
         self.assertIn("HARD_SECONDS=170", text)
         self.assertIn("RUNTIME_SECONDS=90", text)
+        self.assertIn("STORAGE_WAIT_SECONDS=90", text)
+        self.assertIn("MAX_PL_BYTES=262144", text)
         self.assertNotIn("am force-stop", text)
         self.assertNotIn("pm clear", text)
         self.assertNotIn("setenforce", text)
         self.assertIn("-name 'p.l'", text)
+        self.assertIn('dd if="$pl_path" bs=4096 count=64', text)
+        self.assertIn('print "MAP\\t"', text)
+        self.assertNotIn('or int "MAP\\t"', text)
+        self.assertNotIn("Kill -TERM", text)
+        self.assertIn("launcher\\\\.variety", text)
+        self.assertNotIn("launcher\\\\\\\\.variety", text)
+        self.assertIn("com\\\\.dofun\\\\.variety", text)
+        self.assertIn('LOGCAT_RAW="$STATE_DIR/', text)
+        self.assertNotIn("logcat -b all -v threadtime -T 1 2>/dev/null |", text)
+        self.assertIn("SHARING_NOTICE.txt", text)
 
 
 if __name__ == "__main__":
