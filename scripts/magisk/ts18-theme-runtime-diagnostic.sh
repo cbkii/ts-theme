@@ -1,9 +1,9 @@
 #!/system/bin/sh
 # shellcheck shell=sh disable=SC2016,SC2046,SC2317
 # TS18 / DoFun activation diagnostic for Magisk service.d.
-# Read-only against DoFun/package state. Version 3.0.1.
+# Read-only against DoFun/package state. Version 3.0.2.
 
-SCRIPT_VERSION="3.0.1"
+SCRIPT_VERSION="3.0.2"
 SERVICE_PATH="/data/adb/service.d/99-ts18-theme-runtime-diag.sh"
 STATE_DIR="/data/adb/ts18-theme-runtime-diag-state"
 EXPORT_ROOT="/storage/emulated/0/Download/TS18-theme-runtime-diagnostic"
@@ -17,13 +17,16 @@ MAX_TREE_LINES=30000
 MAX_LOG_LINES=12000
 MAX_RUNTIME_LINES=16000
 MAX_PL_FILES=64
+MAX_PL_DISCOVERED=512
 MAX_PL_BYTES=262144
 
 RUN_NO=0
 RUN_DIR=""
 LIVE=""
 LOGCAT_PID=""
-LOGCAT_RAW=""
+LOGCAT_FILTER_PID=""
+LOGCAT_FIFO=""
+LOGCAT_FILTERED_TMP=""
 SAMPLER_PID=""
 SAMPLER_RAW=""
 WATCHDOG_PID=""
@@ -145,11 +148,21 @@ capture_plugins() {
   tag="$1"
   mkdir -p "$RUN_DIR/plugins" 2>/dev/null
   : >"$RUN_DIR/plugins/p.l-${tag}.txt"; : >"$RUN_DIR/plugins/plugin-files-${tag}.tsv"
+  pl_paths="$RUN_DIR/plugins/p.l-${tag}-paths.txt"
+  pl_omitted="$RUN_DIR/plugins/p.l-${tag}-omitted.txt"
+  pl_coverage="$RUN_DIR/plugins/p.l-${tag}-coverage.txt"
   for root in $(find_roots); do
     find "$root" -xdev -maxdepth 6 -type f -name 'p.l' -print 2>/dev/null
-  done | sort -u | head -n "$MAX_PL_FILES" | while IFS= read -r p; do
+  done | sort -u | head -n "$MAX_PL_DISCOVERED" >"$pl_paths"
+  pl_total="$(wc -l <"$pl_paths" 2>/dev/null | tr -d '[:space:]')"; case "$pl_total" in ''|*[!0-9]*) pl_total=0;; esac
+  pl_captured="$pl_total"; [ "$pl_captured" -gt "$MAX_PL_FILES" ] 2>/dev/null && pl_captured="$MAX_PL_FILES"
+  pl_omitted_count=$((pl_total - pl_captured))
+  printf 'discovered_up_to_cap=%s\ncaptured=%s\nomitted_listed=%s\ncontent_limit_files=%s\ndiscovery_path_limit=%s\n' \
+    "$pl_total" "$pl_captured" "$pl_omitted_count" "$MAX_PL_FILES" "$MAX_PL_DISCOVERED" >"$pl_coverage"
+  head -n "$MAX_PL_FILES" "$pl_paths" | while IFS= read -r p; do
     capture_pl_file "$p" "$RUN_DIR/plugins/p.l-${tag}.txt"
   done
+  awk -v max="$MAX_PL_FILES" 'NR > max { print }' "$pl_paths" >"$pl_omitted"
   for root in $(find_roots); do
     find "$root" -xdev -maxdepth 6 -type f \( -name '*.jar' -o -name '*.apk' -o -name '*.dex' -o -name '*.odex' -o -name '*.vdex' -o -name '*.so' -o -name 'p.l' -o -iname '*theme*' -o -iname '*plugin*' -o -iname '*sfp*' \) -print 2>/dev/null | head -n 10000 | while IFS= read -r p; do
       st="$(stat -c '%s\t%Y\t%i\t%a\t%u\t%g' "$p" 2>/dev/null)"; h="$(sha_file "$p")"; printf '%s\t%s\t%s\n' "$p" "$st" "$h"
@@ -184,11 +197,28 @@ capture_environment() {
 
 LOGCAT_PATTERN='dofun|variety|replugin|plugin|theme|skin|sfp_|app_p_|launcher\.variety|PluginInfo|PluginManager|PluginFastInstall|PackageParser|PackageManager|ClassLoader|DexPathList|Resources\$NotFound|InflateException|ClassNotFound|NoClassDefFound|VerifyError|NoSuchMethod|NoSuchField|IllegalAccess|JSONException|SecurityException|certificate|signature|verify|AndroidRuntime|FATAL EXCEPTION|avc: denied'
 
+make_fifo() {
+  if have mkfifo; then mkfifo "$1" 2>/dev/null; return $?; fi
+  if [ -x /system/bin/toybox ]; then /system/bin/toybox mkfifo "$1" 2>/dev/null; return $?; fi
+  return 1
+}
+
+clean_stale_runtime_temp() {
+  rm -f "$STATE_DIR"/logcat-run*.fifo "$STATE_DIR"/logcat-filtered-run*.txt "$STATE_DIR"/process-paths-run* 2>/dev/null
+}
+
 start_logcat() {
-  if ! have logcat; then printf '# logcat unavailable\n' >"$RUN_DIR/runtime/logcat-filtered.txt"; LOGCAT_PID=""; return 0; fi
-  LOGCAT_RAW="$STATE_DIR/logcat-run${RUN_NO}.$$"
-  rm -f "$LOGCAT_RAW" 2>/dev/null
-  logcat -b all -v threadtime -T 1 >"$LOGCAT_RAW" 2>&1 & LOGCAT_PID=$!
+  if ! have logcat; then printf '# logcat unavailable\n' >"$RUN_DIR/runtime/logcat-filtered.txt"; LOGCAT_PID=""; LOGCAT_FILTER_PID=""; return 0; fi
+  LOGCAT_FIFO="$STATE_DIR/logcat-run${RUN_NO}.$$.fifo"
+  LOGCAT_FILTERED_TMP="$STATE_DIR/logcat-filtered-run${RUN_NO}.$$.txt"
+  rm -f "$LOGCAT_FIFO" "$LOGCAT_FILTERED_TMP" 2>/dev/null
+  if ! make_fifo "$LOGCAT_FIFO"; then
+    warn 'mkfifo unavailable; logcat capture skipped'
+    printf '# logcat capture unavailable: mkfifo failed\n' >"$RUN_DIR/runtime/logcat-filtered.txt"
+    LOGCAT_FIFO=""; LOGCAT_FILTERED_TMP=""; return 0
+  fi
+  ( grep -Ei "$LOGCAT_PATTERN" <"$LOGCAT_FIFO" 2>/dev/null | head -n "$MAX_LOG_LINES" >"$LOGCAT_FILTERED_TMP" ) & LOGCAT_FILTER_PID=$!
+  logcat -b all -v threadtime -T 1 >"$LOGCAT_FIFO" 2>/dev/null & LOGCAT_PID=$!
 }
 
 sample_once() {
@@ -226,18 +256,20 @@ stop_pid() {
 }
 
 stop_bg() {
-  stop_pid "$LOGCAT_PID"; stop_pid "$SAMPLER_PID"
-  LOGCAT_PID=""; SAMPLER_PID=""
+  stop_pid "$LOGCAT_PID"
+  stop_pid "$LOGCAT_FILTER_PID"
+  stop_pid "$SAMPLER_PID"
+  LOGCAT_PID=""; LOGCAT_FILTER_PID=""; SAMPLER_PID=""
 }
 
 finalize_runtime_capture() {
-  if [ -n "$LOGCAT_RAW" ] && [ -f "$LOGCAT_RAW" ]; then
-    grep -Ei "$LOGCAT_PATTERN" "$LOGCAT_RAW" 2>/dev/null | head -n "$MAX_LOG_LINES" >"$RUN_DIR/runtime/logcat-filtered.txt"
-    rm -f "$LOGCAT_RAW" 2>/dev/null
+  if [ -n "$LOGCAT_FILTERED_TMP" ] && [ -f "$LOGCAT_FILTERED_TMP" ]; then
+    head -n "$MAX_LOG_LINES" "$LOGCAT_FILTERED_TMP" >"$RUN_DIR/runtime/logcat-filtered.txt"
   elif [ ! -f "$RUN_DIR/runtime/logcat-filtered.txt" ]; then
     printf '# logcat capture unavailable\n' >"$RUN_DIR/runtime/logcat-filtered.txt"
   fi
-  LOGCAT_RAW=""
+  rm -f "$LOGCAT_FIFO" "$LOGCAT_FILTERED_TMP" 2>/dev/null
+  LOGCAT_FIFO=""; LOGCAT_FILTERED_TMP=""
   if [ -n "$SAMPLER_RAW" ] && [ -f "$SAMPLER_RAW" ]; then
     head -n "$MAX_RUNTIME_LINES" "$SAMPLER_RAW" >"$RUN_DIR/runtime/process-paths.tsv"
     rm -f "$SAMPLER_RAW" 2>/dev/null
@@ -296,7 +328,7 @@ PY
 
 cleanup() {
   rc=$?; trap - EXIT INT TERM HUP; stop_bg
-  rm -f "$LOGCAT_RAW" "$SAMPLER_RAW" 2>/dev/null
+  rm -f "$LOGCAT_FIFO" "$LOGCAT_FILTERED_TMP" "$SAMPLER_RAW" 2>/dev/null
   if [ -n "$WATCHDOG_PID" ]; then stop_pid "$WATCHDOG_PID"; fi
   rm -rf "$STATE_DIR/lock" 2>/dev/null
   if [ -n "$LIVE" ]; then
@@ -337,6 +369,7 @@ wait_download() {
 run_worker() {
   [ "$(id -u 2>/dev/null)" = 0 ] || { printf 'FAILED: worker requires UID 0\n' >&2; return 1; }
   trap cleanup EXIT; trap 'exit 130' INT TERM HUP
+  clean_stale_runtime_temp
   acquire_slot; slot=$?; case "$slot" in 0) ;; 2|3) return 0;; *) return 1;; esac
   download_ready || { rm -rf "$STATE_DIR/lock" 2>/dev/null; return 0; }
   stamp="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"; RUN_DIR="$EXPORT_ROOT/live-run${RUN_NO}-$stamp"
@@ -345,7 +378,7 @@ run_worker() {
   cat >"$RUN_DIR/SHARING_NOTICE.txt" <<'NOTICE'
 This diagnostic is local-only and never uploads data automatically.
 The shareable output intentionally contains targeted DoFun package/process paths, plugin registration metadata, hashes, and filtered activation logs needed for TS18/RePlugin diagnosis.
-Unfiltered logcat is captured only in private /data/adb state and deleted after filtering.
+Logcat is filtered and line-bounded while it is collected; unfiltered all-buffer logcat is not stored.
 Review the ZIP contents before sharing them outside your own diagnostic workflow.
 NOTICE
   printf '%s\n' "$RUN_NO" >"$STATE_DIR/run-count" || return 1; printf '%s\n' "$BOOT_ID" >"$STATE_DIR/last-boot" || return 1
