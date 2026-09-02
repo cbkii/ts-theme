@@ -48,8 +48,10 @@ jobs:
           python3 tools/ts18_theme.py validate
           python3 -m unittest discover -s tests -v
           bash -n tools/*.sh scripts/termux/*.sh scripts/termux/lib/*.sh
+          sh -n scripts/magisk/*.sh
           shellcheck tools/*.sh
           shellcheck -x -P scripts/termux scripts/termux/*.sh scripts/termux/lib/*.sh
+          shellcheck -s sh scripts/magisk/*.sh
           git diff --check
       - name: Fetch pinned RePlugin compatibility library
         run: python3 tools/fetch_replugin.py
@@ -74,3 +76,6 @@ jobs:
           umask 077
           keytool -genkeypair -noprompt -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 1 -keystore "$TS_THEME_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" -dname "CN=CI release validation"
           gradle --no-daemon --stacktrace -PVERSION_NAME=9.9.9 -PVERSION_CODE=9009009 :theme:assembleRelease
+          python3 scripts/release/runtime_envelope.py \
+            --apk theme/build/outputs/apk/release/theme-release.apk \
+            --config release-config.json

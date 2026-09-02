@@ -177,6 +177,14 @@ jobs:
             -PVERSION_CODE="$RELEASE_VERSION_CODE" \
             :theme:assembleRelease
 
+      - name: Verify minimal RePlugin runtime envelope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 release-source/scripts/release/runtime_envelope.py \
+            --apk release-source/theme/build/outputs/apk/release/theme-release.apk \
+            --config release-source/release-config.json
+
       - name: Qualify APK and construct closed publication bundle
         shell: bash
         env:
