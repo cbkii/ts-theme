@@ -125,6 +125,15 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("verify_manifest.py qualified/release-manifest.json", MANUAL)
         self.assertIn("retention-days: 14", MANUAL)
 
+    def test_runtime_envelope_gate_preserves_historical_repairs(self):
+        self.assertIn("python3 scripts/release/runtime_envelope.py", MANUAL)
+        self.assertNotIn("python3 release-source/scripts/release/runtime_envelope.py", MANUAL)
+        self.assertIn('config.get("runtime_envelope")', MANUAL)
+        self.assertIn('RELEASE_MODE: ${{ inputs.release_mode }}', MANUAL)
+        self.assertIn('RELEASE_MODE" == "repair_existing_release"', MANUAL)
+        self.assertIn("Historical release source predates the runtime-envelope contract", MANUAL)
+        self.assertIn("New release source is missing runtime_envelope", MANUAL)
+
 
 if __name__ == "__main__":
     unittest.main()

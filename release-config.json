@@ -18,7 +18,9 @@
     "scripts/termux/ts18-theme-rollback.sh",
     "scripts/termux/lib/common.sh",
     "scripts/termux/lib/dofun.sh",
-    "docs/INSTALL_TS18.md"
+    "scripts/magisk/ts18-theme-runtime-diagnostic.sh",
+    "docs/INSTALL_TS18.md",
+    "docs/TS18_RUNTIME_DIAGNOSTIC.md"
   ],
   "sdk": {
     "min": 16,
@@ -39,5 +41,14 @@
   ],
   "required_dex_classes": [
     "Lcom/qihoo360/replugin/Entry;"
-  ]
+  ],
+  "runtime_envelope": {
+    "expected_dex_files": 1,
+    "max_dex_classes": 64,
+    "allowed_class_prefixes": [
+      "Lcom/qihoo360/",
+      "Llibrary/",
+      "Llauncher/variety/theme/plugin/"
+    ]
+  }
 }
