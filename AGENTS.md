@@ -19,5 +19,6 @@
 - Termux installation helpers must follow `TS18_02_Engineering_Assets.zip/method_guides/ENGINEERING_SCRIPT_STANDARD.md`: bounded execution, explicit failure policy, private work state, narrow root use, verified rollback and final status.
 - Donor-slot installation must leave `p.l` unchanged by default, verify a donor is inside DoFun's `app_p_a`, back up before mutation, overwrite donor bytes in place, verify the replacement hash, and fail closed on unexpected paths or layouts.
 - Never automatically clear DoFun application data, set SELinux permissive, apply broad chmod/chown, or write `/system` or `/vendor` from the installer.
+- LSPosed feasibility collectors must be read-only against LSPosed/DoFun configuration: establish the current framework/API evidence, ABI/zygote path, DoFun scope and target-process injection before proposing hooks. Do not infer modern/API-100 compatibility from a framework name alone, do not modify LSPosed's database/scope from a collector, and make the first later hook log-only, exact-package-scoped, bounded and fail-open.
 - Keep Android 10/API 29 compatibility and gate newer APIs.
 - Before every final commit run `python3 tools/ts18_theme.py validate` and `python3 -m unittest discover -s tests -v`; also run Bash syntax/tests for Termux scripts and relevant Gradle checks when their prerequisites are available.
