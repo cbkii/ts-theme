@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -93,16 +94,25 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertIn(script_path, tools)
         self.assertIn(playbook_path, tools)
         text = (ROOT / script_path).read_text(encoding="utf-8")
+
+        # Bounded boot/runtime work and private active state.
         self.assertIn("MAX_RUNS=2", text)
-        self.assertIn("HARD_SECONDS=170", text)
-        self.assertIn("RUNTIME_SECONDS=90", text)
+        self.assertIn("HARD_SECONDS=240", text)
+        self.assertIn("RUNTIME_SECONDS=100", text)
         self.assertIn("STORAGE_WAIT_SECONDS=90", text)
+        self.assertIn("SAMPLER_INTERVAL_SECONDS=4", text)
+        self.assertIn("SAMPLER_SAMPLES=25", text)
+        self.assertIn("INSPECTION_BUDGET_SECONDS=45", text)
         self.assertIn("MAX_PL_FILES=64", text)
         self.assertIn("MAX_PL_DISCOVERED=512", text)
         self.assertIn("MAX_PL_BYTES=262144", text)
-        self.assertNotIn("am force-stop", text)
-        self.assertNotIn("pm clear", text)
-        self.assertNotIn("setenforce", text)
+        self.assertIn("MAX_LSPOSED_LOG_FILES=8", text)
+        self.assertIn("MAX_LSPOSED_LOG_LINES=8000", text)
+        self.assertIn("MAX_XPOSED_MODULES=64", text)
+        self.assertIn("MAX_FRAMEWORK_FILES=512", text)
+        self.assertIn('/data/adb/ts18-theme-runtime-diag-state', text)
+
+        # Existing RePlugin evidence remains covered.
         self.assertIn("-name 'p.l'", text)
         self.assertIn('dd if="$pl_path" bs=4096 count=64', text)
         self.assertIn('p.l-${tag}-coverage.txt', text)
@@ -113,6 +123,39 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertIn("launcher\\\\.variety", text)
         self.assertNotIn("launcher\\\\\\\\.variety", text)
         self.assertIn("com\\\\.dofun\\\\.variety", text)
+
+        # LSPosed/libxposed feasibility evidence is explicit rather than inferred.
+        self.assertIn("/data/adb/lspd", text)
+        self.assertIn("modules_config.db", text)
+        self.assertIn("sqlite_readonly_ok", text)
+        self.assertIn('"$sqlite" -readonly', text)
+        self.assertIn("dofun_scope_query_exit", text)
+        self.assertIn("m.enabled=1", text)
+        self.assertIn("module_pkg_name\\tapp_pkg_name\\tuser_id\\tenabled", text)
+        self.assertIn("META-INF/xposed/java_init.list", text)
+        self.assertIn("META-INF/xposed/native_init.list", text)
+        self.assertIn("META-INF/xposed/scope.list", text)
+        self.assertIn("META-INF/xposed/module.prop", text)
+        self.assertIn("assets/xposed_init", text)
+        self.assertIn("capture_magisk_state", text)
+        self.assertIn("capture_lsposed_state", text)
+        self.assertIn("lsposed/framework-files.tsv", text)
+        self.assertIn("capture_zygotes", text)
+        self.assertIn("capture_dofun_static", text)
+        self.assertIn("capture_logcat_history", text)
+        self.assertIn("start_inspection_budget", text)
+        self.assertIn('member_file="$STATE_DIR/xposed-members.', text)
+        self.assertIn('grep -Fx "$member" "$member_file"', text)
+        self.assertIn("zygote=$(getprop ro.zygote", text)
+        self.assertIn("abilist32=$(getprop ro.product.cpu.abilist32", text)
+        self.assertIn("abilist64=$(getprop ro.product.cpu.abilist64", text)
+        self.assertIn("Lcom/stub/StubApp;", text)
+        self.assertIn("jiagu", text.lower())
+        self.assertIn("Unsupported class loader", text)
+        self.assertIn("analysis/lsposed-feasibility.txt", text)
+        self.assertIn("log-only LSPosed discovery module", text)
+
+        # Logs are filtered during collection; the raw LSPosed DB is never copied.
         self.assertIn('LOGCAT_FIFO="$STATE_DIR/', text)
         self.assertIn('LOGCAT_FILTERED_TMP="$STATE_DIR/', text)
         self.assertIn("make_fifo", text)
@@ -120,10 +163,29 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertNotIn("LOGCAT_RAW=", text)
         self.assertNotIn('logcat -b all -v threadtime -T 1 >"$LOGCAT_FILTERED_TMP"', text)
         self.assertIn("SHARING_NOTICE.txt", text)
+        self.assertNotIn('cp "$db"', text)
+        self.assertNotIn('dd if="$db"', text)
+        self.assertNotRegex(
+            text,
+            re.compile(
+                r"(?i)\b(?:UPDATE(?:\s+OR\s+\w+)?|INSERT(?:\s+OR\s+\w+)?(?:\s+INTO)?|"
+                r"REPLACE(?:\s+INTO)?|DELETE(?:\s+FROM)?)\s+(?:modules|scope|configs)\b"
+            ),
+        )
+
+        # Collector remains read-only against protected state.
+        self.assertNotIn("am force-stop", text)
+        self.assertNotIn("pm clear", text)
+        self.assertNotIn("setenforce", text)
+        self.assertNotRegex(text, re.compile(r"rm\s+-rf\s+[^\n]*lspd", re.IGNORECASE))
+        self.assertNotRegex(text, re.compile(r"(?:chmod|chown)\s+[^\n]*lspd", re.IGNORECASE))
 
         worker = text[text.index("run_worker() {") : text.index("\nservice_entry() {")]
         self.assertLess(worker.index("acquire_slot;"), worker.index("trap cleanup EXIT"))
         self.assertLess(worker.index("trap cleanup EXIT"), worker.index("clean_stale_runtime_temp"))
+        self.assertLess(worker.index("start_logcat;"), worker.index("start_inspection_budget"))
+        self.assertLess(worker.index("start_inspection_budget"), worker.index("capture_xposed_module_apks"))
+        self.assertEqual(1, worker.count("capture_lsposed_logs"))
 
 
 if __name__ == "__main__":

@@ -20,7 +20,8 @@
     "scripts/termux/lib/dofun.sh",
     "scripts/magisk/ts18-theme-runtime-diagnostic.sh",
     "docs/INSTALL_TS18.md",
-    "docs/TS18_RUNTIME_DIAGNOSTIC.md"
+    "docs/TS18_RUNTIME_DIAGNOSTIC.md",
+    "docs/TS18_LSPOSED_ROADMAP_PLAYBOOK.md"
   ],
   "sdk": {
     "min": 16,
