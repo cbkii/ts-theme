@@ -377,12 +377,18 @@ capture_xposed_module_apks() {
     for member in META-INF/xposed/module.prop META-INF/xposed/scope.list META-INF/xposed/java_init.list assets/xposed_init; do
       inspection_budget_available || break
       if grep -Fx "$member" "$member_file" >/dev/null 2>&1; then
-        printf -- '--- %s ---\n' "$member" >>"$out"
-        run_timeout 4 "$unzip_tool" -p "$resolved" "$member" 2>/dev/null | dd bs=4096 count=16 2>/dev/null >>"$out"
-        printf '\n' >>"$out"
+        {
+          printf -- '--- %s ---\n' "$member"
+          run_timeout 4 "$unzip_tool" -p "$resolved" "$member" 2>/dev/null | dd bs=4096 count=16 2>/dev/null
+          printf '\n'
+        } >>"$out"
       fi
     done
-    printf 'marker_summary=' >>"$out"; grep -E '^(META-INF/xposed/|assets/xposed_init$)' "$member_file" 2>/dev/null | tr '\n' ',' | head -c 2048 >>"$out"; printf '\n' >>"$out"
+    {
+      printf 'marker_summary='
+      grep -E '^(META-INF/xposed/|assets/xposed_init$)' "$member_file" 2>/dev/null | tr '\n' ',' | head -c 2048
+      printf '\n'
+    } >>"$out"
     rm -f "$member_file" 2>/dev/null
   done
 }
@@ -623,9 +629,14 @@ count_data_rows() {
 
 count_matches() {
   cm_pattern="$1"; shift
-  cm_n="$(grep -Eih "$cm_pattern" "$@" 2>/dev/null | wc -l | tr -d '[:space:]')"
-  case "$cm_n" in ''|*[!0-9]*) cm_n=0;; esac
-  printf '%s\n' "$cm_n"
+  cm_total=0
+  for cm_file in "$@"; do
+    [ -r "$cm_file" ] || continue
+    cm_part="$(grep -Eic "$cm_pattern" "$cm_file" 2>/dev/null)"
+    case "$cm_part" in ''|*[!0-9]*) cm_part=0;; esac
+    cm_total=$((cm_total + cm_part))
+  done
+  printf '%s\n' "$cm_total"
 }
 
 make_analysis() {
