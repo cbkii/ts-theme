@@ -1,20 +1,21 @@
 #!/system/bin/sh
 # shellcheck shell=sh disable=SC2016,SC2046,SC2317
 # TS18 / DoFun activation + LSPosed feasibility diagnostic for Magisk service.d.
-# Read-only against DoFun, LSPosed and package state. Version 4.0.0.
+# Read-only against DoFun, LSPosed and package state. Version 4.0.1.
 
-SCRIPT_VERSION="4.0.0"
+SCRIPT_VERSION="4.0.1"
 SERVICE_PATH="/data/adb/service.d/99-ts18-theme-runtime-diag.sh"
 STATE_DIR="/data/adb/ts18-theme-runtime-diag-state"
 EXPORT_ROOT="/storage/emulated/0/Download/TS18-theme-runtime-diagnostic"
 DOFUN_PACKAGE="com.dofun.variety"
 CUSTOM_PACKAGE="launcher.variety.theme.plugin.sfp_cbk_black"
 MAX_RUNS=2
-HARD_SECONDS=210
+HARD_SECONDS=240
 RUNTIME_SECONDS=100
 STORAGE_WAIT_SECONDS=90
 SAMPLER_INTERVAL_SECONDS=4
 SAMPLER_SAMPLES=25
+INSPECTION_BUDGET_SECONDS=45
 MAX_TREE_LINES=30000
 MAX_LOG_LINES=14000
 MAX_RUNTIME_LINES=24000
@@ -23,11 +24,12 @@ MAX_PL_DISCOVERED=512
 MAX_PL_BYTES=262144
 MAX_LSPOSED_LOG_FILES=8
 MAX_LSPOSED_LOG_LINES=8000
-MAX_XPOSED_MODULES=96
+MAX_XPOSED_MODULES=64
 MAX_FRAMEWORK_FILES=512
-MAX_ARCHIVES=24
+MAX_ARCHIVES=16
 MAX_ARCHIVE_LINES=2500
 MAX_STATIC_MARKERS=4000
+MAX_MODULE_MEMBER_LINES=3000
 
 RUN_NO=0
 RUN_DIR=""
@@ -41,9 +43,11 @@ SAMPLER_RAW=""
 WATCHDOG_PID=""
 PACKAGER_KIND=""
 PACKAGER_PATH=""
+INSPECTION_DEADLINE=0
 WARNINGS=0
 
 now() { date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date; }
+epoch_now() { date +%s 2>/dev/null || printf '0\n'; }
 log() { line="$(now) $*"; [ -n "$LIVE" ] && printf '%s\n' "$line" >>"$LIVE" 2>/dev/null; printf '%s\n' "$line" 2>/dev/null; }
 warn() { WARNINGS=$((WARNINGS + 1)); log "WARNING: $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -55,9 +59,9 @@ run_timeout() {
   if [ -x /system/bin/toybox ] && /system/bin/toybox timeout 1 /system/bin/true >/dev/null 2>&1; then
     /system/bin/toybox timeout "$rt_s" "$@"; return $?
   fi
-  "$@" & rt_pid=$!; rt_start="$(date +%s 2>/dev/null || echo 0)"
+  "$@" & rt_pid=$!; rt_start="$(epoch_now)"
   while kill -0 "$rt_pid" 2>/dev/null; do
-    rt_now="$(date +%s 2>/dev/null || echo 0)"
+    rt_now="$(epoch_now)"
     if [ $((rt_now - rt_start)) -ge "$rt_s" ] 2>/dev/null; then
       kill -TERM "$rt_pid" 2>/dev/null; sleep 1; kill -KILL "$rt_pid" 2>/dev/null; wait "$rt_pid" 2>/dev/null; return 124
     fi
@@ -80,6 +84,18 @@ capture() {
   return "$cp_rc"
 }
 
+start_inspection_budget() {
+  ib_now="$(epoch_now)"
+  case "$ib_now" in ''|*[!0-9]*) ib_now=0;; esac
+  if [ "$ib_now" -gt 0 ] 2>/dev/null; then INSPECTION_DEADLINE=$((ib_now + INSPECTION_BUDGET_SECONDS)); else INSPECTION_DEADLINE=0; fi
+}
+
+inspection_budget_available() {
+  [ "$INSPECTION_DEADLINE" -gt 0 ] 2>/dev/null || return 1
+  ib_now="$(epoch_now)"; case "$ib_now" in ''|*[!0-9]*) return 1;; esac
+  [ "$ib_now" -lt "$INSPECTION_DEADLINE" ]
+}
+
 safe_install_path() {
   case "$1" in /*) ;; *) return 1 ;; esac
   case "$1" in *[!A-Za-z0-9_./+@%=-]*) return 1 ;; esac
@@ -89,7 +105,7 @@ safe_install_path() {
 safe_apk_path() {
   rp="$(readlink -f "$1" 2>/dev/null)"; [ -n "$rp" ] || rp="$1"
   case "$rp" in
-    /data/app/*.apk|/data/app/*/*.apk|/data/app/*/*/*.apk|/system/*.apk|/system/*/*.apk|/product/*.apk|/product/*/*.apk|/system_ext/*.apk|/system_ext/*/*.apk|/vendor/*.apk|/vendor/*/*.apk) printf '%s\n' "$rp"; return 0;;
+    /data/app/*.apk|/system/*.apk|/product/*.apk|/system_ext/*.apk|/vendor/*.apk) printf '%s\n' "$rp"; return 0;;
   esac
   return 1
 }
@@ -277,7 +293,7 @@ capture_lsposed_db() {
   modules_out="$RUN_DIR/lsposed/modules.tsv"
   scope_out="$RUN_DIR/lsposed/dofun-scope.tsv"
   printf 'mid\tmodule_pkg_name\tapk_path\tenabled\tauto_include\n' >"$modules_out"
-  printf 'module_pkg_name\tapp_pkg_name\tuser_id\n' >"$scope_out"
+  printf 'module_pkg_name\tapp_pkg_name\tuser_id\tenabled\n' >"$scope_out"
 
   {
     printf '# captured_at=%s\n' "$(now)"
@@ -324,7 +340,7 @@ capture_lsposed_db() {
     [ "$sql_rc" -eq 0 ] && tr '|' '\t' <"$sql_tmp" >>"$modules_out"
   fi
 
-  query="SELECT m.module_pkg_name,s.app_pkg_name,s.user_id FROM scope s LEFT JOIN modules m ON m.mid=s.mid WHERE s.app_pkg_name='$DOFUN_PACKAGE' ORDER BY m.module_pkg_name,s.user_id LIMIT 256;"
+  query="SELECT m.module_pkg_name,s.app_pkg_name,s.user_id,m.enabled FROM scope s JOIN modules m ON m.mid=s.mid WHERE m.enabled=1 AND s.app_pkg_name='$DOFUN_PACKAGE' ORDER BY m.module_pkg_name,s.user_id LIMIT 256;"
   rm -f "$sql_tmp" "$sql_err" 2>/dev/null
   run_timeout 8 "$sqlite" -readonly -separator '|' "$db" "$query" >"$sql_tmp" 2>"$sql_err"; sql_rc=$?
   printf '\ndofun_scope_query_exit=%s\n' "$sql_rc" >>"$out"
@@ -333,39 +349,41 @@ capture_lsposed_db() {
   rm -f "$sql_tmp" "$sql_err" 2>/dev/null
 }
 
-zip_has_member() {
-  zh_unzip="$1"; zh_apk="$2"; zh_member="$3"
-  run_timeout 6 "$zh_unzip" -Z1 "$zh_apk" 2>/dev/null | grep -Fx "$zh_member" >/dev/null 2>&1
-}
-
 capture_xposed_module_apks() {
   unzip_tool="$(find_termux_tool unzip 2>/dev/null)"
   out="$RUN_DIR/lsposed/module-apk-markers.txt"
   : >"$out"
   [ -n "$unzip_tool" ] || { printf 'unzip=unavailable; module APK metadata inspection skipped\n' >"$out"; return 0; }
   [ -s "$RUN_DIR/lsposed/modules.tsv" ] || { printf 'module_database_rows=unavailable\n' >"$out"; return 0; }
+  module_i=0
   awk -F '\t' -v max="$MAX_XPOSED_MODULES" 'NR>1 && NR<=max+1 {print $2 "\t" $3 "\t" $4 "\t" $5}' "$RUN_DIR/lsposed/modules.tsv" | while IFS="$(printf '\t')" read -r pkg apk enabled auto_include; do
     [ -n "$pkg" ] || continue
-    safe="$(printf '%s' "$pkg" | tr -c 'A-Za-z0-9._-' '_')"
+    if ! inspection_budget_available; then printf '\ninspection_budget_exhausted_after_modules=%s\n' "$module_i" >>"$out"; break; fi
+    module_i=$((module_i + 1))
     resolved="$(safe_apk_path "$apk" 2>/dev/null)"
     {
       printf '\n### module=%s enabled=%s auto_include=%s\n' "$pkg" "$enabled" "$auto_include"
       if [ -z "$resolved" ] || [ ! -f "$resolved" ]; then printf 'apk_path_rejected_or_missing=%s\n' "$apk"; continue; fi
       printf 'apk=%s\nsha256=%s\n' "$resolved" "$(sha_file "$resolved")"
       stat -c 'stat=%n\t%F\t%s\t%Y\t%i\t%a\t%u\t%g' "$resolved" 2>/dev/null
-      for member in META-INF/xposed/java_init.list META-INF/xposed/native_init.list META-INF/xposed/scope.list META-INF/xposed/module.prop assets/xposed_init; do
-        if zip_has_member "$unzip_tool" "$resolved" "$member"; then printf 'member=%s\n' "$member"; fi
-      done
-      for member in META-INF/xposed/module.prop META-INF/xposed/scope.list META-INF/xposed/java_init.list assets/xposed_init; do
-        if zip_has_member "$unzip_tool" "$resolved" "$member"; then
-          printf -- '--- %s ---\n' "$member"
-          run_timeout 6 "$unzip_tool" -p "$resolved" "$member" 2>/dev/null | dd bs=4096 count=16 2>/dev/null
-          printf '\n'
-        fi
-      done
-      printf 'marker_summary='; run_timeout 6 "$unzip_tool" -Z1 "$resolved" 2>/dev/null | grep -E '^(META-INF/xposed/|assets/xposed_init$)' | tr '\n' ',' | head -c 2048; printf '\n'
-      printf 'inspection_file=%s\n' "$safe"
     } >>"$out" 2>&1
+
+    member_file="$STATE_DIR/xposed-members.$$.${module_i}"
+    rm -f "$member_file" 2>/dev/null
+    run_timeout 5 "$unzip_tool" -Z1 "$resolved" 2>/dev/null | head -n "$MAX_MODULE_MEMBER_LINES" >"$member_file"
+    for member in META-INF/xposed/java_init.list META-INF/xposed/native_init.list META-INF/xposed/scope.list META-INF/xposed/module.prop assets/xposed_init; do
+      if grep -Fx "$member" "$member_file" >/dev/null 2>&1; then printf 'member=%s\n' "$member" >>"$out"; fi
+    done
+    for member in META-INF/xposed/module.prop META-INF/xposed/scope.list META-INF/xposed/java_init.list assets/xposed_init; do
+      inspection_budget_available || break
+      if grep -Fx "$member" "$member_file" >/dev/null 2>&1; then
+        printf -- '--- %s ---\n' "$member" >>"$out"
+        run_timeout 4 "$unzip_tool" -p "$resolved" "$member" 2>/dev/null | dd bs=4096 count=16 2>/dev/null >>"$out"
+        printf '\n' >>"$out"
+      fi
+    done
+    printf 'marker_summary=' >>"$out"; grep -E '^(META-INF/xposed/|assets/xposed_init$)' "$member_file" 2>/dev/null | tr '\n' ',' | head -c 2048 >>"$out"; printf '\n' >>"$out"
+    rm -f "$member_file" 2>/dev/null
   done
 }
 
@@ -415,8 +433,6 @@ capture_lsposed_state() {
   done >>"$RUN_DIR/lsposed/framework-files.tsv"
 
   capture_lsposed_db
-  capture_xposed_module_apks
-  capture_lsposed_logs
 }
 
 capture_zygotes() {
@@ -427,10 +443,12 @@ capture_zygotes() {
     cmd="$(tr '\000' ' ' <"$d/cmdline" 2>/dev/null)"
     case "$cmd" in *zygote*|*lspd*|*lsposed*) ;; *) continue;; esac
     pid="${d#/proc/}"
-    printf '\n### pid=%s cmd=%s\n' "$pid" "$cmd" >>"$out"
-    printf 'exe=%s\ncontext=%s\nmntns=%s\n' "$(readlink "$d/exe" 2>/dev/null)" "$(cat "$d/attr/current" 2>/dev/null)" "$(readlink "$d/ns/mnt" 2>/dev/null)" >>"$out"
-    grep -E '^(Name|Pid|PPid|Uid|Gid|Threads):' "$d/status" 2>/dev/null >>"$out"
-    grep -Eia 'lspd|lsposed|zygisk|xposed|riru|libart|app_process|magisk' "$d/maps" 2>/dev/null | head -n 2500 >>"$out"
+    {
+      printf '\n### pid=%s cmd=%s\n' "$pid" "$cmd"
+      printf 'exe=%s\ncontext=%s\nmntns=%s\n' "$(readlink "$d/exe" 2>/dev/null)" "$(cat "$d/attr/current" 2>/dev/null)" "$(readlink "$d/ns/mnt" 2>/dev/null)"
+      grep -E '^(Name|Pid|PPid|Uid|Gid|Threads):' "$d/status" 2>/dev/null
+      grep -Eia 'lspd|lsposed|zygisk|xposed|riru|libart|app_process|magisk' "$d/maps" 2>/dev/null | head -n 2500
+    } >>"$out"
   done
 }
 
@@ -440,16 +458,24 @@ inspect_archive_markers() {
   unzip_tool="$(find_termux_tool unzip 2>/dev/null)"
   [ -n "$unzip_tool" ] || { printf 'unzip=unavailable; archive member/class marker inspection skipped\n' >"$ia_out"; return 0; }
   [ -s "$ia_filelist" ] || return 0
+  ia_i=0
   awk -F '\t' '$1 ~ /\/app_p_a\// && $1 ~ /\.(jar|apk)$/ {print $1}' "$ia_filelist" | sort -u | head -n "$MAX_ARCHIVES" | while IFS= read -r arc; do
     [ -f "$arc" ] || continue
+    if ! inspection_budget_available; then printf '\ninspection_budget_exhausted_after_archives=%s\n' "$ia_i" >>"$ia_out"; break; fi
+    ia_i=$((ia_i + 1))
     printf '\n### archive=%s\nsha256=%s\n' "$arc" "$(sha_file "$arc")" >>"$ia_out"
-    run_timeout 7 "$unzip_tool" -Z1 "$arc" 2>/dev/null | grep -Eai '(^AndroidManifest\.xml$|classes[0-9]*\.dex$|^assets/|^lib/|theme|plugin|replugin|sfp_)' | head -n "$MAX_ARCHIVE_LINES" >>"$ia_out"
+    member_file="$STATE_DIR/archive-members.$$.${ia_i}"
+    rm -f "$member_file" 2>/dev/null
+    run_timeout 5 "$unzip_tool" -Z1 "$arc" 2>/dev/null | head -n "$MAX_ARCHIVE_LINES" >"$member_file"
+    grep -Eai '(^AndroidManifest\.xml$|classes[0-9]*\.dex$|^assets/|^lib/|theme|plugin|replugin|sfp_)' "$member_file" 2>/dev/null >>"$ia_out"
     for dex in classes.dex classes2.dex classes3.dex; do
-      if zip_has_member "$unzip_tool" "$arc" "$dex"; then
+      inspection_budget_available || break
+      if grep -Fx "$dex" "$member_file" >/dev/null 2>&1; then
         printf -- '--- markers %s ---\n' "$dex" >>"$ia_out"
-        run_timeout 8 "$unzip_tool" -p "$arc" "$dex" 2>/dev/null | grep -aoE 'Lcom/qihoo360/replugin/[^;]{1,220};|Lcom/stub/StubApp;|DexClassLoader|BaseDexClassLoader|PathClassLoader|ClassLoader|theme_config\.json|view_config\.json|media_config\.json|sfp_[A-Za-z0-9_]+' | head -n "$MAX_STATIC_MARKERS" >>"$ia_out"
+        run_timeout 6 "$unzip_tool" -p "$arc" "$dex" 2>/dev/null | grep -aoE 'Lcom/qihoo360/replugin/[^;]{1,220};|Lcom/stub/StubApp;|DexClassLoader|BaseDexClassLoader|PathClassLoader|ClassLoader|theme_config\.json|view_config\.json|media_config\.json|sfp_[A-Za-z0-9_]+' | head -n "$MAX_STATIC_MARKERS" >>"$ia_out"
       fi
     done
+    rm -f "$member_file" 2>/dev/null
   done
 }
 
@@ -460,20 +486,31 @@ capture_dofun_static() {
   if [ ! -s "$paths" ] && have cmd; then run_timeout 8 cmd package path "$DOFUN_PACKAGE" 2>/dev/null | sed -n 's/^package://p' | head -n 32 >"$paths"; fi
   out="$RUN_DIR/static/dofun-apk.txt"; : >"$out"
   unzip_tool="$(find_termux_tool unzip 2>/dev/null)"
+  apk_i=0
   while IFS= read -r apk; do
+    if ! inspection_budget_available; then printf '\ninspection_budget_exhausted_after_dofun_apks=%s\n' "$apk_i" >>"$out"; break; fi
+    apk_i=$((apk_i + 1))
     resolved="$(safe_apk_path "$apk" 2>/dev/null)"
-    [ -n "$resolved" ] && [ -f "$resolved" ] || { printf 'rejected_or_missing=%s\n' "$apk" >>"$out"; continue; }
+    if [ -z "$resolved" ] || [ ! -f "$resolved" ]; then
+      printf 'rejected_or_missing=%s\n' "$apk" >>"$out"
+      continue
+    fi
     printf '\n### apk=%s\nsha256=%s\n' "$resolved" "$(sha_file "$resolved")" >>"$out"
     stat -c 'stat=%n\t%F\t%s\t%Y\t%i\t%a\t%u\t%g' "$resolved" 2>/dev/null >>"$out"
     if [ -n "$unzip_tool" ]; then
+      member_file="$STATE_DIR/dofun-members.$$.${apk_i}"
+      rm -f "$member_file" 2>/dev/null
+      run_timeout 5 "$unzip_tool" -Z1 "$resolved" 2>/dev/null | head -n "$MAX_ARCHIVE_LINES" >"$member_file"
       printf -- '--- relevant members ---\n' >>"$out"
-      run_timeout 8 "$unzip_tool" -Z1 "$resolved" 2>/dev/null | grep -Eai '(^classes[0-9]*\.dex$|^lib/|^assets/.*jiagu|replugin|qihoo|xposed)' | head -n "$MAX_ARCHIVE_LINES" >>"$out"
+      grep -Eai '(^classes[0-9]*\.dex$|^lib/|^assets/.*jiagu|replugin|qihoo|xposed)' "$member_file" 2>/dev/null >>"$out"
       for dex in classes.dex classes2.dex classes3.dex; do
-        if zip_has_member "$unzip_tool" "$resolved" "$dex"; then
+        inspection_budget_available || break
+        if grep -Fx "$dex" "$member_file" >/dev/null 2>&1; then
           printf -- '--- runtime/packer markers %s ---\n' "$dex" >>"$out"
-          run_timeout 8 "$unzip_tool" -p "$resolved" "$dex" 2>/dev/null | grep -aoE 'Lcom/stub/StubApp;|jiagu(_x86|_x64)?|libjiagu|Lcom/qihoo360/replugin/[^;]{1,220};|DexClassLoader|BaseDexClassLoader|PathClassLoader|ClassLoader|loadClass' | head -n "$MAX_STATIC_MARKERS" >>"$out"
+          run_timeout 6 "$unzip_tool" -p "$resolved" "$dex" 2>/dev/null | grep -aoE 'Lcom/stub/StubApp;|jiagu(_x86|_x64)?|libjiagu|Lcom/qihoo360/replugin/[^;]{1,220};|DexClassLoader|BaseDexClassLoader|PathClassLoader|ClassLoader|loadClass' | head -n "$MAX_STATIC_MARKERS" >>"$out"
         fi
       done
+      rm -f "$member_file" 2>/dev/null
     else
       printf 'unzip=unavailable; static APK member/DEX marker inspection skipped\n' >>"$out"
     fi
@@ -498,7 +535,7 @@ make_fifo() {
 }
 
 clean_stale_runtime_temp() {
-  rm -f "$STATE_DIR"/logcat-run*.fifo "$STATE_DIR"/logcat-filtered-run*.txt "$STATE_DIR"/process-paths-run* "$STATE_DIR"/logcat-history.* "$STATE_DIR"/sqlite-query.* 2>/dev/null
+  rm -f "$STATE_DIR"/logcat-run*.fifo "$STATE_DIR"/logcat-filtered-run*.txt "$STATE_DIR"/process-paths-run* "$STATE_DIR"/logcat-history.* "$STATE_DIR"/sqlite-query.* "$STATE_DIR"/xposed-members.* "$STATE_DIR"/archive-members.* "$STATE_DIR"/dofun-members.* 2>/dev/null
 }
 
 start_logcat() {
@@ -584,6 +621,13 @@ count_data_rows() {
   printf '%s\n' "$cdr_n"
 }
 
+count_matches() {
+  cm_pattern="$1"; shift
+  cm_n="$(grep -Eih "$cm_pattern" "$@" 2>/dev/null | wc -l | tr -d '[:space:]')"
+  case "$cm_n" in ''|*[!0-9]*) cm_n=0;; esac
+  printf '%s\n' "$cm_n"
+}
+
 make_analysis() {
   mkdir -p "$RUN_DIR/analysis" 2>/dev/null
   diff -u "$RUN_DIR/snapshots/tree-before.tsv" "$RUN_DIR/snapshots/tree-after.tsv" 2>/dev/null | head -n 10000 >"$RUN_DIR/analysis/tree.diff"
@@ -601,14 +645,14 @@ make_analysis() {
   {
     printf '# LSPosed / ts-theme feasibility evidence summary\n'
     printf 'generated_at=%s\n' "$(now)"
-    printf 'framework_roots_found=%s\n' "$(grep -Ec '^### root=' "$RUN_DIR/lsposed/framework.txt" 2>/dev/null || echo 0)"
+    printf 'framework_roots_found=%s\n' "$(count_matches '^### root=' "$RUN_DIR/lsposed/framework.txt")"
     printf 'dofun_scope_rows=%s\n' "$(count_data_rows "$RUN_DIR/lsposed/dofun-scope.tsv")"
-    printf 'dofun_runtime_injection_markers=%s\n' "$(grep -Eic 'lspd|lsposed|zygisk|xposed|riru|libxposed' "$RUN_DIR/runtime/process-paths.tsv" 2>/dev/null || echo 0)"
-    printf 'zygote_injection_markers=%s\n' "$(grep -Eic 'lspd|lsposed|zygisk|xposed|riru|libxposed' "$RUN_DIR/lsposed/zygote-injection.txt" 2>/dev/null || echo 0)"
-    printf 'modern_module_markers=%s\n' "$(grep -Ec 'member=META-INF/xposed/java_init.list' "$RUN_DIR/lsposed/module-apk-markers.txt" 2>/dev/null || echo 0)"
-    printf 'legacy_module_markers=%s\n' "$(grep -Ec 'member=assets/xposed_init' "$RUN_DIR/lsposed/module-apk-markers.txt" 2>/dev/null || echo 0)"
-    printf 'jiagu_markers=%s\n' "$(grep -Eic 'jiagu|Lcom/stub/StubApp;' "$RUN_DIR/static/dofun-apk.txt" 2>/dev/null || echo 0)"
-    printf 'replugin_runtime_markers=%s\n' "$(grep -Eic 'replugin|app_p_a|PluginInfo|PluginManager|Unsupported class loader' "$RUN_DIR/runtime/logcat-history-filtered.txt" "$RUN_DIR/runtime/logcat-filtered.txt" 2>/dev/null || echo 0)"
+    printf 'dofun_runtime_injection_markers=%s\n' "$(count_matches 'lspd|lsposed|zygisk|xposed|riru|libxposed' "$RUN_DIR/runtime/process-paths.tsv")"
+    printf 'zygote_injection_markers=%s\n' "$(count_matches 'lspd|lsposed|zygisk|xposed|riru|libxposed' "$RUN_DIR/lsposed/zygote-injection.txt")"
+    printf 'modern_module_markers=%s\n' "$(count_matches 'member=META-INF/xposed/java_init.list' "$RUN_DIR/lsposed/module-apk-markers.txt")"
+    printf 'legacy_module_markers=%s\n' "$(count_matches 'member=assets/xposed_init' "$RUN_DIR/lsposed/module-apk-markers.txt")"
+    printf 'jiagu_markers=%s\n' "$(count_matches 'jiagu|Lcom/stub/StubApp;' "$RUN_DIR/static/dofun-apk.txt")"
+    printf 'replugin_runtime_markers=%s\n' "$(count_matches 'replugin|app_p_a|PluginInfo|PluginManager|Unsupported class loader' "$RUN_DIR/runtime/logcat-history-filtered.txt" "$RUN_DIR/runtime/logcat-filtered.txt")"
     printf '\n## explicit API/framework-version tokens (no inferred compatibility)\n'
     grep -Eio 'API[ _-]?version[^0-9]{0,8}[0-9]{2,4}|framework[ _-]?version[^0-9]{0,8}[0-9][^[:space:]]*|LSPosedService[^\n]{0,40}version[^\n]{0,40}' "$RUN_DIR/lsposed/framework.txt" "$RUN_DIR/lsposed/logs-filtered.txt" 2>/dev/null | head -n 120
     printf '\n## installed modern-module API declarations\n'
@@ -617,8 +661,11 @@ make_analysis() {
     grep -E '^(readonly_query|modules_query_[a-z_]*exit|dofun_scope_query_exit)=' "$RUN_DIR/lsposed/database.txt" 2>/dev/null | head -n 120
     printf '\n## DoFun process / parent / bitness evidence\n'
     grep '^PROC' "$RUN_DIR/runtime/process-paths.tsv" 2>/dev/null | head -n 20
-    printf '\n## DoFun scope rows\n'
-    cat "$RUN_DIR/lsposed/dofun-scope.tsv" 2>/dev/null | head -n 260
+    printf '\n## enabled DoFun scope rows\n'
+    head -n 260 "$RUN_DIR/lsposed/dofun-scope.tsv" 2>/dev/null
+    printf '\n## bounded static inspection\n'
+    printf 'aggregate_static_inspection_budget_seconds=%s\n' "$INSPECTION_BUDGET_SECONDS"
+    grep -E 'inspection_budget_exhausted' "$RUN_DIR/lsposed/module-apk-markers.txt" "$RUN_DIR/static/dofun-apk.txt" "$RUN_DIR/plugins/archive-markers-after.txt" 2>/dev/null | head -n 60
     printf '\n## important boundary\n'
     printf '%s\n' 'This shell diagnostic cannot enumerate post-Jiagu Java classes/methods or prove a stable hook signature. If framework/API, DoFun scope and target-process injection are established, the remaining discriminator is a narrow log-only LSPosed discovery module in com.dofun.variety.'
   } >"$RUN_DIR/analysis/lsposed-feasibility.txt"
@@ -658,7 +705,7 @@ PY
 
 cleanup() {
   rc=$?; trap - EXIT INT TERM HUP; stop_bg
-  rm -f "$LOGCAT_FIFO" "$LOGCAT_FILTERED_TMP" "$SAMPLER_RAW" "$STATE_DIR"/logcat-history.* "$STATE_DIR"/sqlite-query.* 2>/dev/null
+  rm -f "$LOGCAT_FIFO" "$LOGCAT_FILTERED_TMP" "$SAMPLER_RAW" "$STATE_DIR"/logcat-history.* "$STATE_DIR"/sqlite-query.* "$STATE_DIR"/xposed-members.* "$STATE_DIR"/archive-members.* "$STATE_DIR"/dofun-members.* 2>/dev/null
   if [ -n "$WATCHDOG_PID" ]; then stop_pid "$WATCHDOG_PID"; fi
   rm -rf "$STATE_DIR/lock" 2>/dev/null
   if [ -n "$LIVE" ]; then
@@ -722,9 +769,7 @@ NOTICE
   capture_lsposed_state
   capture_zygotes
   package_state
-  capture_dofun_static
   capture_plugins before
-  inspect_archive_markers before
   snapshot_tree "$RUN_DIR/snapshots/tree-before.tsv"
   capture_theme_refs "$RUN_DIR/snapshots/refs-before.txt"
   capture_logcat_history
@@ -736,11 +781,15 @@ NOTICE
   snapshot_tree "$RUN_DIR/snapshots/tree-after.tsv"
   capture_theme_refs "$RUN_DIR/snapshots/refs-after.txt"
   capture_plugins after
+
+  start_inspection_budget
+  capture_xposed_module_apks
+  capture_dofun_static
   inspect_archive_markers after
   capture_lsposed_logs
   make_analysis
   {
-    printf 'script_version=%s\nrun=%s/%s\nboot_id=%s\nhard_limit_seconds=%s\nruntime_seconds=%s\nsampler_interval_seconds=%s\nsampler_samples=%s\nwarnings=%s\n' "$SCRIPT_VERSION" "$RUN_NO" "$MAX_RUNS" "$BOOT_ID" "$HARD_SECONDS" "$RUNTIME_SECONDS" "$SAMPLER_INTERVAL_SECONDS" "$SAMPLER_SAMPLES" "$WARNINGS"
+    printf 'script_version=%s\nrun=%s/%s\nboot_id=%s\nhard_limit_seconds=%s\nruntime_seconds=%s\nsampler_interval_seconds=%s\nsampler_samples=%s\nstatic_inspection_budget_seconds=%s\nwarnings=%s\n' "$SCRIPT_VERSION" "$RUN_NO" "$MAX_RUNS" "$BOOT_ID" "$HARD_SECONDS" "$RUNTIME_SECONDS" "$SAMPLER_INTERVAL_SECONDS" "$SAMPLER_SAMPLES" "$INSPECTION_BUDGET_SECONDS" "$WARNINGS"
     printf 'interpretation=This pass captures both DoFun/RePlugin activation evidence and the installed Magisk/Zygisk/LSPosed capability/scope/injection envelope for a possible narrow ts-theme adapter.\n'
     printf 'lsposed_boundary=Shell evidence can establish framework/API/scope/ABI/process injection, but not post-Jiagu Java class/method signatures; see analysis/lsposed-feasibility.txt.\n'
     printf 'overlay_note=overlay-candidates.tsv is evidence only; do not mount every listed path.\n'
