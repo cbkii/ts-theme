@@ -97,17 +97,18 @@ class RuntimeEnvelopeTests(unittest.TestCase):
 
         # Bounded boot/runtime work and private active state.
         self.assertIn("MAX_RUNS=2", text)
-        self.assertIn("HARD_SECONDS=210", text)
+        self.assertIn("HARD_SECONDS=240", text)
         self.assertIn("RUNTIME_SECONDS=100", text)
         self.assertIn("STORAGE_WAIT_SECONDS=90", text)
         self.assertIn("SAMPLER_INTERVAL_SECONDS=4", text)
         self.assertIn("SAMPLER_SAMPLES=25", text)
+        self.assertIn("INSPECTION_BUDGET_SECONDS=45", text)
         self.assertIn("MAX_PL_FILES=64", text)
         self.assertIn("MAX_PL_DISCOVERED=512", text)
         self.assertIn("MAX_PL_BYTES=262144", text)
         self.assertIn("MAX_LSPOSED_LOG_FILES=8", text)
         self.assertIn("MAX_LSPOSED_LOG_LINES=8000", text)
-        self.assertIn("MAX_XPOSED_MODULES=96", text)
+        self.assertIn("MAX_XPOSED_MODULES=64", text)
         self.assertIn("MAX_FRAMEWORK_FILES=512", text)
         self.assertIn('/data/adb/ts18-theme-runtime-diag-state', text)
 
@@ -129,6 +130,8 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertIn("sqlite_readonly_ok", text)
         self.assertIn('"$sqlite" -readonly', text)
         self.assertIn("dofun_scope_query_exit", text)
+        self.assertIn("m.enabled=1", text)
+        self.assertIn("module_pkg_name\\tapp_pkg_name\\tuser_id\\tenabled", text)
         self.assertIn("META-INF/xposed/java_init.list", text)
         self.assertIn("META-INF/xposed/native_init.list", text)
         self.assertIn("META-INF/xposed/scope.list", text)
@@ -140,6 +143,9 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertIn("capture_zygotes", text)
         self.assertIn("capture_dofun_static", text)
         self.assertIn("capture_logcat_history", text)
+        self.assertIn("start_inspection_budget", text)
+        self.assertIn('member_file="$STATE_DIR/xposed-members.', text)
+        self.assertIn('grep -Fx "$member" "$member_file"', text)
         self.assertIn("zygote=$(getprop ro.zygote", text)
         self.assertIn("abilist32=$(getprop ro.product.cpu.abilist32", text)
         self.assertIn("abilist64=$(getprop ro.product.cpu.abilist64", text)
@@ -159,7 +165,13 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         self.assertIn("SHARING_NOTICE.txt", text)
         self.assertNotIn('cp "$db"', text)
         self.assertNotIn('dd if="$db"', text)
-        self.assertNotRegex(text, re.compile(r"(?i)\b(?:UPDATE|INSERT|DELETE)\s+(?:modules|scope|configs)\b"))
+        self.assertNotRegex(
+            text,
+            re.compile(
+                r"(?i)\b(?:UPDATE(?:\s+OR\s+\w+)?|INSERT(?:\s+OR\s+\w+)?(?:\s+INTO)?|"
+                r"REPLACE(?:\s+INTO)?|DELETE(?:\s+FROM)?)\s+(?:modules|scope|configs)\b"
+            ),
+        )
 
         # Collector remains read-only against protected state.
         self.assertNotIn("am force-stop", text)
@@ -171,6 +183,9 @@ class RuntimeEnvelopeTests(unittest.TestCase):
         worker = text[text.index("run_worker() {") : text.index("\nservice_entry() {")]
         self.assertLess(worker.index("acquire_slot;"), worker.index("trap cleanup EXIT"))
         self.assertLess(worker.index("trap cleanup EXIT"), worker.index("clean_stale_runtime_temp"))
+        self.assertLess(worker.index("start_logcat;"), worker.index("start_inspection_budget"))
+        self.assertLess(worker.index("start_inspection_budget"), worker.index("capture_xposed_module_apks"))
+        self.assertEqual(1, worker.count("capture_lsposed_logs"))
 
 
 if __name__ == "__main__":
