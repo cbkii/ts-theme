@@ -11,7 +11,7 @@ It collects enough current-device evidence to distinguish these separate questio
 1. **Root/injection platform:** exact Magisk version, Zygisk state, zygote model and 32/64-bit ABI support.
 2. **Installed LSPosed implementation:** module identity/version, framework paths, `lspd`/zygote processes, optional framework CLI status and bounded framework logs.
 3. **Modern API capability evidence:** modern-module metadata (`META-INF/xposed/java_init.list`, `module.prop`, `scope.list`) versus legacy `assets/xposed_init`, including any explicit `minApiVersion`/`targetApiVersion` values present on-device. The script records exact version/API tokens; it does not guess API 100 support from a product name alone.
-4. **Scope:** whether any enabled LSPosed module is actually scoped to `com.dofun.variety`, read directly from the LSPosed configuration database when a read-only SQLite CLI is available.
+4. **Scope:** whether any **enabled** LSPosed module is actually scoped to `com.dofun.variety`, read directly from the LSPosed configuration database when a read-only SQLite CLI is available.
 5. **Target-process injection:** whether DoFun and its zygote/process maps, file descriptors, mount namespace and logs contain LSPosed/Zygisk/Xposed injection evidence.
 6. **DoFun runtime architecture:** current package state, process parent/executable and ABI evidence, important because an ARM64 Android system may still run DoFun in a 32-bit zygote.
 7. **Jiagu boundary:** static host-APK markers for 360 Jiagu/`StubApp`, class-loader markers and the resulting limit on what shell-only inspection can establish before decrypted classes are loaded.
@@ -32,7 +32,9 @@ Exported evidence remains under:
 /storage/emulated/0/Download/TS18-theme-runtime-diagnostic/
 ```
 
-The worker remains capped at **two boots/runs**. Each worker has a **210-second hard watchdog** and a **100-second live interaction window**, so the maximum diagnostic-worker time is 420 seconds (7 minutes) if both runs are consumed. The service can wait up to 90 seconds for shared storage before starting; a storage-wait failure does not consume a run.
+The worker remains capped at **two boots/runs**. Each worker has a **240-second hard watchdog** and a **100-second live interaction window**, so the maximum diagnostic-worker time is 480 seconds (8 minutes) if both runs are consumed. The service can wait up to 90 seconds for shared storage before starting; a storage-wait failure does not consume a run.
+
+The live interaction window is prioritised ahead of expensive static archive inspection. After the live window, Xposed-module APK inspection, DoFun static APK inspection and RePlugin archive inspection share a **45-second aggregate static-inspection budget**. Each ZIP/JAR is enumerated once and the member list is reused. If the budget is exhausted, the output records exactly where inspection stopped rather than silently presenting a partial scan as complete.
 
 The collector keeps potentially large or sensitive sources bounded:
 
@@ -40,7 +42,7 @@ The collector keeps potentially large or sensitive sources bounded:
 - live logcat: filtered while collected and capped at 14,000 lines; no unrestricted all-buffer log is persisted;
 - logcat history: at most the latest 8,000 source lines are considered, then only matching lines are exported;
 - LSPosed logs: at most 8 log files and 8,000 filtered exported lines total;
-- LSPosed database: only metadata/schema, module rows and **DoFun scope rows** are queried; the raw DB and per-module configuration values are not exported;
+- LSPosed database: only metadata/schema, module rows and **enabled DoFun scope rows** are queried; the raw DB and per-module configuration values are not exported;
 - installed Xposed module APKs and DoFun/RePlugin archives: only hashes, bounded member lists and targeted metadata/class markers are exported; APK/JAR bytes are not copied into the result.
 
 Review `SHARING_NOTICE.txt` before sharing a ZIP.
@@ -88,7 +90,6 @@ lsposed/module-apk-markers.txt
 lsposed/logs-filtered.txt
 lsposed/zygote-injection.txt
 static/dofun-apk.txt
-plugins/archive-markers-before.txt
 plugins/archive-markers-after.txt
 runtime/logcat-history-filtered.txt
 runtime/logcat-filtered.txt
@@ -97,7 +98,7 @@ analysis/lsposed-feasibility.txt
 analysis/overlay-candidates.tsv
 ```
 
-`analysis/lsposed-feasibility.txt` is a compact evidence index, not an automatic verdict. In particular, absence of a DB scope row is not treated as proof of no scope if the read-only SQL query failed; query exit status and bounded stderr are recorded in `lsposed/database.txt`.
+`analysis/lsposed-feasibility.txt` is a compact evidence index, not an automatic verdict. In particular, absence of a DB scope row is not treated as proof of no scope if the read-only SQL query failed; query exit status and bounded stderr are recorded in `lsposed/database.txt`. Scope rows in `lsposed/dofun-scope.tsv` are deliberately restricted to enabled modules so stale rows belonging to disabled modules cannot be mistaken for usable DoFun scope.
 
 ## What this still cannot prove
 
