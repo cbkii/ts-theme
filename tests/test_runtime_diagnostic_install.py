@@ -33,6 +33,14 @@ class RuntimeDiagnosticInstallTests(unittest.TestCase):
         self.assertIn('timed out', install)
         self.assertIn('pkg install -y coreutils', install)
 
+    def test_status_propagates_bounded_root_failure(self):
+        text = self.text
+        status = text[text.index('show_status() {'):text.index('\nfind_roots() {')]
+        self.assertIn('status_rc=$?', status)
+        self.assertIn('status_error=status command failed with exit status %s', status)
+        self.assertIn('return 1', status)
+        self.assertIn('status_error=Magisk su unavailable', status)
+
     def test_generic_fallback_timeout_cannot_depend_on_epoch_clock(self):
         text = self.text
         run_timeout = text[text.index('run_timeout() {'):text.index('\ncapture() {')]
