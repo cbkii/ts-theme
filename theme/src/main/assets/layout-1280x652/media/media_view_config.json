@@ -1,0 +1,22 @@
+{
+  "source": "theme",
+  "attributes": [
+    {"id_name": "iv_media_icon", "width": 0, "height": 0, "gravity": "center", "visibility": false},
+    {"id_name": "iv_media_icon_bg", "width": 0, "height": 0, "gravity": "center", "visibility": false},
+    {"id_name": "tv_media_name", "width": 440, "height": -2, "gravity": "l_18|center_vertical", "text_size": 19, "text_color": "#FFFFFF", "visibility": true, "is_shadow": false},
+    {"id_name": "iv_media_head_img", "width": 0, "height": 0, "visibility": false, "gravity": "left|top"},
+    {"id_name": "tv_media_type", "width": 0, "height": 0, "gravity": "center", "visibility": false, "text_size": 0, "text_color": "#FFFFFF", "is_shadow": false},
+    {"id_name": "iv_media_pre", "width": 56, "height": 56, "gravity": "l_484|center_vertical"},
+    {"id_name": "iv_media_pp", "width": 56, "height": 56, "gravity": "l_552|center_vertical"},
+    {"id_name": "iv_media_next", "width": 56, "height": 56, "gravity": "l_620|center_vertical"},
+    {"id_name": "iv_radio_icon", "width": 0, "height": 0, "gravity": "center", "visibility": false},
+    {"id_name": "iv_radio_head_img", "width": 0, "height": 0, "visibility": false, "gravity": "center"},
+    {"id_name": "tv_radio_type", "width": 0, "height": 0, "gravity": "center", "visibility": false, "text_size": 0, "text_color": "#FFFFFF"},
+    {"id_name": "tv_radio_band", "width": -2, "height": -2, "gravity": "l_198|t_10", "visibility": true, "text_size": 12, "text_color": "#FF6B57"},
+    {"id_name": "tv_radio_name", "width": -2, "height": -2, "gravity": "center", "text_size": 24, "text_color": "#FFFFFF", "visibility": true},
+    {"id_name": "tv_radio_unit", "width": 0, "height": 0, "visibility": false, "gravity": "center", "text_size": 0, "text_color": "#FFFFFF"},
+    {"id_name": "iv_radio_pre", "width": 54, "height": 54, "gravity": "l_4|center_vertical"},
+    {"id_name": "iv_radio_pp", "width": 0, "height": 0, "visibility": false, "gravity": "center"},
+    {"id_name": "iv_radio_next", "width": 54, "height": 54, "gravity": "right|r_4|center_vertical"}
+  ]
+}

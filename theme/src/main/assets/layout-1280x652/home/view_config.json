@@ -1,0 +1,19 @@
+{
+  "source": "theme",
+  "attributes": [
+    {
+      "id_name": "iv_home_arrow",
+      "width": 0,
+      "height": 0,
+      "visibility": false,
+      "gravity": "bottom|center_horizontal"
+    },
+    {
+      "id_name": "home_dotView",
+      "width": 0,
+      "height": 0,
+      "visibility": false,
+      "gravity": "bottom|center_horizontal"
+    }
+  ]
+}

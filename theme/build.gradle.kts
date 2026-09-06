@@ -61,6 +61,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
+    androidResources {
+        // DoFun's generated theme contract uses assets/.gen/c.json. The Android
+        // default ignore-assets pattern drops dot-directories, so retain the
+        // normal exclusions but intentionally allow .gen through AAPT2.
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"
+    }
+
     lint {
         abortOnError = true
         checkDependencies = false

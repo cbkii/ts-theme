@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "codex/**"
+      - "compat/**"
   pull_request:
 
 permissions:
@@ -79,3 +80,32 @@ jobs:
           python3 scripts/release/runtime_envelope.py \
             --apk theme/build/outputs/apk/release/theme-release.apk \
             --config release-config.json
+          python3 - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+
+          apk = Path("theme/build/outputs/apk/release/theme-release.apk")
+          config = json.loads(Path("release-config.json").read_text(encoding="utf-8"))
+          with zipfile.ZipFile(apk) as archive:
+              names = set(archive.namelist())
+          missing = sorted(set(config["required_apk_entries"]) - names)
+          if missing:
+              raise SystemExit("Signed APK is missing compatibility entries: " + ", ".join(missing))
+          for required in (
+              "assets/.gen/c.json",
+              "assets/layout-1280x652/theme_config.json",
+              "assets/layout-1280x652/hotseat_config.json",
+          ):
+              if required not in names:
+                  raise SystemExit(f"Signed APK lost required land compatibility asset: {required}")
+          print("Compatibility asset envelope: PASS")
+          PY
+      - name: Preserve CI-signed compatibility APK
+        # actions/upload-artifact v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: compatibility-apk-${{ github.sha }}
+          path: theme/build/outputs/apk/release/theme-release.apk
+          if-no-files-found: error
+          retention-days: 7
