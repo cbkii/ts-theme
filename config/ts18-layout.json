@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "profile": "ts18-rhd-1280x720",
   "physical_width": 1280,
   "physical_height": 720,
@@ -18,5 +18,19 @@
     "music": {"x": 367, "y": 55, "width": 680, "height": 64},
     "date": {"x": 1047, "y": 55, "width": 178, "height": 64},
     "map": {"x": 81, "y": 119, "width": 1144, "height": 583}
+  },
+  "theme_viewport": {
+    "resolution": "1280x652",
+    "width": 1280,
+    "height": 652,
+    "physical_origin_x": 0,
+    "physical_origin_y": 55,
+    "safe_right": 1225,
+    "safe_bottom": 647
+  },
+  "compatibility_surfaces": {
+    "medias": {"x": 81, "y": 0, "width": 966, "height": 64},
+    "date": {"x": 1047, "y": 0, "width": 178, "height": 64},
+    "map": {"x": 81, "y": 64, "width": 1144, "height": 583}
   }
 }
