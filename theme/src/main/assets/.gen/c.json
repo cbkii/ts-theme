@@ -1,0 +1,45 @@
+{
+  "support_night": true,
+  "all_resolutions": [
+    "1280x652"
+  ],
+  "support_systemui_night": false,
+  "all_features": [],
+  "layouts": [
+    {
+      "resolution": "1280x652",
+      "marketing": [],
+      "all_features": [],
+      "features": {},
+      "all_plugins": [
+        "app",
+        "desktop_window",
+        "medias",
+        "time"
+      ],
+      "plugins": {
+        "theme_config": {
+          "json": [
+            {"type": "desktop_window", "count": 1},
+            {"type": "medias", "count": 1},
+            {"type": "time", "count": 1}
+          ]
+        },
+        "hotseat_config": {
+          "json": [
+            {"type": "app", "count": 5}
+          ]
+        }
+      }
+    }
+  ],
+  "variant": "land",
+  "all_marketing": [],
+  "all_plugins": [
+    "app",
+    "desktop_window",
+    "medias",
+    "time"
+  ],
+  "support_systemui": false
+}
