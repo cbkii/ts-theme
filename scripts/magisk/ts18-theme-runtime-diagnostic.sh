@@ -1,9 +1,9 @@
 #!/system/bin/sh
 # shellcheck shell=sh disable=SC2016,SC2046,SC2317
 # TS18 / DoFun activation + LSPosed feasibility diagnostic for Magisk service.d.
-# Read-only against DoFun, LSPosed and package state. Version 4.0.1.
+# Read-only against DoFun, LSPosed and package state. Version 4.0.2.
 
-SCRIPT_VERSION="4.0.1"
+SCRIPT_VERSION="4.0.2"
 SERVICE_PATH="/data/adb/service.d/99-ts18-theme-runtime-diag.sh"
 STATE_DIR="/data/adb/ts18-theme-runtime-diag-state"
 EXPORT_ROOT="/storage/emulated/0/Download/TS18-theme-runtime-diagnostic"
@@ -16,6 +16,7 @@ STORAGE_WAIT_SECONDS=90
 SAMPLER_INTERVAL_SECONDS=4
 SAMPLER_SAMPLES=25
 INSPECTION_BUDGET_SECONDS=45
+INSTALL_ROOT_TIMEOUT_SECONDS=20
 MAX_TREE_LINES=30000
 MAX_LOG_LINES=14000
 MAX_RUNTIME_LINES=24000
@@ -59,13 +60,12 @@ run_timeout() {
   if [ -x /system/bin/toybox ] && /system/bin/toybox timeout 1 /system/bin/true >/dev/null 2>&1; then
     /system/bin/toybox timeout "$rt_s" "$@"; return $?
   fi
-  "$@" & rt_pid=$!; rt_start="$(epoch_now)"
+  "$@" & rt_pid=$!; rt_elapsed=0
   while kill -0 "$rt_pid" 2>/dev/null; do
-    rt_now="$(epoch_now)"
-    if [ $((rt_now - rt_start)) -ge "$rt_s" ] 2>/dev/null; then
+    if [ "$rt_elapsed" -ge "$rt_s" ] 2>/dev/null; then
       kill -TERM "$rt_pid" 2>/dev/null; sleep 1; kill -KILL "$rt_pid" 2>/dev/null; wait "$rt_pid" 2>/dev/null; return 124
     fi
-    sleep 1
+    sleep 1; rt_elapsed=$((rt_elapsed + 1))
   done
   wait "$rt_pid" 2>/dev/null
 }
@@ -117,6 +117,27 @@ find_termux_tool() {
   return 1
 }
 
+find_install_timeout() {
+  for p in "/data/data/com.termux/files/usr/bin/timeout" "/data/user/0/com.termux/files/usr/bin/timeout" /system/bin/timeout; do
+    [ -x "$p" ] && { printf 'binary|%s\n' "$p"; return 0; }
+  done
+  if [ -x /system/bin/toybox ] && /system/bin/toybox timeout 1 /system/bin/true >/dev/null 2>&1; then
+    printf 'toybox|/system/bin/toybox\n'; return 0
+  fi
+  return 1
+}
+
+run_install_timeout() {
+  it_s="$1"; shift
+  it_spec="$(find_install_timeout 2>/dev/null)" || return 125
+  it_kind="${it_spec%%|*}"; it_path="${it_spec#*|}"
+  case "$it_kind" in
+    binary) "$it_path" "$it_s" "$@" </dev/null; return $?;;
+    toybox) "$it_path" timeout "$it_s" "$@" </dev/null; return $?;;
+  esac
+  return 125
+}
+
 find_magisk() {
   for p in "$(command -v magisk 2>/dev/null)" /data/adb/magisk/magisk; do
     [ -n "$p" ] && [ -x "$p" ] && { printf '%s\n' "$p"; return 0; }
@@ -125,31 +146,79 @@ find_magisk() {
 }
 
 install_self() {
+  printf 'INSTALL[1/4] Validating local prerequisites...\n'
   self="$(readlink -f "$0" 2>/dev/null)"; [ -n "$self" ] || self="$0"
   [ -r "$self" ] || { printf 'FAILED: cannot read %s\n' "$self" >&2; return 1; }
   have su || { printf 'FAILED: Magisk su is unavailable.\n' >&2; return 1; }
   safe_install_path "$self" || { printf 'FAILED: unsupported script path: %s\n' "$self" >&2; return 1; }
-  uid="$(run_timeout 10 su -c 'id -u' 2>/dev/null | head -n 1)"
-  [ "$uid" = 0 ] || { printf 'FAILED: su did not provide UID 0.\n' >&2; return 1; }
+  timeout_spec="$(find_install_timeout 2>/dev/null)" || {
+    printf 'FAILED: no deterministic foreground timeout command is available.\n' >&2
+    printf 'Install Termux coreutils, then retry: pkg install -y coreutils\n' >&2
+    return 1
+  }
+  printf '  timeout=%s\n' "$timeout_spec"
   zp="$(find_termux_tool zip 2>/dev/null)"; py="$(find_termux_tool python 2>/dev/null)"
   if [ -n "$zp" ]; then kind=zip; pack="$zp"; elif [ -n "$py" ]; then kind=python; pack="$py"; else
     printf 'FAILED: install Termux zip first: pkg install -y zip\n' >&2; return 1
   fi
   safe_install_path "$pack" || { printf 'FAILED: unsupported packager path: %s\n' "$pack" >&2; return 1; }
-  run_timeout 15 su -c "mkdir -p '$STATE_DIR' /data/adb/service.d && cp '$self' '$SERVICE_PATH' && chmod 0755 '$SERVICE_PATH'" >/dev/null 2>&1 || {
-    printf 'FAILED: could not install %s\n' "$SERVICE_PATH" >&2; return 1
-  }
-  run_timeout 10 su -c "printf '%s\n' 'PACKAGER_KIND=$kind' 'PACKAGER_PATH=$pack' > '$STATE_DIR/packager.conf' && chmod 0600 '$STATE_DIR/packager.conf'" >/dev/null 2>&1 || {
-    printf 'FAILED: could not save packager configuration.\n' >&2; return 1
-  }
-  count="$(run_timeout 8 su -c "cat '$STATE_DIR/run-count' 2>/dev/null" 2>/dev/null | tr -d '\r\n')"; case "$count" in ''|*[!0-9]*) count=0;; esac
+
+  printf 'INSTALL[2/4] Requesting one Magisk root transaction (hard cap %ss)...\n' "$INSTALL_ROOT_TIMEOUT_SECONDS"
+  printf '  Approve the Magisk superuser prompt if it appears.\n'
+  install_tmp="${TMPDIR:-/data/data/com.termux/files/usr/tmp}/ts18-theme-runtime-install.$$"
+  rm -f "$install_tmp" 2>/dev/null
+  install_cmd="uid=\$(id -u 2>/dev/null); [ \"\$uid\" = 0 ] || { echo ROOT_UID=\$uid; exit 70; }; mkdir -p '$STATE_DIR' /data/adb/service.d || exit 71; cp '$self' '$SERVICE_PATH' || exit 72; chmod 0755 '$SERVICE_PATH' || exit 73; printf '%s\\n' 'PACKAGER_KIND=$kind' 'PACKAGER_PATH=$pack' > '$STATE_DIR/packager.conf' || exit 74; chmod 0600 '$STATE_DIR/packager.conf' || exit 75; c=\$(cat '$STATE_DIR/run-count' 2>/dev/null); case \"\$c\" in ''|*[!0-9]*) c=0;; esac; [ -x '$SERVICE_PATH' ] || exit 76; echo INSTALL_OK; echo run_count=\$c; echo service='$SERVICE_PATH'; exit 0"
+  run_install_timeout "$INSTALL_ROOT_TIMEOUT_SECONDS" su -c "$install_cmd" >"$install_tmp" 2>&1; install_rc=$?
+
+  printf 'INSTALL[3/4] Checking root transaction result...\n'
+  [ -s "$install_tmp" ] && sed -n '1,120p' "$install_tmp"
+  case "$install_rc" in
+    0) ;;
+    124|137)
+      rm -f "$install_tmp" 2>/dev/null
+      printf 'FAILED: Magisk su/install timed out after %ss; the installer stopped instead of hanging.\n' "$INSTALL_ROOT_TIMEOUT_SECONDS" >&2
+      printf "Try this once in Termux to confirm MagiskSU itself returns: su -c 'id -u; exit'\n" >&2
+      return 1
+      ;;
+    125)
+      rm -f "$install_tmp" 2>/dev/null
+      printf 'FAILED: deterministic timeout became unavailable. Install/reinstall: pkg install -y coreutils\n' >&2
+      return 1
+      ;;
+    *)
+      rm -f "$install_tmp" 2>/dev/null
+      printf 'FAILED: root install transaction exited with status %s. See the output above.\n' "$install_rc" >&2
+      return 1
+      ;;
+  esac
+  if ! grep -qx 'INSTALL_OK' "$install_tmp" 2>/dev/null; then
+    rm -f "$install_tmp" 2>/dev/null
+    printf 'FAILED: root transaction returned success without INSTALL_OK verification.\n' >&2
+    return 1
+  fi
+  count="$(sed -n 's/^run_count=//p' "$install_tmp" | head -n 1)"; case "$count" in ''|*[!0-9]*) count=0;; esac
+  rm -f "$install_tmp" 2>/dev/null
+
+  printf 'INSTALL[4/4] Installed and verified.\n'
   printf 'SUCCESS\nservice=%s\nrun_count=%s\nmax_runs=%s\n' "$SERVICE_PATH" "$count" "$MAX_RUNS"
   printf 'recommended_optional_tools=unzip sqlite\n'
 }
 
 show_status() {
-  if ! have su; then printf 'service=unknown\nrun_count=unknown\nexport_root=%s\n' "$EXPORT_ROOT"; return 0; fi
-  run_timeout 10 su -c "if [ -x '$SERVICE_PATH' ]; then echo service=installed; else echo service=missing; fi; c=\$(cat '$STATE_DIR/run-count' 2>/dev/null); [ -n \"\$c\" ] || c=0; echo run_count=\$c; echo max_runs=$MAX_RUNS" 2>/dev/null
+  if ! have su; then
+    printf 'service=unknown\nrun_count=unknown\nstatus_error=Magisk su unavailable\nexport_root=%s\n' "$EXPORT_ROOT"
+    return 1
+  fi
+  if ! find_install_timeout >/dev/null 2>&1; then
+    printf 'service=unknown\nrun_count=unknown\nstatus_error=no deterministic timeout; install Termux coreutils\nexport_root=%s\n' "$EXPORT_ROOT"
+    return 1
+  fi
+  run_install_timeout 10 su -c "if [ -x '$SERVICE_PATH' ]; then echo service=installed; else echo service=missing; fi; c=\$(cat '$STATE_DIR/run-count' 2>/dev/null); [ -n \"\$c\" ] || c=0; echo run_count=\$c; echo max_runs=$MAX_RUNS; exit 0" 2>/dev/null
+  status_rc=$?
+  if [ "$status_rc" -ne 0 ]; then
+    printf 'service=unknown\nrun_count=unknown\nstatus_error=status command failed with exit status %s\nexport_root=%s\n' "$status_rc" "$EXPORT_ROOT"
+    return 1
+  fi
   printf 'export_root=%s\n' "$EXPORT_ROOT"
 }
 
