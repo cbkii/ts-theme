@@ -7,6 +7,18 @@
   "all_features": [],
   "layouts": [
     {
+      "hotseat_config_plugins": {
+        "json": [
+          {"type": "app", "count": 5}
+        ]
+      },
+      "theme_config_plugins": {
+        "json": [
+          {"type": "desktop_window", "count": 1},
+          {"type": "medias", "count": 1},
+          {"type": "time", "count": 1}
+        ]
+      },
       "resolution": "1280x652",
       "marketing": [],
       "all_features": [],
