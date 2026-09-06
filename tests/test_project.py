@@ -18,7 +18,7 @@ class ProjectTests(unittest.TestCase):
     def test_repository_validates(self):
         self.assertEqual([], MODULE.validate_project())
 
-    def test_strip_background_dimensions_match_geometry(self):
+    def test_strip_background_dimensions_match_known_resources(self):
         main_resources = ROOT / "theme" / "src" / "main" / "res" / "mipmap-mdpi-v4"
         release_resources = ROOT / "theme" / "src" / "release" / "res" / "mipmap-mdpi-v4"
         self.assertEqual((286, 64), MODULE.png_dimensions(main_resources / "radio_bg.png"))
@@ -26,8 +26,9 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual((680, 64), MODULE.png_dimensions(release_resources / "media_bg.png"))
         self.assertEqual((178, 64), MODULE.png_dimensions(main_resources / "time_bg.png"))
 
-    def test_safe_area_geometry(self):
+    def test_safe_area_geometry_and_theme_viewport_projection(self):
         profile = json.loads((ROOT / "config" / "ts18-layout.json").read_text(encoding="utf-8"))
+        self.assertEqual(2, profile["schema_version"])
         self.assertEqual(1225, profile["safe_right"])
         self.assertEqual(81, profile["content_left"])
         self.assertEqual(1144, profile["surfaces"]["map"]["width"])
@@ -40,6 +41,18 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(music["x"] + music["width"], date["x"])
         self.assertEqual(date["x"] + date["width"], profile["safe_right"])
 
+        viewport = profile["theme_viewport"]
+        self.assertEqual("1280x652", viewport["resolution"])
+        self.assertEqual((1280, 652), (viewport["width"], viewport["height"]))
+        self.assertEqual((0, 55), (viewport["physical_origin_x"], viewport["physical_origin_y"]))
+        self.assertEqual(647, viewport["safe_bottom"])
+        compat = profile["compatibility_surfaces"]
+        self.assertEqual({"x": 81, "y": 0, "width": 966, "height": 64}, compat["medias"])
+        self.assertEqual({"x": 1047, "y": 0, "width": 178, "height": 64}, compat["date"])
+        self.assertEqual({"x": 81, "y": 64, "width": 1144, "height": 583}, compat["map"])
+        self.assertEqual(profile["surfaces"]["map"]["y"], compat["map"]["y"] + viewport["physical_origin_y"])
+        self.assertEqual(profile["surfaces"]["date"]["y"], compat["date"]["y"] + viewport["physical_origin_y"])
+
     def test_theme_json_is_parseable_and_host_schema_clean(self):
         paths = sorted((ROOT / "theme" / "src" / "main" / "assets").rglob("*.json"))
         self.assertGreater(len(paths), 0)
@@ -47,6 +60,58 @@ class ProjectTests(unittest.TestCase):
             with self.subTest(path=path):
                 value = json.loads(path.read_text(encoding="utf-8"))
                 self.assertFalse(MODULE.contains_empty_key(value))
+
+    def test_host_proven_generated_land_contract_and_medias_widget(self):
+        asset_root = ROOT / "theme" / "src" / "main" / "assets"
+        generated = json.loads((asset_root / ".gen" / "c.json").read_text(encoding="utf-8"))
+        self.assertEqual("land", generated["variant"])
+        self.assertEqual(["1280x652"], generated["all_resolutions"])
+        self.assertEqual(["app", "desktop_window", "medias", "time"], generated["all_plugins"])
+        self.assertFalse(generated["support_systemui"])
+        self.assertFalse(generated["support_systemui_night"])
+        self.assertTrue(generated["support_night"])
+        layout = generated["layouts"][0]
+        self.assertEqual("1280x652", layout["resolution"])
+        self.assertEqual(
+            [
+                {"type": "desktop_window", "count": 1},
+                {"type": "medias", "count": 1},
+                {"type": "time", "count": 1},
+            ],
+            layout["plugins"]["theme_config"]["json"],
+        )
+        self.assertEqual([{"type": "app", "count": 5}], layout["plugins"]["hotseat_config"]["json"])
+
+        for relative in (Path("theme_config.json"), Path("layout-1280x652/theme_config.json")):
+            theme = json.loads((asset_root / relative).read_text(encoding="utf-8"))
+            types = [item["soft_type"] for item in theme["config"][0]["page_config"]]
+            self.assertEqual(["desktop_window", "medias", "time"], types)
+            self.assertFalse({"local_radio", "local_music", "bt_music", "local_music|bt_music"} & set(types))
+
+        for relative in (
+            "theme_config.json",
+            "hotseat_config.json",
+            "home/view_config.json",
+            "home/app_widget_view_config1.json",
+            "media/media_config.json",
+            "media/media_view_config.json",
+            "time/time2_config.json",
+            "time/view2_config.json",
+        ):
+            with self.subTest(relative=relative):
+                generic = json.loads((asset_root / relative).read_text(encoding="utf-8"))
+                specific = json.loads((asset_root / "layout-1280x652" / relative).read_text(encoding="utf-8"))
+                self.assertEqual(generic, specific)
+
+    def test_dot_gen_asset_is_intentionally_packaged(self):
+        gradle = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
+        match = re.search(r'ignoreAssetsPattern\s*=\s*"([^"]+)"', gradle)
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertNotIn(":.*:", f":{match.group(1)}:")
+        config = json.loads((ROOT / "release-config.json").read_text(encoding="utf-8"))
+        self.assertIn("assets/.gen/c.json", config["required_apk_entries"])
+        self.assertIn("assets/layout-1280x652/theme_config.json", config["required_apk_entries"])
 
     def test_compact_date_and_media_presentation(self):
         asset_root = ROOT / "theme" / "src" / "main" / "assets"
@@ -118,6 +183,12 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual("gradle.properties", config["version_file"])
         self.assertEqual("VERSION_NAME", config["version_name_property"])
         self.assertEqual("VERSION_CODE", config["version_code_property"])
+        for entry in (
+            "assets/.gen/c.json",
+            "assets/layout-1280x652/theme_config.json",
+            "assets/layout-1280x652/hotseat_config.json",
+        ):
+            self.assertIn(entry, config["required_apk_entries"])
 
         properties = {}
         for raw in (ROOT / config["version_file"]).read_text(encoding="utf-8").splitlines():
@@ -166,6 +237,7 @@ class ProjectTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(MODULE.safe_member_name(name))
         self.assertTrue(MODULE.safe_member_name("assets/theme_config.json"))
+        self.assertTrue(MODULE.safe_member_name("assets/.gen/c.json"))
 
     def test_malformed_apk_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
