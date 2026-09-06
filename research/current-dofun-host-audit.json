@@ -1,13 +1,13 @@
 {
-  "evidence_class": "APK-STATIC",
-  "captured_on": "2026-08-22",
-  "source_filename": "com.dofun.variety uid_10093.apk",
-  "sha256": "75e7ea9b46d68754253aa385e6ac750aae957a5b72196fec5449ccf2782c60b1",
-  "size_bytes": 27981164,
+  "evidence_class": "APK-STATIC-EXACT-DEVICE",
+  "captured_on": "2026-09-06",
+  "source_filename": "com.dofun.variety-R2sJTpAqJjqOKBreDHZoVg==/base.apk",
+  "sha256": "71d0c2cf12a0af941947f026cb79fa453bb63b4d0cc94f27b7b3e2c8787a2eac",
+  "size_bytes": 28490386,
   "package": "com.dofun.variety",
-  "version_code": 367,
-  "version_name": "V9.7.2.367.260312",
-  "release_time": "20260312-11:47:52",
+  "version_code": 386,
+  "version_name": "V9.9.2.386.260716",
+  "version_build_date": "2026-07-16",
   "min_sdk": 16,
   "target_sdk": 24,
   "compile_sdk": 34,
@@ -50,7 +50,25 @@
     "package": "launcher.variety.theme.plugin.kp",
     "version": 247,
     "payload": "assets/plugins/kp.jar",
+    "sha256": "a835a1cc281c6f607b7bd5ba548eef98f899289729162cd7e48941f4cc03e34c",
+    "signer_matches_host": true,
     "dex_class_count": 62,
+    "generated_contract_path": "assets/.gen/c.json",
+    "generated_contract_variant": "all",
+    "generated_json_index_keys": [
+      "theme_config_plugins",
+      "hotseat_config_plugins"
+    ],
+    "generated_resolutions": [
+      "1024x600",
+      "1024x768",
+      "1080x1650",
+      "768x720",
+      "768x880",
+      "800x600"
+    ],
+    "uses_layout_resolution_asset_roots": true,
+    "top_level_media_widget_type": "medias",
     "custom_media_feature_classes": [],
     "declared_media_headers": [
       "local_music",
@@ -61,10 +79,17 @@
       "youtube_music"
     ]
   },
+  "runtime_evidence": {
+    "custom_plugin_reached_replugin_classloader": true,
+    "custom_theme_parser_started": true,
+    "subsequent_vendor_theme_default_parser_fallback_observed": true,
+    "implication": "The captured custom activation failure is downstream of Android package discovery and RePlugin classloader creation, so parser/theme-contract mismatches are higher priority than package installation alone."
+  },
   "conclusions": [
-    "The host has a broader media architecture than the supplied skins.",
-    "The compact FYD local_music widget is not statically proven to consume every generic source.",
-    "No supplied theme schema proves marquee/ticker or information-region click routing.",
-    "Runtime binding, selected-target and physical control evidence are still required."
+    "The exact current host independently confirms assets/.gen/c.json for its built-in theme.",
+    "The exact current host's JSON theme contract indexes theme_config_plugins/hotseat_config_plugins and uses medias as the top-level media widget type.",
+    "Media source names such as local_music/local_radio/bt_music should not be treated as independently proven top-level widget types.",
+    "Jiagu still prevents ordinary static inspection of the protected host method that chooses the fallback parser.",
+    "Physical activation and persistence remain required before the custom contract is considered proven."
   ]
 }
