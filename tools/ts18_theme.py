@@ -34,6 +34,9 @@ class SafetyStop(ThemeError):
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
+        for chunk in iter(lambda: path.open("rb").read(0), b""):
+            break
+    with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
@@ -193,27 +196,31 @@ def _gravity_xy(value: str) -> tuple[int, int]:
 
 def validate_project() -> list[str]:
     errors: list[str] = []
-    json_paths = sorted((THEME_ROOT / "assets").rglob("*.json")); documents: dict[Path, Any] = {}
+    asset_root = THEME_ROOT / "assets"
+    json_paths = sorted(asset_root.rglob("*.json")); documents: dict[Path, Any] = {}
     require(bool(json_paths), "No theme JSON files found", errors)
     for path in json_paths:
         try:
-            value = load_json(path); documents[path.relative_to(THEME_ROOT / "assets")] = value
+            value = load_json(path); documents[path.relative_to(asset_root)] = value
             require(not contains_empty_key(value), f"Host JSON contains an empty/comment key: {path.relative_to(ROOT)}", errors)
         except ValidationError as exc: errors.append(str(exc))
+
     try: profile = load_json(ROOT / "config" / "ts18-layout.json")
     except ValidationError as exc: errors.append(str(exc)); profile = {}
+    require(profile.get("schema_version") == 2, "TS18 layout profile schema must describe physical and theme coordinates", errors)
     require(profile.get("physical_width") == 1280 and profile.get("physical_height") == 720, "Unexpected physical layout profile", errors)
     require(profile.get("top_system_inset") == 55 and profile.get("right_system_inset") == 55, "Exact TS18 system insets changed", errors)
     require(profile.get("safe_right") == 1225 and profile.get("safe_bottom") == 702, "Exact TS18 safe bounds changed", errors)
     require(profile.get("content_left") == 81 and profile.get("strip_height") == 64, "Content/hotseat contract changed", errors)
+
     surfaces = profile.get("surfaces", {}) if isinstance(profile, dict) else {}
-    expected = {
+    expected_physical = {
         "radio": (81, 55, 286, 64), "music": (367, 55, 680, 64), "date": (1047, 55, 178, 64), "map": (81, 119, 1144, 583)
     }
-    for name, spec in expected.items():
+    for name, spec in expected_physical.items():
         s = surfaces.get(name, {})
         actual = (s.get("x"), s.get("y"), s.get("width"), s.get("height"))
-        require(actual == spec, f"Unexpected {name} profile geometry: {actual}", errors)
+        require(actual == spec, f"Unexpected {name} physical geometry: {actual}", errors)
         if all(isinstance(v, int) for v in actual):
             require(actual[0] + actual[2] <= 1225, f"{name} enters right SystemUI region", errors)
             require(actual[1] + actual[3] <= 702, f"{name} exceeds safe bottom", errors)
@@ -221,16 +228,70 @@ def validate_project() -> list[str]:
         require(surfaces["radio"]["x"] + surfaces["radio"]["width"] == surfaces["music"]["x"], "Radio/music strip gap or overlap", errors)
         require(surfaces["music"]["x"] + surfaces["music"]["width"] == surfaces["date"]["x"], "Music/date strip gap or overlap", errors)
         require(surfaces["date"]["x"] + surfaces["date"]["width"] == 1225, "Strip does not end at safe-right", errors)
-    theme = documents.get(Path("theme_config.json"), {}); pages = theme.get("config", [{}])[0].get("page_config", []) if isinstance(theme, dict) else []
-    types = [item.get("soft_type") for item in pages if isinstance(item, dict)]
-    require(types == ["desktop_window", "local_radio", "local_music|bt_music", "time"], f"Unexpected page surface order/types: {types}", errors)
-    mapping = {"desktop_window":"map", "local_radio":"radio", "local_music|bt_music":"music", "time":"date"}
-    for item in pages:
-        if not isinstance(item, dict) or item.get("soft_type") not in mapping: continue
-        try: x, y = _gravity_xy(str(item.get("gravity", "")))
-        except ValidationError as exc: errors.append(str(exc)); continue
-        s = surfaces.get(mapping[item["soft_type"]], {})
-        require((x, y, item.get("width"), item.get("height")) == (s.get("x"), s.get("y"), s.get("width"), s.get("height")), f"theme_config does not match profile for {item.get('soft_type')}", errors)
+
+    viewport = profile.get("theme_viewport", {}) if isinstance(profile, dict) else {}
+    require(viewport.get("resolution") == "1280x652", "Compatibility viewport must be 1280x652", errors)
+    require((viewport.get("width"), viewport.get("height")) == (1280, 652), "Compatibility viewport dimensions changed", errors)
+    require((viewport.get("physical_origin_x"), viewport.get("physical_origin_y")) == (0, 55), "Compatibility viewport physical origin changed", errors)
+    require((viewport.get("safe_right"), viewport.get("safe_bottom")) == (1225, 647), "Compatibility viewport safe bounds changed", errors)
+    compat = profile.get("compatibility_surfaces", {}) if isinstance(profile, dict) else {}
+    expected_compat = {"medias": (81, 0, 966, 64), "date": (1047, 0, 178, 64), "map": (81, 64, 1144, 583)}
+    for name, spec in expected_compat.items():
+        s = compat.get(name, {})
+        actual = (s.get("x"), s.get("y"), s.get("width"), s.get("height"))
+        require(actual == spec, f"Unexpected {name} compatibility geometry: {actual}", errors)
+        if all(isinstance(v, int) for v in actual):
+            require(actual[0] + actual[2] <= viewport.get("safe_right", -1), f"{name} enters right SystemUI region in theme coordinates", errors)
+            require(actual[1] + actual[3] <= viewport.get("safe_bottom", -1), f"{name} exceeds theme safe bottom", errors)
+    if all(name in compat for name in ("medias", "date", "map")):
+        ox, oy = viewport.get("physical_origin_x", 0), viewport.get("physical_origin_y", 0)
+        require((compat["map"]["x"] + ox, compat["map"]["y"] + oy, compat["map"]["width"], compat["map"]["height"]) == expected_physical["map"], "Theme map does not project onto the known physical map surface", errors)
+        require((compat["date"]["x"] + ox, compat["date"]["y"] + oy, compat["date"]["width"], compat["date"]["height"]) == expected_physical["date"], "Theme date does not project onto the known physical date surface", errors)
+        combined_media = (expected_physical["radio"][0], expected_physical["radio"][1], expected_physical["radio"][2] + expected_physical["music"][2], expected_physical["radio"][3])
+        require((compat["medias"]["x"] + ox, compat["medias"]["y"] + oy, compat["medias"]["width"], compat["medias"]["height"]) == combined_media, "Unified medias widget does not project onto the former radio+music strip", errors)
+
+    expected_types = ["desktop_window", "medias", "time"]
+    mapping = {"desktop_window": "map", "medias": "medias", "time": "date"}
+    for relative in (Path("theme_config.json"), Path("layout-1280x652/theme_config.json")):
+        theme = documents.get(relative, {})
+        pages = theme.get("config", [{}])[0].get("page_config", []) if isinstance(theme, dict) and theme.get("config") else []
+        types = [item.get("soft_type") for item in pages if isinstance(item, dict)]
+        require(types == expected_types, f"Unexpected page surface order/types in {relative}: {types}", errors)
+        require(not any(t in {"local_radio", "local_music", "bt_music", "local_music|bt_music"} for t in types), f"Source/media mode was incorrectly used as a widget type in {relative}", errors)
+        for item in pages:
+            if not isinstance(item, dict) or item.get("soft_type") not in mapping: continue
+            try: x, y = _gravity_xy(str(item.get("gravity", "")))
+            except ValidationError as exc: errors.append(str(exc)); continue
+            s = compat.get(mapping[item["soft_type"]], {})
+            require((x, y, item.get("width"), item.get("height")) == (s.get("x"), s.get("y"), s.get("width"), s.get("height")), f"{relative} does not match compatibility profile for {item.get('soft_type')}", errors)
+
+    mirrored = (
+        "theme_config.json", "hotseat_config.json", "home/view_config.json", "home/app_widget_view_config1.json",
+        "media/media_config.json", "media/media_view_config.json", "time/time2_config.json", "time/view2_config.json",
+    )
+    for relative in mirrored:
+        generic = documents.get(Path(relative))
+        specific = documents.get(Path("layout-1280x652") / relative)
+        require(generic is not None and specific is not None, f"Missing generic/1280x652 mirror for {relative}", errors)
+        if generic is not None and specific is not None:
+            require(generic == specific, f"1280x652 compatibility copy drifted from generic {relative}", errors)
+
+    generated = documents.get(Path(".gen/c.json"), {})
+    require(generated.get("variant") == "land", "Generated compatibility metadata must declare land variant", errors)
+    require(generated.get("all_resolutions") == ["1280x652"], "Generated compatibility metadata must target only 1280x652 for this candidate", errors)
+    require(generated.get("support_night") is True and generated.get("support_systemui") is False and generated.get("support_systemui_night") is False, "Generated support flags do not match the theme contract", errors)
+    expected_plugins = ["app", "desktop_window", "medias", "time"]
+    require(generated.get("all_plugins") == expected_plugins, f"Unexpected generated plugin inventory: {generated.get('all_plugins')}", errors)
+    layouts = generated.get("layouts", []) if isinstance(generated, dict) else []
+    require(len(layouts) == 1 and isinstance(layouts[0], dict) and layouts[0].get("resolution") == "1280x652", "Generated metadata must have one 1280x652 layout", errors)
+    if len(layouts) == 1 and isinstance(layouts[0], dict):
+        require(layouts[0].get("all_plugins") == expected_plugins, "Generated per-layout plugin inventory drifted", errors)
+        plugin_index = layouts[0].get("plugins", {})
+        expected_theme_index = [{"type": "desktop_window", "count": 1}, {"type": "medias", "count": 1}, {"type": "time", "count": 1}]
+        expected_hotseat_index = [{"type": "app", "count": 5}]
+        require(plugin_index.get("theme_config", {}).get("json") == expected_theme_index, "Generated theme_config JSON plugin index is wrong", errors)
+        require(plugin_index.get("hotseat_config", {}).get("json") == expected_hotseat_index, "Generated hotseat_config JSON plugin index is wrong", errors)
+
     media = attributes_by_id(documents.get(Path("media/media_view_config.json"), {}))
     require(media.get("tv_media_name", {}).get("width", 0) >= 430, "Media title field is too narrow", errors)
     for vid in ("iv_media_pre", "iv_media_pp", "iv_media_next"):
@@ -239,15 +300,21 @@ def validate_project() -> list[str]:
         require(media.get(vid, {}).get("width", 0) >= 54 and media.get(vid, {}).get("height", 0) >= 54, f"{vid} touch target is below 54 px", errors)
     time_config = documents.get(Path("time/time2_config.json"), {}); require(time_config.get("format") == "dd MMM", "Date format must be dd MMM", errors)
     identity = documents.get(Path("import_theme_info_config.json"), {}); require(identity.get("themeId") == "202608220001" and identity.get("oemId") == "1132", "Theme/OEM identity changed", errors)
+
     try: release = load_json(ROOT / "release-config.json")
     except ValidationError as exc: errors.append(str(exc)); release = {}
     require(release.get("application_id") == CUSTOM_PACKAGE and release.get("plugin_id") == CUSTOM_PLUGIN_ID, "Release identity does not match hardened window/PIP identity", errors)
     require(release.get("sdk") == {"min":16,"target":26,"compile":29} and release.get("native_abis") == [], "Release SDK/native contract changed", errors)
     require(release.get("layout_profile") == "config/ts18-layout.json", "Release layout profile authority missing", errors)
+    required_entries = set(release.get("required_apk_entries", []))
+    for entry in ("assets/.gen/c.json", "assets/layout-1280x652/theme_config.json", "assets/layout-1280x652/hotseat_config.json"):
+        require(entry in required_entries, f"Release contract does not require compatibility entry: {entry}", errors)
     install_tools = release.get("install_tools", [])
     for relative in install_tools: require(isinstance(relative, str) and (ROOT / relative).is_file(), f"Missing install-tool input: {relative}", errors)
     build_text = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
     require(f'applicationId = "{CUSTOM_PACKAGE}"' in build_text, "Gradle applicationId is not hardened identity", errors)
+    require("ignoreAssetsPattern" in build_text and "<dir>_*" in build_text, "Gradle must intentionally package assets/.gen instead of relying on AAPT's dot-directory default", errors)
+
     try:
         root = ElementTree.parse(THEME_ROOT / "AndroidManifest.xml").getroot(); android = "{http://schemas.android.com/apk/res/android}"
         metadata = {item.get(f"{android}name"): item.get(f"{android}value") for item in root.findall("./application/meta-data")}
@@ -258,6 +325,7 @@ def validate_project() -> list[str]:
         components = [item.tag for item in root.findall("./application/*") if item.tag != "meta-data"]
         require(not components, f"Declarative theme must not add Android components: {components}", errors)
     except (OSError, ElementTree.ParseError) as exc: errors.append(f"Invalid Android manifest: {exc}")
+
     expected_png = {"radio_bg.png":(286,64), "media_bg.png":(680,64), "time_bg.png":(178,64)}
     for name, dims in expected_png.items():
         try: require(png_dimensions(THEME_ROOT / "res" / "mipmap-mdpi-v4" / name) == dims, f"Unexpected {name} dimensions", errors)
