@@ -205,12 +205,20 @@ install_self() {
 }
 
 show_status() {
-  if ! have su; then printf 'service=unknown\nrun_count=unknown\nexport_root=%s\n' "$EXPORT_ROOT"; return 0; fi
+  if ! have su; then
+    printf 'service=unknown\nrun_count=unknown\nstatus_error=Magisk su unavailable\nexport_root=%s\n' "$EXPORT_ROOT"
+    return 1
+  fi
   if ! find_install_timeout >/dev/null 2>&1; then
     printf 'service=unknown\nrun_count=unknown\nstatus_error=no deterministic timeout; install Termux coreutils\nexport_root=%s\n' "$EXPORT_ROOT"
     return 1
   fi
   run_install_timeout 10 su -c "if [ -x '$SERVICE_PATH' ]; then echo service=installed; else echo service=missing; fi; c=\$(cat '$STATE_DIR/run-count' 2>/dev/null); [ -n \"\$c\" ] || c=0; echo run_count=\$c; echo max_runs=$MAX_RUNS; exit 0" 2>/dev/null
+  status_rc=$?
+  if [ "$status_rc" -ne 0 ]; then
+    printf 'service=unknown\nrun_count=unknown\nstatus_error=status command failed with exit status %s\nexport_root=%s\n' "$status_rc" "$EXPORT_ROOT"
+    return 1
+  fi
   printf 'export_root=%s\n' "$EXPORT_ROOT"
 }
 
