@@ -21,6 +21,8 @@ FORBIDDEN_DEX_MARKERS = (
 # markers. Their source/runtime wiring is covered by compilation and source tests.
 REQUIRED_DEX_MARKERS = (
     b"Lcom/cbkii/ts18launcher/LauncherActivity;",
+    b"Lcom/cbkii/ts18launcher/AppDrawerActivity;",
+    b"Lcom/cbkii/ts18launcher/SettingsActivity;",
     b"Lcom/cbkii/ts18launcher/MediaListenerService;",
 )
 REQUIRED_FILES = {
