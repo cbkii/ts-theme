@@ -19,8 +19,8 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#09090
 <script>
 (function() {
   "use strict";
-  const TILE=256, HALF=2, GRID=5;
-  let zoom=2, baseX=null, baseY=null, lastLat=0, lastLon=0;
+  const TILE=256, HALF=2;
+  let zoom=15, baseX=null, baseY=null, lastLat=0, lastLon=0, hasCenter=false;
   const tiles=document.getElementById("tiles");
 
   function clampLat(lat){ return Math.max(-85.05112878, Math.min(85.05112878, lat)); }
@@ -41,7 +41,6 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#09090
         img.className="tile";
         img.alt="";
         img.decoding="async";
-        img.referrerPolicy="origin";
         img.src="https://tile.openstreetmap.org/"+z+"/"+tx+"/"+ty+".png";
         img.style.left=((dx+HALF)*TILE)+"px";
         img.style.top=((dy+HALF)*TILE)+"px";
@@ -51,7 +50,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#09090
   }
   window.setCenter=function(lat,lon,z){
     if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
-    lastLat=lat; lastLon=lon;
+    lastLat=lat; lastLon=lon; hasCenter=true;
     zoom=Math.max(2,Math.min(18,Math.round(z||zoom)));
     const x=worldX(lon,zoom), y=worldY(lat,zoom);
     const bx=Math.floor(x), by=Math.floor(y);
@@ -65,10 +64,10 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#09090
   };
   window.adjustZoom=function(delta){
     zoom=Math.max(2,Math.min(18,zoom+delta));
+    if(!hasCenter) return;
     baseX=null; baseY=null;
     window.setCenter(lastLat,lastLon,zoom);
   };
-  window.setCenter(0,0,2);
 })();
 </script>
 </body>
