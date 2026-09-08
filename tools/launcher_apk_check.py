@@ -15,10 +15,13 @@ FORBIDDEN_DEX_MARKERS = (
     b"Landroidx/",
     b"Lcom/qihoo360/",
 )
+# Only require class names that Android must resolve by their manifest identity.
+# Internal implementation classes such as MapPanel are deliberately eligible for
+# R8 obfuscation in the signed/minified release and therefore are not stable DEX
+# markers. Their source/runtime wiring is covered by compilation and source tests.
 REQUIRED_DEX_MARKERS = (
     b"Lcom/cbkii/ts18launcher/LauncherActivity;",
     b"Lcom/cbkii/ts18launcher/MediaListenerService;",
-    b"Lcom/cbkii/ts18launcher/MapPanel;",
 )
 REQUIRED_FILES = {
     "AndroidManifest.xml",
@@ -67,7 +70,7 @@ def inspect(apk: Path) -> None:
                 fail(f"forbidden runtime marker present in DEX: {marker!r}")
         for marker in REQUIRED_DEX_MARKERS:
             if marker not in dex:
-                fail(f"required launcher class marker missing: {marker!r}")
+                fail(f"required manifest component marker missing: {marker!r}")
 
     print(
         "launcher envelope: PASS "
