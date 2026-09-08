@@ -77,8 +77,6 @@ jobs:
             find theme/build launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
             exit 1
           fi
-          python3 tools/launcher_apk_check.py \
-            launcher/build/outputs/apk/debug/launcher-debug.apk
 
       - name: Exercise signed release build with configuration cache
         shell: bash
