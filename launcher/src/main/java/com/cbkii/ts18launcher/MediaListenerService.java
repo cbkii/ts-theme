@@ -81,7 +81,10 @@ public final class MediaListenerService extends NotificationListenerService {
     public void onListenerConnected() {
         super.onListenerConnected();
         instance = this;
-        if (sessionManager == null) return;
+        if (sessionManager == null) {
+            publishEmpty();
+            return;
+        }
         try {
             sessionManager.addOnActiveSessionsChangedListener(
                     sessionsChangedListener, listenerComponent);
@@ -106,6 +109,7 @@ public final class MediaListenerService extends NotificationListenerService {
         releaseAll();
         detachSessionListener();
         if (instance == this) instance = null;
+        publishEmpty();
         super.onDestroy();
     }
 
