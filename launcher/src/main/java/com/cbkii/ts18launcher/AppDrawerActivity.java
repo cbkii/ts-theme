@@ -22,7 +22,9 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @SuppressLint("SetTextI18n")
 public final class AppDrawerActivity extends Activity {
@@ -58,7 +60,7 @@ public final class AppDrawerActivity extends Activity {
         root.addView(grid, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        setContentView(root);
+        Ts18SafeArea.setContent(this, root);
         loadEntries();
         grid.setAdapter(new AppsAdapter());
         grid.setOnItemClickListener((parent, view, position, id) -> onEntry(entries.get(position)));
@@ -68,19 +70,30 @@ public final class AppDrawerActivity extends Activity {
         PackageManager pm = getPackageManager();
         Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> resolved = pm.queryIntentActivities(query, PackageManager.MATCH_ALL);
+        Set<String> seenPackages = new HashSet<>();
         for (ResolveInfo info : resolved) {
-            if (info.activityInfo == null || getPackageName().equals(info.activityInfo.packageName)) continue;
-            CharSequence label = info.loadLabel(pm);
+            if (info.activityInfo == null) continue;
+            String packageName = info.activityInfo.packageName;
+            if (getPackageName().equals(packageName) || seenPackages.contains(packageName)) continue;
+
+            Intent canonical = pm.getLaunchIntentForPackage(packageName);
+            ComponentName component = canonical == null ? null : canonical.getComponent();
+            if (component == null) continue;
+            seenPackages.add(packageName);
+
+            CharSequence label = info.activityInfo.applicationInfo.loadLabel(pm);
             entries.add(new Entry(
-                    info.activityInfo.packageName,
-                    info.activityInfo.name,
-                    label == null ? info.activityInfo.packageName : label.toString()));
+                    packageName,
+                    component.getClassName(),
+                    label == null ? packageName : label.toString()));
         }
         Collections.sort(entries, Comparator.comparing(e -> e.label.toLowerCase(java.util.Locale.ROOT)));
     }
 
     private void onEntry(Entry entry) {
         if (pickKey != null && !pickKey.isEmpty()) {
+            // The picker exposes exactly one canonical launcher activity per package, so the
+            // stored package and the later PackageManager launch resolve to the same target.
             LauncherPrefs.setPackage(this, pickKey, entry.packageName);
             Toast.makeText(this, entry.label + " selected", Toast.LENGTH_SHORT).show();
             finish();
