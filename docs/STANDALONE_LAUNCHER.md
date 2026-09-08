@@ -10,10 +10,13 @@ It is intentionally installable as an ordinary app before it can become HOME. Do
 
 Requirements match the repository CI: JDK 17, Gradle 9.5, Android platform 29 and Build Tools 36.
 
+For ordinary development validation:
+
 ```bash
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
-python3 tools/launcher_apk_check.py launcher/build/outputs/apk/debug/launcher-debug.apk
 ```
+
+The debug APK is useful for compilation/lint/unit testing, but its unminified DEX layout is not treated as release-envelope evidence.
 
 For a release build, provide the existing four signing inputs used by the repository and run:
 
@@ -21,6 +24,8 @@ For a release build, provide the existing four signing inputs used by the reposi
 gradle -PVERSION_NAME=0.1.0 -PVERSION_CODE=1000 :launcher:assembleRelease
 python3 tools/launcher_apk_check.py launcher/build/outputs/apk/release/launcher-release.apk
 ```
+
+The release-envelope check is fail-closed: the signed/minified candidate must stay within the standalone package-size/runtime contract, contain exactly one DEX, contain no native libraries or Kotlin/AndroidX/RePlugin runtime payload, and retain the required launcher classes and local map asset.
 
 ## Candidate workflow
 
