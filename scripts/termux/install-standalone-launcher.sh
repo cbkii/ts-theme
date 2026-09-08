@@ -52,6 +52,10 @@ safe_component() {
   [[ "$1" =~ ^[A-Za-z0-9._]+/[A-Za-z0-9._$]+$ ]]
 }
 
+is_candidate_home() {
+  [[ "$1" == "$PACKAGE/"* ]]
+}
+
 root_cmd() {
   local command_text="$1"
   timeout -k 2 "$TIMEOUT_SECONDS" su -c "$command_text"
@@ -107,13 +111,13 @@ if ((ROLLBACK)); then
     previous="$(head -n 1 "$PREVIOUS_HOME_FILE")"
   fi
 
-  if safe_component "$previous"; then
+  if safe_component "$previous" && ! is_candidate_home "$previous"; then
     log "Restoring previously captured HOME: $previous"
     if ! root_cmd "cmd package set-home-activity --user 0 '$previous'"; then
       warn "previous HOME could not be restored automatically"
     fi
   else
-    warn "no safe previous HOME component was captured"
+    warn "no safe non-launcher previous HOME component was captured"
   fi
 
   if ! root_cmd "pm disable --user 0 '$HOME_COMPONENT'"; then
@@ -136,9 +140,21 @@ safe_apk_path "$APK" || stop "APK path failed safety validation: $APK"
 
 previous="$(resolve_home 2>/dev/null)"
 if safe_component "$previous"; then
-  printf '%s\n' "$previous" >"$PREVIOUS_HOME_FILE" || stop "cannot save rollback HOME"
-  chmod 600 "$PREVIOUS_HOME_FILE" 2>/dev/null || true
-  log "Captured previous HOME: $previous"
+  if is_candidate_home "$previous"; then
+    captured=""
+    if [[ -f "$PREVIOUS_HOME_FILE" ]]; then
+      captured="$(head -n 1 "$PREVIOUS_HOME_FILE")"
+    fi
+    if safe_component "$captured" && ! is_candidate_home "$captured"; then
+      log "Current HOME is the candidate; preserving captured rollback HOME: $captured"
+    else
+      warn "current HOME is the candidate and no safe non-launcher rollback HOME is recorded"
+    fi
+  else
+    printf '%s\n' "$previous" >"$PREVIOUS_HOME_FILE" || stop "cannot save rollback HOME"
+    chmod 600 "$PREVIOUS_HOME_FILE" 2>/dev/null || true
+    log "Captured previous HOME: $previous"
+  fi
 else
   warn "current HOME could not be captured as a safe component"
 fi
