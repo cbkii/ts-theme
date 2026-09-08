@@ -72,6 +72,7 @@ No SzChoiceWay/FYT/other-vendor MCU protocol is copied onto TS18.
 - registers callbacks on every active session so metadata/playback changes are not missed;
 - compares session tokens rather than `MediaController` object identity;
 - excludes the configured radio package from generic music selection;
+- excludes Android telecom/call session packages from generic music selection;
 - prefers playing/buffering sessions, then paused/stopped sessions;
 - emits title/artist/play state only (no album art);
 - sends previous/play-pause/next exactly once to the selected controller.
@@ -131,9 +132,23 @@ Root is not a substitute for platform signing or protected service authority. Ro
 
 Do not merge the two identities or make the standalone launcher depend on RePlugin.
 
+### Retained legacy compatibility contract
+
+The standalone direction does not invalidate the previously established legacy-theme architecture. For `theme/` work:
+
+- discovery and rendering remain owned by Android PackageManager, DoFun `com.dofun.variety` and RePlugin;
+- the project keeps the unique `launcher.variety.theme.plugin.sfp_cbk_black` / `sfp_cbk_black` identity rather than impersonating a vendor package;
+- the maintained compatibility envelope remains minSdk 16, targetSdk 26, compileSdk 29, Qihoo360 RePlugin 2.3.4, no native libraries, a minimal no-component manifest and independent signing unless stronger exact-device evidence requires change;
+- no vendor APK, resource, DEX, signer or private device data is a build input;
+- CI can establish clean packaging/geometry but not DoFun discovery, signer acceptance, rendering or persistence on the exact TS18.
+
+If native DoFun media behaviour is insufficient, executable media integration remains a **separate adapter lane**, not code added into the declarative theme APK. That adapter must retain the earlier safety/selection rules: rank evidence-backed Android/DoFun/Topway surfaces, keep one normalised current target, exclude telecom sessions, select one control authority, dispatch each action exactly once, fail open on ambiguity and never create a second player/queue/MediaSession/audio-focus owner. Any exact-version DoFun/LSPosed hook starts log-only, narrowly scoped and reversible.
+
+Radio remains a separate authority throughout both lanes and must not be represented as a synthetic generic-media session.
+
 ## Physical validation boundary
 
-Repository CI can prove compilation, lint, unit geometry, one-DEX/no-native/no-Kotlin/no-RePlugin launcher packaging and static resource constraints.
+Repository CI can prove compilation, lint, unit geometry, the signed/minified one-DEX/no-native/no-Kotlin/no-RePlugin launcher release envelope and static resource constraints.
 
 Only the TS18 can prove:
 
