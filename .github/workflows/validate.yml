@@ -69,13 +69,18 @@ jobs:
           if ! gradle --no-daemon --stacktrace \
               :theme:lintDebug :theme:assembleDebug \
               :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug; then
+            theme_report="theme/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+            launcher_report="launcher/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+            for report in "$theme_report" "$launcher_report"; do
+              if [[ -f "$report" ]]; then cat "$report"; fi
+            done
             find theme/build launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
             exit 1
           fi
           python3 tools/launcher_apk_check.py \
             launcher/build/outputs/apk/debug/launcher-debug.apk
 
-      - name: Exercise signed release builds with configuration cache
+      - name: Exercise signed release build with configuration cache
         shell: bash
         env:
           TS_THEME_KEYSTORE_FILE: ${{ runner.temp }}/ci-release-validation.jks
