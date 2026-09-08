@@ -34,6 +34,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private Button playPause;
     private MapPanel mapPanel;
     private boolean launchedAsHome;
+    private boolean locationPermissionRequested;
     private MediaListenerService.Snapshot genericSnapshot =
             new MediaListenerService.Snapshot("", "", "", false);
     private MediaListenerService.Snapshot radioSnapshot =
@@ -57,20 +58,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 applyGeometry(right - left, bottom - top));
         root.post(() -> applyGeometry(root.getWidth(), root.getHeight()));
-
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[] {
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-            }, REQUEST_LOCATION);
-        }
     }
 
     @Override
     protected void onStart() {
         super.onStart();
         MediaListenerService.addObserver(this);
+        MediaListenerService.refreshActiveSessions();
         root.post(this::updateMapVisibility);
         updateLabels();
     }
@@ -229,7 +223,18 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             applyGeometry(root.getWidth(), root.getHeight());
         }
         mapPanel.setVisibility(View.VISIBLE);
+        requestMapLocationIfNeeded();
         mapPanel.resumeWebView();
+    }
+
+    private void requestMapLocationIfNeeded() {
+        if (locationPermissionRequested
+                || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        locationPermissionRequested = true;
+        requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
     }
 
     private LinearLayout stripPanel() {
@@ -285,7 +290,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void updateLabels() {
         String radioPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_RADIO);
-        if (!radioSnapshot.displayText().isEmpty()) {
+        if (!radioPackage.isEmpty()
+                && radioPackage.equals(radioSnapshot.packageName)
+                && !radioSnapshot.displayText().isEmpty()) {
             radioText.setText(radioSnapshot.displayText());
         } else {
             radioText.setText(AppResolver.labelFor(this, radioPackage,
