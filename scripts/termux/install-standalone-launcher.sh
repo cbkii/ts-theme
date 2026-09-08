@@ -28,7 +28,9 @@ stop() {
 }
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
+TS18 standalone launcher installer v$SCRIPT_VERSION
+
 Usage:
   install-standalone-launcher.sh /path/to/launcher.apk [--set-home]
   install-standalone-launcher.sh --rollback-home
@@ -89,6 +91,8 @@ done
 
 command -v timeout >/dev/null 2>&1 || stop "timeout is missing; pkg install coreutils"
 command -v su >/dev/null 2>&1 || stop "Magisk su is unavailable"
+
+log "TS18 standalone launcher installer v$SCRIPT_VERSION"
 
 root_uid="$(root_cmd 'id -u' 2>/dev/null | head -n 1)"
 [[ "$root_uid" == "0" ]] || stop "su did not provide UID 0"
