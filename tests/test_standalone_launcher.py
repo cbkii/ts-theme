@@ -103,6 +103,9 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("timeout -k 2", installer)
         self.assertIn("--rollback-home", installer)
         self.assertIn("previous-home.txt", installer)
+        self.assertIn("is_candidate_home", installer)
+        self.assertIn("preserving captured rollback HOME", installer)
+        self.assertIn("no safe non-launcher previous HOME component", installer)
         for forbidden in (
             "pm uninstall com.dofun.variety",
             "pm disable --user 0 com.dofun.variety",
