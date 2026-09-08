@@ -59,6 +59,9 @@ class StandaloneLauncherContractTests(unittest.TestCase):
             path.read_text(encoding="utf-8")
             for path in sorted(source_root.rglob("*.java"))
         )
+        media = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/MediaListenerService.java"
+        )
         self.assertNotIn("new MediaSession(", java)
         self.assertNotIn("requestAudioFocus", java)
         self.assertNotIn("WakeLock", java)
@@ -68,10 +71,16 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("getSessionToken()", java)
         self.assertIn("com.android.server.telecom", java)
         self.assertIn("configuredRadioPackage", java)
+        self.assertIn("if (sessionManager == null) {\n            publishEmpty();", media)
+        self.assertGreaterEqual(media.count("publishEmpty();"), 4)
 
     def test_web_map_is_local_lifecycle_bound_and_origin_restricted(self):
         panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
+        launcher = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java"
+        )
         html = self.read("launcher/src/main/assets/map/map.html")
+        checker = self.read("tools/launcher_apk_check.py")
         self.assertIn('file:///android_asset/map/map.html', panel)
         self.assertIn('tile.openstreetmap.org', panel)
         self.assertIn('tile.openstreetmap.org', html)
@@ -81,6 +90,9 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("removeUpdates(this)", panel)
         self.assertIn("pageReady", panel)
         self.assertIn("lastLocation", panel)
+        self.assertIn("new MapPanel(", launcher)
+        self.assertIn('"assets/map/map.html"', checker)
+        self.assertNotIn("ts18launcher/MapPanel;", checker)
 
     def test_root_policy_is_authorised_but_bounded_and_reversible(self):
         agents = self.read("AGENTS.md")
@@ -108,6 +120,10 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("install-standalone-launcher.sh", workflow)
         self.assertIn("measure-standalone-launcher.sh", workflow)
         self.assertIn("STANDALONE_LAUNCHER.md", workflow)
+        self.assertIn("qualified/BUILD_INFO.txt", workflow)
+        self.assertIn("Unexpected candidate bundle.", workflow)
+        self.assertIn("mapfile -t actual", workflow)
+        self.assertNotIn('gh release create "$tag" qualified/*', workflow)
         for match in re.finditer(r"uses:\s+([^\s]+)", workflow):
             action = match.group(1)
             self.assertRegex(action, r"@(?:[0-9a-f]{40})$")
