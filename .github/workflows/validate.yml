@@ -62,6 +62,18 @@ jobs:
       - name: Fetch pinned RePlugin compatibility library
         run: python3 tools/fetch_replugin.py
 
+      - name: Verify launcher release runtime dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/launcher-release-runtime-dependencies.txt"
+          gradle --no-daemon -q :launcher:dependencies \
+            --configuration releaseRuntimeClasspath | tee "$report"
+          if ! grep -Eq '^[[:space:]]*No dependencies[[:space:]]*$' "$report"; then
+            echo "::error::Standalone launcher releaseRuntimeClasspath gained a runtime dependency."
+            exit 1
+          fi
+
       - name: Build debug APKs, tests and Android lint
         shell: bash
         run: |
@@ -100,4 +112,6 @@ jobs:
             --apk theme/build/outputs/apk/release/theme-release.apk \
             --config release-config.json
           python3 tools/launcher_apk_check.py \
+            launcher/build/outputs/apk/release/launcher-release.apk
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
             launcher/build/outputs/apk/release/launcher-release.apk

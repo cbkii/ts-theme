@@ -17,13 +17,19 @@ warn() {
 }
 
 capture_root() {
-  local label="$1" outfile="$2" command_text="$3"
+  local label="$1" outfile="$2" command_text="$3" status
   {
     printf '# %s\n' "$label"
     printf '# captured_at=%s\n' "$(date -Iseconds 2>/dev/null || date)"
     timeout -k 2 "$TIMEOUT_SECONDS" su -c "$command_text"
-    printf '# exit_status=%s\n' "$?"
+    status=$?
+    printf '# exit_status=%s\n' "$status"
   } >"$outfile" 2>&1
+
+  if ((status != 0)); then
+    warn "$label capture exited with status $status"
+  fi
+  return "$status"
 }
 
 command -v timeout >/dev/null 2>&1 || {
@@ -32,6 +38,10 @@ command -v timeout >/dev/null 2>&1 || {
 }
 command -v su >/dev/null 2>&1 || {
   log "STOP: Magisk su is unavailable"
+  exit 2
+}
+command -v sha256sum >/dev/null 2>&1 || {
+  log "STOP: sha256sum is unavailable"
   exit 2
 }
 [[ "$(timeout -k 2 8 su -c 'id -u' 2>/dev/null | head -n 1)" == "0" ]] || {
@@ -93,17 +103,29 @@ HOME, modify notification access, change SELinux, or write protected app data.
 EOF
 
 archive="$EXPORT_ROOT/TS18-launcher-diagnostics-$stamp.zip"
+digest="$archive.sha256.txt"
 if command -v zip >/dev/null 2>&1; then
   if (cd "$run" && timeout -k 2 30 zip -q -r "$archive" .) && [[ -s "$archive" ]]; then
-    sha256sum "$archive" >"$archive.sha256.txt"
-    log "SUCCESS: $archive"
-    rm -rf -- "$work"
-    exit 0
+    if sha256sum -- "$archive" >"$digest"; then
+      if ((WARNINGS)); then
+        log "COMPLETED WITH WARNINGS: $archive"
+      else
+        log "SUCCESS: $archive"
+      fi
+      rm -rf -- "$work"
+      exit 0
+    fi
+    warn "SHA-256 generation failed; archive will not be treated as verified"
+  else
+    warn "ZIP packaging failed"
   fi
-  warn "ZIP packaging failed"
+  rm -f -- "$archive" "$digest"
+else
+  warn "zip is unavailable; exporting unpacked diagnostics"
 fi
 
 fallback="$EXPORT_ROOT/TS18-launcher-diagnostics-$stamp"
+rm -rf -- "$fallback"
 if cp -a "$run" "$fallback"; then
   log "COMPLETED WITH WARNINGS: unpacked export $fallback"
   rm -rf -- "$work"

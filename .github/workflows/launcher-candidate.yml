@@ -94,11 +94,13 @@ jobs:
           gradle --no-daemon --stacktrace \
             -PVERSION_NAME="$VERSION_NAME" -PVERSION_CODE="$VERSION_CODE" \
             :launcher:lintRelease :launcher:testDebugUnitTest :launcher:assembleRelease
-          python3 tools/launcher_apk_check.py launcher/build/outputs/apk/release/launcher-release.apk
+          apk="launcher/build/outputs/apk/release/launcher-release.apk"
+          python3 tools/launcher_apk_check.py "$apk"
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose "$apk"
 
           mkdir -p qualified
           apk_name="TS18-Standalone-Launcher-v${VERSION_NAME}.apk"
-          cp launcher/build/outputs/apk/release/launcher-release.apk "qualified/$apk_name"
+          cp "$apk" "qualified/$apk_name"
           cp scripts/termux/install-standalone-launcher.sh qualified/
           cp scripts/termux/measure-standalone-launcher.sh qualified/
           cp docs/STANDALONE_LAUNCHER.md qualified/

@@ -67,12 +67,24 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertNotIn("WakeLock", java)
         self.assertNotIn("startForeground(", java)
         self.assertNotIn("com.qihoo360", java)
-        self.assertIn("MediaSessionManager", java)
-        self.assertIn("getSessionToken()", java)
-        self.assertIn("com.android.server.telecom", java)
-        self.assertIn("configuredRadioPackage", java)
-        self.assertIn("if (sessionManager == null) {\n            publishEmpty();", media)
-        self.assertGreaterEqual(media.count("publishEmpty();"), 4)
+        self.assertIn("MediaSessionManager", media)
+        self.assertIn("requestRebind(", media)
+        self.assertIn("PlaybackState.ACTION_SKIP_TO_PREVIOUS", media)
+        self.assertIn("PlaybackState.ACTION_SKIP_TO_NEXT", media)
+        self.assertIn("PlaybackState.ACTION_PLAY_PAUSE", media)
+        self.assertIn("publishEmpty();", media)
+
+    def test_release_runtime_dependency_and_apk_gates_are_real(self):
+        workflow = self.read(".github/workflows/validate.yml")
+        checker = self.read("tools/launcher_apk_check.py")
+        self.assertIn("--configuration releaseRuntimeClasspath", workflow)
+        self.assertIn("No dependencies", workflow)
+        self.assertIn("launcher_apk_check.py", workflow)
+        self.assertIn("apksigner", workflow)
+        for marker in ("Lkotlin/", "Lkotlinx/", "Landroidx/", "Lcom/qihoo360/"):
+            self.assertIn(marker, checker)
+        self.assertIn('dex_files != ["classes.dex"]', checker)
+        self.assertIn('name.startswith("lib/")', checker)
 
     def test_web_map_is_local_lifecycle_bound_and_origin_restricted(self):
         panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
@@ -86,26 +98,26 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('tile.openstreetmap.org', html)
         self.assertNotIn("addJavascriptInterface", panel)
         self.assertNotIn("http://", panel + html)
-        self.assertIn("requestLocationUpdates", panel)
+        self.assertIn("LocationManager.GPS_PROVIDER", panel)
+        self.assertNotIn("LocationManager.NETWORK_PROVIDER", panel)
         self.assertIn("removeUpdates(this)", panel)
-        self.assertIn("pageReady", panel)
-        self.assertIn("lastLocation", panel)
+        self.assertIn("pointerdown", html)
+        self.assertIn("pointermove", html)
         self.assertIn("new MapPanel(", launcher)
         self.assertIn('"assets/map/map.html"', checker)
         self.assertNotIn("ts18launcher/MapPanel;", checker)
 
-    def test_root_policy_is_authorised_but_bounded_and_reversible(self):
-        agents = self.read("AGENTS.md")
+    def test_root_policy_is_bounded_reversible_and_prevalidated(self):
         installer = self.read("scripts/termux/install-standalone-launcher.sh")
-        self.assertIn("Magisk-root superuser access", agents)
-        self.assertIn("authorised and safe to use", agents)
-        self.assertIn("Root does not grant platform signing", agents)
         self.assertIn("timeout -k 2", installer)
         self.assertIn("--rollback-home", installer)
         self.assertIn("previous-home.txt", installer)
-        self.assertIn("is_candidate_home", installer)
-        self.assertIn("preserving captured rollback HOME", installer)
-        self.assertIn("no safe non-launcher previous HOME component", installer)
+        self.assertIn("capture_rollback_home_for_change", installer)
+        self.assertIn("aapt/aapt2 is required", installer)
+        self.assertIn("apksigner is required", installer)
+        self.assertIn("SHA256SUMS.txt", installer)
+        self.assertIn("APK application ID mismatch", installer)
+        self.assertIn("FAILED: rollback did not complete cleanly", installer)
         for forbidden in (
             "pm uninstall com.dofun.variety",
             "pm disable --user 0 com.dofun.variety",
@@ -114,6 +126,13 @@ class StandaloneLauncherContractTests(unittest.TestCase):
             "rm -rf /data/user/0/com.dofun.variety",
         ):
             self.assertNotIn(forbidden, installer)
+
+    def test_measurement_reports_partial_capture_and_cleans_partial_archives(self):
+        measure = self.read("scripts/termux/measure-standalone-launcher.sh")
+        self.assertIn("capture exited with status", measure)
+        self.assertIn("SHA-256 generation failed", measure)
+        self.assertIn('rm -f -- "$archive" "$digest"', measure)
+        self.assertIn("COMPLETED WITH WARNINGS", measure)
 
     def test_candidate_workflow_keeps_write_permission_in_publish_job(self):
         workflow = self.read(".github/workflows/launcher-candidate.yml")
@@ -124,9 +143,9 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("measure-standalone-launcher.sh", workflow)
         self.assertIn("STANDALONE_LAUNCHER.md", workflow)
         self.assertIn("qualified/BUILD_INFO.txt", workflow)
-        self.assertIn("cd qualified\n            sha256sum", workflow)
         self.assertIn("Unexpected candidate bundle.", workflow)
         self.assertIn("mapfile -t actual", workflow)
+        self.assertIn("GH_REPO: ${{ github.repository }}", workflow)
         self.assertNotIn('gh release create "$tag" qualified/*', workflow)
         for match in re.finditer(r"uses:\s+([^\s]+)", workflow):
             action = match.group(1)

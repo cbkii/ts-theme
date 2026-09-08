@@ -102,6 +102,9 @@ public final class MediaListenerService extends NotificationListenerService {
         instance = null;
         publishEmpty();
         super.onListenerDisconnected();
+        if (listenerComponent != null) {
+            requestRebind(listenerComponent);
+        }
     }
 
     @Override
@@ -293,6 +296,11 @@ public final class MediaListenerService extends NotificationListenerService {
         }
     }
 
+    public static void refreshActiveSessions() {
+        MediaListenerService service = instance;
+        if (service != null) service.refresh();
+    }
+
     public static boolean sendGeneric(Command command) {
         MediaListenerService service = instance;
         if (service == null) return false;
@@ -306,6 +314,7 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     private MediaController findGenericController() {
+        if (sessionManager == null) return null;
         try {
             String radioPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_RADIO);
             return pickPrimary(sessionManager.getActiveSessions(listenerComponent), radioPackage);
@@ -315,6 +324,7 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     private MediaController findRadioController() {
+        if (sessionManager == null) return null;
         try {
             String radioPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_RADIO);
             return pickExactPackage(sessionManager.getActiveSessions(listenerComponent), radioPackage);
@@ -326,16 +336,28 @@ public final class MediaListenerService extends NotificationListenerService {
     private boolean sendToController(MediaController controller, Command command) {
         if (controller == null || command == null) return false;
         try {
+            PlaybackState state = controller.getPlaybackState();
+            long actions = state == null ? 0L : state.getActions();
             switch (command) {
                 case PREVIOUS:
+                    if ((actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) == 0L) return false;
                     controller.getTransportControls().skipToPrevious();
                     break;
                 case NEXT:
+                    if ((actions & PlaybackState.ACTION_SKIP_TO_NEXT) == 0L) return false;
                     controller.getTransportControls().skipToNext();
                     break;
                 case PLAY_PAUSE:
-                    PlaybackState state = controller.getPlaybackState();
-                    if (state != null && state.getState() == PlaybackState.STATE_PLAYING) {
+                    boolean isPlaying = state != null
+                            && state.getState() == PlaybackState.STATE_PLAYING;
+                    long directAction = isPlaying
+                            ? PlaybackState.ACTION_PAUSE
+                            : PlaybackState.ACTION_PLAY;
+                    if ((actions & directAction) == 0L
+                            && (actions & PlaybackState.ACTION_PLAY_PAUSE) == 0L) {
+                        return false;
+                    }
+                    if (isPlaying) {
                         controller.getTransportControls().pause();
                     } else {
                         controller.getTransportControls().play();
