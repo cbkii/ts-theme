@@ -74,10 +74,6 @@ find_aapt() {
     command -v aapt
   elif command -v aapt2 >/dev/null 2>&1; then
     command -v aapt2
-  elif [[ -x /system/bin/aapt ]]; then
-    printf '%s\n' /system/bin/aapt
-  elif [[ -x /system/bin/aapt2 ]]; then
-    printf '%s\n' /system/bin/aapt2
   else
     return 1
   fi
@@ -85,7 +81,7 @@ find_aapt() {
 
 validate_apk_identity() {
   local aapt_bin badging app_id
-  aapt_bin="$(find_aapt)" || stop "aapt/aapt2 is required to validate the APK before installation"
+  aapt_bin="$(find_aapt)" || stop "aapt/aapt2 is required in Termux to validate the APK before installation"
   if ! badging="$(timeout -k 2 12 "$aapt_bin" dump badging "$APK" 2>&1)"; then
     stop "APK package metadata could not be parsed: $badging"
   fi
