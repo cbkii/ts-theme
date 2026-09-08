@@ -103,12 +103,24 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         rail.setBackgroundColor(0xFF090909);
 
         rail.addView(railButton("NAV", v -> openConfigured(LauncherPrefs.KEY_NAV),
-                v -> openSettings()));
+                v -> {
+                    openSettings();
+                    return true;
+                }));
         rail.addView(railButton("APPS", v -> startActivity(new Intent(this, AppDrawerActivity.class)),
-                v -> openSettings()));
+                v -> {
+                    openSettings();
+                    return true;
+                }));
         rail.addView(railButton("BT", v -> openConfigured(LauncherPrefs.KEY_BLUETOOTH),
-                v -> openSettings()));
-        rail.addView(railButton("SET", v -> openSettings(), v -> openSettings()));
+                v -> {
+                    openSettings();
+                    return true;
+                }));
+        rail.addView(railButton("SET", v -> openSettings(), v -> {
+            openSettings();
+            return true;
+        }));
         root.addView(rail);
     }
 
@@ -145,7 +157,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             }
         });
         radioText.setOnClickListener(v -> openConfigured(LauncherPrefs.KEY_RADIO));
-        radioText.setOnLongClickListener(v -> openSettings());
+        radioText.setOnLongClickListener(v -> {
+            openSettings();
+            return true;
+        });
 
         radioPanel.addView(previous, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
         radioPanel.addView(radioText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
