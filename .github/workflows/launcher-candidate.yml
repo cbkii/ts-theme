@@ -104,13 +104,16 @@ jobs:
           printf 'source_sha=%s\nversion_name=%s\nversion_code=%s\n' \
             "$GITHUB_SHA" "$VERSION_NAME" "$VERSION_CODE" \
             > qualified/BUILD_INFO.txt
-          sha256sum \
-            "qualified/$apk_name" \
-            qualified/install-standalone-launcher.sh \
-            qualified/measure-standalone-launcher.sh \
-            qualified/STANDALONE_LAUNCHER.md \
-            qualified/BUILD_INFO.txt \
-            > qualified/SHA256SUMS.txt
+          (
+            cd qualified
+            sha256sum \
+              "$apk_name" \
+              install-standalone-launcher.sh \
+              measure-standalone-launcher.sh \
+              STANDALONE_LAUNCHER.md \
+              BUILD_INFO.txt \
+              > SHA256SUMS.txt
+          )
 
       - name: Upload exact candidate bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
