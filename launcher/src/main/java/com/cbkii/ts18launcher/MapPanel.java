@@ -24,7 +24,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
-@SuppressLint({"SetJavaScriptEnabled", "SetTextI18n", "MissingPermission"})
+@SuppressLint({"SetJavaScriptEnabled", "SetTextI18n", "MissingPermission", "ViewConstructor"})
 final class MapPanel extends FrameLayout implements LocationListener {
     interface NavigationLauncher {
         void openNavigation();
