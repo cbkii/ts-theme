@@ -61,6 +61,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
         settings.setLoadsImagesAutomatically(true);
         settings.setBlockNetworkLoads(false);
         settings.setSupportZoom(false);
+        settings.setUserAgentString(mapUserAgent());
         webView.setBackgroundColor(Color.BLACK);
         webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, false);
         webView.setWebViewClient(new RestrictedMapClient());
@@ -104,6 +105,18 @@ final class MapPanel extends FrameLayout implements LocationListener {
 
         locationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
         webView.loadUrl(MAP_URL);
+    }
+
+    private String mapUserAgent() {
+        String version = "unknown";
+        try {
+            String installed = activity.getPackageManager()
+                    .getPackageInfo(activity.getPackageName(), 0).versionName;
+            if (installed != null && !installed.isEmpty()) version = installed;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            // The running package should always resolve; retain a deterministic fallback.
+        }
+        return "TS18Launcher/" + version + " (+https://github.com/cbkii/ts-theme)";
     }
 
     private Button mapButton(String text) {
