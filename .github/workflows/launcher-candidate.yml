@@ -20,7 +20,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: standalone-launcher-candidate-${{ github.repository }}
@@ -30,6 +30,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
     steps:
       - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -63,6 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
           "$sdkmanager" "platforms;android-29" "build-tools;36.0.0" >/dev/null
 
       - name: Materialise release key
@@ -91,23 +94,51 @@ jobs:
             -PVERSION_NAME="$VERSION_NAME" -PVERSION_CODE="$VERSION_CODE" \
             :launcher:lintRelease :launcher:testDebugUnitTest :launcher:assembleRelease
           python3 tools/launcher_apk_check.py launcher/build/outputs/apk/release/launcher-release.apk
+
           mkdir -p qualified
           cp launcher/build/outputs/apk/release/launcher-release.apk \
             "qualified/TS18-Standalone-Launcher-v${VERSION_NAME}.apk"
-          sha256sum qualified/*.apk > qualified/SHA256SUMS.txt
+          cp scripts/termux/install-standalone-launcher.sh qualified/
+          cp scripts/termux/measure-standalone-launcher.sh qualified/
+          cp docs/STANDALONE_LAUNCHER.md qualified/
+          sha256sum \
+            "qualified/TS18-Standalone-Launcher-v${VERSION_NAME}.apk" \
+            qualified/install-standalone-launcher.sh \
+            qualified/measure-standalone-launcher.sh \
+            qualified/STANDALONE_LAUNCHER.md \
+            > qualified/SHA256SUMS.txt
           printf 'source_sha=%s\nversion_name=%s\nversion_code=%s\n' \
             "$GITHUB_SHA" "$VERSION_NAME" "$VERSION_CODE" \
             > qualified/BUILD_INFO.txt
 
-      - name: Upload candidate artifact
+      - name: Upload exact candidate bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: TS18-Standalone-Launcher-v${{ inputs.version_name }}
           path: qualified/
           retention-days: 14
 
-      - name: Publish optional GitHub prerelease
-        if: ${{ inputs.publish_prerelease }}
+  publish:
+    if: ${{ inputs.publish_prerelease }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download exact qualified candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: TS18-Standalone-Launcher-v${{ inputs.version_name }}
+          path: qualified/
+
+      - name: Verify candidate bundle before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd qualified && sha256sum -c SHA256SUMS.txt)
+
+      - name: Publish GitHub prerelease
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
