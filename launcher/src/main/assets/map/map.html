@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<style>
+html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#090909}
+#tiles{position:absolute;left:0;top:0;width:1280px;height:1280px;will-change:transform}
+.tile{position:absolute;width:256px;height:256px;image-rendering:auto}
+#marker{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;
+  border:3px solid #fff;border-radius:50%;background:#ff6b4a;box-shadow:0 0 0 2px #0008}
+#attr{position:absolute;right:4px;bottom:3px;background:#000b;color:#ddd;padding:2px 4px;
+  font:10px sans-serif;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="map"><div id="tiles"></div><div id="marker"></div>
+<div id="attr">© OpenStreetMap contributors</div></div>
+<script>
+(function() {
+  "use strict";
+  const TILE=256, HALF=2, GRID=5;
+  let zoom=2, baseX=null, baseY=null, lastLat=0, lastLon=0;
+  const tiles=document.getElementById("tiles");
+
+  function clampLat(lat){ return Math.max(-85.05112878, Math.min(85.05112878, lat)); }
+  function worldX(lon,z){ return (lon+180)/360*Math.pow(2,z); }
+  function worldY(lat,z){
+    const r=clampLat(lat)*Math.PI/180;
+    return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z);
+  }
+  function rebuild(bx,by,z){
+    tiles.textContent="";
+    const max=Math.pow(2,z);
+    for(let dy=-HALF;dy<=HALF;dy++){
+      for(let dx=-HALF;dx<=HALF;dx++){
+        let tx=((bx+dx)%max+max)%max;
+        let ty=by+dy;
+        if(ty<0 || ty>=max) continue;
+        const img=document.createElement("img");
+        img.className="tile";
+        img.alt="";
+        img.decoding="async";
+        img.referrerPolicy="origin";
+        img.src="https://tile.openstreetmap.org/"+z+"/"+tx+"/"+ty+".png";
+        img.style.left=((dx+HALF)*TILE)+"px";
+        img.style.top=((dy+HALF)*TILE)+"px";
+        tiles.appendChild(img);
+      }
+    }
+  }
+  window.setCenter=function(lat,lon,z){
+    if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
+    lastLat=lat; lastLon=lon;
+    zoom=Math.max(2,Math.min(18,Math.round(z||zoom)));
+    const x=worldX(lon,zoom), y=worldY(lat,zoom);
+    const bx=Math.floor(x), by=Math.floor(y);
+    if(bx!==baseX || by!==baseY){
+      baseX=bx; baseY=by; rebuild(bx,by,zoom);
+    }
+    const fracX=x-bx, fracY=y-by;
+    const left=(innerWidth/2)-((HALF+fracX)*TILE);
+    const top=(innerHeight/2)-((HALF+fracY)*TILE);
+    tiles.style.transform="translate("+left+"px,"+top+"px)";
+  };
+  window.adjustZoom=function(delta){
+    zoom=Math.max(2,Math.min(18,zoom+delta));
+    baseX=null; baseY=null;
+    window.setCenter(lastLat,lastLon,zoom);
+  };
+  window.setCenter(0,0,2);
+})();
+</script>
+</body>
+</html>
