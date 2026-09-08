@@ -72,7 +72,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
         status.setBackgroundColor(0xAA000000);
         status.setTextSize(12f);
         status.setPadding(8, 4, 8, 4);
-        status.setText("Map waiting for location");
+        status.setText("Map waiting for GPS");
         LayoutParams statusLp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
         statusLp.leftMargin = 8;
         statusLp.topMargin = 8;
@@ -80,9 +80,11 @@ final class MapPanel extends FrameLayout implements LocationListener {
 
         Button zoomIn = mapButton("+");
         Button zoomOut = mapButton("−");
+        Button recenter = mapButton("⌖");
         Button openNav = mapButton("OPEN NAV");
         zoomIn.setOnClickListener(v -> adjustZoom(1));
         zoomOut.setOnClickListener(v -> adjustZoom(-1));
+        recenter.setOnClickListener(v -> recenterMap());
         openNav.setOnClickListener(v -> navigationLauncher.openNavigation());
 
         LayoutParams inLp = new LayoutParams(52, 52);
@@ -96,6 +98,12 @@ final class MapPanel extends FrameLayout implements LocationListener {
         outLp.topMargin = 64;
         outLp.rightMargin = 8;
         addView(zoomOut, outLp);
+
+        LayoutParams recenterLp = new LayoutParams(52, 52);
+        recenterLp.gravity = android.view.Gravity.TOP | android.view.Gravity.RIGHT;
+        recenterLp.topMargin = 120;
+        recenterLp.rightMargin = 8;
+        addView(recenter, recenterLp);
 
         LayoutParams navLp = new LayoutParams(LayoutParams.WRAP_CONTENT, 48);
         navLp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.LEFT;
@@ -142,29 +150,19 @@ final class MapPanel extends FrameLayout implements LocationListener {
             status.setText("Location service unavailable");
             return;
         }
-        Location best = null;
         try {
-            best = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            Location network = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-            if (best == null || (network != null && network.getTime() > best.getTime())) best = network;
-        } catch (SecurityException ignored) {
-            status.setText("Location permission unavailable");
-            return;
-        }
-        if (best != null) onLocationChanged(best);
-        try {
+            Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            if (gps != null) onLocationChanged(gps);
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                         LocationManager.GPS_PROVIDER, 2000L, 5f, this, Looper.getMainLooper());
-            }
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                        LocationManager.NETWORK_PROVIDER, 5000L, 20f, this, Looper.getMainLooper());
+            } else {
+                status.setText("GPS unavailable");
             }
         } catch (SecurityException ignored) {
             status.setText("Location permission unavailable");
         } catch (IllegalArgumentException ignored) {
-            status.setText("Location provider unavailable");
+            status.setText("GPS provider unavailable");
         }
     }
 
@@ -204,6 +202,10 @@ final class MapPanel extends FrameLayout implements LocationListener {
         }
     }
 
+    private void recenterMap() {
+        if (pageReady) webView.evaluateJavascript("recenterMap()", null);
+    }
+
     @Override
     public void onLocationChanged(Location location) {
         if (location == null) return;
@@ -229,13 +231,15 @@ final class MapPanel extends FrameLayout implements LocationListener {
         if (lastLocation != null) {
             renderLocation(lastLocation);
         } else {
-            status.setText("Map waiting for location");
+            status.setText("Map waiting for GPS");
         }
     }
 
-    @Override public void onProviderEnabled(String provider) {}
+    @Override public void onProviderEnabled(String provider) {
+        if (LocationManager.GPS_PROVIDER.equals(provider)) status.setText("Map waiting for GPS");
+    }
     @Override public void onProviderDisabled(String provider) {
-        status.setText("GPS unavailable");
+        if (LocationManager.GPS_PROVIDER.equals(provider)) status.setText("GPS unavailable");
     }
     @Override public void onStatusChanged(String provider, int statusValue, Bundle extras) {}
 
