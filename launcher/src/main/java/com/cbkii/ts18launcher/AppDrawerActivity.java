@@ -2,6 +2,7 @@ package com.cbkii.ts18launcher;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -73,8 +74,7 @@ public final class AppDrawerActivity extends Activity {
             entries.add(new Entry(
                     info.activityInfo.packageName,
                     info.activityInfo.name,
-                    label == null ? info.activityInfo.packageName : label.toString(),
-                    info.loadIcon(pm)));
+                    label == null ? info.activityInfo.packageName : label.toString()));
         }
         Collections.sort(entries, Comparator.comparing(e -> e.label.toLowerCase(java.util.Locale.ROOT)));
     }
@@ -101,13 +101,12 @@ public final class AppDrawerActivity extends Activity {
         final String packageName;
         final String activityName;
         final String label;
-        final Drawable icon;
+        Drawable icon;
 
-        Entry(String packageName, String activityName, String label, Drawable icon) {
+        Entry(String packageName, String activityName, String label) {
             this.packageName = packageName;
             this.activityName = activityName;
             this.label = label;
-            this.icon = icon;
         }
     }
 
@@ -141,6 +140,19 @@ public final class AppDrawerActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT, 48));
             }
             Entry entry = entries.get(position);
+            if (entry.icon == null) {
+                PackageManager pm = getPackageManager();
+                try {
+                    entry.icon = pm.getActivityIcon(
+                            new ComponentName(entry.packageName, entry.activityName));
+                } catch (PackageManager.NameNotFoundException ignored) {
+                    try {
+                        entry.icon = pm.getApplicationIcon(entry.packageName);
+                    } catch (PackageManager.NameNotFoundException ignoredAgain) {
+                        entry.icon = getDrawable(R.drawable.ic_launcher);
+                    }
+                }
+            }
             icon.setImageDrawable(entry.icon);
             label.setText(entry.label);
             return cell;
