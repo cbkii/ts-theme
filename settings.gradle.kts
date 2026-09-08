@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "ts-theme"
 include(":theme")
+include(":launcher")
