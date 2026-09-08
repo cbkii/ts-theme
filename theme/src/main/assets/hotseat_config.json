@@ -4,7 +4,7 @@
   "height": 647,
   "image_path": "mipmap",
   "background": "",
-  "gravity": "t_0|left",
+  "gravity": "t_55|left",
   "config": [
     {
       "soft_type": "app",

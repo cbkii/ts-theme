@@ -1,0 +1,116 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // AGP 3.4.0 ships the D8 1.4.77 generation used by the newer
+        // known-working DoFun theme references on the exact TS18 family.
+        classpath 'com.android.tools.build:gradle:3.4.0'
+    }
+}
+
+apply plugin: 'com.android.application'
+
+def compatVersionCode = (project.findProperty('VERSION_CODE') ?: '1000000').toString().toInteger()
+def compatTimestamp = (project.findProperty('COMPAT_TIMESTAMP') ?: '260822000100').toString()
+if (!(compatTimestamp ==~ /[0-9]{12}/)) {
+    throw new GradleException('COMPAT_TIMESTAMP must be YYMMDDHHMMSS (12 digits)')
+}
+
+def signingKeys = ['TS_THEME_KEYSTORE_FILE', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD']
+def signingReady = signingKeys.every { key ->
+    def value = System.getenv(key)
+    value != null && !value.trim().isEmpty()
+}
+
+android {
+    compileSdkVersion 29
+    buildToolsVersion '28.0.3'
+
+    defaultConfig {
+        applicationId 'launcher.variety.theme.plugin.sfp_cbk_black'
+        minSdkVersion 16
+        targetSdkVersion 26
+        versionCode compatVersionCode
+        versionName "${compatVersionCode}_${compatTimestamp}.land"
+    }
+
+    flavorDimensions 'theme'
+    productFlavors {
+        land {
+            dimension 'theme'
+        }
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'src/main/AndroidManifest.xml'
+            java.srcDirs = []
+            res.srcDirs = ['../../theme/src/main/res']
+            assets.srcDirs = ['../../theme/src/main/assets']
+        }
+        land {
+            // Higher-priority clean-room import metadata for the compatibility
+            // carrier. Shared project assets remain the actual dashboard source.
+            assets.srcDirs = ['src/land/assets']
+        }
+    }
+
+    if (signingReady) {
+        signingConfigs {
+            release {
+                storeFile file(System.getenv('TS_THEME_KEYSTORE_FILE'))
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (signingReady) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def releaseRequested = graph.allTasks.any { task ->
+        task.name == 'assembleLandRelease' || task.name == 'packageLandRelease'
+    }
+    if (releaseRequested && !signingReady) {
+        throw new GradleException('Legacy compatibility release requires all four signing environment variables')
+    }
+}
+
+android.applicationVariants.all { variant ->
+    if (variant.name == 'landRelease') {
+        variant.outputs.all {
+            outputFileName = 'TS18-Dashboard-Theme-compat-fyd18-land.apk'
+        }
+    }
+}
+
+dependencies {
+    implementation files('../../build/dependencies/replugin-plugin-lib-2.3.4.aar')
+}
