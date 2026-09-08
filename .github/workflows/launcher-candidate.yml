@@ -96,20 +96,21 @@ jobs:
           python3 tools/launcher_apk_check.py launcher/build/outputs/apk/release/launcher-release.apk
 
           mkdir -p qualified
-          cp launcher/build/outputs/apk/release/launcher-release.apk \
-            "qualified/TS18-Standalone-Launcher-v${VERSION_NAME}.apk"
+          apk_name="TS18-Standalone-Launcher-v${VERSION_NAME}.apk"
+          cp launcher/build/outputs/apk/release/launcher-release.apk "qualified/$apk_name"
           cp scripts/termux/install-standalone-launcher.sh qualified/
           cp scripts/termux/measure-standalone-launcher.sh qualified/
           cp docs/STANDALONE_LAUNCHER.md qualified/
-          sha256sum \
-            "qualified/TS18-Standalone-Launcher-v${VERSION_NAME}.apk" \
-            qualified/install-standalone-launcher.sh \
-            qualified/measure-standalone-launcher.sh \
-            qualified/STANDALONE_LAUNCHER.md \
-            > qualified/SHA256SUMS.txt
           printf 'source_sha=%s\nversion_name=%s\nversion_code=%s\n' \
             "$GITHUB_SHA" "$VERSION_NAME" "$VERSION_CODE" \
             > qualified/BUILD_INFO.txt
+          sha256sum \
+            "qualified/$apk_name" \
+            qualified/install-standalone-launcher.sh \
+            qualified/measure-standalone-launcher.sh \
+            qualified/STANDALONE_LAUNCHER.md \
+            qualified/BUILD_INFO.txt \
+            > qualified/SHA256SUMS.txt
 
       - name: Upload exact candidate bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -134,8 +135,30 @@ jobs:
 
       - name: Verify candidate bundle before publication
         shell: bash
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
         run: |
           set -euo pipefail
+          apk_name="TS18-Standalone-Launcher-v${VERSION_NAME}.apk"
+          expected=(
+            "$apk_name"
+            "install-standalone-launcher.sh"
+            "measure-standalone-launcher.sh"
+            "STANDALONE_LAUNCHER.md"
+            "BUILD_INFO.txt"
+            "SHA256SUMS.txt"
+          )
+          mapfile -t actual < <(find qualified -maxdepth 1 -type f -printf '%f\n' | sort)
+          mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | sort)
+          [[ "${actual[*]}" == "${wanted[*]}" ]] || {
+            printf 'Unexpected candidate bundle.\nExpected: %s\nActual: %s\n' \
+              "${wanted[*]}" "${actual[*]}" >&2
+            exit 1
+          }
+          grep -Fx "source_sha=$GITHUB_SHA" qualified/BUILD_INFO.txt
+          grep -Fx "version_name=$VERSION_NAME" qualified/BUILD_INFO.txt
+          grep -Fx "version_code=$VERSION_CODE" qualified/BUILD_INFO.txt
           (cd qualified && sha256sum -c SHA256SUMS.txt)
 
       - name: Publish GitHub prerelease
@@ -146,11 +169,18 @@ jobs:
         run: |
           set -euo pipefail
           tag="launcher-v${VERSION_NAME}"
+          apk_name="TS18-Standalone-Launcher-v${VERSION_NAME}.apk"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "::error::Release $tag already exists."
             exit 1
           fi
-          gh release create "$tag" qualified/* \
+          gh release create "$tag" \
+            "qualified/$apk_name" \
+            qualified/install-standalone-launcher.sh \
+            qualified/measure-standalone-launcher.sh \
+            qualified/STANDALONE_LAUNCHER.md \
+            qualified/BUILD_INFO.txt \
+            qualified/SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
             --prerelease \
             --title "TS18 Standalone Launcher v${VERSION_NAME}" \
