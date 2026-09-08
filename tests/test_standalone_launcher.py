@@ -121,6 +121,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("measure-standalone-launcher.sh", workflow)
         self.assertIn("STANDALONE_LAUNCHER.md", workflow)
         self.assertIn("qualified/BUILD_INFO.txt", workflow)
+        self.assertIn("cd qualified\n            sha256sum", workflow)
         self.assertIn("Unexpected candidate bundle.", workflow)
         self.assertIn("mapfile -t actual", workflow)
         self.assertNotIn('gh release create "$tag" qualified/*', workflow)
