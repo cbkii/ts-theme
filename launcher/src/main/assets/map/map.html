@@ -1,73 +1,110 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
-html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#090909}
-#tiles{position:absolute;left:0;top:0;width:1280px;height:1280px;will-change:transform}
-.tile{position:absolute;width:256px;height:256px;image-rendering:auto}
-#marker{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;
-  border:3px solid #fff;border-radius:50%;background:#ff6b4a;box-shadow:0 0 0 2px #0008}
-#attr{position:absolute;right:4px;bottom:3px;background:#000b;color:#ddd;padding:2px 4px;
-  font:10px sans-serif;border-radius:2px}
+html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;font-family:sans-serif}
+#map{position:relative;touch-action:none;cursor:grab}
+#map.dragging{cursor:grabbing}
+#tiles{position:absolute;left:0;top:0;width:0;height:0}
+.tile{position:absolute;width:256px;height:256px;object-fit:cover;background:#202020}
+#marker{position:absolute;left:50%;top:50%;width:18px;height:18px;margin-left:-9px;margin-top:-18px;border-radius:50% 50% 50% 0;background:#ff7043;border:3px solid white;box-sizing:border-box;transform:rotate(-45deg);box-shadow:0 1px 5px #000;z-index:4;display:none;pointer-events:none}
+#attribution{position:absolute;right:5px;bottom:3px;color:#eee;background:#77000000;padding:2px 5px;font-size:10px;z-index:5;pointer-events:none}
 </style>
 </head>
 <body>
-<div id="map"><div id="tiles"></div><div id="marker"></div>
-<div id="attr">© OpenStreetMap contributors</div></div>
+<div id="map"><div id="tiles"></div><div id="marker"></div></div>
+<div id="attribution">© OpenStreetMap contributors</div>
 <script>
-(function() {
+(function(){
   "use strict";
   const TILE=256, HALF=2;
-  let zoom=15, baseX=null, baseY=null, lastLat=0, lastLon=0, hasCenter=false;
+  const map=document.getElementById("map");
   const tiles=document.getElementById("tiles");
+  const marker=document.getElementById("marker");
+  let lat=0,lon=0,zoom=15,hasCenter=false,panX=0,panY=0;
+  let dragging=false,lastX=0,lastY=0,pointerId=-1;
 
-  function clampLat(lat){ return Math.max(-85.05112878, Math.min(85.05112878, lat)); }
-  function worldX(lon,z){ return (lon+180)/360*Math.pow(2,z); }
-  function worldY(lat,z){
-    const r=clampLat(lat)*Math.PI/180;
-    return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z);
+  function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+  function tileXY(latitude,longitude,z){
+    const n=Math.pow(2,z);
+    const safeLat=clamp(latitude,-85.05112878,85.05112878);
+    const x=(longitude+180)/360*n;
+    const rad=safeLat*Math.PI/180;
+    const y=(1-Math.log(Math.tan(rad)+1/Math.cos(rad))/Math.PI)/2*n;
+    return {x:x,y:y,n:n};
   }
-  function rebuild(bx,by,z){
+  function normalisedX(x,n){return ((x%n)+n)%n;}
+  function render(){
+    if(!hasCenter)return;
+    const p=tileXY(lat,lon,zoom);
+    const tx=Math.floor(p.x),ty=Math.floor(p.y);
+    const frag=document.createDocumentFragment();
     tiles.textContent="";
-    const max=Math.pow(2,z);
     for(let dy=-HALF;dy<=HALF;dy++){
       for(let dx=-HALF;dx<=HALF;dx++){
-        let tx=((bx+dx)%max+max)%max;
-        let ty=by+dy;
-        if(ty<0 || ty>=max) continue;
+        const y=ty+dy;
+        if(y<0||y>=p.n)continue;
         const img=document.createElement("img");
         img.className="tile";
         img.alt="";
-        img.decoding="async";
-        img.src="https://tile.openstreetmap.org/"+z+"/"+tx+"/"+ty+".png";
+        img.draggable=false;
+        img.src="https://tile.openstreetmap.org/"+zoom+"/"+normalisedX(tx+dx,p.n)+"/"+y+".png";
         img.style.left=((dx+HALF)*TILE)+"px";
         img.style.top=((dy+HALF)*TILE)+"px";
-        tiles.appendChild(img);
+        frag.appendChild(img);
       }
     }
-  }
-  window.setCenter=function(lat,lon,z){
-    if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
-    lastLat=lat; lastLon=lon; hasCenter=true;
-    zoom=Math.max(2,Math.min(18,Math.round(z||zoom)));
-    const x=worldX(lon,zoom), y=worldY(lat,zoom);
-    const bx=Math.floor(x), by=Math.floor(y);
-    if(bx!==baseX || by!==baseY){
-      baseX=bx; baseY=by; rebuild(bx,by,zoom);
-    }
-    const fracX=x-bx, fracY=y-by;
-    const left=(innerWidth/2)-((HALF+fracX)*TILE);
-    const top=(innerHeight/2)-((HALF+fracY)*TILE);
+    tiles.appendChild(frag);
+    const fracX=p.x-tx,fracY=p.y-ty;
+    const left=(innerWidth/2)-((HALF+fracX)*TILE)+panX;
+    const top=(innerHeight/2)-((HALF+fracY)*TILE)+panY;
     tiles.style.transform="translate("+left+"px,"+top+"px)";
-  };
+    marker.style.left="calc(50% + "+panX+"px)";
+    marker.style.top="calc(50% + "+panY+"px)";
+    marker.style.display="block";
+  }
+  function finishDrag(event){
+    if(!dragging||event.pointerId!==pointerId)return;
+    dragging=false;
+    map.classList.remove("dragging");
+    try{map.releasePointerCapture(pointerId);}catch(ignore){}
+    pointerId=-1;
+  }
+
+  map.addEventListener("pointerdown",function(event){
+    if(!hasCenter)return;
+    dragging=true;
+    pointerId=event.pointerId;
+    lastX=event.clientX;
+    lastY=event.clientY;
+    map.classList.add("dragging");
+    map.setPointerCapture(pointerId);
+    event.preventDefault();
+  });
+  map.addEventListener("pointermove",function(event){
+    if(!dragging||event.pointerId!==pointerId)return;
+    panX=clamp(panX+(event.clientX-lastX),-innerWidth,innerWidth);
+    panY=clamp(panY+(event.clientY-lastY),-innerHeight,innerHeight);
+    lastX=event.clientX;
+    lastY=event.clientY;
+    render();
+    event.preventDefault();
+  });
+  map.addEventListener("pointerup",finishDrag);
+  map.addEventListener("pointercancel",finishDrag);
+
   window.adjustZoom=function(delta){
     zoom=Math.max(2,Math.min(18,zoom+delta));
-    if(!hasCenter) return;
-    baseX=null; baseY=null;
-    window.setCenter(lastLat,lastLon,zoom);
+    render();
   };
+  window.recenterMap=function(){
+    panX=0;panY=0;render();
+  };
+  window.setCenter=function(latitude,longitude,z){
+    lat=latitude;lon=longitude;zoom=Math.max(2,Math.min(18,z));hasCenter=true;render();
+  };
+  addEventListener("resize",render);
 })();
 </script>
 </body>
