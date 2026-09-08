@@ -30,12 +30,16 @@ final class MapPanel extends FrameLayout implements LocationListener {
         void openNavigation();
     }
 
+    private static final String MAP_URL = "file:///android_asset/map/map.html";
+
     private final Activity activity;
     private final NavigationLauncher navigationLauncher;
     private final WebView webView;
     private final TextView status;
     private final LocationManager locationManager;
     private boolean started;
+    private boolean pageReady;
+    private Location lastLocation;
     private int zoom = 15;
 
     MapPanel(Activity activity, NavigationLauncher navigationLauncher) {
@@ -99,7 +103,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
         addView(openNav, navLp);
 
         locationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
-        webView.loadUrl("file:///android_asset/map/map.html");
+        webView.loadUrl(MAP_URL);
     }
 
     private Button mapButton(String text) {
@@ -182,17 +186,38 @@ final class MapPanel extends FrameLayout implements LocationListener {
 
     private void adjustZoom(int delta) {
         zoom = Math.max(2, Math.min(18, zoom + delta));
-        webView.evaluateJavascript("adjustZoom(" + delta + ")", null);
+        if (pageReady) {
+            webView.evaluateJavascript("adjustZoom(" + delta + ")", null);
+        }
     }
 
     @Override
     public void onLocationChanged(Location location) {
         if (location == null) return;
+        lastLocation = new Location(location);
+        if (pageReady) {
+            renderLocation(lastLocation);
+        } else {
+            status.setText("GPS · map loading");
+        }
+    }
+
+    private void renderLocation(Location location) {
         String js = String.format(
                 Locale.US, "setCenter(%.7f,%.7f,%d)",
                 location.getLatitude(), location.getLongitude(), zoom);
         webView.evaluateJavascript(js, null);
         status.setText("GPS");
+    }
+
+    private void onMapPageReady(String url) {
+        if (!MAP_URL.equals(url)) return;
+        pageReady = true;
+        if (lastLocation != null) {
+            renderLocation(lastLocation);
+        } else {
+            status.setText("Map waiting for location");
+        }
     }
 
     @Override public void onProviderEnabled(String provider) {}
@@ -201,13 +226,19 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
     @Override public void onStatusChanged(String provider, int statusValue, Bundle extras) {}
 
-    private static final class RestrictedMapClient extends WebViewClient {
-        private static final byte[] BLOCKED = "blocked".getBytes(StandardCharsets.UTF_8);
+    private final class RestrictedMapClient extends WebViewClient {
+        private static final String TILE_HOST = "tile.openstreetmap.org";
+        private final byte[] blocked = "blocked".getBytes(StandardCharsets.UTF_8);
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            onMapPageReady(url);
+        }
 
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             String url = request.getUrl().toString();
-            return !url.startsWith("file:///android_asset/map/map.html");
+            return !MAP_URL.equals(url);
         }
 
         @Override
@@ -216,10 +247,10 @@ final class MapPanel extends FrameLayout implements LocationListener {
             String host = request.getUrl().getHost();
             String url = request.getUrl().toString();
             if ("file".equals(scheme) && url.startsWith("file:///android_asset/map/")) return null;
-            if ("https".equals(scheme) && "tile.openstreetmap.org".equals(host)) return null;
+            if ("https".equals(scheme) && TILE_HOST.equals(host)) return null;
             return new WebResourceResponse(
                     "text/plain", "utf-8", 403, "Blocked",
-                    java.util.Collections.emptyMap(), new ByteArrayInputStream(BLOCKED));
+                    java.util.Collections.emptyMap(), new ByteArrayInputStream(blocked));
         }
     }
 }
