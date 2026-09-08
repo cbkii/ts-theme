@@ -22,6 +22,18 @@ gradle -PVERSION_NAME=0.1.0 -PVERSION_CODE=1000 :launcher:assembleRelease
 python3 tools/launcher_apk_check.py launcher/build/outputs/apk/release/launcher-release.apk
 ```
 
+## Candidate workflow
+
+Use **Standalone Launcher Candidate** for physical-test APKs. It builds and qualifies the signed APK, then uploads a 14-day artifact containing:
+
+- the exact signed launcher APK;
+- `SHA256SUMS.txt` and `BUILD_INFO.txt`;
+- the bounded root installer/HOME rollback helper;
+- the read-only performance/runtime measurement helper;
+- this standalone validation document.
+
+Publishing a GitHub prerelease is explicit and optional. The build job has read-only repository permission; only the separate publisher job receives `contents: write`, and it re-verifies the downloaded qualified bundle before publication. This candidate lane does not replace the existing DoFun-theme Manual Release workflow.
+
 ## Safe rollout
 
 1. Install the APK without changing HOME.
@@ -42,9 +54,19 @@ bash scripts/termux/install-standalone-launcher.sh /storage/emulated/0/Download/
 
 ## Map
 
-The dashboard map is an in-process WebView backed by project-owned local HTML and OpenStreetMap raster tiles. It is created after the first launcher frame, restricted to the OSM tile origin, and its GPS listeners are active only while the map is visible.
+The dashboard map is an in-process WebView backed by project-owned local HTML and OpenStreetMap raster tiles. It is created after the first launcher frame, restricted to the OSM tile origin, uses the WebView cache, identifies its tile requests as TS18 Launcher, and its GPS listeners are active only while the map is visible.
 
 The map is intentionally a lightweight situational display. `OPEN NAV` launches the configured navigation application for full routing.
+
+## Runtime measurement
+
+After the launcher has settled, collect a bounded read-only snapshot rather than guessing about efficiency:
+
+```bash
+bash scripts/termux/measure-standalone-launcher.sh
+```
+
+The helper records current HOME, package/process state, memory, frame timing, CPU, WebView provider, location/media state and whether DoFun remains available as the recovery launcher. It does not mutate package, HOME, SELinux or vehicle state.
 
 ## Rollback
 
