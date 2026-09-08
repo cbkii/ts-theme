@@ -95,13 +95,7 @@ public final class MediaListenerService extends NotificationListenerService {
     @Override
     public void onListenerDisconnected() {
         releaseAll();
-        if (sessionManager != null) {
-            try {
-                sessionManager.removeOnActiveSessionsChangedListener(sessionsChangedListener);
-            } catch (RuntimeException ignored) {
-                // Listener may already be detached by the framework.
-            }
-        }
+        detachSessionListener();
         instance = null;
         publishEmpty();
         super.onListenerDisconnected();
@@ -110,8 +104,18 @@ public final class MediaListenerService extends NotificationListenerService {
     @Override
     public void onDestroy() {
         releaseAll();
+        detachSessionListener();
         if (instance == this) instance = null;
         super.onDestroy();
+    }
+
+    private void detachSessionListener() {
+        if (sessionManager == null) return;
+        try {
+            sessionManager.removeOnActiveSessionsChangedListener(sessionsChangedListener);
+        } catch (RuntimeException ignored) {
+            // Listener may already be detached by the framework.
+        }
     }
 
     private void refresh() {
@@ -164,11 +168,7 @@ public final class MediaListenerService extends NotificationListenerService {
     private static MediaController pickPrimary(List<MediaController> controllers, String excludedPackage) {
         MediaController fallback = null;
         for (MediaController controller : controllers) {
-            if (controller == null) continue;
-            if (excludedPackage != null && !excludedPackage.isEmpty()
-                    && excludedPackage.equals(controller.getPackageName())) {
-                continue;
-            }
+            if (controller == null || excludedFromGenericMedia(controller, excludedPackage)) continue;
             PlaybackState state = controller.getPlaybackState();
             int value = state == null ? PlaybackState.STATE_NONE : state.getState();
             if (value == PlaybackState.STATE_PLAYING
@@ -183,13 +183,26 @@ public final class MediaListenerService extends NotificationListenerService {
         }
         if (fallback != null) return fallback;
         for (MediaController controller : controllers) {
-            if (controller == null) continue;
-            if (excludedPackage == null || excludedPackage.isEmpty()
-                    || !excludedPackage.equals(controller.getPackageName())) {
+            if (controller != null && !excludedFromGenericMedia(controller, excludedPackage)) {
                 return controller;
             }
         }
         return null;
+    }
+
+    private static boolean excludedFromGenericMedia(
+            MediaController controller, String configuredRadioPackage) {
+        String packageName = controller.getPackageName();
+        if (configuredRadioPackage != null && !configuredRadioPackage.isEmpty()
+                && configuredRadioPackage.equals(packageName)) {
+            return true;
+        }
+        // Keep telecom/call sessions from becoming the dashboard music authority. Do not
+        // blanket-exclude Bluetooth packages: on this TS18 Bluetooth media is a valid source.
+        return "com.android.server.telecom".equals(packageName)
+                || "com.android.dialer".equals(packageName)
+                || "com.google.android.dialer".equals(packageName)
+                || "com.android.phone".equals(packageName);
     }
 
     private static MediaController pickExactPackage(List<MediaController> controllers, String packageName) {
