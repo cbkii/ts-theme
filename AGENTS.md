@@ -1,24 +1,25 @@
 # Repository working rules
 
-- Target CB's TS18: Android 10/API 29, physical 1280 x 720, DoFun `com.dofun.variety`.
-- Treat current physical evidence and the exact installed host APK as controlling; historical assumptions must yield when exact-device evidence conflicts.
-- Treat the exact-device application safe area as ending at x=1225 unless a newer present-state capture proves otherwise. The 55 px right Topway/SystemUI region is not theme-owned space.
-- Keep the largest practical navigation map entirely inside the exact safe area. Do not preserve an old width if doing so would place content beneath SystemUI.
-- Preserve radio/music/date order in one continuous 64 px top strip and keep the map completely below it.
-- Keep the declarative theme identity unique. The hardened TS18 window/PIP identity is `launcher.variety.theme.plugin.sfp_cbk_black` / `sfp_cbk_black`; never impersonate a vendor package.
-- Preserve the audited compatibility envelope unless stronger evidence requires a change: minSdk 16, targetSdk 26, compileSdk 29, Qihoo360 RePlugin 2.3.4, no native libraries, minimal no-component manifest, independently signed APK.
-- Use black/white plus warm pink/red/orange/brown accents; do not add cool cyan/blue accents.
-- Do not add album art, a visualiser or decorative icon backgrounds.
-- Keep declarative theme work separate from executable media integration.
-- A broad adapter may consume several evidence-backed paths, but each press must reach one selected playback authority exactly once.
-- Do not create another player, queue, playback service, MediaSession, notification or focus owner.
-- Do not replace, delete, disable or re-sign protected Topway/DoFun packages.
-- Do not copy, forge or transplant the vendor theme signer. Independent signing acceptance remains a physical validation item.
-- Do not claim ticker, app launch, radio presets, generic control, catalogue discovery or persistence until physically validated.
-- Do not commit vendor APKs/assets, decrypted vendor code, signing keys, device identifiers or logs.
-- Termux installation helpers must follow `TS18_02_Engineering_Assets.zip/method_guides/ENGINEERING_SCRIPT_STANDARD.md`: bounded execution, explicit failure policy, private work state, narrow root use, verified rollback and final status.
-- Donor-slot installation must leave `p.l` unchanged by default, verify a donor is inside DoFun's `app_p_a`, back up before mutation, overwrite donor bytes in place, verify the replacement hash, and fail closed on unexpected paths or layouts.
-- Never automatically clear DoFun application data, set SELinux permissive, apply broad chmod/chown, or write `/system` or `/vendor` from the installer.
-- LSPosed feasibility collectors must be read-only against LSPosed/DoFun configuration: establish the current framework/API evidence, ABI/zygote path, DoFun scope and target-process injection before proposing hooks. Do not infer modern/API-100 compatibility from a framework name alone, do not modify LSPosed's database/scope from a collector, and make the first later hook log-only, exact-package-scoped, bounded and fail-open.
+- Target CB's exact Topway TS18 first: Android 10/API 29, physical 1280 x 720. Present exact-device evidence outranks historical assumptions.
+- The standalone launcher is a separate ordinary Android package (`com.cbkii.ts18launcher`). The legacy DoFun/RePlugin theme remains a rollback/reference lane until standalone HOME passes physical qualification.
+- Do not reuse `launcher.variety.theme.plugin.sfp_cbk_black` as the standalone launcher identity. That package remains the legacy DoFun/RePlugin plug-in identity.
+- Preserve the exact-device application safe area: 55 px Topway/SystemUI region at the right, about 55 px at the top when the Activity is laid out full-screen, and the 81 px left hotseat. When Android decor already consumes system bars, use the resulting fitted content bounds rather than adding the system inset twice.
+- Preserve radio/music/date order in one continuous 64 px top strip and keep the map below it. The standalone dashboard must retain Topway SystemUI; do not hide status/navigation bars merely to gain space.
+- Keep the base launcher small and event-driven. Prefer platform Android Views/XML/Java and ordinary framework APIs. Do not add Compose, AppCompat, Material, Room, DataStore, RxJava, DI frameworks, image loaders or network stacks without a measured requirement.
+- The dashboard map is the approved #10B implementation: a lifecycle-bound, lazily-created in-process WebView using local project code and HTTPS OpenStreetMap raster tiles. Restrict WebView network access to the configured tile origin; do not add arbitrary browsing, JS bridges or background map workers.
+- The launcher may request location only while its map is active/visible. Do not hold wake locks or run periodic background GPS/network polling.
+- Generic music uses one selected Android MediaSession authority obtained through a notification-listener service. Watch session membership and callbacks, compare session tokens, and dispatch each command exactly once.
+- Radio is a separate authority. A configured radio app may be observed/controlled through its own MediaSession when available, but never synthesize a radio MediaSession or broadcast commands blindly across several control paths.
+- Do not create another player, queue, playback service, MediaSession, notification or audio-focus owner.
+- Keep Topway/vehicle integration behind a narrow adapter. Public Android/package paths come first. Add private Topway binder/property/broadcast/MCU behaviour only from exact recovered contracts and keep failures fail-open.
+- DoFun, TWCore, stock radio/music/Bluetooth, SystemUI, vehicle services and updaters remain protected. Replacing HOME does not grant their signature/UID/SELinux authority.
+- Magisk-root superuser access on this user-owned TS18 is authorised and safe to use when it materially improves performance, efficiency, recovery, diagnostics or reduces runtime/integration overhead. Prefer a one-time/root-assisted setup over a permanent background service when it achieves the same result.
+- Root must still be narrow, bounded and reversible. Root does not grant platform signing, UID 1000, signature permissions, protected SELinux authority, MCU/CAN control or safe partition writes. Never use root as justification for destructive system/vendor/MCU/CAN/panel changes.
+- Prefer root for one-time HOME setup, evidence capture, validated private-data reads, systemless overlays and other low-overhead operations where ordinary APIs are insufficient. Do not spawn `su` continuously or poll through root when a callback/public API exists.
+- Never automatically clear DoFun data, set SELinux permissive, broadly chmod/chown, delete protected packages or write `/system`/`vendor`. DoFun remains enabled as recovery HOME during standalone launcher qualification.
+- The HOME capability must be staged: install/test the ordinary launcher Activity first; enable the HOME alias only after explicit user action; preserve a reversible path back to DoFun.
+- Do not claim reverse-camera, radio, Bluetooth, projection, steering-key, reboot, cold-boot or ACC behaviour passed unless it was physically exercised.
+- Legacy DoFun theme work must preserve its independently signed, clean declarative identity and must not copy/forge/transplant vendor signers or assets.
+- Termux helpers must follow `TS18_02_Engineering_Assets.zip/method_guides/ENGINEERING_SCRIPT_STANDARD.md`: bounded execution, explicit failure policy, private work state, narrow root use, verified rollback and final status.
 - Keep Android 10/API 29 compatibility and gate newer APIs.
-- Before every final commit run `python3 tools/ts18_theme.py validate` and `python3 -m unittest discover -s tests -v`; also run Bash syntax/tests for Termux scripts and relevant Gradle checks when their prerequisites are available.
+- Before every final commit run `python3 tools/ts18_theme.py validate` and `python3 -m unittest discover -s tests -v`; run Bash/sh syntax checks for scripts plus relevant Gradle lint/unit/build tasks. For standalone launcher changes also run `:launcher:lintDebug`, `:launcher:testDebugUnitTest`, `:launcher:assembleDebug` and the launcher APK envelope check.
