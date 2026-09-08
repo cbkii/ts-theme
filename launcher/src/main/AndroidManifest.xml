@@ -20,7 +20,6 @@
             android:configChanges="keyboardHidden|orientation|screenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="landscape"
             android:stateNotNeeded="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -49,14 +48,12 @@
         <activity
             android:name=".AppDrawerActivity"
             android:configChanges="keyboardHidden|orientation|screenSize"
-            android:exported="false"
-            android:screenOrientation="landscape" />
+            android:exported="false" />
 
         <activity
             android:name=".SettingsActivity"
             android:configChanges="keyboardHidden|orientation|screenSize"
-            android:exported="false"
-            android:screenOrientation="landscape" />
+            android:exported="false" />
 
         <service
             android:name=".MediaListenerService"
