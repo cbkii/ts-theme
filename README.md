@@ -111,7 +111,7 @@ application id: launcher.variety.theme.plugin.sfp_cbk_black
 plug-in id:     sfp_cbk_black
 ```
 
-It retains the existing clean-room DoFun/RePlugin compatibility work and diagnostic tooling. The standalone launcher does **not** depend on it and does not reuse its package identity.
+It retains the existing clean-room DoFun/RePlugin compatibility work, physical-install safety guards and diagnostic tooling. The standalone launcher does **not** depend on it and does not reuse its package identity. Legacy installation/evidence and publication procedures remain documented in [TS18 installation](docs/INSTALL_TS18.md) and [Releasing](docs/RELEASING.md).
 
 ## Repository map
 
@@ -119,7 +119,7 @@ It retains the existing clean-room DoFun/RePlugin compatibility work and diagnos
 - `theme/` — legacy declarative DoFun/RePlugin theme.
 - `config/ts18-layout.json` — exact physical geometry reference.
 - `design/` — editable project-authored visual sources.
-- `tools/launcher_apk_check.py` — standalone one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin envelope check.
+- `tools/launcher_apk_check.py` — standalone one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin release-envelope check.
 - `tools/ts18_theme.py` — legacy theme/source validator.
 - `scripts/termux/install-standalone-launcher.sh` — bounded root-assisted install/HOME/rollback helper.
 - `scripts/termux/` and `scripts/magisk/` — existing DoFun diagnostics/install tooling.
@@ -135,12 +135,17 @@ python3 -m unittest discover -s tests -v
 
 gradle :theme:lintDebug :theme:assembleDebug
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
-
-python3 tools/launcher_apk_check.py \
-  launcher/build/outputs/apk/debug/launcher-debug.apk
 ```
 
-CI also exercises signed release builds for both modules.
+The unminified debug APK is compilation/lint/test evidence, not release-envelope evidence. CI additionally exercises signed/minified release builds for both modules and applies the standalone runtime-envelope check to `launcher-release.apk`.
+
+For a local signed launcher release, provide the repository signing inputs and run:
+
+```bash
+gradle -PVERSION_NAME=0.1.0 -PVERSION_CODE=1000 :launcher:assembleRelease
+python3 tools/launcher_apk_check.py \
+  launcher/build/outputs/apk/release/launcher-release.apk
+```
 
 ## Candidate release
 
