@@ -197,8 +197,9 @@ if ((ROLLBACK)); then
   if [[ -f "$PREVIOUS_HOME_FILE" ]]; then
     previous="$(head -n 1 "$PREVIOUS_HOME_FILE")"
   fi
-  safe_component "$previous" && ! is_candidate_home "$previous" \
-    || stop "no safe non-launcher previous HOME component was captured"
+  if ! safe_component "$previous" || is_candidate_home "$previous"; then
+    stop "no safe non-launcher previous HOME component was captured"
+  fi
 
   log "Restoring previously captured HOME: $previous"
   if ! root_cmd "cmd package set-home-activity --user 0 '$previous'"; then
