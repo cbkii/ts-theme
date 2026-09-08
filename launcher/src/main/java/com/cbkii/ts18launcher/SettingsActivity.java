@@ -32,7 +32,7 @@ public final class SettingsActivity extends Activity {
         content.setPadding(24, 16, 24, 24);
         scroll.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroll);
+        Ts18SafeArea.setContent(this, scroll);
         render();
     }
 
