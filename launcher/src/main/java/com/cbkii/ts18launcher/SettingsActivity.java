@@ -68,7 +68,17 @@ public final class SettingsActivity extends Activity {
                             Toast.LENGTH_LONG).show();
                 });
 
-        addSection("Media");
+        addSection("Quick launch");
+        addPicker("Quick 1 (Navigation fallback)", LauncherPrefs.KEY_QUICK_1);
+        addPicker("Quick 2 (Radio fallback)", LauncherPrefs.KEY_QUICK_2);
+        addPicker("Quick 3 (Music fallback)", LauncherPrefs.KEY_QUICK_3);
+        addPicker("Quick 4 (Bluetooth fallback)", LauncherPrefs.KEY_QUICK_4);
+        content.addView(text(
+                "The HOME rail has four configurable app slots plus Apps and Settings. "
+                        + "An unset slot uses the corresponding role shown below.",
+                13f, 0xFFB9B9B9));
+
+        addSection("Apps and media");
         addButton(MediaListenerService.hasNotificationAccess(this)
                         ? "Notification access: granted"
                         : "Grant notification access",
@@ -88,7 +98,8 @@ public final class SettingsActivity extends Activity {
 
         TextView mapNote = text(
                 "The map is a local lightweight WebView using OpenStreetMap raster tiles. "
-                        + "It is lifecycle-bound and only requests GPS while the launcher is visible.",
+                        + "It reuses its tile layer while panning, requests GPS only while visible, "
+                        + "and hands OPEN NAV to the configured navigation app.",
                 13f, 0xFFB9B9B9);
         content.addView(mapNote);
 

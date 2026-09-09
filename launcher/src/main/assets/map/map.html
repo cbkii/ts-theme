@@ -22,7 +22,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
   const map=document.getElementById("map");
   const tiles=document.getElementById("tiles");
   const marker=document.getElementById("marker");
-  let lat=0,lon=0,zoom=15,hasCenter=false,panX=0,panY=0;
+  let lat=0,lon=0,zoom=15,hasCenter=false,panX=0,panY=0,tileKey="";
   let dragging=false,lastX=0,lastY=0,pointerId=-1;
 
   function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
@@ -35,10 +35,10 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
     return {x:x,y:y,n:n};
   }
   function normalisedX(x,n){return ((x%n)+n)%n;}
-  function render(){
-    if(!hasCenter)return;
-    const p=tileXY(lat,lon,zoom);
-    const tx=Math.floor(p.x),ty=Math.floor(p.y);
+  function rebuildTiles(p,tx,ty){
+    const key=zoom+":"+tx+":"+ty;
+    if(key===tileKey)return;
+    tileKey=key;
     const frag=document.createDocumentFragment();
     tiles.textContent="";
     for(let dy=-HALF;dy<=HALF;dy++){
@@ -56,6 +56,12 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
       }
     }
     tiles.appendChild(frag);
+  }
+  function render(){
+    if(!hasCenter)return;
+    const p=tileXY(lat,lon,zoom);
+    const tx=Math.floor(p.x),ty=Math.floor(p.y);
+    rebuildTiles(p,tx,ty);
     const fracX=p.x-tx,fracY=p.y-ty;
     const left=(innerWidth/2)-((HALF+fracX)*TILE)+panX;
     const top=(innerHeight/2)-((HALF+fracY)*TILE)+panY;

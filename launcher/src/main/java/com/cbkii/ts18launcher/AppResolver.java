@@ -21,6 +21,21 @@ final class AppResolver {
         }
     }
 
+    static boolean launchComponent(Context context, String packageName, String activityName) {
+        if (packageName == null || packageName.isEmpty()
+                || activityName == null || activityName.isEmpty()) return false;
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.setClassName(packageName, activityName);
+        intent.addCategory(Intent.CATEGORY_LAUNCHER);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            context.startActivity(intent);
+            return true;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
     static String labelFor(Context context, String packageName, String fallback) {
         if (packageName == null || packageName.isEmpty()) return fallback;
         PackageManager pm = context.getPackageManager();

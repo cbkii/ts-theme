@@ -27,7 +27,7 @@ import java.util.Locale;
 @SuppressLint({"SetJavaScriptEnabled", "SetTextI18n", "MissingPermission", "ViewConstructor"})
 final class MapPanel extends FrameLayout implements LocationListener {
     interface NavigationLauncher {
-        void openNavigation();
+        void openNavigation(Location location);
     }
 
     private static final String MAP_URL = "file:///android_asset/map/map.html";
@@ -85,7 +85,8 @@ final class MapPanel extends FrameLayout implements LocationListener {
         zoomIn.setOnClickListener(v -> adjustZoom(1));
         zoomOut.setOnClickListener(v -> adjustZoom(-1));
         recenter.setOnClickListener(v -> recenterMap());
-        openNav.setOnClickListener(v -> navigationLauncher.openNavigation());
+        openNav.setOnClickListener(v -> navigationLauncher.openNavigation(
+                lastLocation == null ? null : new Location(lastLocation)));
 
         LayoutParams inLp = new LayoutParams(52, 52);
         inLp.gravity = android.view.Gravity.TOP | android.view.Gravity.RIGHT;
@@ -167,15 +168,14 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     void stop() {
-        if (!started) return;
-        started = false;
-        if (locationManager != null) {
+        if (started && locationManager != null) {
             try {
                 locationManager.removeUpdates(this);
             } catch (SecurityException ignored) {
                 // No-op.
             }
         }
+        started = false;
         webView.onPause();
     }
 

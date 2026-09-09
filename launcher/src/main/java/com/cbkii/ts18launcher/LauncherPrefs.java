@@ -8,7 +8,15 @@ final class LauncherPrefs {
     static final String KEY_RADIO = "app.radio";
     static final String KEY_BLUETOOTH = "app.bluetooth";
     static final String KEY_MUSIC = "app.music";
+    static final String KEY_QUICK_1 = "app.quick.1";
+    static final String KEY_QUICK_2 = "app.quick.2";
+    static final String KEY_QUICK_3 = "app.quick.3";
+    static final String KEY_QUICK_4 = "app.quick.4";
     static final String KEY_MAP_ENABLED = "map.enabled";
+
+    static final String[] QUICK_KEYS = {
+            KEY_QUICK_1, KEY_QUICK_2, KEY_QUICK_3, KEY_QUICK_4
+    };
 
     private static final String FILE = "ts18_launcher";
 

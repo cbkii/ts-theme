@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.location.Location;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -23,6 +24,7 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
 @SuppressLint("SetTextI18n")
 public class LauncherActivity extends Activity implements MediaListenerService.Observer {
     private static final int REQUEST_LOCATION = 4101;
+    private static final int QUICK_SLOT_COUNT = 4;
 
     private FrameLayout root;
     private LinearLayout rail;
@@ -32,7 +34,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private TextView radioText;
     private TextView mediaText;
     private Button playPause;
+    private final Button[] quickButtons = new Button[QUICK_SLOT_COUNT];
     private MapPanel mapPanel;
+    private AppDrawerPanel appDrawerPanel;
     private boolean launchedAsHome;
     private boolean locationPermissionRequested;
     private MediaListenerService.Snapshot genericSnapshot =
@@ -65,6 +69,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onStart();
         MediaListenerService.addObserver(this);
         MediaListenerService.refreshActiveSessions();
+        updateQuickLabels();
         root.post(this::updateMapVisibility);
         updateLabels();
     }
@@ -72,6 +77,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override
     protected void onStop() {
         MediaListenerService.removeObserver(this);
+        if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
+            appDrawerPanel.setVisibility(View.GONE);
+        }
         if (mapPanel != null) mapPanel.stop();
         super.onStop();
     }
@@ -84,6 +92,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override
     public void onBackPressed() {
+        if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
+            appDrawerPanel.hidePanel();
+            return;
+        }
         if (launchedAsHome || HomeMode.isDefaultHome(this)) {
             return;
         }
@@ -96,21 +108,21 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         rail.setGravity(Gravity.CENTER);
         rail.setBackgroundColor(0xFF090909);
 
-        rail.addView(railButton("NAV", v -> openConfigured(LauncherPrefs.KEY_NAV),
-                v -> {
-                    openSettings();
-                    return true;
-                }));
-        rail.addView(railButton("APPS", v -> startActivity(new Intent(this, AppDrawerActivity.class)),
-                v -> {
-                    openSettings();
-                    return true;
-                }));
-        rail.addView(railButton("BT", v -> openConfigured(LauncherPrefs.KEY_BLUETOOTH),
-                v -> {
-                    openSettings();
-                    return true;
-                }));
+        for (int i = 0; i < QUICK_SLOT_COUNT; i++) {
+            final int index = i;
+            Button button = railButton("APP" + (i + 1),
+                    v -> openQuick(index),
+                    v -> {
+                        openPicker(LauncherPrefs.QUICK_KEYS[index]);
+                        return true;
+                    });
+            quickButtons[i] = button;
+            rail.addView(button);
+        }
+        rail.addView(railButton("APPS", v -> toggleAppDrawer(), v -> {
+            openSettings();
+            return true;
+        }));
         rail.addView(railButton("SET", v -> openSettings(), v -> {
             openSettings();
             return true;
@@ -123,10 +135,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         button.setAllCaps(false);
         button.setText(text);
         button.setTextColor(Color.WHITE);
-        button.setTextSize(12f);
+        button.setTextSize(11f);
         button.setGravity(Gravity.CENTER);
         button.setPadding(0, 0, 0, 0);
         button.setBackgroundColor(Color.TRANSPARENT);
+        button.setSingleLine(true);
+        button.setEllipsize(TextUtils.TruncateAt.END);
         button.setOnClickListener(click);
         button.setOnLongClickListener(longClick);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -218,11 +232,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             return;
         }
         if (mapPanel == null) {
-            mapPanel = new MapPanel(this, () -> openConfigured(LauncherPrefs.KEY_NAV));
+            mapPanel = new MapPanel(this, this::openNavigation);
             root.addView(mapPanel);
             applyGeometry(root.getWidth(), root.getHeight());
         }
         mapPanel.setVisibility(View.VISIBLE);
+        if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
+            mapPanel.stop();
+            return;
+        }
         requestMapLocationIfNeeded();
         mapPanel.resumeWebView();
     }
@@ -278,6 +296,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (mapPanel != null) {
             place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         }
+        if (appDrawerPanel != null) {
+            place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
+        }
     }
 
     private void place(View view, int x, int y, int width, int height) {
@@ -318,6 +339,69 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         playPause.setText(genericSnapshot.playing ? "Ⅱ" : "▶");
     }
 
+    private void updateQuickLabels() {
+        for (int i = 0; i < QUICK_SLOT_COUNT; i++) {
+            String fallback = "APP" + (i + 1);
+            String pkg = resolveQuickPackage(i);
+            String label = AppResolver.labelFor(this, pkg, fallback);
+            if (label.length() > 8) label = label.substring(0, 8);
+            quickButtons[i].setText(label);
+        }
+    }
+
+    private String resolveQuickPackage(int index) {
+        String direct = LauncherPrefs.packageFor(this, LauncherPrefs.QUICK_KEYS[index]);
+        if (!direct.isEmpty()) return direct;
+        String roleKey;
+        switch (index) {
+            case 0:
+                roleKey = LauncherPrefs.KEY_NAV;
+                break;
+            case 1:
+                roleKey = LauncherPrefs.KEY_RADIO;
+                break;
+            case 2:
+                roleKey = LauncherPrefs.KEY_MUSIC;
+                break;
+            case 3:
+                roleKey = LauncherPrefs.KEY_BLUETOOTH;
+                break;
+            default:
+                return "";
+        }
+        String role = LauncherPrefs.packageFor(this, roleKey);
+        if (role.isEmpty() && LauncherPrefs.KEY_MUSIC.equals(roleKey)) {
+            role = TopwayAdapter.defaultMusicPackage(this);
+        }
+        return role;
+    }
+
+    private void openQuick(int index) {
+        String pkg = resolveQuickPackage(index);
+        if (!AppResolver.launchPackage(this, pkg)) {
+            openPicker(LauncherPrefs.QUICK_KEYS[index]);
+        }
+    }
+
+    private void toggleAppDrawer() {
+        if (appDrawerPanel == null) {
+            appDrawerPanel = new AppDrawerPanel(this, () -> {
+                if (mapPanel != null && LauncherPrefs.mapEnabled(this)) {
+                    requestMapLocationIfNeeded();
+                    mapPanel.resumeWebView();
+                }
+            });
+            root.addView(appDrawerPanel);
+            applyGeometry(root.getWidth(), root.getHeight());
+        }
+        if (appDrawerPanel.isOpen()) {
+            appDrawerPanel.hidePanel();
+        } else {
+            if (mapPanel != null) mapPanel.stop();
+            appDrawerPanel.showPanel();
+        }
+    }
+
     @Override
     public void onMediaStateChanged(
             MediaListenerService.Snapshot genericMedia,
@@ -339,6 +423,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         String fallback = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
         if (fallback.isEmpty()) fallback = TopwayAdapter.defaultMusicPackage(this);
         if (!AppResolver.launchPackage(this, fallback)) openSettings();
+    }
+
+    private void openNavigation(Location location) {
+        String pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
+        if (!NavigationProvider.open(this, pkg, location)) {
+            openPicker(LauncherPrefs.KEY_NAV);
+        }
     }
 
     private void openConfigured(String key) {
