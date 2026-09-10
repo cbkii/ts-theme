@@ -7,10 +7,10 @@ final class Ts18Geometry {
     static final int SAFE_BOTTOM = 702;
     static final int TOP_SYSTEM_INSET = 55;
     static final int BOTTOM_RESERVE = 18;
-    static final int HOTSEAT_WIDTH = 81;
-    static final int STRIP_HEIGHT = 64;
-    static final int RADIO_WIDTH = 286;
-    static final int MUSIC_WIDTH = 680;
+    static final int HOTSEAT_WIDTH = 96;
+    static final int STRIP_HEIGHT = 72;
+    static final int RADIO_WIDTH = 350;
+    static final int MUSIC_WIDTH = 616;
 
     static final class Layout {
         final int top;
@@ -65,7 +65,7 @@ final class Ts18Geometry {
         int dateX = left + radioWidth + musicWidth;
         if (dateX >= safeRight) {
             int available = Math.max(3, safeRight - left);
-            radioWidth = Math.max(1, Math.round(available * (RADIO_WIDTH / 1144.0f)));
+            radioWidth = Math.max(1, Math.round(available * (RADIO_WIDTH / 966.0f)));
             musicWidth = Math.max(1, available - radioWidth - 1);
         }
 

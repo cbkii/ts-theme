@@ -93,9 +93,17 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("removeUpdates(this)", panel)
         self.assertIn("pointerdown", html)
         self.assertIn("pointermove", html)
+        self.assertIn("pointers=new Map()", html)
+        self.assertIn("pinchDistance", html)
+        self.assertIn("window.mapHealth", html)
         self.assertIn("tileKey", html)
         self.assertIn("if(key===tileKey)return", html)
         self.assertIn("rebuildTiles(p,tx,ty)", html)
+        self.assertIn("onReceivedError(", panel)
+        self.assertIn("onReceivedHttpError(", panel)
+        self.assertIn("onReceivedSslError(", panel)
+        self.assertIn("handler.cancel()", panel)
+        self.assertNotIn("handler.proceed()", panel)
         self.assertIn("new MapPanel(", launcher)
         self.assertIn('"assets/map/map.html"', checker)
         self.assertNotIn("ts18launcher/MapPanel;", checker)
@@ -137,14 +145,35 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("PlaybackState.ACTION_PLAY", media)
         self.assertIn("PlaybackState.ACTION_PAUSE", media)
         self.assertIn("sessionDiagnostics", media)
+        self.assertIn("MEDIA_REFRESH_INTERVAL_MS = 1000L", launcher)
+        self.assertIn("postDelayed(mediaRefreshPoll, MEDIA_REFRESH_INTERVAL_MS)", launcher)
+        self.assertIn("removeCallbacks(mediaRefreshPoll)", launcher)
         self.assertIn("setMediaButtonState(mediaPrevious", launcher)
         self.assertIn("setMediaButtonState(playPause", launcher)
         self.assertIn("setMediaButtonState(mediaNext", launcher)
+        self.assertIn("radioPlayPause", launcher)
+        self.assertIn("sendRadio(MediaListenerService.Command.PLAY_PAUSE)", launcher)
+        self.assertNotIn("if (!MediaListenerService.sendRadio", launcher)
         self.assertIn("Generic media selection:", settings)
         self.assertIn("Media session diagnostics", settings)
         self.assertIn('NAVRADIO_PLUS_PACKAGE = "com.navimods.radio"', radio)
         self.assertNotIn("sendBroadcast", radio)
         self.assertNotIn("su -c", radio)
+
+    def test_first_physical_feedback_adjustments_are_guarded(self):
+        geometry = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/Ts18Geometry.java"
+        )
+        launcher = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java"
+        )
+        self.assertIn("HOTSEAT_WIDTH = 96", geometry)
+        self.assertIn("STRIP_HEIGHT = 72", geometry)
+        self.assertIn("RADIO_WIDTH = 350", geometry)
+        self.assertIn("MUSIC_WIDTH = 616", geometry)
+        self.assertIn("RippleDrawable", launcher)
+        self.assertIn("setTextSize(13f)", launcher)
+        self.assertIn("setTextSize(28f)", launcher)
 
     def test_root_policy_is_bounded_reversible_and_prevalidated(self):
         installer = self.read("scripts/termux/install-standalone-launcher.sh")

@@ -5,10 +5,15 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -25,6 +30,7 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
 public class LauncherActivity extends Activity implements MediaListenerService.Observer {
     private static final int REQUEST_LOCATION = 4101;
     private static final int QUICK_SLOT_COUNT = 4;
+    private static final long MEDIA_REFRESH_INTERVAL_MS = 1000L;
 
     private FrameLayout root;
     private LinearLayout rail;
@@ -33,14 +39,27 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private TextClock dateView;
     private TextView radioText;
     private TextView mediaText;
+    private Button radioPrevious;
+    private Button radioPlayPause;
+    private Button radioNext;
     private Button mediaPrevious;
     private Button playPause;
     private Button mediaNext;
     private final Button[] quickButtons = new Button[QUICK_SLOT_COUNT];
+    private final Handler mediaRefreshHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mediaRefreshPoll = new Runnable() {
+        @Override
+        public void run() {
+            if (!mediaRefreshPolling) return;
+            MediaListenerService.refreshActiveSessions();
+            mediaRefreshHandler.postDelayed(this, MEDIA_REFRESH_INTERVAL_MS);
+        }
+    };
     private MapPanel mapPanel;
     private AppDrawerPanel appDrawerPanel;
     private boolean launchedAsHome;
     private boolean locationPermissionRequested;
+    private boolean mediaRefreshPolling;
     private MediaListenerService.Snapshot genericSnapshot =
             new MediaListenerService.Snapshot("", "", "", false);
     private MediaListenerService.Snapshot radioSnapshot =
@@ -71,6 +90,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onStart();
         MediaListenerService.addObserver(this);
         MediaListenerService.refreshActiveSessions();
+        startMediaRefreshPolling();
         updateQuickLabels();
         root.post(this::updateMapVisibility);
         updateLabels();
@@ -78,6 +98,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override
     protected void onStop() {
+        stopMediaRefreshPolling();
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
             appDrawerPanel.setVisibility(View.GONE);
@@ -88,6 +109,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override
     protected void onDestroy() {
+        stopMediaRefreshPolling();
         if (mapPanel != null) mapPanel.destroy();
         super.onDestroy();
     }
@@ -100,6 +122,18 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         }
         if (launchedAsHome || HomeMode.isDefaultHome(this)) return;
         super.onBackPressed();
+    }
+
+    private void startMediaRefreshPolling() {
+        if (mediaRefreshPolling) return;
+        mediaRefreshPolling = true;
+        mediaRefreshHandler.removeCallbacks(mediaRefreshPoll);
+        mediaRefreshHandler.postDelayed(mediaRefreshPoll, MEDIA_REFRESH_INTERVAL_MS);
+    }
+
+    private void stopMediaRefreshPolling() {
+        mediaRefreshPolling = false;
+        mediaRefreshHandler.removeCallbacks(mediaRefreshPoll);
     }
 
     private void buildRail() {
@@ -135,10 +169,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         button.setAllCaps(false);
         button.setText(text);
         button.setTextColor(Color.WHITE);
-        button.setTextSize(11f);
+        button.setTextSize(13f);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
         button.setGravity(Gravity.CENTER);
-        button.setPadding(0, 0, 0, 0);
-        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setPadding(4, 0, 4, 0);
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setBackground(touchFeedback());
         button.setSingleLine(true);
         button.setEllipsize(TextUtils.TruncateAt.END);
         button.setOnClickListener(click);
@@ -151,28 +188,35 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void buildRadioPanel() {
         radioPanel = stripPanel();
-        Button previous = controlButton("‹");
-        Button next = controlButton("›");
+        radioPrevious = controlButton("‹");
+        radioPlayPause = controlButton("▶");
+        radioNext = controlButton("›");
         radioText = stripText("RADIO");
-        previous.setOnClickListener(v -> {
-            if (!MediaListenerService.sendRadio(MediaListenerService.Command.PREVIOUS)) {
-                openConfigured(LauncherPrefs.KEY_RADIO);
-            }
-        });
-        next.setOnClickListener(v -> {
-            if (!MediaListenerService.sendRadio(MediaListenerService.Command.NEXT)) {
-                openConfigured(LauncherPrefs.KEY_RADIO);
-            }
-        });
+        radioText.setSingleLine(true);
+        radioText.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        radioText.setMarqueeRepeatLimit(-1);
+        radioText.setSelected(true);
+
+        radioPrevious.setOnClickListener(v ->
+                MediaListenerService.sendRadio(MediaListenerService.Command.PREVIOUS));
+        radioPlayPause.setOnClickListener(v ->
+                MediaListenerService.sendRadio(MediaListenerService.Command.PLAY_PAUSE));
+        radioNext.setOnClickListener(v ->
+                MediaListenerService.sendRadio(MediaListenerService.Command.NEXT));
         radioText.setOnClickListener(v -> openConfigured(LauncherPrefs.KEY_RADIO));
         radioText.setOnLongClickListener(v -> {
             openSettings();
             return true;
         });
 
-        radioPanel.addView(previous, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
-        radioPanel.addView(radioText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
-        radioPanel.addView(next, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
+        radioPanel.addView(radioPrevious,
+                new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
+        radioPanel.addView(radioPlayPause,
+                new LinearLayout.LayoutParams(60, LinearLayout.LayoutParams.MATCH_PARENT));
+        radioPanel.addView(radioNext,
+                new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
+        radioPanel.addView(radioText,
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
         root.addView(radioPanel);
     }
 
@@ -203,10 +247,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             return true;
         });
 
-        musicPanel.addView(mediaPrevious, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
-        musicPanel.addView(playPause, new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
-        musicPanel.addView(mediaNext, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
-        musicPanel.addView(mediaText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+        musicPanel.addView(mediaPrevious,
+                new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
+        musicPanel.addView(playPause,
+                new LinearLayout.LayoutParams(60, LinearLayout.LayoutParams.MATCH_PARENT));
+        musicPanel.addView(mediaNext,
+                new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
+        musicPanel.addView(mediaText,
+                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
         root.addView(musicPanel);
     }
 
@@ -218,9 +266,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         dateView.setTextSize(20f);
         dateView.setTypeface(Typeface.DEFAULT_BOLD);
         dateView.setGravity(Gravity.CENTER);
-        dateView.setBackgroundColor(0xFF170C09);
+        dateView.setBackground(touchFeedback(0xFF170C09));
         dateView.setOnClickListener(v -> openSettings());
         root.addView(dateView);
+    }
+
+    private RippleDrawable touchFeedback() {
+        return touchFeedback(Color.TRANSPARENT);
+    }
+
+    private RippleDrawable touchFeedback(int baseColor) {
+        return new RippleDrawable(
+                ColorStateList.valueOf(0x55FFFFFF),
+                new ColorDrawable(baseColor),
+                new ColorDrawable(Color.WHITE));
     }
 
     private void updateMapVisibility() {
@@ -266,10 +325,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         button.setAllCaps(false);
         button.setText(text);
         button.setTextColor(Color.WHITE);
-        button.setTextSize(24f);
+        button.setTextSize(28f);
         button.setGravity(Gravity.CENTER);
         button.setPadding(0, 0, 0, 0);
-        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setBackground(touchFeedback());
         return button;
     }
 
@@ -307,14 +368,21 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void updateLabels() {
         String radioPackage = RadioProvider.resolvePackage(this);
-        if (!radioPackage.isEmpty()
-                && radioPackage.equals(radioSnapshot.packageName)
-                && !radioSnapshot.displayText().isEmpty()) {
+        boolean exactRadioSession = !radioPackage.isEmpty()
+                && radioPackage.equals(radioSnapshot.packageName);
+        if (exactRadioSession && !radioSnapshot.displayText().isEmpty()) {
             radioText.setText(radioSnapshot.displayText());
         } else {
             radioText.setText(AppResolver.labelFor(this, radioPackage,
                     radioPackage.isEmpty() ? "SET RADIO" : "RADIO"));
         }
+        radioPlayPause.setText(radioSnapshot.playing ? "Ⅱ" : "▶");
+        setMediaButtonState(radioPrevious,
+                exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.PREVIOUS));
+        setMediaButtonState(radioPlayPause,
+                exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.PLAY_PAUSE));
+        setMediaButtonState(radioNext,
+                exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.NEXT));
 
         if (!MediaListenerService.hasNotificationAccess(this)) {
             mediaText.setText("Grant media access");
@@ -354,7 +422,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             String fallback = "APP" + (i + 1);
             String pkg = resolveQuickPackage(i);
             String label = AppResolver.labelFor(this, pkg, fallback);
-            if (label.length() > 8) label = label.substring(0, 8);
+            if (label.length() > 9) label = label.substring(0, 9);
             quickButtons[i].setText(label);
         }
     }

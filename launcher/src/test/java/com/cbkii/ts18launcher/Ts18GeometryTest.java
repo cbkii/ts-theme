@@ -7,27 +7,30 @@ import org.junit.Test;
 
 public class Ts18GeometryTest {
     @Test
-    public void physicalWindowMatchesExistingThemeGeometry() {
+    public void physicalWindowUsesVerifiedSystemInsetsAndWiderTouchRail() {
         Ts18Geometry.Layout g = Ts18Geometry.resolve(1280, 720);
         assertEquals(55, g.top);
-        assertEquals(81, g.left);
+        assertEquals(96, g.left);
         assertEquals(1225, g.safeRight);
         assertEquals(702, g.safeBottom);
-        assertEquals(119, g.mapY());
-        assertEquals(1144, g.mapWidth());
-        assertEquals(583, g.mapHeight());
+        assertEquals(127, g.mapY());
+        assertEquals(1129, g.mapWidth());
+        assertEquals(575, g.mapHeight());
+        assertEquals(72, g.stripHeight);
+        assertEquals(350, g.radioWidth);
+        assertEquals(616, g.musicWidth);
     }
 
     @Test
     public void decorFittedWindowKeepsSameContentGeometry() {
         Ts18Geometry.Layout g = Ts18Geometry.resolve(1225, 665);
         assertEquals(0, g.top);
-        assertEquals(81, g.left);
+        assertEquals(96, g.left);
         assertEquals(1225, g.safeRight);
         assertEquals(647, g.safeBottom);
-        assertEquals(64, g.mapY());
-        assertEquals(1144, g.mapWidth());
-        assertEquals(583, g.mapHeight());
+        assertEquals(72, g.mapY());
+        assertEquals(1129, g.mapWidth());
+        assertEquals(575, g.mapHeight());
     }
 
     @Test
