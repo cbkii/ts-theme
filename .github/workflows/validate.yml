@@ -90,7 +90,7 @@ jobs:
             exit 1
           fi
 
-      - name: Exercise signed release build and prepare testing input
+      - name: Exercise signed release build with configuration cache
         shell: bash
         env:
           TS_THEME_KEYSTORE_FILE: ${{ runner.temp }}/ci-release-validation.jks
