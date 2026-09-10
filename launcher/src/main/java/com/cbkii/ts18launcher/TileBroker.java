@@ -20,13 +20,7 @@ import java.util.regex.Pattern;
 
 import javax.net.ssl.SSLHandshakeException;
 
-/**
- * Small native HTTP/cache boundary for the HOME raster map.
- *
- * The WebView remains responsible only for rendering/interaction. Tile networking is
- * handled here so requests have an application-specific User-Agent, bounded timeouts,
- * HTTP-aware cache metadata and stale-cache fallback without adding a networking library.
- */
+/** Small native HTTP/cache boundary for the HOME raster map. */
 final class TileBroker {
     static final String TILE_HOST = "tile.openstreetmap.org";
     private static final Pattern TILE_PATH =
@@ -76,7 +70,6 @@ final class TileBroker {
         CacheMeta meta = readMeta(metadata);
         if (tile.isFile() && tile.length() > 0L && isFresh(tile, meta, now)) {
             cacheHits.incrementAndGet();
-            touch(tile, now);
             return fileResponse(tile, "HIT");
         }
 
@@ -92,9 +85,7 @@ final class TileBroker {
             connection.setRequestProperty("Accept", "image/png,image/*;q=0.8,*/*;q=0.1");
 
             if (staleAvailable && meta != null) {
-                if (!meta.etag.isEmpty()) {
-                    connection.setRequestProperty("If-None-Match", meta.etag);
-                }
+                if (!meta.etag.isEmpty()) connection.setRequestProperty("If-None-Match", meta.etag);
                 if (!meta.lastModified.isEmpty()) {
                     connection.setRequestProperty("If-Modified-Since", meta.lastModified);
                 }
@@ -102,21 +93,17 @@ final class TileBroker {
 
             int code = connection.getResponseCode();
             if (code == HttpURLConnection.HTTP_NOT_MODIFIED && staleAvailable) {
-                CacheMeta refreshed = CacheMeta.fromResponse(connection, meta, now);
-                writeMeta(metadata, refreshed);
+                writeMeta(metadata, CacheMeta.fromResponse(connection, meta, now));
                 cacheHits.incrementAndGet();
-                touch(tile, now);
                 lastFailure = "";
                 return fileResponse(tile, "REVALIDATED");
             }
-
             if (code != HttpURLConnection.HTTP_OK) {
-                String reason = "HTTP " + code;
-                return staleOrError(tile, staleAvailable, reason);
+                return staleOrError(tile, staleAvailable, "HTTP " + code);
             }
 
             String contentType = connection.getContentType();
-            if (contentType == null || !contentType.toLowerCase().startsWith("image/")) {
+            if (contentType == null || !contentType.toLowerCase(java.util.Locale.US).startsWith("image/")) {
                 return staleOrError(tile, staleAvailable, "invalid content type");
             }
 
@@ -124,8 +111,15 @@ final class TileBroker {
             try (InputStream input = connection.getInputStream()) {
                 bytes = readBounded(input);
             }
-            if (bytes.length == 0) {
-                return staleOrError(tile, staleAvailable, "empty tile");
+            if (bytes.length == 0) return staleOrError(tile, staleAvailable, "empty tile");
+
+            String cacheControl = connection.getHeaderField("Cache-Control");
+            if (hasCacheDirective(cacheControl, "no-store")) {
+                if (tile.isFile()) tile.delete();
+                if (metadata.isFile()) metadata.delete();
+                networkLoads.incrementAndGet();
+                lastFailure = "";
+                return bytesResponse(bytes, "BYPASS");
             }
 
             writeTile(tile, bytes);
@@ -143,9 +137,7 @@ final class TileBroker {
         }
     }
 
-    String lastFailure() {
-        return lastFailure;
-    }
+    String lastFailure() { return lastFailure; }
 
     String diagnosticSummary() {
         return "cache=" + cacheHits.get()
@@ -160,23 +152,30 @@ final class TileBroker {
         failures.incrementAndGet();
         if (staleAvailable) {
             staleHits.incrementAndGet();
-            touch(tile, System.currentTimeMillis());
             return fileResponse(tile, "STALE");
         }
         return error(502, "Tile unavailable");
     }
 
+    private static boolean hasCacheDirective(String cacheControl, String directive) {
+        if (cacheControl == null || directive == null) return false;
+        String[] parts = cacheControl.split(",");
+        for (String part : parts) {
+            String value = part.trim();
+            int equals = value.indexOf('=');
+            if (equals >= 0) value = value.substring(0, equals).trim();
+            if (directive.equalsIgnoreCase(value)) return true;
+        }
+        return false;
+    }
+
     private static boolean isFresh(File tile, CacheMeta meta, long now) {
-        long expiresAt = meta == null
-                ? tile.lastModified() + FALLBACK_CACHE_TTL_MS
-                : meta.expiresAt;
+        long expiresAt = meta == null ? tile.lastModified() + FALLBACK_CACHE_TTL_MS : meta.expiresAt;
         return expiresAt > now;
     }
 
     private static TileKey parseKey(Uri uri) {
-        if (uri == null || !"https".equals(uri.getScheme()) || !TILE_HOST.equals(uri.getHost())) {
-            return null;
-        }
+        if (uri == null || !"https".equals(uri.getScheme()) || !TILE_HOST.equals(uri.getHost())) return null;
         Matcher match = TILE_PATH.matcher(uri.getPath() == null ? "" : uri.getPath());
         if (!match.matches()) return null;
         try {
@@ -193,8 +192,7 @@ final class TileBroker {
     }
 
     private File tileFile(TileKey key) {
-        return new File(new File(new File(cacheRoot, Integer.toString(key.z)),
-                Integer.toString(key.x)), key.y + ".png");
+        return new File(new File(new File(cacheRoot, Integer.toString(key.z)), Integer.toString(key.x)), key.y + ".png");
     }
 
     private static File metadataFile(File tile) {
@@ -203,13 +201,8 @@ final class TileBroker {
 
     private WebResourceResponse fileResponse(File file, String cacheState) {
         try {
-            return new WebResourceResponse(
-                    "image/png",
-                    null,
-                    200,
-                    "OK",
-                    Collections.singletonMap("X-TS18-Map-Cache", cacheState),
-                    new FileInputStream(file));
+            return new WebResourceResponse("image/png", null, 200, "OK",
+                    Collections.singletonMap("X-TS18-Map-Cache", cacheState), new FileInputStream(file));
         } catch (IOException e) {
             lastFailure = e.getClass().getSimpleName();
             failures.incrementAndGet();
@@ -218,23 +211,13 @@ final class TileBroker {
     }
 
     private static WebResourceResponse bytesResponse(byte[] bytes, String cacheState) {
-        return new WebResourceResponse(
-                "image/png",
-                null,
-                200,
-                "OK",
-                Collections.singletonMap("X-TS18-Map-Cache", cacheState),
-                new ByteArrayInputStream(bytes));
+        return new WebResourceResponse("image/png", null, 200, "OK",
+                Collections.singletonMap("X-TS18-Map-Cache", cacheState), new ByteArrayInputStream(bytes));
     }
 
     private static WebResourceResponse error(int status, String reason) {
-        return new WebResourceResponse(
-                "text/plain",
-                "utf-8",
-                status,
-                reason,
-                Collections.emptyMap(),
-                new ByteArrayInputStream(reason.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        return new WebResourceResponse("text/plain", "utf-8", status, reason,
+                Collections.emptyMap(), new ByteArrayInputStream(reason.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
 
     private static byte[] readBounded(InputStream input) throws IOException {
@@ -243,6 +226,7 @@ final class TileBroker {
         int total = 0;
         int read;
         while ((read = input.read(buffer)) >= 0) {
+            if (read == 0) continue;
             total += read;
             if (total > MAX_TILE_BYTES) throw new IOException("tile too large");
             output.write(buffer, 0, read);
@@ -255,11 +239,9 @@ final class TileBroker {
         if (!parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory()) {
             throw new IOException("cache directory unavailable");
         }
-        File temporary = new File(parent,
-                destination.getName() + ".tmp-" + Thread.currentThread().getId());
+        File temporary = new File(parent, destination.getName() + ".tmp-" + Thread.currentThread().getId());
         try (FileOutputStream output = new FileOutputStream(temporary)) {
             output.write(bytes);
-            output.getFD().sync();
         }
         if (destination.exists() && !destination.delete()) {
             temporary.delete();
@@ -277,10 +259,7 @@ final class TileBroker {
         try (FileInputStream input = new FileInputStream(file)) {
             properties.load(input);
             long expires = Long.parseLong(properties.getProperty("expiresAt", "0"));
-            return new CacheMeta(
-                    expires,
-                    properties.getProperty("etag", ""),
-                    properties.getProperty("lastModified", ""));
+            return new CacheMeta(expires, properties.getProperty("etag", ""), properties.getProperty("lastModified", ""));
         } catch (IOException | NumberFormatException e) {
             return null;
         }
@@ -295,8 +274,7 @@ final class TileBroker {
         properties.setProperty("expiresAt", Long.toString(meta.expiresAt));
         properties.setProperty("etag", meta.etag);
         properties.setProperty("lastModified", meta.lastModified);
-        File temporary = new File(parent,
-                file.getName() + ".tmp-" + Thread.currentThread().getId());
+        File temporary = new File(parent, file.getName() + ".tmp-" + Thread.currentThread().getId());
         try (FileOutputStream output = new FileOutputStream(temporary)) {
             properties.store(output, "TS18 map tile cache metadata");
         }
@@ -310,10 +288,6 @@ final class TileBroker {
         }
     }
 
-    private static void touch(File file, long now) {
-        if (file.isFile()) file.setLastModified(now);
-    }
-
     private void trimCache() {
         if (!cacheRoot.isDirectory()) return;
         java.util.ArrayList<File> tiles = new java.util.ArrayList<>();
@@ -321,8 +295,7 @@ final class TileBroker {
         long total = 0L;
         for (File tile : tiles) total += tile.length();
         if (total <= MAX_CACHE_BYTES) return;
-        Collections.sort(tiles, (left, right) ->
-                Long.compare(left.lastModified(), right.lastModified()));
+        Collections.sort(tiles, (left, right) -> Long.compare(left.lastModified(), right.lastModified()));
         for (File tile : tiles) {
             if (total <= MAX_CACHE_BYTES) break;
             long size = tile.length();
@@ -347,12 +320,7 @@ final class TileBroker {
         final int z;
         final int x;
         final int y;
-
-        TileKey(int z, int x, int y) {
-            this.z = z;
-            this.x = x;
-            this.y = y;
-        }
+        TileKey(int z, int x, int y) { this.z = z; this.x = x; this.y = y; }
     }
 
     private static final class CacheMeta {
@@ -366,27 +334,22 @@ final class TileBroker {
             this.lastModified = lastModified == null ? "" : lastModified;
         }
 
-        static CacheMeta fromResponse(
-                HttpURLConnection connection, CacheMeta previous, long now) {
+        static CacheMeta fromResponse(HttpURLConnection connection, CacheMeta previous, long now) {
             long expiresAt = expiryFrom(connection, now);
-            String etag = valueOrPrevious(connection.getHeaderField("ETag"),
-                    previous == null ? "" : previous.etag);
-            String modified = valueOrPrevious(connection.getHeaderField("Last-Modified"),
-                    previous == null ? "" : previous.lastModified);
+            String etag = valueOrPrevious(connection.getHeaderField("ETag"), previous == null ? "" : previous.etag);
+            String modified = valueOrPrevious(connection.getHeaderField("Last-Modified"), previous == null ? "" : previous.lastModified);
             return new CacheMeta(expiresAt, etag, modified);
         }
 
         private static long expiryFrom(HttpURLConnection connection, long now) {
             String cacheControl = connection.getHeaderField("Cache-Control");
+            if (hasCacheDirective(cacheControl, "no-cache")) return now;
             if (cacheControl != null) {
-                Matcher matcher = Pattern.compile("(?:^|,)\\s*max-age=(\\d+)",
-                        Pattern.CASE_INSENSITIVE).matcher(cacheControl);
+                Matcher matcher = Pattern.compile("(?:^|,)\\s*max-age=(\\d+)", Pattern.CASE_INSENSITIVE).matcher(cacheControl);
                 if (matcher.find()) {
                     try {
                         long seconds = Long.parseLong(matcher.group(1));
-                        if (seconds > 0L && seconds < Long.MAX_VALUE / 1000L) {
-                            return now + seconds * 1000L;
-                        }
+                        if (seconds >= 0L && seconds < Long.MAX_VALUE / 1000L) return now + seconds * 1000L;
                     } catch (NumberFormatException ignored) {
                         // Fall through to Expires/default TTL.
                     }
