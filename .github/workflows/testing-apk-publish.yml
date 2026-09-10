@@ -152,8 +152,19 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          release_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq ".[] | select(.tag_name == \"$TEST_RELEASE_TAG\") | .id" | head -n 1)"
+
+          # GitHub deliberately exposes unpublished releases with generated
+          # untagged-* tag identities. The stable testing identity is therefore
+          # the exact title plus draft=true, never the draft tag_name.
+          mapfile -t matching_drafts < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\") | [.updated_at, .id] | @tsv" \
+              | sort -r
+          )
+          release_id=""
+          if ((${#matching_drafts[@]})); then
+            release_id="${matching_drafts[0]#*$'\t'}"
+          fi
 
           source_sha="$(sed -n 's/^source_sha=//p' outgoing/BUILD_INFO.txt | head -n 1)"
           body="Testing-only rolling launcher build. This release is intentionally kept as a draft and must not be published.\n\nCurrent source: $source_sha\nSource artifact run: ${{ inputs.artifact_run_id }}\n\nUse $TEST_INSTALL_APK_NAME for normal installation/update. $TEST_DEBUG_APK_NAME is the exact CI debug build and may use a different debug signer between runs."
@@ -175,6 +186,15 @@ jobs:
               -F draft=true \
               -F prerelease=false \
               -f make_latest=false >/dev/null
+
+            # Repair duplicates created by earlier tag-based draft lookup. The
+            # scope is deliberately exact-title + draft only; published or
+            # differently named releases are never touched.
+            for duplicate in "${matching_drafts[@]:1}"; do
+              duplicate_id="${duplicate#*$'\t'}"
+              [[ -n "$duplicate_id" && "$duplicate_id" != "$release_id" ]] || continue
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$duplicate_id" >/dev/null
+            done
           fi
 
           state="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
@@ -228,4 +248,11 @@ jobs:
               "${wanted_assets[*]}" "${actual_assets[*]}" >&2
             exit 1
           }
-          echo "Testing draft refreshed and remains draft: $TEST_RELEASE_TITLE"
+
+          exact_draft_count="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\") | .id" | wc -l | tr -d ' ')"
+          [[ "$exact_draft_count" == "1" ]] || {
+            echo "::error::Expected one canonical testing draft; found $exact_draft_count."
+            exit 1
+          }
+          echo "Testing draft refreshed and remains the single canonical draft: $TEST_RELEASE_TITLE"
