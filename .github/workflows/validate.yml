@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "codex/**"
+      - "compat/**"
   pull_request:
 
 permissions:
@@ -79,3 +80,81 @@ jobs:
           python3 scripts/release/runtime_envelope.py \
             --apk theme/build/outputs/apk/release/theme-release.apk \
             --config release-config.json
+
+  legacy_compat:
+    name: Legacy D8 / land compatibility APK
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Android 29 and legacy build tools before switching JDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-29" "build-tools;28.0.3" >/dev/null
+      - name: Set up Java 8
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "8"
+      - name: Set up Gradle 5.1.1
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
+        with:
+          gradle-version: "5.1.1"
+      - name: Fetch pinned RePlugin compatibility library
+        run: python3 tools/fetch_replugin.py
+      - name: Derive deterministic DoFun-style compatibility version
+        shell: bash
+        run: |
+          set -euo pipefail
+          stamp="$(git show -s --format=%cd --date=format:%y%m%d%H%M%S HEAD)"
+          [[ "$stamp" =~ ^[0-9]{12}$ ]]
+          echo "COMPAT_TIMESTAMP=$stamp" >> "$GITHUB_ENV"
+          echo "COMPAT_VERSION_CODE=9009009" >> "$GITHUB_ENV"
+      - name: Build independently signed legacy-D8 land carrier
+        shell: bash
+        env:
+          TS_THEME_KEYSTORE_FILE: ${{ runner.temp }}/ci-legacy-compat.jks
+          KEYSTORE_PASSWORD: ci-legacy-compat
+          KEY_ALIAS: ci-legacy-compat
+          KEY_PASSWORD: ci-legacy-compat
+        run: |
+          set -euo pipefail
+          umask 077
+          keytool -genkeypair -noprompt -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 1 -keystore "$TS_THEME_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" -dname "CN=CI legacy compatibility"
+          gradle --project-dir compat/legacy-d8 --no-daemon --stacktrace \
+            -PVERSION_CODE="$COMPAT_VERSION_CODE" \
+            -PCOMPAT_TIMESTAMP="$COMPAT_TIMESTAMP" \
+            assembleLandRelease
+      - name: Verify legacy toolchain and APK contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find compat/legacy-d8/build/outputs/apk -type f -name 'TS18-Dashboard-Theme-compat-fyd18-land.apk' -print -quit)"
+          test -n "$apk"
+          python3 tools/verify_legacy_compat_apk.py \
+            --apk "$apk" \
+            --expected-version-code "$COMPAT_VERSION_CODE" \
+            --expected-timestamp "$COMPAT_TIMESTAMP"
+          verify_log="$(mktemp)"
+          "$ANDROID_SDK_ROOT/build-tools/28.0.3/apksigner" verify --verbose "$apk" | tee "$verify_log"
+          grep -Fq 'Verified using v1 scheme (JAR signing): true' "$verify_log"
+          grep -Fq 'Verified using v2 scheme (APK Signature Scheme v2): true' "$verify_log"
+          mkdir -p compatibility-out
+          cp "$apk" compatibility-out/TS18-Dashboard-Theme-compat-fyd18-land.apk
+          sha256sum compatibility-out/TS18-Dashboard-Theme-compat-fyd18-land.apk > compatibility-out/TS18-Dashboard-Theme-compat-fyd18-land.apk.sha256.txt
+      - name: Preserve exact physical-test APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: compatibility-apk-fyd18-legacy-d8-${{ github.sha }}
+          path: compatibility-out/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 6

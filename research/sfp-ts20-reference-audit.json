@@ -1,0 +1,58 @@
+{
+  "evidence_class": "APK-STATIC-USER-SUPPLIED",
+  "captured_on": "2026-09-06",
+  "source_filename": "sfp_ts20.apk",
+  "sha256": "85d3f9845d9db0911cb68ccbe79dbff85405a5814ce720a02ac54580c2608d0e",
+  "package": "launcher.variety.theme.plugin.sfp_ts20",
+  "plugin_id": "sfp_ts20",
+  "version_code": 213,
+  "version_name": "213_241030172244.land",
+  "sdk": {
+    "min": 16,
+    "target": 26,
+    "compile": 29
+  },
+  "signer_certificate_sha256": "5B88187716D74BCA641B35DA261CFA52F86467DDDA0AC6099083184DF842999D",
+  "dex": {
+    "files": 1,
+    "classes": 63,
+    "compiler_marker": "D8 1.4.77 release min-api 16",
+    "contains_replugin_entry": true,
+    "contains_variety_theme_mocker": true
+  },
+  "native_abis": [],
+  "theme_metadata": {
+    "variant": "land",
+    "all_resolutions": [
+      "1280x652",
+      "1920x1087"
+    ],
+    "support_night": true,
+    "support_systemui": false,
+    "support_systemui_night": false,
+    "theme_id": "20240808173450",
+    "oem_id": "190"
+  },
+  "generated_contract": {
+    "path": "assets/.gen/c.json",
+    "widget_type_for_media_and_radio": "medias",
+    "source_modes_observed_in_media_config": [
+      "local_music",
+      "local_radio",
+      "bt_music"
+    ],
+    "uses_resolution_asset_roots": true,
+    "resolution_asset_root_example": "assets/layout-1280x652/"
+  },
+  "clean_room_findings_used_by_this_repository": [
+    "DoFun theme plugins distinguish the medias widget type from media source modes such as local_music/local_radio/bt_music.",
+    "A land theme can publish a generated assets/.gen/c.json capability/index and resolution-specific assets/layout-1280x652 configuration.",
+    "The 1280x652 layout family is directly relevant to the physical 1280x720 TS18 when the 55 px top system region is represented outside theme-local coordinates.",
+    "The APK remains a minimal no-native RePlugin payload; proprietary code, layouts, images, certificates and APK bytes are not copied into this repository."
+  ],
+  "evidence_limits": [
+    "This reference proves a vendor/community theme package contract, not that every field is mandatory on every DoFun version.",
+    "The vendor certificate is recorded for comparison only and is not copied or impersonated.",
+    "The D8 1.4.77 marker is a compatibility variable, not yet proven to be required by the current host."
+  ]
+}

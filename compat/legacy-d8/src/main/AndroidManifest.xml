@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="launcher.variety.theme.plugin">
+
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
+    <application
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:supportsRtl="true">
+        <meta-data
+            android:name="launcher.variety.theme.plugin"
+            android:value="sfp_cbk_black" />
+        <meta-data
+            android:name="support_systemui"
+            android:value="false" />
+        <meta-data
+            android:name="support_systemui_night"
+            android:value="false" />
+        <meta-data
+            android:name="support_night"
+            android:value="true" />
+    </application>
+</manifest>
