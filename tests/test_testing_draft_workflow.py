@@ -40,11 +40,11 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertNotIn("gh release upload", PUBLISH)
 
     def test_draft_identity_uses_title_and_cleans_only_exact_draft_duplicates(self):
-        self.assertIn('.draft == true and .name == \\"$TEST_RELEASE_TITLE\\"', PUBLISH)
+        self.assertIn('.draft == true and .name == \\"$TEST_RELEASE_TITLE\\"'.replace('\\\\', '\\'), PUBLISH)
         self.assertIn('matching_drafts', PUBLISH)
         self.assertIn('duplicate_id=', PUBLISH)
         self.assertIn('Expected one canonical testing draft', PUBLISH)
-        self.assertNotIn('.tag_name == \\"$TEST_RELEASE_TAG\\"', PUBLISH)
+        self.assertNotIn('.tag_name == \\"$TEST_RELEASE_TAG\\"'.replace('\\\\', '\\'), PUBLISH)
 
 
 if __name__ == "__main__":
