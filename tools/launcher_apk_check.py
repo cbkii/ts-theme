@@ -15,10 +15,6 @@ FORBIDDEN_DEX_MARKERS = (
     b"Landroidx/",
     b"Lcom/qihoo360/",
 )
-# Only require class names that Android must resolve by their manifest identity.
-# Internal implementation classes such as MapPanel are deliberately eligible for
-# R8 obfuscation in the signed/minified release and therefore are not stable DEX
-# markers. Their source/runtime wiring is covered by compilation and source tests.
 REQUIRED_DEX_MARKERS = (
     b"Lcom/cbkii/ts18launcher/LauncherActivity;",
     b"Lcom/cbkii/ts18launcher/AppDrawerActivity;",
@@ -29,6 +25,9 @@ REQUIRED_FILES = {
     "AndroidManifest.xml",
     "classes.dex",
     "assets/map/map.html",
+    "assets/map/vendor/leaflet.js",
+    "assets/map/vendor/leaflet.css",
+    "assets/map/vendor/LEAFLET-LICENSE.txt",
 }
 
 
@@ -77,7 +76,7 @@ def inspect(apk: Path) -> None:
     print(
         "launcher envelope: PASS "
         f"apk_bytes={size} dex=1 native=0 "
-        "kotlin=0 androidx=0 replugin=0 map_asset=present"
+        "kotlin=0 androidx=0 replugin=0 leaflet_map_assets=present"
     )
 
 

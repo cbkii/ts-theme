@@ -10,12 +10,9 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.Uri;
-import android.net.http.SslError;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.webkit.SslErrorHandler;
-import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -27,6 +24,7 @@ import android.widget.TextView;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.Locale;
 
 @SuppressLint({"SetJavaScriptEnabled", "SetTextI18n", "MissingPermission", "ViewConstructor"})
@@ -36,22 +34,20 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     private static final String MAP_URL = "file:///android_asset/map/map.html";
-    private static final String TILE_HOST = "tile.openstreetmap.org";
-    private static final long HEALTH_CHECK_DELAY_MS = 1200L;
+    private static final long HEALTH_CHECK_DELAY_MS = 1400L;
 
     private final Activity activity;
     private final NavigationLauncher navigationLauncher;
     private final WebView webView;
     private final TextView status;
     private final LocationManager locationManager;
+    private final TileBroker tileBroker;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable mapHealthCheck = this::checkMapHealth;
     private boolean started;
     private boolean pageReady;
     private boolean destroyed;
     private Location lastLocation;
-    private int zoom = 15;
-    private String tileFailure = "";
 
     MapPanel(Activity activity, NavigationLauncher navigationLauncher) {
         super(activity);
@@ -59,6 +55,8 @@ final class MapPanel extends FrameLayout implements LocationListener {
         this.navigationLauncher = navigationLauncher;
         setBackgroundColor(Color.BLACK);
 
+        String userAgent = mapUserAgent();
+        tileBroker = new TileBroker(activity.getCacheDir(), userAgent);
         webView = new WebView(activity);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -68,11 +66,11 @@ final class MapPanel extends FrameLayout implements LocationListener {
         settings.setAllowFileAccess(true);
         settings.setGeolocationEnabled(false);
         settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setLoadsImagesAutomatically(true);
         settings.setBlockNetworkLoads(false);
         settings.setSupportZoom(false);
-        settings.setUserAgentString(mapUserAgent());
+        settings.setUserAgentString(userAgent);
         webView.setBackgroundColor(Color.BLACK);
         webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, false);
         webView.setWebViewClient(new RestrictedMapClient());
@@ -83,7 +81,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
         status.setBackgroundColor(0xAA000000);
         status.setTextSize(12f);
         status.setPadding(8, 4, 8, 4);
-        status.setText("Map waiting for GPS");
+        status.setText("Map loading");
         LayoutParams statusLp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
         statusLp.leftMargin = 8;
         statusLp.topMargin = 8;
@@ -212,7 +210,6 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     private void adjustZoom(int delta) {
-        zoom = Math.max(2, Math.min(18, zoom + delta));
         if (pageReady) {
             webView.evaluateJavascript("adjustZoom(" + delta + ")", null);
             scheduleMapHealthCheck();
@@ -220,10 +217,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     private void recenterMap() {
-        if (pageReady) {
-            webView.evaluateJavascript("recenterMap()", null);
-            scheduleMapHealthCheck();
-        }
+        if (pageReady) webView.evaluateJavascript("recenterMap()", null);
     }
 
     @Override
@@ -238,20 +232,19 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     private void renderLocation(Location location) {
+        double accuracy = location.hasAccuracy() ? location.getAccuracy() : 0.0;
+        double bearing = location.hasBearing() ? location.getBearing() : 0.0;
         String js = String.format(
-                Locale.US, "setCenter(%.7f,%.7f,%d)",
-                location.getLatitude(), location.getLongitude(), zoom);
+                Locale.US,
+                "setLocation(%.7f,%.7f,%.1f,%.1f,%s)",
+                location.getLatitude(),
+                location.getLongitude(),
+                accuracy,
+                bearing,
+                location.hasBearing() ? "true" : "false");
         webView.evaluateJavascript(js, null);
-        updateGpsStatus();
+        status.setText("GPS · map loading");
         scheduleMapHealthCheck();
-    }
-
-    private void updateGpsStatus() {
-        if (!tileFailure.isEmpty()) {
-            status.setText("GPS · " + tileFailure);
-        } else {
-            status.setText("GPS · tiles loading");
-        }
     }
 
     private void scheduleMapHealthCheck() {
@@ -265,23 +258,18 @@ final class MapPanel extends FrameLayout implements LocationListener {
         webView.evaluateJavascript("mapHealth()", value -> {
             if (destroyed || value == null) return;
             if (value.contains("ok:")) {
-                tileFailure = "";
                 status.setText(lastLocation == null ? "Map ready · waiting for GPS" : "GPS");
             } else if (value.contains("error:")) {
-                if (tileFailure.isEmpty()) tileFailure = "map tile image error";
-                status.setText(lastLocation == null ? tileFailure : "GPS · " + tileFailure);
-            } else if (value.contains("loading:")) {
-                updateGpsStatus();
+                String detail = tileBroker.lastFailure();
+                if (detail.isEmpty()) detail = "tile render error";
+                status.setText(lastLocation == null
+                        ? "Map tiles · " + detail
+                        : "GPS · map tiles · " + detail);
+            } else if (value.contains("runtime-error")) {
+                status.setText("Map runtime unavailable");
+            } else if (lastLocation != null) {
+                status.setText("GPS · map loading");
             }
-        });
-    }
-
-    private void reportTileFailure(String message) {
-        if (destroyed || message == null || message.isEmpty()) return;
-        activity.runOnUiThread(() -> {
-            if (destroyed) return;
-            tileFailure = message;
-            status.setText(lastLocation == null ? message : "GPS · " + message);
         });
     }
 
@@ -291,12 +279,12 @@ final class MapPanel extends FrameLayout implements LocationListener {
         if (lastLocation != null) {
             renderLocation(lastLocation);
         } else {
-            status.setText("Map waiting for GPS");
+            status.setText("Map ready · waiting for GPS");
         }
     }
 
     @Override public void onProviderEnabled(String provider) {
-        if (LocationManager.GPS_PROVIDER.equals(provider)) status.setText("Map waiting for GPS");
+        if (LocationManager.GPS_PROVIDER.equals(provider)) status.setText("Map ready · waiting for GPS");
     }
 
     @Override public void onProviderDisabled(String provider) {
@@ -304,12 +292,6 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     @Override public void onStatusChanged(String provider, int statusValue, Bundle extras) {}
-
-    private static boolean isTileUri(Uri uri) {
-        return uri != null
-                && "https".equals(uri.getScheme())
-                && TILE_HOST.equals(uri.getHost());
-    }
 
     private final class RestrictedMapClient extends WebViewClient {
         private final byte[] blocked = "blocked".getBytes(StandardCharsets.UTF_8);
@@ -331,36 +313,10 @@ final class MapPanel extends FrameLayout implements LocationListener {
             String scheme = uri.getScheme();
             String url = uri.toString();
             if ("file".equals(scheme) && url.startsWith("file:///android_asset/map/")) return null;
-            if (isTileUri(uri)) return null;
+            if (TileBroker.isTileUri(uri)) return tileBroker.intercept(uri);
             return new WebResourceResponse(
                     "text/plain", "utf-8", 403, "Blocked",
-                    java.util.Collections.emptyMap(), new ByteArrayInputStream(blocked));
-        }
-
-        @Override
-        public void onReceivedError(
-                WebView view, WebResourceRequest request, WebResourceError error) {
-            if (request != null && isTileUri(request.getUrl())) {
-                int code = error == null ? 0 : error.getErrorCode();
-                reportTileFailure("map tiles network error " + code);
-            }
-        }
-
-        @Override
-        public void onReceivedHttpError(
-                WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
-            if (request != null && isTileUri(request.getUrl())) {
-                int code = errorResponse == null ? 0 : errorResponse.getStatusCode();
-                reportTileFailure("map tiles HTTP " + code);
-            }
-        }
-
-        @Override
-        public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-            handler.cancel();
-            if (error != null && isTileUri(Uri.parse(error.getUrl()))) {
-                reportTileFailure("map tiles TLS error");
-            }
+                    Collections.emptyMap(), new ByteArrayInputStream(blocked));
         }
     }
 }

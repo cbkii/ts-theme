@@ -74,6 +74,16 @@ android {
     }
 }
 
+val fetchLeafletAssets = tasks.register<Exec>("fetchLeafletAssets") {
+    group = "build setup"
+    description = "Fetches and SHA-256 verifies the pinned Leaflet 1.9.4 runtime assets."
+    commandLine("python3", rootProject.file("tools/fetch_leaflet.py").absolutePath)
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(fetchLeafletAssets)
+}
+
 val verifyReleaseSigningEnvironment = tasks.register("verifyReleaseSigningEnvironment") {
     group = "verification"
     description = "Fails closed when a standalone launcher release lacks signing inputs."

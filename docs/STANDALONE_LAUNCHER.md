@@ -2,197 +2,192 @@
 
 ## Status
 
-The `launcher/` module is the staged successor to the DoFun theme runtime.
+The `launcher/` module is a staged Android 10/API 29 HOME successor path that can be installed and tested as an ordinary Activity before HOME is changed. DoFun remains installed and enabled as recovery during qualification.
 
-It is intentionally installable as an ordinary app before it can become HOME. DoFun remains available as recovery during physical validation.
+Physical TS18 evidence collected on 10 September 2026 currently establishes:
 
-The current standalone release-completion scope now includes the maps/app-launch batch and the generic-media/radio authority batch. Static/CI qualification is not physical TS18 proof.
+- Topway/SystemUI top/right geometry remained visible and usable;
+- the launcher/app drawer/quick-launch/navigation hand-off surfaces worked;
+- `com.tw.media` on this exact unit is Auxio-TS, not the stock Topway music application;
+- Auxio-TS and Spotify worked through the generic Android MediaSession path;
+- third-party NavRadio+ (`com.navimods.radio`) exposed a usable independent MediaSession in the tested state;
+- the original hand-written WebView raster-map shell received GPS and accepted some gestures but its OSM tile images did not render;
+- stock TS18/Topway music and radio applications have not yet been qualified and must be tested independently from Auxio-TS/NavRadio+.
 
-## Build
+Static/CI qualification is never represented as physical TS18 proof.
 
-Requirements match the repository CI: JDK 17, Gradle 9.5, Android platform 29 and Build Tools 36.
+## Build and runtime envelope
 
-For ordinary development validation:
+Requirements match CI: JDK 17, Gradle 9.5, Python 3, Android platform 29 and Build Tools 36.
+
+`launcher:preBuild` fetches the pinned Leaflet 1.9.4 deployment assets from one of two HTTPS distribution endpoints and verifies exact SHA-256 values before Android packaging. Leaflet is bundled into the APK; HOME does not fetch mapping-library code at runtime.
 
 ```bash
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 ```
 
-The debug APK is useful for compilation/lint/unit testing, but its unminified DEX layout is not treated as release-envelope evidence.
-
-For a release build, provide the existing four signing inputs used by the repository and run:
+Release builds require the existing repository signing inputs:
 
 ```bash
 gradle -PVERSION_NAME=0.1.0 -PVERSION_CODE=1000 :launcher:assembleRelease
 python3 tools/launcher_apk_check.py launcher/build/outputs/apk/release/launcher-release.apk
 ```
 
-The release-envelope check is fail-closed: the signed/minified candidate must stay within the standalone package-size/runtime contract, contain exactly one DEX, contain no native libraries or Kotlin/AndroidX/RePlugin runtime payload, and retain the required manifest-resolved launcher classes and local map asset. CI also requires an empty `releaseRuntimeClasspath` and verifies the APK signature with Android Build Tools `apksigner`.
+The release envelope remains deliberately small: one DEX, no native libraries, no Kotlin/AndroidX/RePlugin runtime, no added Android runtime dependency, and a 2.5 MB APK ceiling. The APK check also requires the local Leaflet JS/CSS and bundled BSD-2-Clause licence.
 
-## Candidate workflow
+## Testing-build workflow
 
-Use **Standalone Launcher Candidate** for physical-test APKs. It builds and qualifies the signed APK, then uploads a 14-day artifact containing:
+Successful same-repository PR validation feeds the fixed draft release **000 Testing Only Version**. The installable asset is `TS18-Standalone-Launcher-TESTING.apk`; the exact CI debug build is also retained separately. The privileged publisher consumes only validated artifacts and does not execute PR source.
 
-- the exact signed launcher APK;
-- `SHA256SUMS.txt` and `BUILD_INFO.txt`;
-- the bounded root installer/HOME rollback helper;
-- the read-only performance/runtime measurement helper;
-- this standalone validation document.
+The manual **Refresh Testing APK Draft** action accepts a PR number, branch, tag or commit SHA. Commits predating the standalone launcher naturally cannot produce its APK.
 
-Publishing a GitHub prerelease is explicit and optional. The build job has read-only repository permission; only the separate publisher job receives `contents: write`, and it re-verifies the downloaded qualified bundle before publication. This candidate lane does not replace the existing DoFun-theme Manual Release workflow.
+## HOME dashboard
 
-## Dashboard controls
+The current physical-feedback geometry uses a 96 px left rail and 72 px radio/music/date strip while preserving the already-verified Topway/SystemUI safe boundary.
 
-The left HOME rail contains four configurable application slots plus **Apps** and **Settings**.
+The rail contains four configurable quick-launch slots plus **Apps** and **Settings**. Unset slots fall back to Navigation, Radio, Music and Bluetooth roles respectively. Long-pressing a quick slot opens its picker. **Apps** opens a five-column in-HOME drawer over the map only; while fully covered, map GPS/WebView work is suspended and resumes when the drawer closes.
 
-- Quick 1 falls back to the configured Navigation app when unset.
-- Quick 2 falls back to the resolved Radio app when unset.
-- Quick 3 falls back to Music, including the existing Topway music fallback when applicable.
-- Quick 4 falls back to Bluetooth.
-- Long-pressing a quick slot opens its app picker.
-- **Apps** opens an in-HOME five-column app drawer over the map surface only. The radio/music/date strip remains visible. Closing the drawer resumes the map; launching an app collapses the drawer before the next HOME resume.
+## Home-screen map architecture
 
-The separate Navigation, Radio, Bluetooth and Music role settings remain authoritative for the map/media surfaces. Quick slots can override those role defaults without changing those authorities.
+The original custom 5 x 5 tile renderer is retired after the physical TS18 test showed a blank tile surface and incomplete gesture behaviour.
 
-## Generic media authority
+The replacement keeps WebView because that renderer is already present and functioning on the unit, but delegates mature map interaction to bundled **Leaflet 1.9.4**. This provides pinch zoom, double-tap zoom, inertial drag, smooth recenter/follow behaviour, location accuracy circle and a bearing indicator without adding a native vector-map engine or Android runtime library.
 
-Generic music is controlled only through one existing Android `MediaSession` selected by the notification-listener service. The launcher does not create a player, queue, playback service, MediaSession or audio-focus owner.
+Tile networking is not delegated to opaque WebView subresource networking. `TileBroker` intercepts only exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` requests and performs them with framework `HttpURLConnection` using:
 
-Settings exposes two selection modes:
+- a TS18 Launcher identifying User-Agent;
+- bounded connect/read timeouts;
+- ordinary platform TLS validation with no bypass;
+- HTTP `max-age` / `Expires` handling;
+- ETag / Last-Modified conditional revalidation;
+- at least seven-day fallback cache lifetime where the server gives no usable freshness lifetime;
+- stale cached-tile fallback when a refresh fails;
+- a bounded 64 MiB on-disk tile cache;
+- no bulk download or prefetch.
 
-- **Auto**: use Android's active-session priority order and select the highest-priority eligible non-radio/non-telecom session. This is the default.
-- **Prefer music app**: if the configured Music app currently exposes an active session, use that exact package first; if it does not, fall back to Auto.
+The map library itself is entirely local. WebView remains origin-restricted and no JavaScript-to-Java bridge is exposed. Full route planning/navigation remains owned by the configured navigation application rather than duplicated inside HOME.
 
-The preferred/fallback music role therefore works with Auxio-TS, Spotify or another ordinary Android media application without hard-coding those applications into the control path.
+`OPEN NAV` sends the latest available location through the provider adapter for Google Maps, Waze, Organic Maps or OsmAnd/OsmAnd+, then falls back to the application's ordinary launch surface. These external navigation applications are not embedded or impersonated.
 
-Previous, play/pause and next are capability-aware. Each button is enabled only when the selected session's `PlaybackState` advertises the corresponding action. A press is dispatched once to that selected controller. Unsupported generic commands are not broadcast to alternate apps.
+### Map performance intent
 
-**Media session diagnostics** in Settings is read-only. It reports active sessions in the order Android returned them, marks the currently selected `[music]` and `[radio]` sessions, and reports state, metadata and previous/play-pause/next capability. It does not poll in the background.
+The Leaflet pivot intentionally remains raster-based. It adds roughly 160 KB of uncompressed JavaScript/CSS source before APK compression and reuses the WebView renderer already required by the launcher. It avoids MapLibre/native vector-engine libraries, background routing, vector style parsing and native/GPU renderer lifecycle inside HOME.
 
-## Radio and NavRadio+
+Actual CPU/RAM/frame impact on the TS18 must still be measured physically. If the richer map materially regresses the unit, the owning map surface should be reduced rather than compensating elsewhere in the launcher.
 
-Radio remains a separate authority from generic music.
+## Generic music authority
 
-- An explicitly configured Radio package always wins.
-- When no Radio package is configured and `com.navimods.radio` is installed, the launcher may resolve that package as the default NavRadio+ app.
-- Auto-detection is package discovery only. It is not proof that NavRadio+ exposes a usable MediaSession on the exact TS18.
-- Radio metadata/control is used only when an active MediaSession from the resolved radio package exists.
-- Previous/next are dispatched once only when that session advertises the requested action. Otherwise the launcher opens the resolved radio app rather than inventing a broadcast, key event, root command or private Topway path.
+Generic music uses one existing Android MediaSession selected by the notification-listener service. The launcher creates no player, queue, MediaSession or audio-focus owner.
 
-Any deeper NavRadio+/Topway contract remains blocked until exact-device evidence demonstrates that the public MediaSession route is insufficient and identifies the owning interface.
+Selection modes:
 
-## Safe rollout
+- **Auto** follows Android active-session priority while excluding the resolved radio package and telecom/call sessions.
+- **Prefer music app** uses the explicitly configured Music package whenever that package has an active session, then falls back to Auto.
 
-1. Install the APK without changing HOME.
-2. Launch **TS18 Launcher** from the existing launcher/app list.
-3. Configure Navigation, Radio, Bluetooth and preferred/fallback Music in Settings.
-4. Configure any quick-launch overrides required for the left rail.
-5. Grant notification-listener access for generic media.
-6. Grant location if the embedded map is required.
-7. Complete the ordinary-Activity Gate B tests below.
-8. Only after those tests pass, enable/set HOME from Settings. The public Android role/settings path is available.
-9. If Magisk root is available, **Set as HOME with Magisk root** performs the one-time HOME shell operation and verifies the result; if it fails it falls back to Android HOME settings.
-10. Keep DoFun installed/enabled until restart/reboot/cold-boot/ACC and vehicle-function validation is complete.
+Previous/play-pause/next are dispatched once to that selected controller only when its PlaybackState advertises support. A visible-only one-second reconciliation fallback exists because the physical TS18 test showed that callback delivery alone did not reliably refresh Auxio-TS metadata for every track change. The fallback stops when the launcher is no longer visible.
 
-The Termux helper can also install and set HOME with a bounded root operation. For this helper, ensure `aapt` or `aapt2`, `apksigner`, `sha256sum`, `timeout` and Magisk `su` are available in Termux first. The helper parses the APK before installation, rejects any application ID other than `com.cbkii.ts18launcher`, verifies the APK signature, and verifies the APK against an adjacent `SHA256SUMS.txt` when a qualified candidate bundle is used.
+### Exact package clarification
 
-```bash
-bash scripts/termux/install-standalone-launcher.sh /storage/emulated/0/Download/TS18-Standalone-Launcher.apk --set-home
-```
+On the tested TS18, `com.tw.media` is **Auxio-TS**. Its Topway-looking package name must not be interpreted as evidence for the stock Topway music app.
 
-With `--set-home`, the helper refuses to change HOME unless it can preserve a safe non-launcher rollback component first. Installation without `--set-home` does not overwrite the saved rollback target.
+The code currently knows `com.tw.music` only as an installed-package fallback candidate. Its actual stock-app runtime identity, MediaSession behaviour and control semantics still require exact-device testing. Do not infer those semantics from Auxio-TS.
 
-## Map and navigation handoff
+## Radio authority
 
-The dashboard map is an in-process WebView backed by project-owned local HTML and OpenStreetMap raster tiles. It is created after the first launcher frame, restricted to the OSM tile origin, uses the WebView cache, identifies its tile requests as TS18 Launcher, and its GPS listeners are active only while the map is visible.
+Radio remains independent from generic music.
 
-The map supports bounded touch/pointer panning and explicit recentering/zoom controls without adding a background worker. Its 5 x 5 tile layer is rebuilt only when the integer centre tile or zoom changes; ordinary pointer movement, resize and same-tile GPS updates reuse the existing image nodes and update only their transform.
+Third-party NavRadio+ uses package `com.navimods.radio`. Physical testing showed a usable MediaSession in the captured state, so previous/play-pause/next may be controlled through that exact session when the actions are advertised. Unsupported controls stay disabled; only tapping the radio title intentionally opens the full radio app.
 
-`OPEN NAV` hands the latest GPS location to the configured navigation authority where that app exposes a matching public deep-link intent, then falls back to the app's ordinary launcher Activity. The lightweight provider layer includes the known package identities for Google Maps, Waze, Organic Maps and OsmAnd/OsmAnd+ but does not embed or impersonate those applications. No private navigation-app API, root task embedding or JS-to-Java bridge is used.
+This does **not** establish the stock Topway radio contract. The native TS18/Topway radio application must be selected/tested separately. If it exposes no usable Android MediaSession, that result is a boundary for targeted Topway integration research; it is not justification to copy NavRadio+, Auxio-TS or another donor's command path.
+
+No guessed stock-radio package, private broadcast, root key injection or MCU command is added at this stage.
 
 ## Gate B - ordinary Activity physical qualification
 
-Do not make TS18 Launcher the default HOME for this gate. Keep DoFun as the active/recovery launcher and test the standalone Activity directly.
+Keep DoFun as HOME. Test TS18 Launcher directly.
 
 ### B1 - geometry, map and app surfaces
 
-Confirm on the physical 1280 x 720 TS18:
+Already passed on the previous build except for the map. Re-test the changed surfaces only:
 
-- Topway/SystemUI top/right regions remain visible and usable;
-- radio/music/date strip and 81 px rail fit the observed application bounds;
-- map renders, receives GPS, pans, recentres and zooms;
-- same-tile GPS movement does not cause visible full-tile-layer churn;
-- `OPEN NAV` hands off correctly to every installed navigation provider intended for release support;
-- all four quick slots launch their configured or role-fallback app exactly once;
-- the in-HOME drawer opens/closes over the map, pauses the map while covered, launches an app and returns cleanly.
+1. confirm the 96 px rail / 72 px strip remain inside the proven SystemUI bounds and the larger controls give visible press feedback;
+2. confirm Leaflet map tiles actually render;
+3. confirm GPS position, accuracy circle and bearing indicator where bearing is available;
+4. confirm drag, inertial pan, pinch zoom, double-tap zoom, +/- and recenter/follow;
+5. confirm opening/closing the app drawer still cleanly suspends/resumes the map;
+6. confirm navigation hand-off remains correct.
 
-A failure here blocks HOME qualification but does not imply a media failure.
+A blank map is a Gate B blocker. Preserve the visible map-status text and a fresh diagnostic ZIP before changing another map variable.
 
-### B2 - generic media selection and controls
+### B2 - generic players
 
-Grant notification access, then use **Media session diagnostics** after each state change.
+Previously demonstrated with Auxio-TS (`com.tw.media`) and Spotify. Re-test metadata refresh after the visible-only reconciliation change:
 
-1. With only the intended Music app active, confirm it is marked `[music]`, metadata is correct and only advertised controls are enabled.
-2. Repeat with another generic player such as Spotify. Confirm Auto follows the Android-priority active session rather than a hard-coded package.
-3. With two generic players exposing sessions, record the diagnostics order and selected `[music]` authority in Auto.
-4. Set the preferred Music app, switch to **Prefer music app**, and confirm that exact package is selected while its session exists.
-5. Stop/remove that preferred session and confirm selection falls back to Auto without sending a command to both sessions.
-6. Exercise previous, play/pause and next. A supported action must affect only the selected player; an unsupported action must remain disabled.
-7. Disconnect/reconnect notification-listener access or restart the launcher process and confirm media observation recovers without creating a second authority.
+1. change tracks using launcher controls;
+2. change tracks inside Auxio-TS;
+3. change tracks from any other working system/media control surface;
+4. confirm HOME metadata changes without leaving/re-entering the launcher;
+5. confirm exactly one selected `[music]` authority receives each command.
 
-If a result differs, preserve the diagnostics and `dumpsys media_session` evidence before changing selection logic.
+### B3 - stock Topway music
 
-### B3 - radio / NavRadio+
+This remains **unverified** and is separate from B2.
 
-1. Leave Radio explicitly configured if the exact desired package is known. Otherwise, with NavRadio+ installed, confirm Settings reports the resolved `com.navimods.radio` package.
-2. Launch/play radio and open **Media session diagnostics**.
-3. If `com.navimods.radio` exposes an active session, confirm it is marked `[radio]` and is not also selected as `[music]`.
-4. Exercise radio previous/next only where the diagnostics report support. Confirm one physical action per press.
-5. Where no matching session/action exists, confirm the dashboard opens NavRadio+ instead of silently sending an alternate control path.
-6. If NavRadio+ has no useful MediaSession on this TS18, record that as the earliest causal boundary. Do not add guessed broadcasts/private Topway controls until a targeted exact-device probe identifies a real contract.
+1. select the native TS18/Topway music application explicitly in launcher Settings;
+2. start playback in that native app;
+3. record the selected package and **Media session diagnostics**;
+4. confirm whether it exposes a session, metadata and previous/play-pause/next actions;
+5. exercise only actions that are actually advertised;
+6. if no usable session is exposed, mark native-music control as BLOCKED at the Android MediaSession boundary and capture evidence before proposing a Topway-specific adapter.
 
-### B4 - read-only evidence capture
+### B4 - third-party NavRadio+
 
-After the launcher has settled and after reproducing any media/radio discrepancy, run:
+The prior capture establishes a usable `com.navimods.radio` MediaSession in that tested state. Re-test only the changed control presentation if desired: previous/play-pause/next should not launch the app; tapping the radio title should.
+
+### B5 - stock Topway radio
+
+This remains **unverified** and is not represented by the NavRadio+ result.
+
+1. select the native TS18/Topway radio application explicitly;
+2. tune/play radio using the native app;
+3. record the exact package and **Media session diagnostics**;
+4. establish whether it exposes metadata and transport actions;
+5. exercise only proven actions;
+6. if the Android session path is absent/inadequate, capture `dumpsys media_session` and package state and stop there for targeted Topway contract analysis.
+
+## Read-only evidence capture
+
+After a settled state or immediately after reproducing a discrepancy:
 
 ```bash
 bash scripts/termux/measure-standalone-launcher.sh
 ```
 
-The capture includes package/process state, memory, frame timing, CPU, WebView/location state and a bounded `dumpsys media_session` surface. Note the corresponding in-app **Media session diagnostics** result in the test record. Failed/timed-out capture components are warnings rather than being misreported as a complete success.
+The capture covers package/process state, memory, frame timing, CPU, WebView/location state and bounded MediaSession evidence. Failed/timed-out capture components are warnings, not successful observations.
 
-Gate B passes only when the relevant B1-B3 tests have been physically exercised. CI/emulator success does not satisfy it.
+## Gate C - HOME and lifecycle
 
-## Gate C - HOME and vehicle lifecycle qualification
+Only after the relevant Gate B checks pass:
 
-Only after Gate B passes:
-
-1. preserve/verify the DoFun rollback HOME;
-2. enable the standalone HOME alias and select TS18 Launcher;
+1. preserve and verify DoFun as rollback HOME;
+2. enable/select TS18 Launcher as HOME;
 3. test HOME key, app launch/return and launcher process restart;
-4. test reverse camera entry and return;
-5. test Bluetooth and projection transitions that are used on this unit;
-6. reboot Android and confirm HOME/recovery behaviour;
-7. perform a cold boot;
-8. perform applicable ACC sleep/wake cycles;
-9. rerun the read-only measurement capture after a settled HOME session.
+4. test Bluetooth/projection transitions actually used on the unit;
+5. reboot Android and confirm HOME/recovery behaviour;
+6. cold boot;
+7. applicable ACC sleep/wake cycles;
+8. rerun read-only measurement after a settled HOME session.
 
-Any failure must be attributed to its owning boundary. A reverse-camera/vehicle lifecycle failure does not justify altering the generic MediaSession selection logic unless direct evidence connects them.
+**Reverse-camera hand-off/return remains a roadmapped physical vehicle-lifecycle validation item only. There is no reverse-camera implementation in the launcher at this stage, and none should be added unless later evidence shows the launcher itself owns a regression at that boundary.**
 
 ## Rollback
 
 Use launcher Settings -> **Disable HOME candidate / keep app installed**, then select DoFun in Android HOME settings if required.
 
-The Termux installer records the pre-change HOME component in private Termux state and can attempt to restore it:
+The Termux installer can restore its saved pre-change HOME:
 
 ```bash
 bash scripts/termux/install-standalone-launcher.sh --rollback-home
 ```
 
-Rollback exits non-zero unless the saved HOME is restored, the launcher HOME alias is disabled and the resolved HOME matches the saved component. Do not uninstall or disable DoFun during this phase.
-
-## Release boundary
-
-A release candidate is technically qualified only when its exact source head passes repository validation, empty standalone release-runtime dependency inspection, launcher lint/unit/debug build, signed/minified release build, APK-envelope validation and signature verification.
-
-A fully qualified TS18 release additionally requires the physical Gate B and Gate C results above. Record unrun checks as unverified rather than inferred from CI.
+Rollback must verify the saved HOME is restored and the standalone HOME alias is disabled. Do not uninstall/disable DoFun during qualification.

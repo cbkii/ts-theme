@@ -2,166 +2,110 @@
 
 ## Direction
 
-`ts-theme` now carries two deliberately separate runtime lanes.
+`ts-theme` carries two separate runtime lanes.
 
 | Lane | Purpose | Runtime authority |
 | --- | --- | --- |
-| `launcher/` | Primary standalone TS18 HOME candidate | Ordinary Android app + public Android APIs + narrow optional Topway/root adapters |
-| `theme/` | Legacy DoFun/RePlugin compatibility and rollback/reference lane | DoFun `com.dofun.variety` + RePlugin |
+| `launcher/` | Primary standalone TS18 HOME candidate | Ordinary Android app + public Android APIs + narrow evidence-backed adapters |
+| `theme/` | Legacy DoFun/RePlugin rollback/reference lane | DoFun `com.dofun.variety` + RePlugin |
 
-The standalone launcher removes DoFun/RePlugin from the normal dashboard control path. DoFun remains installed and enabled as the recovery HOME until standalone physical qualification is complete.
+DoFun remains installed and enabled until standalone physical qualification is complete.
 
-## Standalone controlling layers
+## Authority boundary
 
 vehicle/MCU/CAN/radio/reverse/amp/DSP/panel/keys
-→ Unisoc kernel/HALs/vendor daemons
-→ privileged Topway/TW services
-→ ordinary Android framework surfaces
-→ `com.cbkii.ts18launcher`
+-> Unisoc kernel/HALs/vendor daemons
+-> privileged Topway/TW services
+-> Android framework/SystemUI
+-> `com.cbkii.ts18launcher`
 
-The launcher owns only its HOME UI, app launching, its WebView map, and observation/control of Android media sessions. It does not become a vehicle service, radio service, Bluetooth stack, projection host, SystemUI or audio-focus owner.
+The standalone launcher owns only HOME UI, app launching, its context map and observation/control of existing Android media sessions. It is not a vehicle service, native radio/music service, Bluetooth stack, projection host, SystemUI, player or audio-focus owner.
 
-### Identity and lifecycle
+Magisk root may perform bounded one-time setup/diagnostics but does not grant platform signing, UID 1000, protected SELinux, MCU/CAN or safe partition-write authority.
 
-- package: `com.cbkii.ts18launcher`;
-- exact target: Android 10/API 29;
-- ordinary Activity is always launchable for safe pre-HOME testing;
-- HOME is a disabled `activity-alias` enabled only after explicit user action;
-- Android `RoleManager`/HOME settings are the normal setup path;
-- Magisk root may perform the equivalent one-time `cmd package set-home-activity` setup when available;
-- DoFun is not disabled or removed by the launcher.
+## Identity and lifecycle
 
-### Geometry
+- package `com.cbkii.ts18launcher`;
+- Android 10/API 29;
+- ordinary Activity always available for pre-HOME testing;
+- HOME provided by a disabled-by-default `activity-alias` enabled only after explicit user action;
+- Android HOME settings/role are the normal setup path;
+- bounded Magisk `cmd package set-home-activity` is an optional one-time equivalent;
+- DoFun is never automatically disabled or removed.
 
-The canonical physical panel is 1280 × 720:
+## Geometry
 
-- top system region: ~55 px;
-- right Topway/SystemUI region: 55 px;
-- hotseat: 81 px;
-- dashboard strip: 64 px;
-- safe-right: x=1225;
-- map physical origin: x=81, y=119;
-- map physical size: 1144 × 583.
+The physical panel is 1280 x 720. Physical testing confirmed the existing ~55 px top and 55 px right Topway/SystemUI boundaries while showing the first 81/64 px launcher controls were too small. The current dashboard therefore uses:
 
-`Ts18Geometry` supports both cases seen on aftermarket Android:
+- 96 px left rail;
+- 72 px Radio | Music | DD MMM strip;
+- safe-right x=1225;
+- map below the strip inside the remaining safe application area.
 
-1. a full physical Activity surface, where the project applies the known top/right safe bounds itself; and
-2. a decor-fitted Activity surface, where Android has already removed those system bars and the dashboard begins at local y=0.
+`Ts18Geometry` handles both full-physical and decor-fitted Activity surfaces and never hides SystemUI.
 
-The launcher never hides SystemUI.
+## Dashboard/app surface
 
-## Dashboard
+The rail contains four configurable quick slots plus Apps and Settings. Unset quick slots fall back to Navigation, Radio, Music and Bluetooth roles. The app drawer is an in-HOME overlay covering only the map surface; map GPS/WebView work is suspended while fully covered.
 
-### Left rail
+## Generic media
 
-The 81 px rail provides Navigation, Apps, Bluetooth and Settings entry points. Navigation/Bluetooth roles are user-selected package targets rather than hard-coded vendor identities.
+`MediaListenerService` obtains active Android sessions through notification-listener authority. It follows platform-priority sessions, compares tokens, registers metadata/playback callbacks, excludes the resolved radio package and telecom sessions, and dispatches capability-aware previous/play-pause/next exactly once to one selected controller.
 
-### Radio
+A visible-only one-second reconciliation fallback exists because physical TS18 testing showed callback delivery alone did not update Auxio-TS metadata for every track change. It stops outside the visible launcher lifecycle.
 
-Radio remains a separate authority.
+On this exact TS18, `com.tw.media` is **Auxio-TS**. That result must not be treated as stock Topway music evidence. `com.tw.music` remains only an installed-package fallback candidate until its native-app runtime/session behaviour is tested.
 
-The first implementation has a `MediaSession` radio adapter for a user-selected radio package. It can display that package's metadata and dispatch previous/next only to that exact session. If no usable session exists, tapping the panel opens the configured radio app.
+## Radio
 
-No SzChoiceWay/FYT/other-vendor MCU protocol is copied onto TS18.
+Radio is a separate authority from generic music. Third-party NavRadio+ (`com.navimods.radio`) exposed a usable MediaSession on the physical TS18 and may therefore be controlled through that exact session when actions are advertised.
 
-### Generic media
+This does not establish the native Topway radio contract. No stock-radio package or private command surface is guessed. If native Topway radio/music do not expose adequate Android MediaSessions, exact-device evidence must identify the owning Topway contract before a dedicated adapter is added.
 
-`MediaListenerService` is a notification-listener service used only to obtain active-session authority. It:
+## Home-screen map
 
-- watches the current platform-priority session set;
-- registers callbacks on every active session so metadata/playback changes are not missed;
-- compares session tokens rather than `MediaController` object identity;
-- excludes the configured radio package from generic music selection;
-- excludes Android telecom/call session packages from generic music selection;
-- prefers playing/buffering sessions, then paused/stopped sessions;
-- emits title/artist/play state only (no album art);
-- sends previous/play-pause/next exactly once to the selected controller.
+The original hand-written 5 x 5 tile renderer was retired after physical testing established that GPS and local WebView scripting worked but OSM tiles did not render reliably and gesture support was incomplete.
 
-The launcher does not create a MediaSession, player, queue, playback service, notification or focus owner.
+The replacement uses **bundled Leaflet 1.9.4** inside the existing lifecycle-bound WebView. Leaflet provides mature touch zoom, double-tap zoom, inertial panning, current-position marker, accuracy circle, bearing indicator and follow/recentre behaviour without introducing a native vector renderer or Android runtime dependency.
 
-## Map — approved #10B path
+Leaflet JS/CSS are fetched only during build from pinned HTTPS distribution endpoints and accepted only when their exact SHA-256 values match. The APK includes the BSD-2-Clause licence. HOME never downloads the map library at runtime.
 
-The embedded dashboard map is deliberately not Android `ActivityView`/task embedding. Those paths require platform/system privileges not granted by Magisk root or an independently signed APK.
+### Tile broker
 
-Instead the launcher uses a lazily-created in-process `WebView`:
+WebView does not own tile HTTP. `TileBroker` intercepts only exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` requests and uses framework `HttpURLConnection` with:
 
-- local project-owned HTML/JavaScript only;
-- raster OpenStreetMap tiles over HTTPS;
-- network restricted to `tile.openstreetmap.org`;
-- no JavaScript interface/bridge exposed to remote content;
-- no arbitrary browsing;
-- a fixed centre marker driven by lifecycle-bound Android `LocationManager`;
-- tile images are rebuilt only when the integer slippy-map tile changes;
-- WebView cache is preferred before network;
-- GPS listeners exist only while the dashboard map is visible;
-- an `OPEN NAV` control launches the configured full navigation app.
+- identifying TS18 Launcher User-Agent;
+- bounded connect/read timeouts;
+- normal platform TLS with no bypass;
+- HTTP `max-age`/`Expires` freshness;
+- ETag/Last-Modified conditional revalidation;
+- seven-day fallback freshness where the response provides no usable lifetime;
+- stale-cache fallback after a refresh failure;
+- bounded 64 MiB disk cache;
+- no bulk download or prefetch.
 
-This is a lightweight context map, not a replacement navigation engine. Organic Maps remains the full navigation authority.
+WebView remains restricted to local map assets plus the exact OSM tile origin and exposes no JavaScript-to-Java bridge. Full route calculation/navigation remains with Organic Maps, Google Maps, Waze or OsmAnd via public hand-off intents.
 
-## App discovery and preferences
+The raster/Leaflet design is intentional: it is more capable than the prototype but avoids MapLibre/native-vector APK, GPU and renderer-lifecycle cost in permanent HOME.
 
-The app drawer queries `ACTION_MAIN` + `CATEGORY_LAUNCHER` only. API 29 does not require the broad API-30 package-visibility permission for this use.
+## App discovery/preferences
 
-Preferences use platform `SharedPreferences` and hold only selected navigation/radio/Bluetooth/music packages plus map enable state.
+The drawer queries `ACTION_MAIN` + `CATEGORY_LAUNCHER`. Preferences use `SharedPreferences` for selected components/roles, media mode and map state.
 
 ## Topway adapter
 
-`platform/TopwayAdapter` is intentionally narrow. The initial implementation only recognises evidence-backed packages:
+`platform/TopwayAdapter` remains narrow. DoFun (`com.dofun.variety`) is recognised as environment/recovery evidence. `com.tw.music` may be used only as an installed fallback candidate. There is no guessed stock-radio package or private service/binder/property/MCU/CAN call.
 
-- DoFun (`com.dofun.variety`) as environment/recovery-host evidence;
-- stock music (`com.tw.music`) as a fallback launch target when installed.
+## Reverse camera
 
-It performs no private service, binder, property, MCU or CAN calls. Those can be added only after exact contracts are recovered and physically validated.
-
-## Magisk root policy
-
-Magisk root is authorised on this user-owned TS18 and should be used when it reduces ongoing runtime cost or makes integration materially simpler.
-
-Preferred examples:
-
-- one-time HOME assignment instead of a persistent helper;
-- exact private-data diagnostics;
-- systemless/reversible overlays;
-- bounded setup/recovery operations.
-
-Root is not a substitute for platform signing or protected service authority. Root-backed code must be explicit, bounded, fail-open/reversible and must not become a periodic runtime dependency when public callbacks suffice.
+Reverse-camera hand-off/return is a **roadmapped physical vehicle-lifecycle validation boundary**, not current launcher functionality. No reverse-camera code is introduced unless later exact-device evidence demonstrates a launcher-owned regression and identifies the relevant contract.
 
 ## Legacy DoFun/RePlugin lane
 
-`theme/` remains available while the standalone launcher is being physically qualified. It continues to follow its own clean declarative compatibility contract.
+`theme/` remains independent from `launcher/`: unique `launcher.variety.theme.plugin.sfp_cbk_black` / `sfp_cbk_black` identity, independent signing and the established clean declarative RePlugin compatibility envelope. No vendor APK/resource/DEX/signer/private device data is a build input.
 
-Do not merge the two identities or make the standalone launcher depend on RePlugin.
+## Qualification boundary
 
-### Retained legacy compatibility contract
+CI proves source contracts, empty launcher release-runtime dependency graph, lint/unit/build, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin envelope and required Leaflet assets/signature. It does not prove TS18 runtime behaviour.
 
-The standalone direction does not invalidate the previously established legacy-theme architecture. For `theme/` work:
-
-- discovery and rendering remain owned by Android PackageManager, DoFun `com.dofun.variety` and RePlugin;
-- the project keeps the unique `launcher.variety.theme.plugin.sfp_cbk_black` / `sfp_cbk_black` identity rather than impersonating a vendor package;
-- the maintained compatibility envelope remains minSdk 16, targetSdk 26, compileSdk 29, Qihoo360 RePlugin 2.3.4, no native libraries, a minimal no-component manifest and independent signing unless stronger exact-device evidence requires change;
-- no vendor APK, resource, DEX, signer or private device data is a build input;
-- CI can establish clean packaging/geometry but not DoFun discovery, signer acceptance, rendering or persistence on the exact TS18.
-
-If native DoFun media behaviour is insufficient, executable media integration remains a **separate adapter lane**, not code added into the declarative theme APK. That adapter must retain the earlier safety/selection rules: rank evidence-backed Android/DoFun/Topway surfaces, keep one normalised current target, exclude telecom sessions, select one control authority, dispatch each action exactly once, fail open on ambiguity and never create a second player/queue/MediaSession/audio-focus owner. Any exact-version DoFun/LSPosed hook starts log-only, narrowly scoped and reversible.
-
-Radio remains a separate authority throughout both lanes and must not be represented as a synthetic generic-media session.
-
-## Physical validation boundary
-
-Repository CI can prove compilation, lint, unit geometry, the signed/minified one-DEX/no-native/no-Kotlin/no-RePlugin launcher release envelope and static resource constraints.
-
-Only the TS18 can prove:
-
-- HOME selection and recovery;
-- correct SystemUI geometry;
-- launcher return behaviour;
-- media/radio behaviour with the installed apps;
-- WebView/GPS rendering/performance;
-- reverse-camera takeover/return;
-- Bluetooth/projection behaviour;
-- steering keys;
-- launcher restart;
-- reboot/cold boot;
-- ACC sleep/wake.
-
-Do not promote the standalone lane to sole release path until these pass.
+Current physical evidence proves the prior build's SystemUI geometry, quick slots/drawer/navigation hand-off, generic Auxio-TS/Spotify MediaSession path and third-party NavRadio+ session behaviour. The new Leaflet map, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake remain exact-device checks. Reverse-camera hand-off/return remains a later roadmapped lifecycle check.
