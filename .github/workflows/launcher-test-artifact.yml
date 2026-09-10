@@ -1,0 +1,107 @@
+name: TS18 Launcher Test Artifact
+
+on:
+  push:
+    branches:
+      - build/launcher-0.0.188
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      VERSION_NAME: 0.0.188
+      VERSION_CODE: 188
+      APP_SOURCE_SHA: efc8adef014db587ce456b90170a1b1a568c22a3
+    steps:
+      - name: Checkout build branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Prove application source matches qualified PR head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code "$APP_SOURCE_SHA" "$GITHUB_SHA" -- . \
+            ':(exclude).github/workflows/launcher-test-artifact.yml'
+
+      - name: Set up Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Install Android SDK inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-29" "build-tools;36.0.0" >/dev/null
+
+      - name: Materialise repository release key
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ts-launcher-release.jks"
+          test -s "$RUNNER_TEMP/ts-launcher-release.jks"
+
+      - name: Build and qualify signed release APK
+        shell: bash
+        env:
+          TS_THEME_KEYSTORE_FILE: ${{ runner.temp }}/ts-launcher-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace \
+            -PVERSION_NAME="$VERSION_NAME" -PVERSION_CODE="$VERSION_CODE" \
+            :launcher:lintRelease :launcher:testDebugUnitTest :launcher:assembleRelease
+          apk="launcher/build/outputs/apk/release/launcher-release.apk"
+          python3 tools/launcher_apk_check.py "$apk"
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" \
+            > launcher-signature.txt
+          mkdir -p qualified
+          apk_name="TS18-Standalone-Launcher-v${VERSION_NAME}.apk"
+          cp "$apk" "qualified/$apk_name"
+          cp scripts/termux/install-standalone-launcher.sh qualified/
+          cp scripts/termux/measure-standalone-launcher.sh qualified/
+          cp docs/STANDALONE_LAUNCHER.md qualified/
+          cp launcher-signature.txt qualified/
+          printf 'app_source_sha=%s\nbuild_sha=%s\nversion_name=%s\nversion_code=%s\n' \
+            "$APP_SOURCE_SHA" "$GITHUB_SHA" "$VERSION_NAME" "$VERSION_CODE" \
+            > qualified/BUILD_INFO.txt
+          (
+            cd qualified
+            sha256sum \
+              "$apk_name" \
+              install-standalone-launcher.sh \
+              measure-standalone-launcher.sh \
+              STANDALONE_LAUNCHER.md \
+              launcher-signature.txt \
+              BUILD_INFO.txt \
+              > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+
+      - name: Upload exact test bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: TS18-Standalone-Launcher-v0.0.188
+          path: qualified/
+          retention-days: 14
