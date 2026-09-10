@@ -104,8 +104,10 @@ jobs:
             -dname "CN=Temporary testing build"
 
           gradle --no-daemon --stacktrace \
-            :launcher:lintDebug :launcher:testDebugUnitTest \
-            :launcher:assembleDebug :launcher:assembleRelease
+            :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
+          gradle --no-daemon --stacktrace \
+            -PVERSION_NAME=0.0.0-testing -PVERSION_CODE=999999 \
+            :launcher:assembleRelease
 
           debug_apk="launcher/build/outputs/apk/debug/launcher-debug.apk"
           release_apk="launcher/build/outputs/apk/release/launcher-release.apk"
@@ -124,6 +126,8 @@ jobs:
           requested_ref=${{ steps.resolve.outputs.label }}
           source_sha=${{ steps.source.outputs.sha }}
           built_sha=${{ steps.source.outputs.sha }}
+          testing_version_name=0.0.0-testing
+          testing_version_code=999999
           build_run_id=$GITHUB_RUN_ID
           build_run_number=$GITHUB_RUN_NUMBER
           EOF
