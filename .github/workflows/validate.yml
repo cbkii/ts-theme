@@ -128,6 +128,8 @@ jobs:
           "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
             launcher/build/outputs/apk/release/launcher-release.apk
 
+      # This artifact is the only automatic input accepted by the default-branch
+      # testing-draft publisher; the PR validation job itself remains read-only.
       - name: Prepare standalone launcher testing input
         shell: bash
         env:
