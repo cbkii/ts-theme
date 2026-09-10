@@ -115,3 +115,36 @@ jobs:
             launcher/build/outputs/apk/release/launcher-release.apk
           "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
             launcher/build/outputs/apk/release/launcher-release.apk
+
+      - name: Prepare standalone launcher testing input
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+        run: |
+          set -euo pipefail
+          debug_apk="launcher/build/outputs/apk/debug/launcher-debug.apk"
+          release_apk="launcher/build/outputs/apk/release/launcher-release.apk"
+          test -s "$debug_apk"
+          test -s "$release_apk"
+          mkdir -p testing-input
+          cp "$debug_apk" testing-input/launcher-debug.apk
+          cp "$release_apk" testing-input/launcher-release.apk
+          cat > testing-input/BUILD_INFO.txt <<EOF
+          source_kind=validate
+          source_sha=$SOURCE_SHA
+          built_sha=$GITHUB_SHA
+          source_ref=$SOURCE_REF
+          pr_number=$PR_NUMBER
+          validate_run_id=$GITHUB_RUN_ID
+          validate_run_number=$GITHUB_RUN_NUMBER
+          EOF
+
+      - name: Upload standalone launcher testing input
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: standalone-launcher-testing-input
+          path: testing-input/
+          retention-days: 2
+          if-no-files-found: error
