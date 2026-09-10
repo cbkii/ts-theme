@@ -1,0 +1,142 @@
+name: Refresh Testing APK Draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "PR number (#9 or 9), branch, tag, or commit SHA to build"
+        required: true
+        default: main
+        type: string
+  workflow_run:
+    workflows:
+      - Validate
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testing-only-draft-release
+  cancel-in-progress: false
+
+env:
+  TEST_RELEASE_TITLE: 000 Testing Only Version
+  TEST_RELEASE_TAG: 000-testing-only
+  TEST_APK_NAME: TS18-Standalone-Launcher-DEBUG.apk
+
+jobs:
+  manual-build:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve requested source
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          target="${TARGET#\#}"
+          if [[ "$target" =~ ^[1-9][0-9]*$ ]]; then
+            sha="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$target" --jq .head.sha)"
+            ref="$sha"
+            label="PR #$target"
+          else
+            ref="$TARGET"
+            label="$TARGET"
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+          printf 'label=%s\n' "$label" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout requested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.resolve.outputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Record exact source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f launcher/build.gradle.kts || {
+            echo "::error::Selected source does not contain the standalone launcher module."
+            exit 1
+          }
+          sha="$(git rev-parse HEAD)"
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Install Android SDK inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "platforms;android-29" "build-tools;36.0.0" >/dev/null
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace \
+            :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
+          apk="launcher/build/outputs/apk/debug/launcher-debug.apk"
+          test -s "$apk"
+          if [[ -f tools/launcher_apk_check.py ]]; then
+            python3 tools/launcher_apk_check.py "$apk"
+          fi
+          mkdir -p testing-input
+          cp "$apk" testing-input/launcher-debug.apk
+          cat > testing-input/BUILD_INFO.txt <<EOF
+          source_kind=manual
+          requested_ref=${{ steps.resolve.outputs.label }}
+          source_sha=${{ steps.source.outputs.sha }}
+          build_run_id=$GITHUB_RUN_ID
+          build_run_number=$GITHUB_RUN_NUMBER
+          EOF
+
+      - name: Upload testing input
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: testing-apk-input
+          path: testing-input/
+          retention-days: 2
+          if-no-files-found: error
+
+  manual-publish:
+    if: github.event_name == 'workflow_dispatch'
+    needs: manual-build
+    uses: ./.github/workflows/testing-apk-publish.yml
+    with:
+      artifact_run_id: ${{ github.run_id }}
+      artifact_name: testing-apk-input
+    secrets: inherit
+
+  ci-publish:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    uses: ./.github/workflows/testing-apk-publish.yml
+    with:
+      artifact_run_id: ${{ github.event.workflow_run.id }}
+      artifact_name: standalone-launcher-debug
+    secrets: inherit
