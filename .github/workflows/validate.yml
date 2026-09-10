@@ -90,7 +90,7 @@ jobs:
             exit 1
           fi
 
-      - name: Exercise signed release build with configuration cache
+      - name: Exercise signed release build and prepare testing input
         shell: bash
         env:
           TS_THEME_KEYSTORE_FILE: ${{ runner.temp }}/ci-release-validation.jks
@@ -105,12 +105,24 @@ jobs:
             -keystore "$TS_THEME_KEYSTORE_FILE" \
             -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
             -dname "CN=CI release validation"
+
+          # Keep the canonical release-state exercise unchanged.
           gradle --no-daemon --stacktrace \
             -PVERSION_NAME=9.9.9 -PVERSION_CODE=9009009 \
             :theme:assembleRelease :launcher:assembleRelease
           python3 scripts/release/runtime_envelope.py \
             --apk theme/build/outputs/apk/release/theme-release.apk \
             --config release-config.json
+          python3 tools/launcher_apk_check.py \
+            launcher/build/outputs/apk/release/launcher-release.apk
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
+            launcher/build/outputs/apk/release/launcher-release.apk
+
+          # Rebuild only the launcher handoff APK at a stable testing version below 1.0.0.
+          # The privileged publisher strips this temporary signer and applies the repository key.
+          gradle --no-daemon --stacktrace \
+            -PVERSION_NAME=0.0.0-testing -PVERSION_CODE=999999 \
+            :launcher:assembleRelease
           python3 tools/launcher_apk_check.py \
             launcher/build/outputs/apk/release/launcher-release.apk
           "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
@@ -137,6 +149,8 @@ jobs:
           built_sha=$GITHUB_SHA
           source_ref=$SOURCE_REF
           pr_number=$PR_NUMBER
+          testing_version_name=0.0.0-testing
+          testing_version_code=999999
           validate_run_id=$GITHUB_RUN_ID
           validate_run_number=$GITHUB_RUN_NUMBER
           EOF
