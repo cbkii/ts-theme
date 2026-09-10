@@ -1,0 +1,210 @@
+name: Publish Testing APK Draft
+
+on:
+  workflow_call:
+    inputs:
+      artifact_run_id:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+env:
+  TEST_RELEASE_TITLE: 000 Testing Only Version
+  TEST_RELEASE_TAG: 000-testing-only
+  TEST_DEBUG_APK_NAME: TS18-Standalone-Launcher-DEBUG.apk
+  TEST_INSTALL_APK_NAME: TS18-Standalone-Launcher-TESTING.apk
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Confirm source artifact exists
+        id: artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.artifact_run_id }}
+          SOURCE_ARTIFACT: ${{ inputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
+            --jq "[.artifacts[] | select(.name == \"$SOURCE_ARTIFACT\" and .expired == false)] | length")"
+          if [[ "$count" == "1" ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          elif [[ "$count" == "0" ]]; then
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo "No $SOURCE_ARTIFACT artifact on run $SOURCE_RUN_ID; nothing to refresh."
+          else
+            echo "::error::Expected exactly one $SOURCE_ARTIFACT artifact on run $SOURCE_RUN_ID; found $count."
+            exit 1
+          fi
+
+      - name: Download validated build input
+        if: steps.artifact.outputs.available == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: incoming
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Validate input envelope
+        if: steps.artifact.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=(BUILD_INFO.txt launcher-debug.apk launcher-release.apk)
+          mapfile -t actual < <(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
+          mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | sort)
+          [[ "${actual[*]}" == "${wanted[*]}" ]] || {
+            printf 'Unexpected testing input.\nExpected: %s\nActual: %s\n' \
+              "${wanted[*]}" "${actual[*]}" >&2
+            exit 1
+          }
+          test -s incoming/launcher-debug.apk
+          test -s incoming/launcher-release.apk
+          grep -Eq '^source_sha=[0-9a-f]{40}$' incoming/BUILD_INFO.txt
+
+      - name: Install Android signing tools
+        if: steps.artifact.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          "$sdkmanager" "build-tools;36.0.0" >/dev/null
+
+      - name: Materialise repository launcher key
+        if: steps.artifact.outputs.available == 'true'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ts-launcher-testing.jks"
+          test -s "$RUNNER_TEMP/ts-launcher-testing.jks"
+
+      - name: Prepare fixed testing assets
+        if: steps.artifact.outputs.available == 'true'
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SOURCE_RUN_ID: ${{ inputs.artifact_run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+          mkdir -p outgoing
+          cp incoming/launcher-debug.apk "outgoing/$TEST_DEBUG_APK_NAME"
+
+          apksigner="${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
+          "$apksigner" sign \
+            --ks "$RUNNER_TEMP/ts-launcher-testing.jks" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled false \
+            --out "outgoing/$TEST_INSTALL_APK_NAME" \
+            incoming/launcher-release.apk
+
+          "$apksigner" verify --verbose "outgoing/$TEST_DEBUG_APK_NAME"
+          "$apksigner" verify --verbose --print-certs "outgoing/$TEST_INSTALL_APK_NAME" \
+            | tee outgoing/SIGNER.txt
+          signer_sha256="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' outgoing/SIGNER.txt)"
+          test -n "$signer_sha256"
+
+          cp incoming/BUILD_INFO.txt outgoing/BUILD_INFO.txt
+          cat >> outgoing/BUILD_INFO.txt <<EOF
+          published_by_run_id=$GITHUB_RUN_ID
+          source_artifact_run_id=$SOURCE_RUN_ID
+          install_asset=$TEST_INSTALL_APK_NAME
+          install_asset_signer_sha256=$signer_sha256
+          debug_asset=$TEST_DEBUG_APK_NAME
+          debug_asset_note=CI debug signer; use TESTING.apk for upgrade-compatible installs
+          EOF
+          (
+            cd outgoing
+            sha256sum "$TEST_INSTALL_APK_NAME" "$TEST_DEBUG_APK_NAME" BUILD_INFO.txt SIGNER.txt \
+              > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+
+      - name: Refresh fixed draft release
+        if: steps.artifact.outputs.available == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"$TEST_RELEASE_TAG\") | .id" | head -n 1)"
+
+          source_sha="$(sed -n 's/^source_sha=//p' outgoing/BUILD_INFO.txt | head -n 1)"
+          body="Testing-only rolling launcher build. This release is intentionally kept as a draft and must not be published.\n\nCurrent source: $source_sha\nSource artifact run: ${{ inputs.artifact_run_id }}\n\nUse $TEST_INSTALL_APK_NAME for normal installation/update. $TEST_DEBUG_APK_NAME is the exact CI debug build and may use a different debug signer between runs."
+
+          if [[ -z "$release_id" ]]; then
+            release_id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TEST_RELEASE_TAG" \
+              -f target_commitish="${{ github.event.repository.default_branch || 'main' }}" \
+              -f name="$TEST_RELEASE_TITLE" \
+              -f body="$body" \
+              -F draft=true \
+              -F prerelease=false \
+              -f make_latest=false \
+              --jq .id)"
+          else
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              -f name="$TEST_RELEASE_TITLE" \
+              -f body="$body" \
+              -F draft=true \
+              -F prerelease=false \
+              -f make_latest=false >/dev/null
+          fi
+
+          state="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            --jq '[.draft, .name] | @tsv')"
+          [[ "$state" == $'true\t'"$TEST_RELEASE_TITLE" ]] || {
+            echo "::error::Testing release is not the required draft/title before asset replacement: $state"
+            exit 1
+          }
+
+          mapfile -t old_assets < <(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" --jq '.[].id')
+          for asset_id in "${old_assets[@]}"; do
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" >/dev/null
+          done
+
+          gh release upload "$TEST_RELEASE_TAG" \
+            "outgoing/$TEST_INSTALL_APK_NAME" \
+            "outgoing/$TEST_DEBUG_APK_NAME" \
+            outgoing/BUILD_INFO.txt \
+            outgoing/SIGNER.txt \
+            outgoing/SHA256SUMS.txt
+
+          final="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")"
+          [[ "$(jq -r .draft <<<"$final")" == true ]]
+          [[ "$(jq -r .name <<<"$final")" == "$TEST_RELEASE_TITLE" ]]
+          mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"$final" | sort)
+          mapfile -t wanted_assets < <(printf '%s\n' \
+            "$TEST_INSTALL_APK_NAME" "$TEST_DEBUG_APK_NAME" BUILD_INFO.txt SIGNER.txt SHA256SUMS.txt | sort)
+          [[ "${actual_assets[*]}" == "${wanted_assets[*]}" ]] || {
+            printf 'Draft assets mismatch.\nExpected: %s\nActual: %s\n' \
+              "${wanted_assets[*]}" "${actual_assets[*]}" >&2
+            exit 1
+          }
+          echo "Testing draft refreshed and remains draft: $TEST_RELEASE_TITLE"
