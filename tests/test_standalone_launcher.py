@@ -21,15 +21,8 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("targetSdk = 29", gradle)
         self.assertIn("compileSdk = 29", gradle)
         for forbidden in (
-            "androidx.",
-            "compose",
-            "appcompat",
-            "material:",
-            "room",
-            "datastore",
-            "rxjava",
-            "dagger",
-            "replugin",
+            "androidx.", "compose", "appcompat", "material:", "room",
+            "datastore", "rxjava", "dagger", "replugin",
         ):
             self.assertNotIn(forbidden, gradle.lower())
 
@@ -46,7 +39,6 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertEqual("false", alias.attrib.get(ANDROID_NS + "enabled"))
         self.assertEqual("true", alias.attrib.get(ANDROID_NS + "exported"))
         self.assertEqual(".LauncherActivity", alias.attrib.get(ANDROID_NS + "targetActivity"))
-
         manifest = manifest_path.read_text(encoding="utf-8")
         self.assertNotIn("launcher.variety.theme.plugin.sfp_cbk_black", manifest)
         self.assertNotIn("android.uid.system", manifest)
@@ -88,9 +80,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
 
     def test_web_map_is_local_lifecycle_bound_and_origin_restricted(self):
         panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
-        launcher = self.read(
-            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java"
-        )
+        launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         html = self.read("launcher/src/main/assets/map/map.html")
         checker = self.read("tools/launcher_apk_check.py")
         self.assertIn('file:///android_asset/map/map.html', panel)
@@ -131,6 +121,30 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('OSMAND_PLUS = "net.osmand.plus"', nav)
         self.assertIn("geo:", nav)
         self.assertIn("waze://", nav)
+
+    def test_media_selection_is_deterministic_capability_aware_and_radio_separate(self):
+        prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
+        media = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MediaListenerService.java")
+        launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
+        radio = self.read("launcher/src/main/java/com/cbkii/ts18launcher/RadioProvider.java")
+        self.assertIn('MEDIA_MODE_AUTO = "auto"', prefs)
+        self.assertIn('MEDIA_MODE_PREFER_MUSIC = "prefer_music"', prefs)
+        self.assertIn("preferConfigured", media)
+        self.assertIn("pickExactPackage(controllers, preferredPackage)", media)
+        self.assertIn("RadioProvider.resolvePackage(this)", media)
+        self.assertIn("public boolean supports(Command command)", media)
+        self.assertIn("PlaybackState.ACTION_PLAY", media)
+        self.assertIn("PlaybackState.ACTION_PAUSE", media)
+        self.assertIn("sessionDiagnostics", media)
+        self.assertIn("setMediaButtonState(mediaPrevious", launcher)
+        self.assertIn("setMediaButtonState(playPause", launcher)
+        self.assertIn("setMediaButtonState(mediaNext", launcher)
+        self.assertIn("Generic media selection:", settings)
+        self.assertIn("Media session diagnostics", settings)
+        self.assertIn('NAVRADIO_PLUS_PACKAGE = "com.navimods.radio"', radio)
+        self.assertNotIn("sendBroadcast", radio)
+        self.assertNotIn("su -c", radio)
 
     def test_root_policy_is_bounded_reversible_and_prevalidated(self):
         installer = self.read("scripts/termux/install-standalone-launcher.sh")

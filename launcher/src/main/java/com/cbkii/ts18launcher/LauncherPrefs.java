@@ -13,6 +13,10 @@ final class LauncherPrefs {
     static final String KEY_QUICK_3 = "app.quick.3";
     static final String KEY_QUICK_4 = "app.quick.4";
     static final String KEY_MAP_ENABLED = "map.enabled";
+    static final String KEY_MEDIA_MODE = "media.selection.mode";
+
+    static final String MEDIA_MODE_AUTO = "auto";
+    static final String MEDIA_MODE_PREFER_MUSIC = "prefer_music";
 
     static final String[] QUICK_KEYS = {
             KEY_QUICK_1, KEY_QUICK_2, KEY_QUICK_3, KEY_QUICK_4
@@ -32,6 +36,17 @@ final class LauncherPrefs {
 
     static void setPackage(Context context, String key, String packageName) {
         prefs(context).edit().putString(key, packageName == null ? "" : packageName).apply();
+    }
+
+    static String mediaMode(Context context) {
+        String value = prefs(context).getString(KEY_MEDIA_MODE, MEDIA_MODE_AUTO);
+        return MEDIA_MODE_PREFER_MUSIC.equals(value) ? MEDIA_MODE_PREFER_MUSIC : MEDIA_MODE_AUTO;
+    }
+
+    static void setMediaMode(Context context, String mode) {
+        String safe = MEDIA_MODE_PREFER_MUSIC.equals(mode)
+                ? MEDIA_MODE_PREFER_MUSIC : MEDIA_MODE_AUTO;
+        prefs(context).edit().putString(KEY_MEDIA_MODE, safe).apply();
     }
 
     static boolean mapEnabled(Context context) {

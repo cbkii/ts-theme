@@ -33,7 +33,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private TextClock dateView;
     private TextView radioText;
     private TextView mediaText;
+    private Button mediaPrevious;
     private Button playPause;
+    private Button mediaNext;
     private final Button[] quickButtons = new Button[QUICK_SLOT_COUNT];
     private MapPanel mapPanel;
     private AppDrawerPanel appDrawerPanel;
@@ -47,8 +49,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        launchedAsHome = getIntent() != null
-                && getIntent().hasCategory(Intent.CATEGORY_HOME);
+        launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
 
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
@@ -59,7 +60,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         buildMusicPanel();
         buildDate();
 
-        root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+        root.addOnLayoutChangeListener((v, left, top, right, bottom,
+                                        oldLeft, oldTop, oldRight, oldBottom) ->
                 applyGeometry(right - left, bottom - top));
         root.post(() -> applyGeometry(root.getWidth(), root.getHeight()));
     }
@@ -96,9 +98,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             appDrawerPanel.hidePanel();
             return;
         }
-        if (launchedAsHome || HomeMode.isDefaultHome(this)) {
-            return;
-        }
+        if (launchedAsHome || HomeMode.isDefaultHome(this)) return;
         super.onBackPressed();
     }
 
@@ -178,20 +178,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void buildMusicPanel() {
         musicPanel = stripPanel();
-        Button previous = controlButton("‹");
+        mediaPrevious = controlButton("‹");
         playPause = controlButton("▶");
-        Button next = controlButton("›");
+        mediaNext = controlButton("›");
         mediaText = stripText("Grant media access");
         mediaText.setSingleLine(true);
         mediaText.setEllipsize(TextUtils.TruncateAt.MARQUEE);
         mediaText.setMarqueeRepeatLimit(-1);
         mediaText.setSelected(true);
 
-        previous.setOnClickListener(v ->
+        mediaPrevious.setOnClickListener(v ->
                 MediaListenerService.sendGeneric(MediaListenerService.Command.PREVIOUS));
         playPause.setOnClickListener(v ->
                 MediaListenerService.sendGeneric(MediaListenerService.Command.PLAY_PAUSE));
-        next.setOnClickListener(v ->
+        mediaNext.setOnClickListener(v ->
                 MediaListenerService.sendGeneric(MediaListenerService.Command.NEXT));
         mediaText.setOnClickListener(v -> openCurrentMedia());
         mediaText.setOnLongClickListener(v -> {
@@ -203,9 +203,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             return true;
         });
 
-        musicPanel.addView(previous, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
+        musicPanel.addView(mediaPrevious, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
         musicPanel.addView(playPause, new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
-        musicPanel.addView(next, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
+        musicPanel.addView(mediaNext, new LinearLayout.LayoutParams(52, LinearLayout.LayoutParams.MATCH_PARENT));
         musicPanel.addView(mediaText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
         root.addView(musicPanel);
     }
@@ -248,9 +248,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void requestMapLocationIfNeeded() {
         if (locationPermissionRequested
                 || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED) {
-            return;
-        }
+                == PackageManager.PERMISSION_GRANTED) return;
         locationPermissionRequested = true;
         requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
     }
@@ -293,9 +291,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         place(radioPanel, g.radioX(), g.top, g.radioWidth, g.stripHeight);
         place(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);
         place(dateView, g.dateX(), g.top, g.dateWidth(), g.stripHeight);
-        if (mapPanel != null) {
-            place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
-        }
+        if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (appDrawerPanel != null) {
             place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         }
@@ -310,7 +306,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void updateLabels() {
-        String radioPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_RADIO);
+        String radioPackage = RadioProvider.resolvePackage(this);
         if (!radioPackage.isEmpty()
                 && radioPackage.equals(radioSnapshot.packageName)
                 && !radioSnapshot.displayText().isEmpty()) {
@@ -323,20 +319,34 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (!MediaListenerService.hasNotificationAccess(this)) {
             mediaText.setText("Grant media access");
             playPause.setText("▶");
+            setMediaButtonState(mediaPrevious, false);
+            setMediaButtonState(playPause, false);
+            setMediaButtonState(mediaNext, false);
             return;
         }
+
         String display = genericSnapshot.displayText();
         if (!display.isEmpty()) {
             mediaText.setText(display);
         } else {
             String fallbackPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
-            if (fallbackPackage.isEmpty()) {
-                fallbackPackage = TopwayAdapter.defaultMusicPackage(this);
-            }
+            if (fallbackPackage.isEmpty()) fallbackPackage = TopwayAdapter.defaultMusicPackage(this);
             mediaText.setText(AppResolver.labelFor(
                     this, fallbackPackage, "No active media session"));
         }
         playPause.setText(genericSnapshot.playing ? "Ⅱ" : "▶");
+        setMediaButtonState(mediaPrevious,
+                genericSnapshot.supports(MediaListenerService.Command.PREVIOUS));
+        setMediaButtonState(playPause,
+                genericSnapshot.supports(MediaListenerService.Command.PLAY_PAUSE));
+        setMediaButtonState(mediaNext,
+                genericSnapshot.supports(MediaListenerService.Command.NEXT));
+    }
+
+    private void setMediaButtonState(Button button, boolean enabled) {
+        if (button == null) return;
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1f : 0.35f);
     }
 
     private void updateQuickLabels() {
@@ -352,35 +362,24 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private String resolveQuickPackage(int index) {
         String direct = LauncherPrefs.packageFor(this, LauncherPrefs.QUICK_KEYS[index]);
         if (!direct.isEmpty()) return direct;
-        String roleKey;
         switch (index) {
             case 0:
-                roleKey = LauncherPrefs.KEY_NAV;
-                break;
+                return LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
             case 1:
-                roleKey = LauncherPrefs.KEY_RADIO;
-                break;
+                return RadioProvider.resolvePackage(this);
             case 2:
-                roleKey = LauncherPrefs.KEY_MUSIC;
-                break;
+                String music = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
+                return music.isEmpty() ? TopwayAdapter.defaultMusicPackage(this) : music;
             case 3:
-                roleKey = LauncherPrefs.KEY_BLUETOOTH;
-                break;
+                return LauncherPrefs.packageFor(this, LauncherPrefs.KEY_BLUETOOTH);
             default:
                 return "";
         }
-        String role = LauncherPrefs.packageFor(this, roleKey);
-        if (role.isEmpty() && LauncherPrefs.KEY_MUSIC.equals(roleKey)) {
-            role = TopwayAdapter.defaultMusicPackage(this);
-        }
-        return role;
     }
 
     private void openQuick(int index) {
         String pkg = resolveQuickPackage(index);
-        if (!AppResolver.launchPackage(this, pkg)) {
-            openPicker(LauncherPrefs.QUICK_KEYS[index]);
-        }
+        if (!AppResolver.launchPackage(this, pkg)) openPicker(LauncherPrefs.QUICK_KEYS[index]);
     }
 
     private void toggleAppDrawer() {
@@ -407,19 +406,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             MediaListenerService.Snapshot genericMedia,
             MediaListenerService.Snapshot radio) {
         genericSnapshot = genericMedia == null
-                ? new MediaListenerService.Snapshot("", "", "", false)
-                : genericMedia;
+                ? new MediaListenerService.Snapshot("", "", "", false) : genericMedia;
         radioSnapshot = radio == null
-                ? new MediaListenerService.Snapshot("", "", "", false)
-                : radio;
+                ? new MediaListenerService.Snapshot("", "", "", false) : radio;
         runOnUiThread(this::updateLabels);
     }
 
     private void openCurrentMedia() {
         if (!genericSnapshot.packageName.isEmpty()
-                && AppResolver.launchPackage(this, genericSnapshot.packageName)) {
-            return;
-        }
+                && AppResolver.launchPackage(this, genericSnapshot.packageName)) return;
         String fallback = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
         if (fallback.isEmpty()) fallback = TopwayAdapter.defaultMusicPackage(this);
         if (!AppResolver.launchPackage(this, fallback)) openSettings();
@@ -427,19 +422,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void openNavigation(Location location) {
         String pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
-        if (!NavigationProvider.open(this, pkg, location)) {
-            openPicker(LauncherPrefs.KEY_NAV);
-        }
+        if (!NavigationProvider.open(this, pkg, location)) openPicker(LauncherPrefs.KEY_NAV);
     }
 
     private void openConfigured(String key) {
-        String pkg = LauncherPrefs.packageFor(this, key);
-        if (LauncherPrefs.KEY_MUSIC.equals(key) && pkg.isEmpty()) {
-            pkg = TopwayAdapter.defaultMusicPackage(this);
+        String pkg;
+        if (LauncherPrefs.KEY_RADIO.equals(key)) {
+            pkg = RadioProvider.resolvePackage(this);
+        } else {
+            pkg = LauncherPrefs.packageFor(this, key);
+            if (LauncherPrefs.KEY_MUSIC.equals(key) && pkg.isEmpty()) {
+                pkg = TopwayAdapter.defaultMusicPackage(this);
+            }
         }
-        if (!AppResolver.launchPackage(this, pkg)) {
-            openPicker(key);
-        }
+        if (!AppResolver.launchPackage(this, pkg)) openPicker(key);
     }
 
     private void openPicker(String key) {
