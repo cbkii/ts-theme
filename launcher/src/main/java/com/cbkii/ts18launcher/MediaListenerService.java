@@ -43,7 +43,7 @@ public final class MediaListenerService extends NotificationListenerService {
             this.artist = artist == null ? "" : artist;
             this.state = state;
             this.actions = actions;
-            this.playing = state == PlaybackState.STATE_PLAYING;
+            this.playing = usesPauseAction(state);
         }
 
         public boolean isEmpty() {
@@ -227,11 +227,7 @@ public final class MediaListenerService extends NotificationListenerService {
             if (controller == null || excludedFromGenericMedia(controller, excludedPackage)) continue;
             PlaybackState state = controller.getPlaybackState();
             int value = state == null ? PlaybackState.STATE_NONE : state.getState();
-            if (value == PlaybackState.STATE_PLAYING
-                    || value == PlaybackState.STATE_BUFFERING
-                    || value == PlaybackState.STATE_CONNECTING) {
-                return controller;
-            }
+            if (usesPauseAction(value)) return controller;
             if (fallback == null && (value == PlaybackState.STATE_PAUSED
                     || value == PlaybackState.STATE_STOPPED)) {
                 fallback = controller;
@@ -267,14 +263,16 @@ public final class MediaListenerService extends NotificationListenerService {
             if (controller == null || !packageName.equals(controller.getPackageName())) continue;
             PlaybackState state = controller.getPlaybackState();
             int value = state == null ? PlaybackState.STATE_NONE : state.getState();
-            if (value == PlaybackState.STATE_PLAYING
-                    || value == PlaybackState.STATE_BUFFERING
-                    || value == PlaybackState.STATE_CONNECTING) {
-                return controller;
-            }
+            if (usesPauseAction(value)) return controller;
             if (fallback == null) fallback = controller;
         }
         return fallback;
+    }
+
+    private static boolean usesPauseAction(int state) {
+        return state == PlaybackState.STATE_PLAYING
+                || state == PlaybackState.STATE_BUFFERING
+                || state == PlaybackState.STATE_CONNECTING;
     }
 
     private static Snapshot snapshotOf(MediaController controller) {
@@ -390,7 +388,7 @@ public final class MediaListenerService extends NotificationListenerService {
         try {
             PlaybackState state = controller.getPlaybackState();
             long actions = state == null ? 0L : state.getActions();
-            boolean isPlaying = state != null && state.getState() == PlaybackState.STATE_PLAYING;
+            boolean pauseSide = state != null && usesPauseAction(state.getState());
             switch (command) {
                 case PREVIOUS:
                     if ((actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) == 0L) return false;
@@ -401,13 +399,13 @@ public final class MediaListenerService extends NotificationListenerService {
                     controller.getTransportControls().skipToNext();
                     break;
                 case PLAY_PAUSE:
-                    long directAction = isPlaying
+                    long directAction = pauseSide
                             ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY;
                     if ((actions & directAction) == 0L
                             && (actions & PlaybackState.ACTION_PLAY_PAUSE) == 0L) {
                         return false;
                     }
-                    if (isPlaying) controller.getTransportControls().pause();
+                    if (pauseSide) controller.getTransportControls().pause();
                     else controller.getTransportControls().play();
                     break;
                 default:
