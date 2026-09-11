@@ -2,22 +2,33 @@
 <resources>
     <dimen name="ui_gutter">8dp</dimen>
     <dimen name="ui_card_inset">4dp</dimen>
-    <dimen name="ui_corner_radius">10dp</dimen>
-    <dimen name="ui_focus_stroke">2dp</dimen>
+    <dimen name="ui_corner_radius">12dp</dimen>
+    <dimen name="ui_focus_stroke">3dp</dimen>
     <dimen name="ui_icon_button_padding">10dp</dimen>
-    <dimen name="ui_metadata_text">18sp</dimen>
-    <dimen name="ui_date_text">22sp</dimen>
-    <dimen name="ui_drawer_header_text">22sp</dimen>
-    <dimen name="ui_drawer_label_text">17sp</dimen>
-    <dimen name="ui_drawer_quick_label_text">14sp</dimen>
+    <dimen name="ui_metadata_text">22sp</dimen>
+    <dimen name="ui_date_text">24sp</dimen>
+    <dimen name="ui_drawer_header_text">24sp</dimen>
+    <dimen name="ui_drawer_label_text">16sp</dimen>
+    <dimen name="ui_drawer_quick_label_text">15sp</dimen>
     <dimen name="ui_settings_title">26sp</dimen>
-    <dimen name="ui_settings_label">18sp</dimen>
-    <dimen name="ui_settings_value">15sp</dimen>
+    <dimen name="ui_settings_label">20sp</dimen>
+    <dimen name="ui_settings_value">16sp</dimen>
     <dimen name="ui_settings_section">17sp</dimen>
     <dimen name="ui_search_text">18sp</dimen>
-    <dimen name="ui_drawer_icon">64dp</dimen>
+    <dimen name="ui_drawer_icon">72dp</dimen>
     <dimen name="ui_drawer_header_height">76dp</dimen>
-    <dimen name="ui_drawer_quick_height">92dp</dimen>
-    <dimen name="ui_search_height">64dp</dimen>
-    <dimen name="ui_settings_row_height">78dp</dimen>
+    <dimen name="ui_drawer_quick_height">116dp</dimen>
+    <dimen name="ui_search_height">80dp</dimen>
+    <dimen name="ui_settings_row_height">80dp</dimen>
+
+    <dimen name="driver_target_min">80dp</dimen>
+    <dimen name="driver_target_primary">88dp</dimen>
+    <dimen name="driver_icon_primary">44dp</dimen>
+    <dimen name="driver_icon_secondary">36dp</dimen>
+    <dimen name="driver_icon_tertiary">24dp</dimen>
+    <dimen name="driver_gap">8dp</dimen>
+    <dimen name="driver_gap_large">12dp</dimen>
+    <dimen name="driver_section_gap">16dp</dimen>
+    <dimen name="driver_radius">12dp</dimen>
+    <dimen name="ui_play_visual">60dp</dimen>
 </resources>

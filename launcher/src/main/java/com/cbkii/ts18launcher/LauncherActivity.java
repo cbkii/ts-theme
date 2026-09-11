@@ -5,14 +5,12 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -24,6 +22,9 @@ import android.widget.TextView;
 
 import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @SuppressLint("SetTextI18n")
 public class LauncherActivity extends Activity implements MediaListenerService.Observer {
     private static final int REQUEST_LOCATION = 4101;
@@ -32,6 +33,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private FrameLayout root;
     private LinearLayout rail;
+    private LinearLayout quickRail;
+    private ImageButton appsButton;
+    private ImageButton navigationButton;
     private LinearLayout radioPanel;
     private LinearLayout musicPanel;
     private TextClock dateView;
@@ -46,8 +50,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private final ImageButton[] quickButtons = new ImageButton[MAX_QUICK_SLOTS];
     private final Handler mediaRefreshHandler = new Handler(Looper.getMainLooper());
     private final Runnable mediaRefreshPoll = new Runnable() {
-        @Override
-        public void run() {
+        @Override public void run() {
             if (!mediaRefreshPolling) return;
             MediaListenerService.refreshActiveSessions();
             mediaRefreshHandler.postDelayed(this, MEDIA_REFRESH_INTERVAL_MS);
@@ -55,6 +58,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     };
     private MapPanel mapPanel;
     private AppDrawerPanel appDrawerPanel;
+    private AppearanceController appearanceController;
     private boolean launchedAsHome;
     private boolean locationPermissionRequested;
     private boolean mediaRefreshPolling;
@@ -63,29 +67,26 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private MediaListenerService.Snapshot radioSnapshot =
             new MediaListenerService.Snapshot("", "", "", false);
 
-    @Override
-    protected void onCreate(Bundle state) {
+    @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
+        appearanceController = new AppearanceController(this, mode -> runOnUiThread(this::recreate));
 
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         setContentView(root);
-
         buildRail();
         buildRadioPanel();
         buildMusicPanel();
         buildDate();
-
-        root.addOnLayoutChangeListener((v, left, top, right, bottom,
-                                        oldLeft, oldTop, oldRight, oldBottom) ->
+        root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 applyGeometry(right - left, bottom - top));
         root.post(() -> applyGeometry(root.getWidth(), root.getHeight()));
     }
 
-    @Override
-    protected void onStart() {
+    @Override protected void onStart() {
         super.onStart();
+        appearanceController.start();
         MediaListenerService.addObserver(this);
         MediaListenerService.refreshActiveSessions();
         startMediaRefreshPolling();
@@ -95,26 +96,22 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         updateLabels();
     }
 
-    @Override
-    protected void onStop() {
+    @Override protected void onStop() {
+        appearanceController.stop();
         stopMediaRefreshPolling();
         MediaListenerService.removeObserver(this);
-        if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
-            appDrawerPanel.setVisibility(View.GONE);
-        }
+        if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (mapPanel != null) mapPanel.stop();
         super.onStop();
     }
 
-    @Override
-    protected void onDestroy() {
+    @Override protected void onDestroy() {
         stopMediaRefreshPolling();
         if (mapPanel != null) mapPanel.destroy();
         super.onDestroy();
     }
 
-    @Override
-    public void onBackPressed() {
+    @Override public void onBackPressed() {
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
             appDrawerPanel.hidePanel();
             return;
@@ -138,27 +135,37 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void buildRail() {
         rail = new LinearLayout(this);
         rail.setOrientation(LinearLayout.VERTICAL);
-        rail.setGravity(Gravity.CENTER);
-        rail.setPadding(AutomotiveUi.dimen(this, R.dimen.ui_card_inset),
-                AutomotiveUi.dimen(this, R.dimen.ui_card_inset),
-                AutomotiveUi.dimen(this, R.dimen.ui_card_inset),
-                AutomotiveUi.dimen(this, R.dimen.ui_card_inset));
+        rail.setGravity(Gravity.CENTER_HORIZONTAL);
         rail.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
 
+        appsButton = railButton(R.drawable.ic_apps, "Apps");
+        appsButton.setOnClickListener(v -> toggleAppDrawer());
+        rail.addView(appsButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Ts18Geometry.RAIL_ENDPOINT_HEIGHT));
+
+        quickRail = new LinearLayout(this);
+        quickRail.setOrientation(LinearLayout.VERTICAL);
+        quickRail.setGravity(Gravity.CENTER);
+        rail.addView(quickRail, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         for (int i = 0; i < MAX_QUICK_SLOTS; i++) {
             final int index = i;
-            ImageButton button = railButton(AutomotiveUi.quickRoleIcon(i), "Quick app " + (i + 1));
+            String role = LauncherPrefs.quickRole(this, i);
+            ImageButton button = railButton(RoleIconCatalog.icon(role), RoleIconCatalog.label(role));
             button.setOnClickListener(v -> openQuick(index));
             button.setOnLongClickListener(v -> {
                 openPicker(LauncherPrefs.QUICK_KEYS[index]);
                 return true;
             });
             quickButtons[i] = button;
-            rail.addView(button);
+            quickRail.addView(button, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, Ts18Geometry.RAIL_QUICK_HEIGHT));
         }
-        ImageButton apps = railButton(R.drawable.ic_apps, "Apps");
-        apps.setOnClickListener(v -> toggleAppDrawer());
-        rail.addView(apps);
+
+        navigationButton = railButton(R.drawable.ic_navigation, "Navigation");
+        navigationButton.setOnClickListener(v -> openNavigation(null));
+        rail.addView(navigationButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Ts18Geometry.RAIL_ENDPOINT_HEIGHT));
         root.addView(rail);
     }
 
@@ -166,22 +173,24 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         ImageButton button = new ImageButton(this);
         button.setImageResource(icon);
         button.setContentDescription(description);
-        AutomotiveUi.styleIconButton(this, button, false);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        int gap = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
-        lp.topMargin = gap;
-        lp.bottomMargin = gap;
-        button.setLayoutParams(lp);
+        AutomotiveUi.styleRailButton(this, button);
         return button;
     }
 
     private void applyRailConfiguration() {
         int count = LauncherPrefs.quickCount(this);
+        List<View> focus = new ArrayList<>();
+        focus.add(appsButton);
         for (int i = 0; i < MAX_QUICK_SLOTS; i++) {
-            quickButtons[i].setVisibility(i < count ? View.VISIBLE : View.GONE);
-            quickButtons[i].setImageResource(AutomotiveUi.quickRoleIcon(i));
+            boolean visible = i < count;
+            quickButtons[i].setVisibility(visible ? View.VISIBLE : View.GONE);
+            String role = LauncherPrefs.quickRole(this, i);
+            quickButtons[i].setImageResource(RoleIconCatalog.icon(role));
+            quickButtons[i].setContentDescription(RoleIconCatalog.label(role));
+            if (visible) focus.add(quickButtons[i]);
         }
+        focus.add(navigationButton);
+        AutomotiveUi.linkVertical(focus);
         if (root != null) applyGeometry(root.getWidth(), root.getHeight());
         if (mapPanel != null) mapPanel.applyPreferences();
     }
@@ -193,24 +202,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         radioPrevious = controlButton(R.drawable.ic_previous, "Previous station", false);
         radioPlayPause = controlButton(R.drawable.ic_play, "Play or pause radio", true);
         radioNext = controlButton(R.drawable.ic_next, "Next station", false);
-
-        radioPrevious.setOnClickListener(v ->
-                MediaListenerService.sendRadio(MediaListenerService.Command.PREVIOUS));
-        radioPlayPause.setOnClickListener(v ->
-                MediaListenerService.sendRadio(MediaListenerService.Command.PLAY_PAUSE));
-        radioNext.setOnClickListener(v ->
-                MediaListenerService.sendRadio(MediaListenerService.Command.NEXT));
+        radioPrevious.setOnClickListener(v -> MediaListenerService.sendRadio(MediaListenerService.Command.PREVIOUS));
+        radioPlayPause.setOnClickListener(v -> MediaListenerService.sendRadio(MediaListenerService.Command.PLAY_PAUSE));
+        radioNext.setOnClickListener(v -> MediaListenerService.sendRadio(MediaListenerService.Command.NEXT));
         radioText.setOnClickListener(v -> openConfigured(LauncherPrefs.KEY_RADIO));
-        radioText.setOnLongClickListener(v -> {
-            openSettings();
-            return true;
-        });
-
-        radioPanel.addView(role, fixed(56));
+        radioText.setOnLongClickListener(v -> { openSettings(); return true; });
+        radioPanel.addView(role, fixed(48));
         radioPanel.addView(radioText, weighted());
         radioPanel.addView(radioPrevious, fixed(84));
         radioPanel.addView(radioPlayPause, fixed(88));
         radioPanel.addView(radioNext, fixed(84));
+        AutomotiveUi.linkHorizontal(java.util.Arrays.asList(radioPrevious, radioPlayPause, radioNext));
         root.addView(radioPanel);
     }
 
@@ -221,28 +223,22 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaPrevious = controlButton(R.drawable.ic_previous, "Previous track", false);
         playPause = controlButton(R.drawable.ic_play, "Play or pause", true);
         mediaNext = controlButton(R.drawable.ic_next, "Next track", false);
-
-        mediaPrevious.setOnClickListener(v ->
-                MediaListenerService.sendGeneric(MediaListenerService.Command.PREVIOUS));
-        playPause.setOnClickListener(v ->
-                MediaListenerService.sendGeneric(MediaListenerService.Command.PLAY_PAUSE));
-        mediaNext.setOnClickListener(v ->
-                MediaListenerService.sendGeneric(MediaListenerService.Command.NEXT));
+        mediaPrevious.setOnClickListener(v -> MediaListenerService.sendGeneric(MediaListenerService.Command.PREVIOUS));
+        playPause.setOnClickListener(v -> MediaListenerService.sendGeneric(MediaListenerService.Command.PLAY_PAUSE));
+        mediaNext.setOnClickListener(v -> MediaListenerService.sendGeneric(MediaListenerService.Command.NEXT));
         mediaText.setOnClickListener(v -> openCurrentMedia());
         mediaText.setOnLongClickListener(v -> {
             if (!MediaListenerService.hasNotificationAccess(this)) {
                 startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
-            } else {
-                openSettings();
-            }
+            } else openSettings();
             return true;
         });
-
-        musicPanel.addView(role, fixed(56));
+        musicPanel.addView(role, fixed(48));
         musicPanel.addView(mediaText, weighted());
         musicPanel.addView(mediaPrevious, fixed(84));
         musicPanel.addView(playPause, fixed(88));
         musicPanel.addView(mediaNext, fixed(84));
+        AutomotiveUi.linkHorizontal(java.util.Arrays.asList(mediaPrevious, playPause, mediaNext));
         root.addView(musicPanel);
     }
 
@@ -253,9 +249,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         dateView.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
         dateView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                 getResources().getDimension(R.dimen.ui_date_text));
-        dateView.setTypeface(Typeface.DEFAULT_BOLD);
+        dateView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         dateView.setGravity(Gravity.CENTER);
         dateView.setBackground(AutomotiveUi.interactiveBackground(this, false));
+        dateView.setContentDescription("Settings");
         AutomotiveUi.attachFeedback(dateView);
         dateView.setOnClickListener(v -> openSettings());
         root.addView(dateView);
@@ -265,7 +262,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.HORIZONTAL);
         panel.setGravity(Gravity.CENTER_VERTICAL);
-        panel.setPadding(AutomotiveUi.dimen(this, R.dimen.ui_gutter), 0,
+        panel.setPadding(AutomotiveUi.dimen(this, R.dimen.driver_gap), 0,
                 AutomotiveUi.dimen(this, R.dimen.ui_card_inset), 0);
         panel.setBackground(AutomotiveUi.cardBackground(this));
         return panel;
@@ -276,7 +273,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         view.setImageResource(iconRes);
         view.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
         view.setContentDescription(description);
-        int padding = AutomotiveUi.dimen(this, R.dimen.ui_gutter);
+        int padding = AutomotiveUi.dimen(this, R.dimen.driver_gap);
         view.setPadding(padding, padding, padding, padding);
         return view;
     }
@@ -285,23 +282,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         ImageButton button = new ImageButton(this);
         button.setImageResource(icon);
         button.setContentDescription(description);
-        AutomotiveUi.styleIconButton(this, button, primary);
+        AutomotiveUi.styleTransportButton(this, button, primary);
         return button;
     }
 
     private TextView stripText(String text) {
-        TextView view = new TextView(this);
+        SlowMarqueeTextView view = new SlowMarqueeTextView(this);
         view.setText(text);
         view.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                 getResources().getDimension(R.dimen.ui_metadata_text));
+        view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         view.setGravity(Gravity.CENTER_VERTICAL);
-        view.setPadding(AutomotiveUi.dimen(this, R.dimen.ui_gutter), 0,
-                AutomotiveUi.dimen(this, R.dimen.ui_gutter), 0);
-        view.setSingleLine(true);
-        view.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        view.setMarqueeRepeatLimit(-1);
-        view.setSelected(true);
+        view.setPadding(AutomotiveUi.dimen(this, R.dimen.driver_gap), 0,
+                AutomotiveUi.dimen(this, R.dimen.driver_gap), 0);
         return view;
     }
 
@@ -315,10 +309,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void updateMapVisibility() {
         if (!LauncherPrefs.mapEnabled(this)) {
-            if (mapPanel != null) {
-                mapPanel.stop();
-                mapPanel.setVisibility(View.GONE);
-            }
+            if (mapPanel != null) { mapPanel.stop(); mapPanel.setVisibility(View.GONE); }
             return;
         }
         if (mapPanel == null) {
@@ -328,17 +319,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         }
         mapPanel.applyPreferences();
         mapPanel.setVisibility(View.VISIBLE);
-        if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
-            mapPanel.stop();
-            return;
-        }
+        if (appDrawerPanel != null && appDrawerPanel.isOpen()) { mapPanel.stop(); return; }
         requestMapLocationIfNeeded();
         mapPanel.resumeWebView();
     }
 
     private void requestMapLocationIfNeeded() {
-        if (locationPermissionRequested
-                || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (locationPermissionRequested || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) return;
         locationPermissionRequested = true;
         requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
@@ -346,22 +333,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void applyGeometry(int width, int height) {
         if (width <= 0 || height <= 0) return;
-        boolean railRight = LauncherPrefs.railOnRight(this);
-        Ts18Geometry.Layout g = Ts18Geometry.resolve(width, height, railRight);
-
+        Ts18Geometry.Layout g = Ts18Geometry.resolve(width, height, LauncherPrefs.railOnRight(this));
         place(rail, g.railX, g.top, g.railWidth(), g.railHeight());
         placeCard(radioPanel, g.radioX(), g.top, g.radioWidth, g.stripHeight);
         placeCard(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);
         placeCard(dateView, g.dateX(), g.top, g.dateWidth(), g.stripHeight);
         if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
-        if (appDrawerPanel != null) {
-            place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
-        }
+        if (appDrawerPanel != null) place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
     }
 
     private void place(View view, int x, int y, int width, int height) {
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                Math.max(1, width), Math.max(1, height));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Math.max(1, width), Math.max(1, height));
         lp.leftMargin = Math.max(0, x);
         lp.topMargin = Math.max(0, y);
         view.setLayoutParams(lp);
@@ -369,27 +351,19 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void placeCard(View view, int x, int y, int width, int height) {
         int inset = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
-        place(view, x + inset, y + inset,
-                Math.max(1, width - inset * 2), Math.max(1, height - inset * 2));
+        place(view, x + inset, y + inset, Math.max(1, width - inset * 2), Math.max(1, height - inset * 2));
     }
 
     private void updateLabels() {
         String radioPackage = RadioProvider.resolvePackage(this);
-        boolean exactRadioSession = !radioPackage.isEmpty()
-                && radioPackage.equals(radioSnapshot.packageName);
-        if (exactRadioSession && !radioSnapshot.displayText().isEmpty()) {
-            radioText.setText(radioSnapshot.displayText());
-        } else {
-            radioText.setText(AppResolver.labelFor(this, radioPackage,
-                    radioPackage.isEmpty() ? "Set radio" : "Radio"));
-        }
+        boolean exactRadioSession = !radioPackage.isEmpty() && radioPackage.equals(radioSnapshot.packageName);
+        radioText.setText(exactRadioSession && !radioSnapshot.displayText().isEmpty()
+                ? radioSnapshot.displayText()
+                : AppResolver.labelFor(this, radioPackage, radioPackage.isEmpty() ? "Set radio" : "Radio"));
         radioPlayPause.setImageResource(radioSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
-        setMediaButtonState(radioPrevious,
-                exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.PREVIOUS));
-        setMediaButtonState(radioPlayPause,
-                exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.PLAY_PAUSE));
-        setMediaButtonState(radioNext,
-                exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.NEXT));
+        setMediaButtonState(radioPrevious, exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.PREVIOUS));
+        setMediaButtonState(radioPlayPause, exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.PLAY_PAUSE));
+        setMediaButtonState(radioNext, exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.NEXT));
 
         if (!MediaListenerService.hasNotificationAccess(this)) {
             mediaText.setText("Grant media access");
@@ -399,47 +373,28 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             setMediaButtonState(mediaNext, false);
             return;
         }
-
         String display = genericSnapshot.displayText();
-        if (!display.isEmpty()) {
-            mediaText.setText(display);
-        } else {
-            String fallbackPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
-            if (fallbackPackage.isEmpty()) fallbackPackage = TopwayAdapter.defaultMusicPackage(this);
-            mediaText.setText(AppResolver.labelFor(
-                    this, fallbackPackage, "No active media session"));
+        if (!display.isEmpty()) mediaText.setText(display);
+        else {
+            String fallback = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
+            if (fallback.isEmpty()) fallback = TopwayAdapter.defaultMusicPackage(this);
+            mediaText.setText(AppResolver.labelFor(this, fallback, "No active media session"));
         }
         playPause.setImageResource(genericSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
-        setMediaButtonState(mediaPrevious,
-                genericSnapshot.supports(MediaListenerService.Command.PREVIOUS));
-        setMediaButtonState(playPause,
-                genericSnapshot.supports(MediaListenerService.Command.PLAY_PAUSE));
-        setMediaButtonState(mediaNext,
-                genericSnapshot.supports(MediaListenerService.Command.NEXT));
+        setMediaButtonState(mediaPrevious, genericSnapshot.supports(MediaListenerService.Command.PREVIOUS));
+        setMediaButtonState(playPause, genericSnapshot.supports(MediaListenerService.Command.PLAY_PAUSE));
+        setMediaButtonState(mediaNext, genericSnapshot.supports(MediaListenerService.Command.NEXT));
     }
 
     private void setMediaButtonState(ImageButton button, boolean enabled) {
         if (button == null) return;
         button.setEnabled(enabled);
-        button.setAlpha(enabled ? 1f : 0.35f);
     }
 
     private String resolveQuickPackage(int index) {
         String direct = LauncherPrefs.packageFor(this, LauncherPrefs.QUICK_KEYS[index]);
         if (!direct.isEmpty()) return direct;
-        switch (index) {
-            case 0:
-                return LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
-            case 1:
-                return RadioProvider.resolvePackage(this);
-            case 2:
-                String music = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
-                return music.isEmpty() ? TopwayAdapter.defaultMusicPackage(this) : music;
-            case 3:
-                return LauncherPrefs.packageFor(this, LauncherPrefs.KEY_BLUETOOTH);
-            default:
-                return "";
-        }
+        return RoleIconCatalog.fallbackPackage(this, LauncherPrefs.quickRole(this, index));
     }
 
     private void openQuick(int index) {
@@ -458,29 +413,23 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             root.addView(appDrawerPanel);
             applyGeometry(root.getWidth(), root.getHeight());
         }
-        if (appDrawerPanel.isOpen()) {
-            appDrawerPanel.hidePanel();
-        } else {
+        if (appDrawerPanel.isOpen()) appDrawerPanel.hidePanel();
+        else {
             if (mapPanel != null) mapPanel.stop();
             appDrawerPanel.refreshPreferences();
             appDrawerPanel.showPanel();
         }
     }
 
-    @Override
-    public void onMediaStateChanged(
-            MediaListenerService.Snapshot genericMedia,
-            MediaListenerService.Snapshot radio) {
-        genericSnapshot = genericMedia == null
-                ? new MediaListenerService.Snapshot("", "", "", false) : genericMedia;
-        radioSnapshot = radio == null
-                ? new MediaListenerService.Snapshot("", "", "", false) : radio;
+    @Override public void onMediaStateChanged(MediaListenerService.Snapshot genericMedia,
+                                                MediaListenerService.Snapshot radio) {
+        genericSnapshot = genericMedia == null ? new MediaListenerService.Snapshot("", "", "", false) : genericMedia;
+        radioSnapshot = radio == null ? new MediaListenerService.Snapshot("", "", "", false) : radio;
         runOnUiThread(this::updateLabels);
     }
 
     private void openCurrentMedia() {
-        if (!genericSnapshot.packageName.isEmpty()
-                && AppResolver.launchPackage(this, genericSnapshot.packageName)) return;
+        if (!genericSnapshot.packageName.isEmpty() && AppResolver.launchPackage(this, genericSnapshot.packageName)) return;
         String fallback = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
         if (fallback.isEmpty()) fallback = TopwayAdapter.defaultMusicPackage(this);
         if (!AppResolver.launchPackage(this, fallback)) openSettings();
@@ -493,13 +442,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void openConfigured(String key) {
         String pkg;
-        if (LauncherPrefs.KEY_RADIO.equals(key)) {
-            pkg = RadioProvider.resolvePackage(this);
-        } else {
+        if (LauncherPrefs.KEY_RADIO.equals(key)) pkg = RadioProvider.resolvePackage(this);
+        else {
             pkg = LauncherPrefs.packageFor(this, key);
-            if (LauncherPrefs.KEY_MUSIC.equals(key) && pkg.isEmpty()) {
-                pkg = TopwayAdapter.defaultMusicPackage(this);
-            }
+            if (LauncherPrefs.KEY_MUSIC.equals(key) && pkg.isEmpty()) pkg = TopwayAdapter.defaultMusicPackage(this);
         }
         if (!AppResolver.launchPackage(this, pkg)) openPicker(key);
     }
@@ -510,16 +456,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         startActivity(intent);
     }
 
-    private void openSettings() {
-        startActivity(new Intent(this, SettingsActivity.class));
+    private void openSettings() { startActivity(new Intent(this, SettingsActivity.class)); }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == VoiceSearch.REQUEST_CODE && resultCode == RESULT_OK && appDrawerPanel != null) {
+            appDrawerPanel.applyVoiceSearch(VoiceSearch.firstResult(data));
+        }
     }
 
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode, String[] permissions, int[] grantResults) {
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_LOCATION && mapPanel != null) {
-            mapPanel.onLocationPermissionResult();
-        }
+        if (requestCode == REQUEST_LOCATION && mapPanel != null) mapPanel.onLocationPermissionResult();
     }
 }

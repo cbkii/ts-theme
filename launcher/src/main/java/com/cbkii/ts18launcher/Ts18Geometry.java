@@ -9,8 +9,11 @@ final class Ts18Geometry {
     static final int BOTTOM_RESERVE = 18;
     static final int HOTSEAT_WIDTH = 96;
     static final int STRIP_HEIGHT = 88;
-    static final int RADIO_WIDTH = 406;
-    static final int MUSIC_WIDTH = 560;
+    static final int GRID_COLUMNS = 12;
+    static final int RADIO_COLUMNS = 4;
+    static final int MUSIC_COLUMNS = 6;
+    static final int RAIL_ENDPOINT_HEIGHT = 80;
+    static final int RAIL_QUICK_HEIGHT = 80;
 
     static final class Layout {
         final int top;
@@ -57,9 +60,7 @@ final class Ts18Geometry {
     static Layout resolve(int viewWidth, int viewHeight, boolean railRight) {
         int width = Math.max(1, viewWidth);
         int height = Math.max(1, viewHeight);
-
-        boolean appearsFullPhysical =
-                width >= PHYSICAL_WIDTH - 10 && height >= PHYSICAL_HEIGHT - 20;
+        boolean appearsFullPhysical = width >= PHYSICAL_WIDTH - 10 && height >= PHYSICAL_HEIGHT - 20;
         int top = appearsFullPhysical ? TOP_SYSTEM_INSET : 0;
         int safeRight = appearsFullPhysical ? Math.min(SAFE_RIGHT, width) : width;
         int safeBottom = appearsFullPhysical
@@ -71,12 +72,12 @@ final class Ts18Geometry {
         int contentLeft = railRight ? 0 : railWidth;
         int contentRight = railRight ? Math.max(1, safeRight - railWidth) : safeRight;
         int railX = railRight ? contentRight : 0;
-        int available = Math.max(3, contentRight - contentLeft);
+        int available = Math.max(GRID_COLUMNS, contentRight - contentLeft);
 
-        int radioWidth = Math.max(1, Math.round(RADIO_WIDTH * xScale));
-        int musicWidth = Math.max(1, Math.round(MUSIC_WIDTH * xScale));
+        int radioWidth = Math.max(1, Math.round(available * (RADIO_COLUMNS / (float) GRID_COLUMNS)));
+        int musicWidth = Math.max(1, Math.round(available * (MUSIC_COLUMNS / (float) GRID_COLUMNS)));
         if (radioWidth + musicWidth >= available) {
-            radioWidth = Math.max(1, Math.round(available * (RADIO_WIDTH / 966.0f)));
+            radioWidth = Math.max(1, available / 3);
             musicWidth = Math.max(1, available - radioWidth - 1);
         }
 

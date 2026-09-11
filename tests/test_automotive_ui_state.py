@@ -9,22 +9,67 @@ class AutomotiveUiStateTests(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
-    def test_home_drawer_resets_search_and_dismisses_soft_keyboard(self):
-        drawer = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerPanel.java")
-        self.assertIn("private final EditText search;", drawer)
-        self.assertIn('search.setText("")', drawer)
-        self.assertIn("search.clearFocus()", drawer)
-        self.assertIn("InputMethodManager", drawer)
-        self.assertIn("hideSoftInputFromWindow(search.getWindowToken(), 0)", drawer)
-        self.assertIn("dismissKeyboard();\n        setVisibility(View.GONE);", drawer)
+    def test_home_rail_has_fixed_apps_top_navigation_bottom_and_configurable_middle(self):
+        launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
+        self.assertLess(launcher.index("rail.addView(appsButton"), launcher.index("rail.addView(quickRail"))
+        self.assertLess(launcher.index("rail.addView(quickRail"), launcher.index("rail.addView(navigationButton"))
+        self.assertIn("RoleIconCatalog.icon(role)", launcher)
+        self.assertIn("QUICK_ROLE_KEYS", prefs)
+        self.assertIn("Math.max(3, Math.min(6", prefs)
 
-    def test_quick_slot_settings_report_navigation_and_bluetooth_role_fallbacks(self):
+    def test_drawer_keeps_search_visible_and_adds_voice_quick_row(self):
+        drawer = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerPanel.java")
+        self.assertIn('search.setHint("Search apps")', drawer)
+        self.assertIn("R.drawable.ic_mic", drawer)
+        self.assertIn("VoiceSearch.available(activity)", drawer)
+        self.assertIn("DRAWER_QUICK_KEYS", drawer)
+        self.assertIn("76, 76", drawer)
+        self.assertIn("dismissKeyboard();", drawer)
+
+    def test_slow_marquee_holds_five_seconds_and_repeats(self):
+        marquee = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SlowMarqueeTextView.java")
+        self.assertIn("HOLD_MS = 5000L", marquee)
+        self.assertIn("SPEED_DP_PER_SECOND = 24f", marquee)
+        self.assertIn("handler.postDelayed(restart, HOLD_MS)", marquee)
+        self.assertIn("scrollTo(0, 0)", marquee)
+
+    def test_appearance_supports_sensor_schedule_high_contrast_dim_and_night(self):
+        prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
+        controller = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppearanceController.java")
+        schedule = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppearanceSchedule.java")
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
-        self.assertIn("LauncherPrefs.KEY_DRAWER_QUICK_1.equals(key)", settings)
-        self.assertIn("pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);", settings)
-        self.assertIn("LauncherPrefs.KEY_DRAWER_QUICK_4.equals(key)", settings)
-        self.assertIn("pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_BLUETOOTH);", settings)
-        self.assertIn('AppResolver.labelFor(this, pkg, pkg) + " · role fallback"', settings)
+        html = self.read("launcher/src/main/assets/map/map.html")
+        for marker in ("APPEARANCE_DAY", "APPEARANCE_HIGH_CONTRAST", "APPEARANCE_DIM", "APPEARANCE_NIGHT"):
+            self.assertIn(marker, prefs)
+        self.assertIn("Sensor.TYPE_LIGHT", controller)
+        self.assertIn("SENSOR_STALE_MS", controller)
+        self.assertIn("AppearanceSchedule.resolve", controller)
+        self.assertIn("DEFAULT_DAY_START_MINUTES = 7 * 60", prefs)
+        self.assertIn("DEFAULT_NIGHT_START_MINUTES = 19 * 60", prefs)
+        self.assertIn("TRANSITION_MINUTES = 45", schedule)
+        self.assertIn('"Ambient light sensor", "Schedule"', settings)
+        self.assertIn("setMapAppearance", html)
+        self.assertIn("contrast(1.18)", html)
+
+    def test_settings_expose_role_icons_and_map_control_hide(self):
+        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
+        self.assertIn('"Map controls"', settings)
+        self.assertIn("chooseRole(false, index)", settings)
+        self.assertIn("chooseRole(true, index)", settings)
+        self.assertIn("RoleIconCatalog.LABELS", settings)
+        self.assertIn('addSection("Advanced HOME / recovery")', settings)
+
+    def test_semantic_driver_tokens_and_focus_graph_exist(self):
+        dimens = self.read("launcher/src/main/res/values/dimens.xml")
+        ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
+        for token in ("driver_target_min", "driver_target_primary", "driver_icon_primary",
+                      "driver_icon_secondary", "driver_gap", "driver_section_gap", "driver_radius"):
+            self.assertIn(token, dimens)
+        self.assertIn("linkVertical", ui)
+        self.assertIn("linkHorizontal", ui)
+        self.assertIn("ui_focus_stroke", ui)
+        self.assertIn("FEEDBACK_MS = 140L", ui)
 
 
 if __name__ == "__main__":

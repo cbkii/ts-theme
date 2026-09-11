@@ -12,11 +12,13 @@ import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.BaseAdapter;
 import android.widget.EditText;
 import android.widget.GridView;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -38,27 +40,26 @@ public final class AppDrawerActivity extends Activity {
     private final List<Entry> visibleEntries = new ArrayList<>();
     private final AppsAdapter adapter = new AppsAdapter();
     private String pickKey;
+    private EditText search;
 
-    @Override
-    protected void onCreate(Bundle state) {
+    @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         pickKey = getIntent().getStringExtra(EXTRA_PICK_KEY);
-
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
-        int gutter = AutomotiveUi.dimen(this, R.dimen.ui_gutter);
-        root.setPadding(gutter, gutter, gutter, gutter);
+        int gap = AutomotiveUi.dimen(this, R.dimen.driver_gap);
+        root.setPadding(gap, gap, gap, gap);
 
         TextView header = new TextView(this);
         header.setText(pickKey == null ? "Apps" : "Choose app");
         header.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
         header.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                 getResources().getDimension(R.dimen.ui_drawer_header_text));
+        header.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(gutter, 0, gutter, 0);
-        root.addView(header, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
+        header.setPadding(gap, 0, gap, 0);
+        root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(this, R.dimen.ui_drawer_header_height)));
 
         LinearLayout searchRow = new LinearLayout(this);
@@ -67,9 +68,9 @@ public final class AppDrawerActivity extends Activity {
         ImageView searchIcon = new ImageView(this);
         searchIcon.setImageResource(R.drawable.ic_search);
         searchIcon.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
-        searchIcon.setPadding(gutter, gutter, gutter, gutter);
+        searchIcon.setPadding(gap, gap, gap, gap);
         searchRow.addView(searchIcon, new LinearLayout.LayoutParams(56, 56));
-        EditText search = new EditText(this);
+        search = new EditText(this);
         search.setSingleLine(true);
         search.setHint("Search apps");
         search.setHintTextColor(AutomotiveUi.color(this, R.color.ui_text_secondary));
@@ -86,23 +87,40 @@ public final class AppDrawerActivity extends Activity {
             @Override public void afterTextChanged(Editable s) {}
         });
         searchRow.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        root.addView(searchRow, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
+        ImageButton voice = new ImageButton(this);
+        voice.setImageResource(R.drawable.ic_mic);
+        boolean voiceAvailable = VoiceSearch.available(this);
+        voice.setContentDescription(voiceAvailable ? "Voice search" : "Voice search unavailable");
+        AutomotiveUi.styleRailButton(this, voice);
+        voice.setEnabled(voiceAvailable);
+        voice.setOnClickListener(v -> startActivityForResult(VoiceSearch.intent(), VoiceSearch.REQUEST_CODE));
+        searchRow.addView(voice, new LinearLayout.LayoutParams(76, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(searchRow, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(this, R.dimen.ui_search_height)));
 
         GridView grid = new GridView(this);
         grid.setNumColumns(5);
-        grid.setHorizontalSpacing(gutter);
-        grid.setVerticalSpacing(gutter);
-        grid.setPadding(gutter, gutter, gutter, gutter);
+        grid.setHorizontalSpacing(gap);
+        grid.setVerticalSpacing(gap);
+        grid.setPadding(gap, gap, gap, gap);
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         grid.setAdapter(adapter);
         grid.setOnItemClickListener((parent, view, position, id) -> onEntry(visibleEntries.get(position)));
         root.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
         Ts18SafeArea.setContent(this, root);
         loadEntries();
         filter("");
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == VoiceSearch.REQUEST_CODE && resultCode == RESULT_OK) {
+            String spoken = VoiceSearch.firstResult(data);
+            if (!spoken.isEmpty()) {
+                search.setText(spoken);
+                search.setSelection(search.length());
+            }
+        }
     }
 
     private void loadEntries() {
@@ -131,9 +149,7 @@ public final class AppDrawerActivity extends Activity {
         visibleEntries.clear();
         for (Entry entry : allEntries) {
             if (needle.isEmpty() || entry.label.toLowerCase(Locale.ROOT).contains(needle)
-                    || entry.packageName.toLowerCase(Locale.ROOT).contains(needle)) {
-                visibleEntries.add(entry);
-            }
+                    || entry.packageName.toLowerCase(Locale.ROOT).contains(needle)) visibleEntries.add(entry);
         }
         adapter.notifyDataSetChanged();
     }
@@ -155,11 +171,8 @@ public final class AppDrawerActivity extends Activity {
         final String activityName;
         final String label;
         Drawable icon;
-
         Entry(String packageName, String activityName, String label) {
-            this.packageName = packageName;
-            this.activityName = activityName;
-            this.label = label;
+            this.packageName = packageName; this.activityName = activityName; this.label = label;
         }
     }
 
@@ -167,9 +180,7 @@ public final class AppDrawerActivity extends Activity {
         @Override public int getCount() { return visibleEntries.size(); }
         @Override public Object getItem(int position) { return visibleEntries.get(position); }
         @Override public long getItemId(int position) { return position; }
-
-        @Override
-        public android.view.View getView(int position, android.view.View convertView, ViewGroup parent) {
+        @Override public View getView(int position, View convertView, ViewGroup parent) {
             LinearLayout cell;
             ImageView icon;
             TextView label;
@@ -182,6 +193,7 @@ public final class AppDrawerActivity extends Activity {
                 cell.setOrientation(LinearLayout.VERTICAL);
                 cell.setGravity(Gravity.CENTER);
                 icon = new ImageView(AppDrawerActivity.this);
+                icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
                 label = new TextView(AppDrawerActivity.this);
                 label.setTextColor(AutomotiveUi.color(AppDrawerActivity.this, R.color.ui_text));
                 label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
@@ -196,19 +208,15 @@ public final class AppDrawerActivity extends Activity {
             Entry entry = visibleEntries.get(position);
             if (entry.icon == null) {
                 PackageManager pm = getPackageManager();
-                try {
-                    entry.icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName));
-                } catch (PackageManager.NameNotFoundException ignored) {
-                    try {
-                        entry.icon = pm.getApplicationIcon(entry.packageName);
-                    } catch (PackageManager.NameNotFoundException ignoredAgain) {
-                        entry.icon = getDrawable(R.drawable.ic_launcher);
-                    }
+                try { entry.icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName)); }
+                catch (PackageManager.NameNotFoundException ignored) {
+                    try { entry.icon = pm.getApplicationIcon(entry.packageName); }
+                    catch (PackageManager.NameNotFoundException ignoredAgain) { entry.icon = getDrawable(R.drawable.ic_launcher); }
                 }
             }
             icon.setImageDrawable(entry.icon);
             label.setText(entry.label);
-            cell.setMinimumHeight(112);
+            cell.setMinimumHeight(116);
             return cell;
         }
     }

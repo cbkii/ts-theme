@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="vendor/leaflet.css">
 <style>
 html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;font-family:sans-serif}
-#map{position:relative}
+#map{position:relative;transition:filter 140ms linear}
 #dim{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:900;transition:opacity 140ms linear}
 .vehicle-dot{width:18px;height:18px;border-radius:50%;background:#ff7043;border:3px solid #fff;box-sizing:border-box;box-shadow:0 1px 5px #000}
 .vehicle-bearing{position:absolute;left:50%;top:-15px;margin-left:-5px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:13px solid #fff;transform-origin:5px 24px;display:none}
@@ -21,18 +21,15 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
 <script>
 (function(){
   "use strict";
-  let ready=false, hasLocation=false, follow=true, marker=null, accuracyCircle=null;
-  let tileRequested=0, tileLoaded=0, tileFailed=0;
-  const map=L.map("map", {
-    zoomControl:false, attributionControl:true, touchZoom:true, doubleClickZoom:true,
-    dragging:true, inertia:true, scrollWheelZoom:false, boxZoom:false, keyboard:false,
-    fadeAnimation:false, zoomAnimation:false, markerZoomAnimation:false, preferCanvas:true
-  });
+  let ready=false,hasLocation=false,follow=true,marker=null,accuracyCircle=null;
+  let tileRequested=0,tileLoaded=0,tileFailed=0;
+  const map=L.map("map",{zoomControl:false,attributionControl:true,touchZoom:true,doubleClickZoom:true,
+    dragging:true,inertia:true,scrollWheelZoom:false,boxZoom:false,keyboard:false,
+    fadeAnimation:false,zoomAnimation:false,markerZoomAnimation:false,preferCanvas:true});
   map.attributionControl.setPrefix(false);
-  const layer=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  const layer=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
     minZoom:2,maxZoom:19,tileSize:256,detectRetina:false,updateWhenIdle:true,keepBuffer:1,
-    attribution:"&copy; OpenStreetMap contributors"
-  });
+    attribution:"&copy; OpenStreetMap contributors"});
   layer.on("loading",function(){tileRequested=0;tileLoaded=0;tileFailed=0;});
   layer.on("tileloadstart",function(){tileRequested++;});
   layer.on("tileload",function(){tileLoaded++;});
@@ -50,8 +47,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
   window.setLocation=function(latitude,longitude,accuracy,bearing,hasBearing){
     const point=L.latLng(Number(latitude),Number(longitude));
     if(!hasLocation){
-      map.setView(point,15,{animate:false});
-      layer.addTo(map);
+      map.setView(point,15,{animate:false});layer.addTo(map);
       marker=L.marker(point,{icon:markerIcon(bearing,hasBearing),interactive:false,riseOnHover:false}).addTo(map);
       accuracyCircle=L.circle(point,{radius:Math.max(0,Number(accuracy)||0),interactive:false,weight:1,opacity:.55,fillOpacity:.08}).addTo(map);
       hasLocation=true;follow=true;ready=true;return;
@@ -60,16 +56,16 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
     accuracyCircle.setLatLng(point);accuracyCircle.setRadius(Math.max(0,Number(accuracy)||0));
     if(follow)map.panTo(point,{animate:false});
   };
-  window.adjustZoom=function(delta){
-    if(!hasLocation)return;
-    map.setZoom(Math.max(2,Math.min(19,map.getZoom()+Number(delta||0))),{animate:false});
-  };
-  window.recenterMap=function(){
-    if(!hasLocation||!marker)return;
-    follow=true;map.setView(marker.getLatLng(),map.getZoom(),{animate:false});
-  };
-  window.setMapDim=function(opacity){
-    document.getElementById("dim").style.opacity=String(Math.max(0,Math.min(.55,Number(opacity)||0)));
+  window.adjustZoom=function(delta){if(hasLocation)map.setZoom(Math.max(2,Math.min(19,map.getZoom()+Number(delta||0))),{animate:false});};
+  window.recenterMap=function(){if(hasLocation&&marker){follow=true;map.setView(marker.getLatLng(),map.getZoom(),{animate:false});}};
+  window.setMapAppearance=function(mode){
+    const dim=document.getElementById("dim");
+    const node=document.getElementById("map");
+    let opacity=0,filter="none";
+    if(mode==="night"){opacity=.10;filter="brightness(.55) saturate(.70) contrast(1.10)";}
+    else if(mode==="dim"){opacity=.18;filter="brightness(.72) saturate(.78) contrast(1.08)";}
+    else if(mode==="high_contrast"){filter="brightness(.92) saturate(.85) contrast(1.18)";}
+    node.style.filter=filter;dim.style.opacity=String(opacity);
   };
   window.mapHealth=function(){
     const state=follow?"follow":"free";

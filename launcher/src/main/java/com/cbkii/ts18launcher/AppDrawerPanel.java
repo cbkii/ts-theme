@@ -25,8 +25,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.cbkii.ts18launcher.platform.TopwayAdapter;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -52,12 +50,12 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         super(activity);
         this.activity = activity;
         this.onDismiss = onDismiss;
-        setBackgroundColor(0xF7000000);
+        setBackgroundColor(0xF7050505);
 
+        int gap = AutomotiveUi.dimen(activity, R.dimen.driver_gap);
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
-        int gutter = AutomotiveUi.dimen(activity, R.dimen.ui_gutter);
-        root.setPadding(gutter, gutter, gutter, gutter);
+        root.setPadding(gap, gap, gap, gap);
         addView(root, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         LinearLayout header = new LinearLayout(activity);
@@ -67,7 +65,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         title.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
         title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                 activity.getResources().getDimension(R.dimen.ui_drawer_header_text));
-        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        title.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         ImageButton settings = iconButton(R.drawable.ic_settings, "Settings");
         settings.setOnClickListener(v -> activity.startActivity(new Intent(activity, SettingsActivity.class)));
@@ -75,6 +73,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         ImageButton close = iconButton(R.drawable.ic_close, "Close apps");
         close.setOnClickListener(v -> hidePanel());
         header.addView(close, new LinearLayout.LayoutParams(76, 76));
+        AutomotiveUi.linkHorizontal(java.util.Arrays.asList(settings, close));
         root.addView(header, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(activity, R.dimen.ui_drawer_header_height)));
@@ -91,7 +90,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         ImageView searchIcon = new ImageView(activity);
         searchIcon.setImageResource(R.drawable.ic_search);
         searchIcon.setColorFilter(AutomotiveUi.color(activity, R.color.ui_icon));
-        searchIcon.setPadding(gutter, gutter, gutter, gutter);
+        searchIcon.setPadding(gap, gap, gap, gap);
         searchRow.addView(searchIcon, new LinearLayout.LayoutParams(56, 56));
         search = new EditText(activity);
         search.setSingleLine(true);
@@ -110,62 +109,81 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             @Override public void afterTextChanged(Editable s) {}
         });
         searchRow.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        ImageButton voice = iconButton(R.drawable.ic_mic, "Voice search");
+        boolean voiceAvailable = VoiceSearch.available(activity);
+        voice.setEnabled(voiceAvailable);
+        voice.setContentDescription(voiceAvailable ? "Voice search" : "Voice search unavailable");
+        voice.setOnClickListener(v -> activity.startActivityForResult(VoiceSearch.intent(), VoiceSearch.REQUEST_CODE));
+        searchRow.addView(voice, new LinearLayout.LayoutParams(76, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(searchRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(activity, R.dimen.ui_search_height)));
 
         grid = new GridView(activity);
         grid.setNumColumns(5);
-        grid.setHorizontalSpacing(gutter);
-        grid.setVerticalSpacing(gutter);
-        grid.setPadding(gutter, gutter, gutter, gutter);
+        grid.setHorizontalSpacing(gap);
+        grid.setVerticalSpacing(gap);
+        grid.setPadding(gap, gap, gap, gap);
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         grid.setAdapter(adapter);
         grid.setOnItemClickListener((parent, view, position, id) -> launch(visibleEntries.get(position)));
-        root.addView(grid, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
+        root.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         setVisibility(View.GONE);
     }
 
     boolean isOpen() { return getVisibility() == View.VISIBLE; }
 
     void showPanel() {
-        if (!loaded) {
-            loadEntries();
-            loaded = true;
-        }
+        if (!loaded) { loadEntries(); loaded = true; }
         refreshPreferences();
-        if (search.length() == 0) {
-            filter("");
-        } else {
-            search.setText("");
-        }
+        if (search.length() == 0) filter(""); else search.setText("");
         search.clearFocus();
+        setAlpha(0f);
         setVisibility(View.VISIBLE);
         bringToFront();
+        animate().cancel();
+        animate().alpha(1f).setDuration(AutomotiveUi.DRAWER_MS).start();
     }
 
     void hidePanel() {
         if (!isOpen()) return;
         dismissKeyboard();
+        animate().cancel();
+        animate().alpha(0f).setDuration(AutomotiveUi.DRAWER_MS).withEndAction(() -> {
+            setVisibility(View.GONE);
+            setAlpha(1f);
+            if (onDismiss != null) onDismiss.run();
+        }).start();
+    }
+
+    void hideImmediately() {
+        if (!isOpen()) return;
+        animate().cancel();
+        dismissKeyboard();
+        setAlpha(1f);
         setVisibility(View.GONE);
-        if (onDismiss != null) onDismiss.run();
+    }
+
+    void applyVoiceSearch(String query) {
+        if (query == null || query.trim().isEmpty()) return;
+        search.setText(query.trim());
+        search.setSelection(search.length());
+        search.clearFocus();
+        dismissKeyboard();
     }
 
     void refreshPreferences() {
         quickRow.removeAllViews();
+        List<View> focus = new ArrayList<>();
         for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++) {
             final int index = i;
             LinearLayout cell = new LinearLayout(activity);
             cell.setOrientation(LinearLayout.VERTICAL);
             cell.setGravity(Gravity.CENTER);
-            ImageButton button = iconButton(AutomotiveUi.drawerQuickRoleIcon(i), "Quick access " + (i + 1));
+            String role = LauncherPrefs.drawerQuickRole(activity, i);
+            ImageButton button = iconButton(RoleIconCatalog.icon(role), RoleIconCatalog.label(role));
             button.setOnClickListener(v -> openDrawerQuick(index));
-            button.setOnLongClickListener(v -> {
-                openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]);
-                return true;
-            });
+            button.setOnLongClickListener(v -> { openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]); return true; });
             TextView label = new TextView(activity);
             label.setText(drawerQuickLabel(i));
             label.setTextColor(AutomotiveUi.color(activity, R.color.ui_text_secondary));
@@ -174,24 +192,25 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             label.setGravity(Gravity.CENTER);
             label.setSingleLine(true);
             label.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            cell.addView(button, new LinearLayout.LayoutParams(60, 60));
-            cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 28));
+            cell.addView(button, new LinearLayout.LayoutParams(76, 76));
+            cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 30));
             quickRow.addView(cell, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+            focus.add(button);
         }
+        AutomotiveUi.linkHorizontal(focus);
     }
 
     private ImageButton iconButton(int res, String description) {
         ImageButton button = new ImageButton(activity);
         button.setImageResource(res);
         button.setContentDescription(description);
-        AutomotiveUi.styleIconButton(activity, button, false);
+        AutomotiveUi.styleRailButton(activity, button);
         return button;
     }
 
     private void dismissKeyboard() {
         search.clearFocus();
-        InputMethodManager input = (InputMethodManager)
-                activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+        InputMethodManager input = (InputMethodManager) activity.getSystemService(Context.INPUT_METHOD_SERVICE);
         if (input != null) input.hideSoftInputFromWindow(search.getWindowToken(), 0);
     }
 
@@ -221,38 +240,21 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         visibleEntries.clear();
         for (Entry entry : allEntries) {
             if (needle.isEmpty() || entry.label.toLowerCase(Locale.ROOT).contains(needle)
-                    || entry.packageName.toLowerCase(Locale.ROOT).contains(needle)) {
-                visibleEntries.add(entry);
-            }
+                    || entry.packageName.toLowerCase(Locale.ROOT).contains(needle)) visibleEntries.add(entry);
         }
         adapter.notifyDataSetChanged();
     }
 
     private String resolveDrawerQuickPackage(int index) {
         String direct = LauncherPrefs.packageFor(activity, LauncherPrefs.DRAWER_QUICK_KEYS[index]);
-        if (!direct.isEmpty()) return direct;
-        switch (index) {
-            case 0: return LauncherPrefs.packageFor(activity, LauncherPrefs.KEY_NAV);
-            case 1: return RadioProvider.resolvePackage(activity);
-            case 2:
-                String music = LauncherPrefs.packageFor(activity, LauncherPrefs.KEY_MUSIC);
-                return music.isEmpty() ? TopwayAdapter.defaultMusicPackage(activity) : music;
-            case 3: return LauncherPrefs.packageFor(activity, LauncherPrefs.KEY_BLUETOOTH);
-            default: return "";
-        }
+        return direct.isEmpty() ? RoleIconCatalog.fallbackPackage(activity,
+                LauncherPrefs.drawerQuickRole(activity, index)) : direct;
     }
 
     private String drawerQuickLabel(int index) {
+        String role = LauncherPrefs.drawerQuickRole(activity, index);
         String pkg = resolveDrawerQuickPackage(index);
-        String fallback;
-        switch (index) {
-            case 0: fallback = "Nav"; break;
-            case 1: fallback = "Radio"; break;
-            case 2: fallback = "Music"; break;
-            case 3: fallback = "BT"; break;
-            default: fallback = "Extra"; break;
-        }
-        return AppResolver.labelFor(activity, pkg, fallback);
+        return AppResolver.labelFor(activity, pkg, RoleIconCatalog.label(role));
     }
 
     private void openDrawerQuick(int index) {
@@ -280,11 +282,8 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         final String activityName;
         final String label;
         Drawable icon;
-
         Entry(String packageName, String activityName, String label) {
-            this.packageName = packageName;
-            this.activityName = activityName;
-            this.label = label;
+            this.packageName = packageName; this.activityName = activityName; this.label = label;
         }
     }
 
@@ -292,9 +291,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         @Override public int getCount() { return visibleEntries.size(); }
         @Override public Object getItem(int position) { return visibleEntries.get(position); }
         @Override public long getItemId(int position) { return position; }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
+        @Override public View getView(int position, View convertView, ViewGroup parent) {
             LinearLayout cell;
             ImageView icon;
             TextView label;
@@ -306,9 +303,8 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
                 cell = new LinearLayout(activity);
                 cell.setOrientation(LinearLayout.VERTICAL);
                 cell.setGravity(Gravity.CENTER);
-                int pad = AutomotiveUi.dimen(activity, R.dimen.ui_card_inset);
-                cell.setPadding(pad, pad, pad, pad);
                 icon = new ImageView(activity);
+                icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
                 label = new TextView(activity);
                 label.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
                 label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
@@ -323,19 +319,15 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             Entry entry = visibleEntries.get(position);
             if (entry.icon == null) {
                 PackageManager pm = activity.getPackageManager();
-                try {
-                    entry.icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName));
-                } catch (PackageManager.NameNotFoundException ignored) {
-                    try {
-                        entry.icon = pm.getApplicationIcon(entry.packageName);
-                    } catch (PackageManager.NameNotFoundException ignoredAgain) {
-                        entry.icon = activity.getDrawable(R.drawable.ic_launcher);
-                    }
+                try { entry.icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName)); }
+                catch (PackageManager.NameNotFoundException ignored) {
+                    try { entry.icon = pm.getApplicationIcon(entry.packageName); }
+                    catch (PackageManager.NameNotFoundException ignoredAgain) { entry.icon = activity.getDrawable(R.drawable.ic_launcher); }
                 }
             }
             icon.setImageDrawable(entry.icon);
             label.setText(entry.label);
-            cell.setMinimumHeight(112);
+            cell.setMinimumHeight(116);
             return cell;
         }
     }
