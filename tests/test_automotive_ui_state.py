@@ -64,11 +64,12 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("RoleIconCatalog.LABELS", settings)
         self.assertIn('addSection("Advanced HOME / recovery")', settings)
 
-    def test_semantic_driver_tokens_and_focus_graph_exist(self):
+    def test_used_driver_tokens_and_focus_graph_exist(self):
         dimens = self.read("launcher/src/main/res/values/dimens.xml")
         ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
-        for token in ("driver_target_min", "driver_target_primary", "driver_icon_primary",
-                      "driver_icon_secondary", "driver_gap", "driver_section_gap", "driver_radius"):
+        for token in ("driver_target_min", "driver_target_primary", "driver_gap",
+                      "driver_gap_large", "ui_play_visual", "ui_icon_button_padding",
+                      "ui_corner_radius"):
             self.assertIn(token, dimens)
         self.assertIn("linkVertical", ui)
         self.assertIn("linkHorizontal", ui)

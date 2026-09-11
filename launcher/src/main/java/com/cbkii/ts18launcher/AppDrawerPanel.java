@@ -66,7 +66,8 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         title.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
         title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                 activity.getResources().getDimension(R.dimen.ui_drawer_header_text));
-        title.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
+        title.setTypeface(android.graphics.Typeface.create(
+                "sans-serif-medium", android.graphics.Typeface.NORMAL));
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         ImageButton settings = iconButton(R.drawable.ic_settings, "Settings");
         settings.setOnClickListener(v -> activity.startActivity(new Intent(activity, SettingsActivity.class)));

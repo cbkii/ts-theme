@@ -57,7 +57,8 @@ public final class AppDrawerActivity extends Activity {
         header.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
         header.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                 getResources().getDimension(R.dimen.ui_drawer_header_text));
-        header.setTypeface(android.graphics.Typeface.create("sans-serif-medium", 0));
+        header.setTypeface(android.graphics.Typeface.create(
+                "sans-serif-medium", android.graphics.Typeface.NORMAL));
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(gap, 0, gap, 0);
         root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,

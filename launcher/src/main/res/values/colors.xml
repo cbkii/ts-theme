@@ -11,7 +11,6 @@
     <color name="ui_accent">#FF7043</color>
     <color name="ui_accent_dark">#E65F38</color>
     <color name="ui_ripple">#55FFFFFF</color>
-    <color name="ui_error">#FF5252</color>
 
     <color name="ui_night_black">#000000</color>
     <color name="ui_night_surface">#0D0D0D</color>

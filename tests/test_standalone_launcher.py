@@ -117,8 +117,9 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("HOTSEAT_WIDTH = 96", geometry)
         self.assertIn("STRIP_HEIGHT = 88", geometry)
         self.assertIn("GRID_COLUMNS = 12", geometry)
-        for token in ("driver_target_min", "driver_target_primary", "driver_icon_primary",
-                      "driver_icon_secondary", "driver_gap", "driver_section_gap", "driver_radius"):
+        for token in ("driver_target_min", "driver_target_primary", "driver_gap",
+                      "driver_gap_large", "ui_play_visual", "ui_icon_button_padding",
+                      "ui_corner_radius"):
             self.assertIn(token, dimens)
         self.assertIn("#FF7043", colors)
         self.assertIn("ui_high_text", colors)
