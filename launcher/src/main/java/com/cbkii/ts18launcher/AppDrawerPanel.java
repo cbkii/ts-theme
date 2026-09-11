@@ -3,6 +3,7 @@ package com.cbkii.ts18launcher;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -14,6 +15,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.BaseAdapter;
 import android.widget.EditText;
 import android.widget.GridView;
@@ -41,6 +43,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private final List<Entry> allEntries = new ArrayList<>();
     private final List<Entry> visibleEntries = new ArrayList<>();
     private final LinearLayout quickRow;
+    private final EditText search;
     private final GridView grid;
     private final AppsAdapter adapter = new AppsAdapter();
     private boolean loaded;
@@ -90,7 +93,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         searchIcon.setColorFilter(AutomotiveUi.color(activity, R.color.ui_icon));
         searchIcon.setPadding(gutter, gutter, gutter, gutter);
         searchRow.addView(searchIcon, new LinearLayout.LayoutParams(56, 56));
-        EditText search = new EditText(activity);
+        search = new EditText(activity);
         search.setSingleLine(true);
         search.setHint("Search apps");
         search.setHintTextColor(AutomotiveUi.color(activity, R.color.ui_text_secondary));
@@ -133,13 +136,19 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             loaded = true;
         }
         refreshPreferences();
-        filter("");
+        if (search.length() == 0) {
+            filter("");
+        } else {
+            search.setText("");
+        }
+        search.clearFocus();
         setVisibility(View.VISIBLE);
         bringToFront();
     }
 
     void hidePanel() {
         if (!isOpen()) return;
+        dismissKeyboard();
         setVisibility(View.GONE);
         if (onDismiss != null) onDismiss.run();
     }
@@ -177,6 +186,13 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         button.setContentDescription(description);
         AutomotiveUi.styleIconButton(activity, button, false);
         return button;
+    }
+
+    private void dismissKeyboard() {
+        search.clearFocus();
+        InputMethodManager input = (InputMethodManager)
+                activity.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (input != null) input.hideSoftInputFromWindow(search.getWindowToken(), 0);
     }
 
     private void loadEntries() {
@@ -252,6 +268,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     private void launch(Entry entry) {
         if (AppResolver.launchComponent(activity, entry.packageName, entry.activityName)) {
+            dismissKeyboard();
             setVisibility(View.GONE);
             return;
         }

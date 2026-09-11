@@ -301,17 +301,26 @@ public final class SettingsActivity extends Activity {
     }
 
     private String pickerFallback(String key) {
-        if (LauncherPrefs.KEY_MUSIC.equals(key) || LauncherPrefs.KEY_QUICK_3.equals(key)
+        String pkg = "";
+        if (LauncherPrefs.KEY_QUICK_1.equals(key)
+                || LauncherPrefs.KEY_DRAWER_QUICK_1.equals(key)) {
+            pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
+        } else if (LauncherPrefs.KEY_MUSIC.equals(key)
+                || LauncherPrefs.KEY_QUICK_3.equals(key)
                 || LauncherPrefs.KEY_DRAWER_QUICK_3.equals(key)) {
-            String pkg = TopwayAdapter.defaultMusicPackage(this);
-            if (!pkg.isEmpty()) return AppResolver.labelFor(this, pkg, pkg) + " · role fallback";
-        }
-        if (LauncherPrefs.KEY_RADIO.equals(key) || LauncherPrefs.KEY_QUICK_2.equals(key)
+            pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
+            if (pkg.isEmpty()) pkg = TopwayAdapter.defaultMusicPackage(this);
+        } else if (LauncherPrefs.KEY_RADIO.equals(key)
+                || LauncherPrefs.KEY_QUICK_2.equals(key)
                 || LauncherPrefs.KEY_DRAWER_QUICK_2.equals(key)) {
-            String pkg = RadioProvider.resolvePackage(this);
-            if (!pkg.isEmpty()) return AppResolver.labelFor(this, pkg, pkg) + " · role fallback";
+            pkg = RadioProvider.resolvePackage(this);
+        } else if (LauncherPrefs.KEY_QUICK_4.equals(key)
+                || LauncherPrefs.KEY_DRAWER_QUICK_4.equals(key)) {
+            pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_BLUETOOTH);
         }
-        return "Not set";
+        return pkg.isEmpty()
+                ? "Not set"
+                : AppResolver.labelFor(this, pkg, pkg) + " · role fallback";
     }
 
     private void showMediaDiagnostics() {
