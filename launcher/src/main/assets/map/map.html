@@ -8,6 +8,7 @@
 <style>
 html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;font-family:sans-serif}
 #map{position:relative}
+#dim{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:900;transition:opacity 140ms linear}
 .vehicle-dot{width:18px;height:18px;border-radius:50%;background:#ff7043;border:3px solid #fff;box-sizing:border-box;box-shadow:0 1px 5px #000}
 .vehicle-bearing{position:absolute;left:50%;top:-15px;margin-left:-5px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:13px solid #fff;transform-origin:5px 24px;display:none}
 .leaflet-control-attribution{font-size:10px!important;background:rgba(0,0,0,.55)!important;color:#eee!important}
@@ -15,7 +16,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
 </style>
 </head>
 <body>
-<div id="map"></div>
+<div id="map"></div><div id="dim"></div>
 <script src="vendor/leaflet.js"></script>
 <script>
 (function(){
@@ -23,47 +24,27 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
   let ready=false, hasLocation=false, follow=true, marker=null, accuracyCircle=null;
   let tileRequested=0, tileLoaded=0, tileFailed=0;
   const map=L.map("map", {
-    zoomControl:false,
-    attributionControl:true,
-    touchZoom:true,
-    doubleClickZoom:true,
-    dragging:true,
-    inertia:true,
-    scrollWheelZoom:false,
-    boxZoom:false,
-    keyboard:false,
-    fadeAnimation:false,
-    zoomAnimation:false,
-    markerZoomAnimation:false,
-    preferCanvas:true
+    zoomControl:false, attributionControl:true, touchZoom:true, doubleClickZoom:true,
+    dragging:true, inertia:true, scrollWheelZoom:false, boxZoom:false, keyboard:false,
+    fadeAnimation:false, zoomAnimation:false, markerZoomAnimation:false, preferCanvas:true
   });
   map.attributionControl.setPrefix(false);
   const layer=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    minZoom:2,
-    maxZoom:19,
-    tileSize:256,
-    detectRetina:false,
-    updateWhenIdle:true,
-    keepBuffer:1,
+    minZoom:2,maxZoom:19,tileSize:256,detectRetina:false,updateWhenIdle:true,keepBuffer:1,
     attribution:"&copy; OpenStreetMap contributors"
   });
-
-  layer.on("loading",function(){ tileRequested=0; tileLoaded=0; tileFailed=0; });
-  layer.on("tileloadstart",function(){ tileRequested++; });
-  layer.on("tileload",function(){ tileLoaded++; });
-  layer.on("tileerror",function(){ tileFailed++; });
-  map.on("dragstart",function(){ follow=false; });
-  map.whenReady(function(){ ready=true; });
+  layer.on("loading",function(){tileRequested=0;tileLoaded=0;tileFailed=0;});
+  layer.on("tileloadstart",function(){tileRequested++;});
+  layer.on("tileload",function(){tileLoaded++;});
+  layer.on("tileerror",function(){tileFailed++;});
+  map.on("dragstart",function(){follow=false;});
+  map.whenReady(function(){ready=true;});
 
   function markerIcon(bearing,hasBearing){
-    const rotation=hasBearing ? Number(bearing)||0 : 0;
-    const display=hasBearing ? "block" : "none";
-    return L.divIcon({
-      className:"",
-      iconSize:[24,38],
-      iconAnchor:[12,19],
-      html:'<div class="vehicle-bearing" style="display:'+display+';transform:rotate('+rotation+'deg)"></div><div class="vehicle-dot"></div>'
-    });
+    const rotation=hasBearing?Number(bearing)||0:0;
+    const display=hasBearing?"block":"none";
+    return L.divIcon({className:"",iconSize:[24,38],iconAnchor:[12,19],
+      html:'<div class="vehicle-bearing" style="display:'+display+';transform:rotate('+rotation+'deg)"></div><div class="vehicle-dot"></div>'});
   }
 
   window.setLocation=function(latitude,longitude,accuracy,bearing,hasBearing){
@@ -73,36 +54,30 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
       layer.addTo(map);
       marker=L.marker(point,{icon:markerIcon(bearing,hasBearing),interactive:false,riseOnHover:false}).addTo(map);
       accuracyCircle=L.circle(point,{radius:Math.max(0,Number(accuracy)||0),interactive:false,weight:1,opacity:.55,fillOpacity:.08}).addTo(map);
-      hasLocation=true;
-      follow=true;
-      ready=true;
-      return;
+      hasLocation=true;follow=true;ready=true;return;
     }
-    marker.setLatLng(point);
-    marker.setIcon(markerIcon(bearing,hasBearing));
-    accuracyCircle.setLatLng(point);
-    accuracyCircle.setRadius(Math.max(0,Number(accuracy)||0));
-    if(follow) map.panTo(point,{animate:false});
+    marker.setLatLng(point);marker.setIcon(markerIcon(bearing,hasBearing));
+    accuracyCircle.setLatLng(point);accuracyCircle.setRadius(Math.max(0,Number(accuracy)||0));
+    if(follow)map.panTo(point,{animate:false});
   };
-
   window.adjustZoom=function(delta){
     if(!hasLocation)return;
-    const next=Math.max(2,Math.min(19,map.getZoom()+Number(delta||0)));
-    map.setZoom(next,{animate:false});
+    map.setZoom(Math.max(2,Math.min(19,map.getZoom()+Number(delta||0))),{animate:false});
   };
-
   window.recenterMap=function(){
     if(!hasLocation||!marker)return;
-    follow=true;
-    map.setView(marker.getLatLng(),map.getZoom(),{animate:false});
+    follow=true;map.setView(marker.getLatLng(),map.getZoom(),{animate:false});
   };
-
+  window.setMapDim=function(opacity){
+    document.getElementById("dim").style.opacity=String(Math.max(0,Math.min(.55,Number(opacity)||0)));
+  };
   window.mapHealth=function(){
-    if(typeof L==="undefined")return "runtime-error";
-    if(!hasLocation)return ready ? "waiting" : "loading-runtime";
-    if(tileLoaded>0)return "ok:"+tileLoaded+":"+tileFailed+":"+tileRequested;
-    if(tileFailed>0)return "error:0:"+tileFailed+":"+tileRequested;
-    return "loading:0:0:"+tileRequested;
+    const state=follow?"follow":"free";
+    if(typeof L==="undefined")return "runtime-error:"+state;
+    if(!hasLocation)return (ready?"waiting":"loading-runtime")+":"+state;
+    if(tileLoaded>0)return "ok:"+tileLoaded+":"+tileFailed+":"+tileRequested+":"+state;
+    if(tileFailed>0)return "error:0:"+tileFailed+":"+tileRequested+":"+state;
+    return "loading:0:0:"+tileRequested+":"+state;
   };
 })();
 </script>

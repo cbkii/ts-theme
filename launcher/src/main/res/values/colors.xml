@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ui_black">#000000</color>
+    <color name="ui_surface">#171717</color>
+    <color name="ui_surface_elevated">#222222</color>
+    <color name="ui_surface_pressed">#353535</color>
+    <color name="ui_surface_focus">#242424</color>
+    <color name="ui_text">#F5F5F5</color>
+    <color name="ui_text_secondary">#B8B8B8</color>
+    <color name="ui_icon">#F4F4F4</color>
+    <color name="ui_accent">#FF7043</color>
+    <color name="ui_accent_dark">#E35D35</color>
+    <color name="ui_ripple">#66FFFFFF</color>
+    <color name="ui_disabled">#59FFFFFF</color>
+</resources>

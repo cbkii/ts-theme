@@ -8,37 +8,40 @@ final class Ts18Geometry {
     static final int TOP_SYSTEM_INSET = 55;
     static final int BOTTOM_RESERVE = 18;
     static final int HOTSEAT_WIDTH = 96;
-    static final int STRIP_HEIGHT = 72;
-    static final int RADIO_WIDTH = 350;
-    static final int MUSIC_WIDTH = 616;
+    static final int STRIP_HEIGHT = 88;
+    static final int RADIO_WIDTH = 406;
+    static final int MUSIC_WIDTH = 560;
 
     static final class Layout {
         final int top;
-        final int left;
-        final int safeRight;
+        final int railX;
+        final int contentLeft;
+        final int contentRight;
         final int safeBottom;
         final int stripHeight;
         final int radioWidth;
         final int musicWidth;
 
-        Layout(int top, int left, int safeRight, int safeBottom, int stripHeight,
-               int radioWidth, int musicWidth) {
+        Layout(int top, int railX, int contentLeft, int contentRight, int safeBottom,
+               int stripHeight, int radioWidth, int musicWidth) {
             this.top = top;
-            this.left = left;
-            this.safeRight = safeRight;
+            this.railX = railX;
+            this.contentLeft = contentLeft;
+            this.contentRight = contentRight;
             this.safeBottom = safeBottom;
             this.stripHeight = stripHeight;
             this.radioWidth = radioWidth;
             this.musicWidth = musicWidth;
         }
 
-        int radioX() { return left; }
-        int musicX() { return left + radioWidth; }
+        int railWidth() { return HOTSEAT_WIDTH; }
+        int radioX() { return contentLeft; }
+        int musicX() { return contentLeft + radioWidth; }
         int dateX() { return musicX() + musicWidth; }
-        int dateWidth() { return Math.max(1, safeRight - dateX()); }
-        int mapX() { return left; }
+        int dateWidth() { return Math.max(1, contentRight - dateX()); }
+        int mapX() { return contentLeft; }
         int mapY() { return top + stripHeight; }
-        int mapWidth() { return Math.max(1, safeRight - left); }
+        int mapWidth() { return Math.max(1, contentRight - contentLeft); }
         int mapHeight() { return Math.max(1, safeBottom - mapY()); }
         int railHeight() { return Math.max(1, safeBottom - top); }
     }
@@ -46,6 +49,10 @@ final class Ts18Geometry {
     private Ts18Geometry() {}
 
     static Layout resolve(int viewWidth, int viewHeight) {
+        return resolve(viewWidth, viewHeight, false);
+    }
+
+    static Layout resolve(int viewWidth, int viewHeight, boolean railRight) {
         int width = Math.max(1, viewWidth);
         int height = Math.max(1, viewHeight);
 
@@ -58,17 +65,20 @@ final class Ts18Geometry {
                 : Math.max(top + STRIP_HEIGHT + 1, height - BOTTOM_RESERVE);
 
         float xScale = Math.min(1.0f, safeRight / (float) SAFE_RIGHT);
-        int left = Math.max(1, Math.round(HOTSEAT_WIDTH * xScale));
+        int railWidth = Math.max(1, Math.round(HOTSEAT_WIDTH * xScale));
+        int contentLeft = railRight ? 0 : railWidth;
+        int contentRight = railRight ? Math.max(1, safeRight - railWidth) : safeRight;
+        int railX = railRight ? contentRight : 0;
+        int available = Math.max(3, contentRight - contentLeft);
+
         int radioWidth = Math.max(1, Math.round(RADIO_WIDTH * xScale));
         int musicWidth = Math.max(1, Math.round(MUSIC_WIDTH * xScale));
-
-        int dateX = left + radioWidth + musicWidth;
-        if (dateX >= safeRight) {
-            int available = Math.max(3, safeRight - left);
+        if (radioWidth + musicWidth >= available) {
             radioWidth = Math.max(1, Math.round(available * (RADIO_WIDTH / 966.0f)));
             musicWidth = Math.max(1, available - radioWidth - 1);
         }
 
-        return new Layout(top, left, safeRight, safeBottom, STRIP_HEIGHT, radioWidth, musicWidth);
+        return new Layout(top, railX, contentLeft, contentRight, safeBottom,
+                STRIP_HEIGHT, radioWidth, musicWidth);
     }
 }

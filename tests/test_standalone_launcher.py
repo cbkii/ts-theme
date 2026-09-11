@@ -32,10 +32,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         application = root.find("application")
         self.assertIsNotNone(application)
         aliases = application.findall("activity-alias")
-        alias = next(
-            item for item in aliases
-            if item.attrib.get(ANDROID_NS + "name") == ".HomeAlias"
-        )
+        alias = next(item for item in aliases if item.attrib.get(ANDROID_NS + "name") == ".HomeAlias")
         self.assertEqual("false", alias.attrib.get(ANDROID_NS + "enabled"))
         self.assertEqual("true", alias.attrib.get(ANDROID_NS + "exported"))
         self.assertEqual(".LauncherActivity", alias.attrib.get(ANDROID_NS + "targetActivity"))
@@ -47,13 +44,8 @@ class StandaloneLauncherContractTests(unittest.TestCase):
 
     def test_launcher_runtime_stays_small_and_single_authority(self):
         source_root = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher"
-        java = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(source_root.rglob("*.java"))
-        )
-        media = self.read(
-            "launcher/src/main/java/com/cbkii/ts18launcher/MediaListenerService.java"
-        )
+        java = "\n".join(path.read_text(encoding="utf-8") for path in sorted(source_root.rglob("*.java")))
+        media = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MediaListenerService.java")
         self.assertNotIn("new MediaSession(", java)
         self.assertNotIn("requestAudioFocus", java)
         self.assertNotIn("WakeLock", java)
@@ -87,6 +79,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
         broker = self.read("launcher/src/main/java/com/cbkii/ts18launcher/TileBroker.java")
         html = self.read("launcher/src/main/assets/map/map.html")
+        prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
         self.assertIn("fetchLeafletAssets", gradle)
         self.assertIn('VERSION = "1.9.4"', fetcher)
         self.assertIn("db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a", fetcher)
@@ -102,8 +95,13 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("vehicle-bearing", html)
         self.assertIn("setLocation", html)
         self.assertIn("map.panTo", html)
+        self.assertIn("setMapDim", html)
+        self.assertIn('follow?"follow":"free"', html)
         self.assertIn("TileBroker.isTileUri", panel)
         self.assertIn("tileBroker.intercept(uri)", panel)
+        self.assertIn("mapControlsEnabled", panel)
+        self.assertIn("mapAppearance", panel)
+        self.assertIn('"Offline · cached map"', panel)
         self.assertIn('TILE_HOST = "tile.openstreetmap.org"', broker)
         self.assertIn("FALLBACK_CACHE_TTL_MS", broker)
         self.assertIn("MAX_CACHE_BYTES = 64L * 1024L * 1024L", broker)
@@ -112,6 +110,8 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('setRequestProperty("If-Modified-Since"', broker)
         self.assertIn("HttpURLConnection.HTTP_NOT_MODIFIED", broker)
         self.assertIn("staleOrError", broker)
+        self.assertIn("KEY_MAP_CONTROLS_ENABLED", prefs)
+        self.assertIn("KEY_MAP_APPEARANCE", prefs)
         self.assertIn("LocationManager.GPS_PROVIDER", panel)
         self.assertNotIn("LocationManager.NETWORK_PROVIDER", panel)
         self.assertIn("removeUpdates(this)", panel)
@@ -119,20 +119,31 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertNotIn("setAllowUniversalAccessFromFileURLs(true)", panel)
         self.assertNotIn("http://", panel + broker + html)
 
-    def test_home_has_quick_slots_collapsible_drawer_and_navigation_handoff(self):
+    def test_home_has_configurable_role_icon_rail_drawer_and_navigation_handoff(self):
         prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         drawer = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerPanel.java")
         nav = self.read("launcher/src/main/java/com/cbkii/ts18launcher/NavigationProvider.java")
         self.assertIn("KEY_QUICK_1", prefs)
-        self.assertIn("KEY_QUICK_4", prefs)
-        self.assertIn("QUICK_SLOT_COUNT = 4", launcher)
+        self.assertIn("KEY_QUICK_6", prefs)
+        self.assertIn("KEY_QUICK_COUNT", prefs)
+        self.assertIn("KEY_RAIL_POSITION", prefs)
+        self.assertIn("KEY_DRAWER_QUICK_5", prefs)
+        self.assertIn("Math.max(3, Math.min(6, value))", prefs)
+        self.assertIn("MAX_QUICK_SLOTS = 6", launcher)
+        self.assertIn("ImageButton[] quickButtons", launcher)
+        self.assertIn("AutomotiveUi.quickRoleIcon", launcher)
+        self.assertNotIn('railButton("SET"', launcher)
+        self.assertIn("LauncherPrefs.railOnRight(this)", launcher)
         self.assertIn("AppDrawerPanel", launcher)
         self.assertIn("toggleAppDrawer()", launcher)
         self.assertIn("mapPanel.stop()", launcher)
         self.assertIn("mapPanel.resumeWebView()", launcher)
-        self.assertIn("setVisibility(View.GONE)", drawer)
         self.assertIn("GridView", drawer)
+        self.assertIn('setHint("Search apps")', drawer)
+        self.assertIn("DRAWER_QUICK_KEYS", drawer)
+        self.assertIn("R.drawable.ic_settings", drawer)
+        self.assertIn("R.drawable.ic_close", drawer)
         self.assertIn("NavigationProvider.open", launcher)
         self.assertIn('GOOGLE_MAPS = "com.google.android.apps.maps"', nav)
         self.assertIn('WAZE = "com.waze"', nav)
@@ -140,6 +151,49 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('OSMAND_PLUS = "net.osmand.plus"', nav)
         self.assertIn("geo:", nav)
         self.assertIn("waze://", nav)
+
+    def test_automotive_ui_uses_local_vectors_semantic_dimensions_and_feedback(self):
+        launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
+        geometry = self.read("launcher/src/main/java/com/cbkii/ts18launcher/Ts18Geometry.java")
+        dimens = self.read("launcher/src/main/res/values/dimens.xml")
+        colors = self.read("launcher/src/main/res/values/colors.xml")
+        drawables = {path.name for path in (ROOT / "launcher/src/main/res/drawable").glob("*.xml")}
+        for required in (
+            "ic_navigation.xml", "ic_radio.xml", "ic_music.xml", "ic_bluetooth.xml",
+            "ic_apps.xml", "ic_settings.xml", "ic_previous.xml", "ic_play.xml",
+            "ic_pause.xml", "ic_next.xml", "ic_zoom_in.xml", "ic_zoom_out.xml",
+            "ic_my_location.xml", "ic_close.xml", "ic_search.xml",
+        ):
+            self.assertIn(required, drawables)
+        self.assertIn("HOTSEAT_WIDTH = 96", geometry)
+        self.assertIn("STRIP_HEIGHT = 88", geometry)
+        self.assertIn("resolve(int viewWidth, int viewHeight, boolean railRight)", geometry)
+        self.assertIn("ui_metadata_text", dimens)
+        self.assertIn("ui_drawer_icon", dimens)
+        self.assertIn("ui_settings_row_height", dimens)
+        self.assertIn("ui_accent", colors)
+        self.assertIn("FEEDBACK_MS = 140L", ui)
+        self.assertIn("state_focused", ui)
+        self.assertIn("state_pressed", ui)
+        self.assertIn("setImageResource(radioSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play)", launcher)
+        self.assertIn("setImageResource(genericSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play)", launcher)
+        self.assertIn("dateView.setOnClickListener(v -> openSettings())", launcher)
+
+    def test_settings_are_automotive_rows_with_switches_and_advanced_home_actions(self):
+        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
+        picker = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerActivity.java")
+        self.assertIn("new Switch(this)", settings)
+        self.assertIn('addSection("Appearance")', settings)
+        self.assertIn('addSection("Advanced HOME / recovery")', settings)
+        self.assertIn('"Map controls"', settings)
+        self.assertIn('"Map appearance"', settings)
+        self.assertIn('"Quick-launch slots"', settings)
+        self.assertIn('"Rail position"', settings)
+        self.assertIn("setSingleChoiceItems", settings)
+        self.assertIn("DRAWER_QUICK_KEYS", settings)
+        self.assertIn('setHint("Search apps")', picker)
+        self.assertNotIn("androidx.preference", settings)
 
     def test_media_selection_is_deterministic_capability_aware_and_radio_separate(self):
         prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
@@ -163,7 +217,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("setMediaButtonState(mediaPrevious", launcher)
         self.assertIn("setMediaButtonState(playPause", launcher)
         self.assertIn("setMediaButtonState(mediaNext", launcher)
-        self.assertIn("Generic media selection:", settings)
+        self.assertIn("Generic media selection", settings)
         self.assertIn("Media session diagnostics", settings)
         self.assertIn('NAVRADIO_PLUS_PACKAGE = "com.navimods.radio"', radio)
         self.assertNotIn("sendBroadcast", radio)

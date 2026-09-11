@@ -5,11 +5,8 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.RippleDrawable;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
@@ -18,8 +15,9 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
@@ -29,7 +27,7 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
 @SuppressLint("SetTextI18n")
 public class LauncherActivity extends Activity implements MediaListenerService.Observer {
     private static final int REQUEST_LOCATION = 4101;
-    private static final int QUICK_SLOT_COUNT = 4;
+    private static final int MAX_QUICK_SLOTS = 6;
     private static final long MEDIA_REFRESH_INTERVAL_MS = 1000L;
 
     private FrameLayout root;
@@ -39,13 +37,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private TextClock dateView;
     private TextView radioText;
     private TextView mediaText;
-    private Button radioPrevious;
-    private Button radioPlayPause;
-    private Button radioNext;
-    private Button mediaPrevious;
-    private Button playPause;
-    private Button mediaNext;
-    private final Button[] quickButtons = new Button[QUICK_SLOT_COUNT];
+    private ImageButton radioPrevious;
+    private ImageButton radioPlayPause;
+    private ImageButton radioNext;
+    private ImageButton mediaPrevious;
+    private ImageButton playPause;
+    private ImageButton mediaNext;
+    private final ImageButton[] quickButtons = new ImageButton[MAX_QUICK_SLOTS];
     private final Handler mediaRefreshHandler = new Handler(Looper.getMainLooper());
     private final Runnable mediaRefreshPoll = new Runnable() {
         @Override
@@ -71,7 +69,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
 
         root = new FrameLayout(this);
-        root.setBackgroundColor(Color.BLACK);
+        root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         setContentView(root);
 
         buildRail();
@@ -91,7 +89,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         MediaListenerService.addObserver(this);
         MediaListenerService.refreshActiveSessions();
         startMediaRefreshPolling();
-        updateQuickLabels();
+        applyRailConfiguration();
+        if (appDrawerPanel != null) appDrawerPanel.refreshPreferences();
         root.post(this::updateMapVisibility);
         updateLabels();
     }
@@ -140,62 +139,60 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         rail = new LinearLayout(this);
         rail.setOrientation(LinearLayout.VERTICAL);
         rail.setGravity(Gravity.CENTER);
-        rail.setBackgroundColor(0xFF090909);
+        rail.setPadding(AutomotiveUi.dimen(this, R.dimen.ui_card_inset),
+                AutomotiveUi.dimen(this, R.dimen.ui_card_inset),
+                AutomotiveUi.dimen(this, R.dimen.ui_card_inset),
+                AutomotiveUi.dimen(this, R.dimen.ui_card_inset));
+        rail.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
 
-        for (int i = 0; i < QUICK_SLOT_COUNT; i++) {
+        for (int i = 0; i < MAX_QUICK_SLOTS; i++) {
             final int index = i;
-            Button button = railButton("APP" + (i + 1),
-                    v -> openQuick(index),
-                    v -> {
-                        openPicker(LauncherPrefs.QUICK_KEYS[index]);
-                        return true;
-                    });
+            ImageButton button = railButton(AutomotiveUi.quickRoleIcon(i), "Quick app " + (i + 1));
+            button.setOnClickListener(v -> openQuick(index));
+            button.setOnLongClickListener(v -> {
+                openPicker(LauncherPrefs.QUICK_KEYS[index]);
+                return true;
+            });
             quickButtons[i] = button;
             rail.addView(button);
         }
-        rail.addView(railButton("APPS", v -> toggleAppDrawer(), v -> {
-            openSettings();
-            return true;
-        }));
-        rail.addView(railButton("SET", v -> openSettings(), v -> {
-            openSettings();
-            return true;
-        }));
+        ImageButton apps = railButton(R.drawable.ic_apps, "Apps");
+        apps.setOnClickListener(v -> toggleAppDrawer());
+        rail.addView(apps);
         root.addView(rail);
     }
 
-    private Button railButton(String text, View.OnClickListener click, View.OnLongClickListener longClick) {
-        Button button = new Button(this);
-        button.setAllCaps(false);
-        button.setText(text);
-        button.setTextColor(Color.WHITE);
-        button.setTextSize(13f);
-        button.setTypeface(Typeface.DEFAULT_BOLD);
-        button.setGravity(Gravity.CENTER);
-        button.setPadding(4, 0, 4, 0);
-        button.setMinWidth(0);
-        button.setMinHeight(0);
-        button.setBackground(touchFeedback());
-        button.setSingleLine(true);
-        button.setEllipsize(TextUtils.TruncateAt.END);
-        button.setOnClickListener(click);
-        button.setOnLongClickListener(longClick);
+    private ImageButton railButton(int icon, String description) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(icon);
+        button.setContentDescription(description);
+        AutomotiveUi.styleIconButton(this, button, false);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        int gap = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
+        lp.topMargin = gap;
+        lp.bottomMargin = gap;
         button.setLayoutParams(lp);
         return button;
     }
 
+    private void applyRailConfiguration() {
+        int count = LauncherPrefs.quickCount(this);
+        for (int i = 0; i < MAX_QUICK_SLOTS; i++) {
+            quickButtons[i].setVisibility(i < count ? View.VISIBLE : View.GONE);
+            quickButtons[i].setImageResource(AutomotiveUi.quickRoleIcon(i));
+        }
+        if (root != null) applyGeometry(root.getWidth(), root.getHeight());
+        if (mapPanel != null) mapPanel.applyPreferences();
+    }
+
     private void buildRadioPanel() {
         radioPanel = stripPanel();
-        radioPrevious = controlButton("‹");
-        radioPlayPause = controlButton("▶");
-        radioNext = controlButton("›");
+        ImageView role = roleIcon(R.drawable.ic_radio, "Radio");
         radioText = stripText("RADIO");
-        radioText.setSingleLine(true);
-        radioText.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        radioText.setMarqueeRepeatLimit(-1);
-        radioText.setSelected(true);
+        radioPrevious = controlButton(R.drawable.ic_previous, "Previous station", false);
+        radioPlayPause = controlButton(R.drawable.ic_play, "Play or pause radio", true);
+        radioNext = controlButton(R.drawable.ic_next, "Next station", false);
 
         radioPrevious.setOnClickListener(v ->
                 MediaListenerService.sendRadio(MediaListenerService.Command.PREVIOUS));
@@ -209,27 +206,21 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             return true;
         });
 
-        radioPanel.addView(radioPrevious,
-                new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
-        radioPanel.addView(radioPlayPause,
-                new LinearLayout.LayoutParams(60, LinearLayout.LayoutParams.MATCH_PARENT));
-        radioPanel.addView(radioNext,
-                new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
-        radioPanel.addView(radioText,
-                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+        radioPanel.addView(role, fixed(56));
+        radioPanel.addView(radioText, weighted());
+        radioPanel.addView(radioPrevious, fixed(84));
+        radioPanel.addView(radioPlayPause, fixed(88));
+        radioPanel.addView(radioNext, fixed(84));
         root.addView(radioPanel);
     }
 
     private void buildMusicPanel() {
         musicPanel = stripPanel();
-        mediaPrevious = controlButton("‹");
-        playPause = controlButton("▶");
-        mediaNext = controlButton("›");
+        ImageView role = roleIcon(R.drawable.ic_music, "Music");
         mediaText = stripText("Grant media access");
-        mediaText.setSingleLine(true);
-        mediaText.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        mediaText.setMarqueeRepeatLimit(-1);
-        mediaText.setSelected(true);
+        mediaPrevious = controlButton(R.drawable.ic_previous, "Previous track", false);
+        playPause = controlButton(R.drawable.ic_play, "Play or pause", true);
+        mediaNext = controlButton(R.drawable.ic_next, "Next track", false);
 
         mediaPrevious.setOnClickListener(v ->
                 MediaListenerService.sendGeneric(MediaListenerService.Command.PREVIOUS));
@@ -247,14 +238,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             return true;
         });
 
-        musicPanel.addView(mediaPrevious,
-                new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
-        musicPanel.addView(playPause,
-                new LinearLayout.LayoutParams(60, LinearLayout.LayoutParams.MATCH_PARENT));
-        musicPanel.addView(mediaNext,
-                new LinearLayout.LayoutParams(56, LinearLayout.LayoutParams.MATCH_PARENT));
-        musicPanel.addView(mediaText,
-                new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+        musicPanel.addView(role, fixed(56));
+        musicPanel.addView(mediaText, weighted());
+        musicPanel.addView(mediaPrevious, fixed(84));
+        musicPanel.addView(playPause, fixed(88));
+        musicPanel.addView(mediaNext, fixed(84));
         root.addView(musicPanel);
     }
 
@@ -262,24 +250,67 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         dateView = new TextClock(this);
         dateView.setFormat12Hour("dd MMM");
         dateView.setFormat24Hour("dd MMM");
-        dateView.setTextColor(Color.WHITE);
-        dateView.setTextSize(20f);
+        dateView.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+        dateView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                getResources().getDimension(R.dimen.ui_date_text));
         dateView.setTypeface(Typeface.DEFAULT_BOLD);
         dateView.setGravity(Gravity.CENTER);
-        dateView.setBackground(touchFeedback(0xFF170C09));
+        dateView.setBackground(AutomotiveUi.interactiveBackground(this, false));
+        AutomotiveUi.attachFeedback(dateView);
         dateView.setOnClickListener(v -> openSettings());
         root.addView(dateView);
     }
 
-    private RippleDrawable touchFeedback() {
-        return touchFeedback(Color.TRANSPARENT);
+    private LinearLayout stripPanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.HORIZONTAL);
+        panel.setGravity(Gravity.CENTER_VERTICAL);
+        panel.setPadding(AutomotiveUi.dimen(this, R.dimen.ui_gutter), 0,
+                AutomotiveUi.dimen(this, R.dimen.ui_card_inset), 0);
+        panel.setBackground(AutomotiveUi.cardBackground(this));
+        return panel;
     }
 
-    private RippleDrawable touchFeedback(int baseColor) {
-        return new RippleDrawable(
-                ColorStateList.valueOf(0x55FFFFFF),
-                new ColorDrawable(baseColor),
-                new ColorDrawable(Color.WHITE));
+    private ImageView roleIcon(int iconRes, String description) {
+        ImageView view = new ImageView(this);
+        view.setImageResource(iconRes);
+        view.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
+        view.setContentDescription(description);
+        int padding = AutomotiveUi.dimen(this, R.dimen.ui_gutter);
+        view.setPadding(padding, padding, padding, padding);
+        return view;
+    }
+
+    private ImageButton controlButton(int icon, String description, boolean primary) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(icon);
+        button.setContentDescription(description);
+        AutomotiveUi.styleIconButton(this, button, primary);
+        return button;
+    }
+
+    private TextView stripText(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                getResources().getDimension(R.dimen.ui_metadata_text));
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        view.setPadding(AutomotiveUi.dimen(this, R.dimen.ui_gutter), 0,
+                AutomotiveUi.dimen(this, R.dimen.ui_gutter), 0);
+        view.setSingleLine(true);
+        view.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        view.setMarqueeRepeatLimit(-1);
+        view.setSelected(true);
+        return view;
+    }
+
+    private LinearLayout.LayoutParams fixed(int widthPx) {
+        return new LinearLayout.LayoutParams(widthPx, LinearLayout.LayoutParams.MATCH_PARENT);
+    }
+
+    private LinearLayout.LayoutParams weighted() {
+        return new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
     }
 
     private void updateMapVisibility() {
@@ -295,6 +326,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             root.addView(mapPanel);
             applyGeometry(root.getWidth(), root.getHeight());
         }
+        mapPanel.applyPreferences();
         mapPanel.setVisibility(View.VISIBLE);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
             mapPanel.stop();
@@ -312,46 +344,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
     }
 
-    private LinearLayout stripPanel() {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.HORIZONTAL);
-        panel.setGravity(Gravity.CENTER_VERTICAL);
-        panel.setBackgroundColor(0xFF120A08);
-        return panel;
-    }
-
-    private Button controlButton(String text) {
-        Button button = new Button(this);
-        button.setAllCaps(false);
-        button.setText(text);
-        button.setTextColor(Color.WHITE);
-        button.setTextSize(28f);
-        button.setGravity(Gravity.CENTER);
-        button.setPadding(0, 0, 0, 0);
-        button.setMinWidth(0);
-        button.setMinHeight(0);
-        button.setBackground(touchFeedback());
-        return button;
-    }
-
-    private TextView stripText(String text) {
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextColor(Color.WHITE);
-        view.setTextSize(16f);
-        view.setGravity(Gravity.CENTER_VERTICAL);
-        view.setPadding(10, 0, 10, 0);
-        return view;
-    }
-
     private void applyGeometry(int width, int height) {
         if (width <= 0 || height <= 0) return;
-        Ts18Geometry.Layout g = Ts18Geometry.resolve(width, height);
+        boolean railRight = LauncherPrefs.railOnRight(this);
+        Ts18Geometry.Layout g = Ts18Geometry.resolve(width, height, railRight);
 
-        place(rail, 0, g.top, g.left, g.railHeight());
-        place(radioPanel, g.radioX(), g.top, g.radioWidth, g.stripHeight);
-        place(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);
-        place(dateView, g.dateX(), g.top, g.dateWidth(), g.stripHeight);
+        place(rail, g.railX, g.top, g.railWidth(), g.railHeight());
+        placeCard(radioPanel, g.radioX(), g.top, g.radioWidth, g.stripHeight);
+        placeCard(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);
+        placeCard(dateView, g.dateX(), g.top, g.dateWidth(), g.stripHeight);
         if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (appDrawerPanel != null) {
             place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
@@ -366,6 +367,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         view.setLayoutParams(lp);
     }
 
+    private void placeCard(View view, int x, int y, int width, int height) {
+        int inset = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
+        place(view, x + inset, y + inset,
+                Math.max(1, width - inset * 2), Math.max(1, height - inset * 2));
+    }
+
     private void updateLabels() {
         String radioPackage = RadioProvider.resolvePackage(this);
         boolean exactRadioSession = !radioPackage.isEmpty()
@@ -374,9 +381,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             radioText.setText(radioSnapshot.displayText());
         } else {
             radioText.setText(AppResolver.labelFor(this, radioPackage,
-                    radioPackage.isEmpty() ? "SET RADIO" : "RADIO"));
+                    radioPackage.isEmpty() ? "Set radio" : "Radio"));
         }
-        radioPlayPause.setText(radioSnapshot.playing ? "Ⅱ" : "▶");
+        radioPlayPause.setImageResource(radioSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
         setMediaButtonState(radioPrevious,
                 exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.PREVIOUS));
         setMediaButtonState(radioPlayPause,
@@ -386,7 +393,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
         if (!MediaListenerService.hasNotificationAccess(this)) {
             mediaText.setText("Grant media access");
-            playPause.setText("▶");
+            playPause.setImageResource(R.drawable.ic_play);
             setMediaButtonState(mediaPrevious, false);
             setMediaButtonState(playPause, false);
             setMediaButtonState(mediaNext, false);
@@ -402,7 +409,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             mediaText.setText(AppResolver.labelFor(
                     this, fallbackPackage, "No active media session"));
         }
-        playPause.setText(genericSnapshot.playing ? "Ⅱ" : "▶");
+        playPause.setImageResource(genericSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
         setMediaButtonState(mediaPrevious,
                 genericSnapshot.supports(MediaListenerService.Command.PREVIOUS));
         setMediaButtonState(playPause,
@@ -411,20 +418,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 genericSnapshot.supports(MediaListenerService.Command.NEXT));
     }
 
-    private void setMediaButtonState(Button button, boolean enabled) {
+    private void setMediaButtonState(ImageButton button, boolean enabled) {
         if (button == null) return;
         button.setEnabled(enabled);
         button.setAlpha(enabled ? 1f : 0.35f);
-    }
-
-    private void updateQuickLabels() {
-        for (int i = 0; i < QUICK_SLOT_COUNT; i++) {
-            String fallback = "APP" + (i + 1);
-            String pkg = resolveQuickPackage(i);
-            String label = AppResolver.labelFor(this, pkg, fallback);
-            if (label.length() > 9) label = label.substring(0, 9);
-            quickButtons[i].setText(label);
-        }
     }
 
     private String resolveQuickPackage(int index) {
@@ -465,6 +462,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             appDrawerPanel.hidePanel();
         } else {
             if (mapPanel != null) mapPanel.stop();
+            appDrawerPanel.refreshPreferences();
             appDrawerPanel.showPanel();
         }
     }

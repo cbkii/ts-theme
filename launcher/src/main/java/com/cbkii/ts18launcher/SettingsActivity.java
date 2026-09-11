@@ -9,10 +9,13 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -20,17 +23,20 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
 @SuppressLint("SetTextI18n")
 public final class SettingsActivity extends Activity {
+    private interface ChoiceSetter { void set(String value); }
+    private interface BooleanSetter { void set(boolean value); }
+
     private LinearLayout content;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.BLACK);
+        scroll.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(24, 16, 24, 24);
+        int gutter = AutomotiveUi.dimen(this, R.dimen.ui_gutter);
+        content.setPadding(gutter * 2, gutter, gutter * 2, gutter * 2);
         scroll.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         Ts18SafeArea.setContent(this, scroll);
@@ -45,101 +51,267 @@ public final class SettingsActivity extends Activity {
 
     private void render() {
         content.removeAllViews();
-
-        content.addView(text("TS18 Launcher settings", 26f, Color.WHITE));
+        content.addView(text("TS18 Launcher", R.dimen.ui_settings_title, R.color.ui_text));
         content.addView(text(
                 TopwayAdapter.isTopwayEnvironment(this)
-                        ? "Topway/DoFun environment detected. DoFun remains installed as recovery HOME."
-                        : "Topway/DoFun host not detected. Generic Android paths remain available.",
-                14f, 0xFFB9B9B9));
+                        ? "Automotive UI · DoFun retained as recovery HOME"
+                        : "Automotive UI · generic Android mode",
+                R.dimen.ui_settings_value, R.color.ui_text_secondary));
 
-        addSection("HOME");
-        addButton(HomeMode.isDefaultHome(this)
-                        ? "Current HOME: TS18 Launcher" : "Set as HOME (system UI)",
-                v -> HomeMode.requestHomeRole(this));
-        addButton("Set as HOME with Magisk root", v -> setHomeWithRoot());
-        addButton("Disable HOME candidate / keep app installed", v -> {
-            HomeMode.setHomeAliasEnabled(this, false);
-            Toast.makeText(this,
-                    "HOME alias disabled. App remains installed.", Toast.LENGTH_LONG).show();
-        });
+        addSection("Appearance");
+        addChoiceRow(R.drawable.ic_apps, "Rail position", railPositionLabel(),
+                v -> choose("Rail position",
+                        new String[] {"Driver side (right)", "Left", "Right"},
+                        new String[] {LauncherPrefs.RAIL_DRIVER, LauncherPrefs.RAIL_LEFT, LauncherPrefs.RAIL_RIGHT},
+                        LauncherPrefs.railPosition(this), value -> {
+                            LauncherPrefs.setRailPosition(this, value);
+                            render();
+                        }));
+        addChoiceRow(R.drawable.ic_shortcut, "Quick-launch slots",
+                Integer.toString(LauncherPrefs.quickCount(this)),
+                v -> choose("Quick-launch slots",
+                        new String[] {"3", "4", "5", "6"},
+                        new String[] {"3", "4", "5", "6"},
+                        Integer.toString(LauncherPrefs.quickCount(this)), value -> {
+                            LauncherPrefs.setQuickCount(this, Integer.parseInt(value));
+                            render();
+                        }));
+        addSwitchRow(R.drawable.ic_navigation, "Dashboard map", "Show the Leaflet map on HOME",
+                LauncherPrefs.mapEnabled(this), checked -> LauncherPrefs.setMapEnabled(this, checked));
+        addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom, follow and open-navigation buttons",
+                LauncherPrefs.mapControlsEnabled(this), checked -> LauncherPrefs.setMapControlsEnabled(this, checked));
+        addChoiceRow(R.drawable.ic_my_location, "Map appearance", mapAppearanceLabel(),
+                v -> choose("Map appearance",
+                        new String[] {"Auto", "Normal", "Dim"},
+                        new String[] {LauncherPrefs.MAP_APPEARANCE_AUTO,
+                                LauncherPrefs.MAP_APPEARANCE_NORMAL,
+                                LauncherPrefs.MAP_APPEARANCE_DIM},
+                        LauncherPrefs.mapAppearance(this), value -> {
+                            LauncherPrefs.setMapAppearance(this, value);
+                            render();
+                        }));
 
-        addSection("Quick launch");
-        addPicker("Quick 1 (Navigation fallback)", LauncherPrefs.KEY_QUICK_1);
-        addPicker("Quick 2 (Radio fallback)", LauncherPrefs.KEY_QUICK_2);
-        addPicker("Quick 3 (Music fallback)", LauncherPrefs.KEY_QUICK_3);
-        addPicker("Quick 4 (Bluetooth fallback)", LauncherPrefs.KEY_QUICK_4);
-        content.addView(text(
-                "The HOME rail has four configurable app slots plus Apps and Settings. "
-                        + "An unset slot uses the corresponding role shown below.",
-                13f, 0xFFB9B9B9));
-
-        addSection("Media");
-        addButton(MediaListenerService.hasNotificationAccess(this)
-                        ? "Notification access: granted" : "Grant notification access",
-                v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
-
-        boolean preferMusic = LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(
-                LauncherPrefs.mediaMode(this));
-        addButton("Generic media selection: "
-                        + (preferMusic ? "Prefer music app" : "Auto"),
-                v -> {
-                    LauncherPrefs.setMediaMode(this,
-                            preferMusic ? LauncherPrefs.MEDIA_MODE_AUTO
-                                    : LauncherPrefs.MEDIA_MODE_PREFER_MUSIC);
-                    MediaListenerService.refreshActiveSessions();
-                    render();
-                });
-        addPicker("Preferred / fallback music app", LauncherPrefs.KEY_MUSIC);
-        addPicker("Radio app", LauncherPrefs.KEY_RADIO);
-        addButton("Media session diagnostics", v -> showMediaDiagnostics());
-        content.addView(text(
-                "Auto follows Android's highest-priority active non-radio session. Prefer music app "
-                        + "uses the selected music app whenever it has an active session, then falls "
-                        + "back to Auto. HOME transport buttons are enabled only when that session "
-                        + "advertises the matching action.",
-                13f, 0xFFB9B9B9));
-
-        String resolvedRadio = RadioProvider.resolvePackage(this);
-        if (RadioProvider.isAutoDetectedNavRadio(this)) {
-            content.addView(text(
-                    "NavRadio+ detected as the default radio package ("
-                            + RadioProvider.NAVRADIO_PLUS_PACKAGE
-                            + "). It is controlled only through its real MediaSession when present; "
-                            + "unsupported commands open the app instead.",
-                    13f, 0xFFB9B9B9));
-        } else if (!resolvedRadio.isEmpty()) {
-            content.addView(text("Resolved radio package: " + resolvedRadio,
-                    13f, 0xFFB9B9B9));
+        addSection("HOME quick launch");
+        for (int i = 0; i < LauncherPrefs.QUICK_KEYS.length; i++) {
+            addPickerRow(AutomotiveUi.quickRoleIcon(i), quickLabel(i), LauncherPrefs.QUICK_KEYS[i]);
         }
 
-        addSection("App roles");
-        addPicker("Navigation app", LauncherPrefs.KEY_NAV);
-        addPicker("Bluetooth app", LauncherPrefs.KEY_BLUETOOTH);
+        addSection("Drawer quick access");
+        for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++) {
+            addPickerRow(AutomotiveUi.drawerQuickRoleIcon(i), drawerQuickLabel(i),
+                    LauncherPrefs.DRAWER_QUICK_KEYS[i]);
+        }
 
-        addSection("Map");
-        boolean mapEnabled = LauncherPrefs.mapEnabled(this);
-        addButton("Dashboard map: " + (mapEnabled ? "ON" : "OFF"), v -> {
-            LauncherPrefs.setMapEnabled(this, !mapEnabled);
-            render();
-        });
-        content.addView(text(
-                "The map is a local lightweight WebView using OpenStreetMap raster tiles. "
-                        + "It reuses its tile layer while panning, requests GPS only while visible, "
-                        + "and hands OPEN NAV to the configured navigation app.",
-                13f, 0xFFB9B9B9));
+        addSection("Media");
+        addActionRow(R.drawable.ic_music, "Notification access",
+                MediaListenerService.hasNotificationAccess(this) ? "Granted" : "Required for media sessions",
+                v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        addChoiceRow(R.drawable.ic_music, "Generic media selection", mediaModeLabel(),
+                v -> choose("Generic media selection",
+                        new String[] {"Auto", "Prefer music app"},
+                        new String[] {LauncherPrefs.MEDIA_MODE_AUTO, LauncherPrefs.MEDIA_MODE_PREFER_MUSIC},
+                        LauncherPrefs.mediaMode(this), value -> {
+                            LauncherPrefs.setMediaMode(this, value);
+                            MediaListenerService.refreshActiveSessions();
+                            render();
+                        }));
+        addPickerRow(R.drawable.ic_music, "Preferred / fallback music", LauncherPrefs.KEY_MUSIC);
+        addPickerRow(R.drawable.ic_radio, "Radio app", LauncherPrefs.KEY_RADIO);
+        addActionRow(R.drawable.ic_shortcut, "Media session diagnostics", "Read-only active-session view",
+                v -> showMediaDiagnostics());
+
+        addSection("App roles");
+        addPickerRow(R.drawable.ic_navigation, "Navigation app", LauncherPrefs.KEY_NAV);
+        addPickerRow(R.drawable.ic_bluetooth, "Bluetooth app", LauncherPrefs.KEY_BLUETOOTH);
 
         addSection("Permissions");
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
-            addButton("Grant location permission", v -> requestPermissions(
-                    new String[] {
+            addActionRow(R.drawable.ic_my_location, "Location permission", "Required for the HOME map",
+                    v -> requestPermissions(new String[] {
                             Manifest.permission.ACCESS_FINE_LOCATION,
                             Manifest.permission.ACCESS_COARSE_LOCATION
                     }, 9201));
         } else {
-            content.addView(text("Location permission: granted", 14f, 0xFFEDEDED));
+            addInfoRow(R.drawable.ic_my_location, "Location permission", "Granted");
         }
+
+        addSection("Advanced HOME / recovery");
+        addActionRow(R.drawable.ic_settings,
+                HomeMode.isDefaultHome(this) ? "Current HOME: TS18 Launcher" : "Set as HOME",
+                "Use Android HOME selection UI", v -> HomeMode.requestHomeRole(this));
+        addActionRow(R.drawable.ic_settings, "Set as HOME with Magisk root",
+                "Bounded one-time root command; DoFun remains installed", v -> confirmRootHome());
+        addActionRow(R.drawable.ic_close, "Disable HOME candidate",
+                "Keep the application installed and retain DoFun recovery", v -> confirmDisableHome());
+    }
+
+    private void addSection(String title) {
+        TextView view = text(title, R.dimen.ui_settings_section, R.color.ui_accent);
+        int gutter = AutomotiveUi.dimen(this, R.dimen.ui_gutter);
+        view.setPadding(0, gutter * 2, 0, gutter / 2);
+        content.addView(view);
+    }
+
+    private void addSwitchRow(int icon, String title, String value, boolean checked,
+                              BooleanSetter listener) {
+        LinearLayout row = baseRow(icon, title, value);
+        Switch toggle = new Switch(this);
+        toggle.setChecked(checked);
+        toggle.setShowText(false);
+        toggle.setOnCheckedChangeListener((buttonView, isChecked) -> listener.set(isChecked));
+        row.addView(toggle, new LinearLayout.LayoutParams(88, ViewGroup.LayoutParams.MATCH_PARENT));
+        row.setBackground(AutomotiveUi.interactiveBackground(this, false));
+        row.setFocusable(true);
+        row.setOnClickListener(v -> toggle.setChecked(!toggle.isChecked()));
+        AutomotiveUi.attachFeedback(row);
+        addRow(row);
+    }
+
+    private void addPickerRow(int icon, String label, String key) {
+        String pkg = LauncherPrefs.packageFor(this, key);
+        String current = pkg.isEmpty() ? pickerFallback(key) : AppResolver.labelFor(this, pkg, pkg);
+        addChoiceRow(icon, label, current, v -> {
+            Intent intent = new Intent(this, AppDrawerActivity.class);
+            intent.putExtra(AppDrawerActivity.EXTRA_PICK_KEY, key);
+            startActivity(intent);
+        });
+    }
+
+    private void addChoiceRow(int icon, String title, String value, View.OnClickListener listener) {
+        LinearLayout row = baseRow(icon, title, value);
+        ImageView chevron = new ImageView(this);
+        chevron.setImageResource(R.drawable.ic_chevron_right);
+        chevron.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
+        int pad = AutomotiveUi.dimen(this, R.dimen.ui_gutter) * 2;
+        chevron.setPadding(pad, pad, pad, pad);
+        row.addView(chevron, new LinearLayout.LayoutParams(64, ViewGroup.LayoutParams.MATCH_PARENT));
+        row.setBackground(AutomotiveUi.interactiveBackground(this, false));
+        row.setFocusable(true);
+        row.setOnClickListener(listener);
+        AutomotiveUi.attachFeedback(row);
+        addRow(row);
+    }
+
+    private void addActionRow(int icon, String title, String value, View.OnClickListener listener) {
+        addChoiceRow(icon, title, value, listener);
+    }
+
+    private void addInfoRow(int icon, String title, String value) {
+        addRow(baseRow(icon, title, value));
+    }
+
+    private LinearLayout baseRow(int iconRes, String title, String value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackground(AutomotiveUi.cardBackground(this));
+        row.setPadding(AutomotiveUi.dimen(this, R.dimen.ui_gutter), 0,
+                AutomotiveUi.dimen(this, R.dimen.ui_gutter), 0);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
+        int pad = AutomotiveUi.dimen(this, R.dimen.ui_gutter);
+        icon.setPadding(pad, pad, pad, pad);
+        row.addView(icon, new LinearLayout.LayoutParams(56, 56));
+
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.setGravity(Gravity.CENTER_VERTICAL);
+        TextView primary = text(title, R.dimen.ui_settings_label, R.color.ui_text);
+        TextView secondary = text(value, R.dimen.ui_settings_value, R.color.ui_text_secondary);
+        primary.setPadding(0, 0, 0, 0);
+        secondary.setPadding(0, 0, 0, 0);
+        labels.addView(primary);
+        labels.addView(secondary);
+        row.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        return row;
+    }
+
+    private void addRow(LinearLayout row) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                AutomotiveUi.dimen(this, R.dimen.ui_settings_row_height));
+        lp.topMargin = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
+        lp.bottomMargin = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
+        content.addView(row, lp);
+    }
+
+    private TextView text(String value, int dimenId, int colorId) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextColor(AutomotiveUi.color(this, colorId));
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                getResources().getDimension(dimenId));
+        view.setPadding(0, 4, 0, 4);
+        return view;
+    }
+
+    private void choose(String title, String[] labels, String[] values,
+                        String current, ChoiceSetter setter) {
+        int checked = -1;
+        for (int i = 0; i < values.length; i++) if (values[i].equals(current)) checked = i;
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    setter.set(values[which]);
+                    dialog.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private String railPositionLabel() {
+        String value = LauncherPrefs.railPosition(this);
+        if (LauncherPrefs.RAIL_LEFT.equals(value)) return "Left";
+        if (LauncherPrefs.RAIL_RIGHT.equals(value)) return "Right";
+        return "Driver side · right on this TS18";
+    }
+
+    private String mapAppearanceLabel() {
+        String value = LauncherPrefs.mapAppearance(this);
+        if (LauncherPrefs.MAP_APPEARANCE_NORMAL.equals(value)) return "Normal";
+        if (LauncherPrefs.MAP_APPEARANCE_DIM.equals(value)) return "Dim";
+        return "Auto";
+    }
+
+    private String mediaModeLabel() {
+        return LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(LauncherPrefs.mediaMode(this))
+                ? "Prefer music app" : "Auto";
+    }
+
+    private String quickLabel(int index) {
+        switch (index) {
+            case 0: return "Quick 1 · Navigation role";
+            case 1: return "Quick 2 · Radio role";
+            case 2: return "Quick 3 · Music role";
+            case 3: return "Quick 4 · Bluetooth role";
+            case 4: return "Quick 5 · Extra";
+            default: return "Quick 6 · Extra";
+        }
+    }
+
+    private String drawerQuickLabel(int index) {
+        switch (index) {
+            case 0: return "Drawer quick · Navigation";
+            case 1: return "Drawer quick · Radio";
+            case 2: return "Drawer quick · Music";
+            case 3: return "Drawer quick · Bluetooth";
+            default: return "Drawer quick · Extra";
+        }
+    }
+
+    private String pickerFallback(String key) {
+        if (LauncherPrefs.KEY_MUSIC.equals(key) || LauncherPrefs.KEY_QUICK_3.equals(key)
+                || LauncherPrefs.KEY_DRAWER_QUICK_3.equals(key)) {
+            String pkg = TopwayAdapter.defaultMusicPackage(this);
+            if (!pkg.isEmpty()) return AppResolver.labelFor(this, pkg, pkg) + " · role fallback";
+        }
+        if (LauncherPrefs.KEY_RADIO.equals(key) || LauncherPrefs.KEY_QUICK_2.equals(key)
+                || LauncherPrefs.KEY_DRAWER_QUICK_2.equals(key)) {
+            String pkg = RadioProvider.resolvePackage(this);
+            if (!pkg.isEmpty()) return AppResolver.labelFor(this, pkg, pkg) + " · role fallback";
+        }
+        return "Not set";
     }
 
     private void showMediaDiagnostics() {
@@ -148,6 +320,28 @@ public final class SettingsActivity extends Activity {
                 .setTitle("Active media sessions")
                 .setMessage(MediaListenerService.sessionDiagnostics(this))
                 .setPositiveButton("Close", null)
+                .show();
+    }
+
+    private void confirmRootHome() {
+        new AlertDialog.Builder(this)
+                .setTitle("Set TS18 Launcher as HOME?")
+                .setMessage("This uses a bounded Magisk root command. DoFun remains installed for rollback.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Continue", (dialog, which) -> setHomeWithRoot())
+                .show();
+    }
+
+    private void confirmDisableHome() {
+        new AlertDialog.Builder(this)
+                .setTitle("Disable HOME candidate?")
+                .setMessage("The launcher stays installed. DoFun remains available as recovery HOME.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Disable", (dialog, which) -> {
+                    HomeMode.setHomeAliasEnabled(this, false);
+                    Toast.makeText(this, "HOME alias disabled", Toast.LENGTH_LONG).show();
+                    render();
+                })
                 .show();
     }
 
@@ -162,66 +356,10 @@ public final class SettingsActivity extends Activity {
                 } else {
                     String detail = result.output == null || result.output.isEmpty()
                             ? "root HOME command was not accepted" : result.output;
-                    Toast.makeText(this,
-                            detail + "; opening Android HOME settings", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, detail + "; opening Android HOME settings", Toast.LENGTH_LONG).show();
                     HomeMode.requestHomeRole(this);
                 }
             });
         }, "ts18-root-home").start();
-    }
-
-    private void addPicker(String label, String key) {
-        String pkg = LauncherPrefs.packageFor(this, key);
-        String current;
-        if (pkg.isEmpty() && LauncherPrefs.KEY_MUSIC.equals(key)) {
-            String topwayDefault = TopwayAdapter.defaultMusicPackage(this);
-            current = topwayDefault.isEmpty()
-                    ? "not set"
-                    : AppResolver.labelFor(this, topwayDefault, topwayDefault)
-                            + " (Topway fallback)";
-        } else if (pkg.isEmpty() && LauncherPrefs.KEY_RADIO.equals(key)) {
-            String radioDefault = RadioProvider.resolvePackage(this);
-            current = radioDefault.isEmpty()
-                    ? "not set"
-                    : AppResolver.labelFor(this, radioDefault, radioDefault)
-                            + (RadioProvider.isAutoDetectedNavRadio(this)
-                            ? " (NavRadio+ detected)" : "");
-        } else {
-            current = pkg.isEmpty() ? "not set" : AppResolver.labelFor(this, pkg, pkg);
-        }
-        addButton(label + ": " + current, v -> {
-            Intent intent = new Intent(this, AppDrawerActivity.class);
-            intent.putExtra(AppDrawerActivity.EXTRA_PICK_KEY, key);
-            startActivity(intent);
-        });
-    }
-
-    private void addSection(String title) {
-        TextView view = text(title, 17f, 0xFFFF8A65);
-        view.setPadding(0, 18, 0, 4);
-        content.addView(view);
-    }
-
-    private void addButton(String label, android.view.View.OnClickListener listener) {
-        Button button = new Button(this);
-        button.setAllCaps(false);
-        button.setText(label);
-        button.setTextColor(Color.WHITE);
-        button.setTextSize(15f);
-        button.setBackgroundColor(0xFF2A1712);
-        button.setOnClickListener(listener);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 58);
-        lp.topMargin = 6;
-        content.addView(button, lp);
-    }
-
-    private TextView text(String value, float sp, int color) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextColor(color);
-        view.setTextSize(sp);
-        view.setPadding(0, 6, 0, 6);
-        return view;
     }
 }

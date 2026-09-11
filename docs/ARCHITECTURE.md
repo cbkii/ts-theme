@@ -33,20 +33,26 @@ Magisk root may perform bounded one-time setup/diagnostics but does not grant pl
 - bounded Magisk `cmd package set-home-activity` is an optional one-time equivalent;
 - DoFun is never automatically disabled or removed.
 
-## Geometry
+## Geometry and automotive UI
 
-The physical panel is 1280 x 720. Physical testing confirmed the existing ~55 px top and 55 px right Topway/SystemUI boundaries while showing the first 81/64 px launcher controls were too small. The current dashboard therefore uses:
+The physical panel is 1280 x 720. Exact-device testing established the ~55 px top/right Topway/SystemUI boundaries. Those physical boundaries remain raw-pixel authority while inner controls use semantic resources.
 
-- 96 px left rail;
-- 72 px Radio | Music | DD MMM strip;
+The automotive HOME now uses:
+
+- 96 px side rail, user-selectable as Driver side/Left/Right; Driver side is right on this exact Australian RHD TS18;
+- 88 px Radio | Music | DD MMM strip;
 - safe-right x=1225;
-- map below the strip inside the remaining safe application area.
+- mirrored content geometry that keeps the rail and map outside the Topway right SystemUI;
+- black base, charcoal cards, warm orange primary state, local monochrome role/vector icons and 140 ms pressed/focus feedback;
+- stable Previous | Play/Pause | Next ordering with the centre action visually primary.
 
 `Ts18Geometry` handles both full-physical and decor-fitted Activity surfaces and never hides SystemUI.
 
 ## Dashboard/app surface
 
-The rail contains four configurable quick slots plus Apps and Settings. Unset quick slots fall back to Navigation, Radio, Music and Bluetooth roles. The app drawer is an in-HOME overlay covering only the map surface; map GPS/WebView work is suspended while fully covered.
+The rail contains 3-6 configurable monochrome role-icon quick slots with Apps fixed last. The first four unset slots fall back to Navigation, Radio, Music and Bluetooth roles. Settings is intentionally moved out of the prime rail and into the drawer header; tapping the date remains a Settings shortcut.
+
+The app drawer remains an in-HOME overlay covering only the map surface; map GPS/WebView work is suspended while fully covered. It uses a five-column app grid with larger installed-app icons/labels, an explicit Settings gear and Close control, a five-slot user-configurable quick-access row, and local label/package search. Search does not introduce a service or background index.
 
 ## Generic media
 
@@ -64,33 +70,21 @@ This does not establish the native Topway radio contract. No stock-radio package
 
 ## Home-screen map
 
-The original hand-written 5 x 5 tile renderer was retired after physical testing established that GPS and local WebView scripting worked but OSM tiles did not render reliably and gesture support was incomplete.
+The map uses bundled **Leaflet 1.9.4** inside the lifecycle-bound WebView, with mature touch zoom, double-tap zoom, inertial panning, current-position marker, accuracy circle, bearing indicator and follow/recentre behaviour without a native vector renderer or Android runtime dependency.
 
-The replacement uses **bundled Leaflet 1.9.4** inside the existing lifecycle-bound WebView. Leaflet provides mature touch zoom, double-tap zoom, inertial panning, current-position marker, accuracy circle, bearing indicator and follow/recentre behaviour without introducing a native vector renderer or Android runtime dependency.
+Leaflet JS/CSS are fetched only during build from pinned HTTPS distribution endpoints and accepted only when their exact SHA-256 values match. HOME never downloads the map library at runtime.
 
-Leaflet JS/CSS are fetched only during build from pinned HTTPS distribution endpoints and accepted only when their exact SHA-256 values match. The APK includes the BSD-2-Clause licence. HOME never downloads the map library at runtime.
+Driver-facing map actions are project-authored icon buttons: zoom in, zoom out, follow/recentre and one primary navigation action. They may be hidden as a group from Settings. Follow state is visible through the location icon's selected accent state. Healthy map status is hidden; only locating/loading/offline/error states are surfaced. Map appearance supports Auto/Normal/Dim through a local overlay; Auto follows Android night mode rather than guessing MCU illumination state.
 
 ### Tile broker
 
-WebView does not own tile HTTP. `TileBroker` intercepts only exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` requests and uses framework `HttpURLConnection` with:
-
-- identifying TS18 Launcher User-Agent;
-- bounded connect/read timeouts;
-- normal platform TLS with no bypass;
-- HTTP `max-age`/`Expires` freshness;
-- ETag/Last-Modified conditional revalidation;
-- seven-day fallback freshness where the response provides no usable lifetime;
-- stale-cache fallback after a refresh failure;
-- bounded 64 MiB disk cache;
-- no bulk download or prefetch.
+WebView does not own tile HTTP. `TileBroker` intercepts only exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` requests and uses framework `HttpURLConnection` with identifying User-Agent, bounded connect/read timeouts, normal platform TLS, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB disk cache. No bulk download or prefetch is used.
 
 WebView remains restricted to local map assets plus the exact OSM tile origin and exposes no JavaScript-to-Java bridge. Full route calculation/navigation remains with Organic Maps, Google Maps, Waze or OsmAnd via public hand-off intents.
 
-The raster/Leaflet design is intentional: it is more capable than the prototype but avoids MapLibre/native-vector APK, GPU and renderer-lifecycle cost in permanent HOME.
-
 ## App discovery/preferences
 
-The drawer queries `ACTION_MAIN` + `CATEGORY_LAUNCHER`. Preferences use `SharedPreferences` for selected components/roles, media mode and map state.
+The drawer queries `ACTION_MAIN` + `CATEGORY_LAUNCHER`. Preferences use `SharedPreferences` for selected roles/components, 3-6 HOME quick slots, five drawer quick slots, rail side, media mode, map visibility, map-control visibility and map appearance.
 
 ## Topway adapter
 
@@ -108,4 +102,4 @@ Reverse-camera hand-off/return is a **roadmapped physical vehicle-lifecycle vali
 
 CI proves source contracts, empty launcher release-runtime dependency graph, lint/unit/build, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin envelope and required Leaflet assets/signature. It does not prove TS18 runtime behaviour.
 
-Current physical evidence proves the prior build's SystemUI geometry, quick slots/drawer/navigation hand-off, generic Auxio-TS/Spotify MediaSession path and third-party NavRadio+ session behaviour. The new Leaflet map, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake remain exact-device checks. Reverse-camera hand-off/return remains a later roadmapped lifecycle check.
+Current physical evidence proves the prior build's SystemUI geometry, quick slots/drawer/navigation hand-off, generic Auxio-TS/Spotify MediaSession path and third-party NavRadio+ session behaviour. The redesigned automotive HOME, Leaflet map, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake remain exact-device checks. Reverse-camera hand-off/return remains a later roadmapped lifecycle check.

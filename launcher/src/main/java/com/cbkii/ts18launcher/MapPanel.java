@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.location.Location;
 import android.location.LocationListener;
@@ -13,13 +14,15 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.TextView;
 
 import java.io.ByteArrayInputStream;
@@ -34,7 +37,9 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     private static final String MAP_URL = "file:///android_asset/map/map.html";
-    private static final long HEALTH_CHECK_DELAY_MS = 1400L;
+    private static final long HEALTH_CHECK_DELAY_MS = 900L;
+    private static final int MAP_ACTION_PX = 84;
+    private static final int MAP_ACTION_GAP_PX = 8;
 
     private final Activity activity;
     private final NavigationLauncher navigationLauncher;
@@ -42,6 +47,10 @@ final class MapPanel extends FrameLayout implements LocationListener {
     private final TextView status;
     private final LocationManager locationManager;
     private final TileBroker tileBroker;
+    private final ImageButton zoomIn;
+    private final ImageButton zoomOut;
+    private final ImageButton recenter;
+    private final ImageButton openNav;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable mapHealthCheck = this::checkMapHealth;
     private boolean started;
@@ -77,49 +86,34 @@ final class MapPanel extends FrameLayout implements LocationListener {
         addView(webView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         status = new TextView(activity);
-        status.setTextColor(Color.WHITE);
-        status.setBackgroundColor(0xAA000000);
-        status.setTextSize(12f);
-        status.setPadding(8, 4, 8, 4);
-        status.setText("Map loading");
+        status.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
+        status.setBackground(AutomotiveUi.chipBackground(activity));
+        status.setTextSize(14f);
+        int statusPad = AutomotiveUi.dimen(activity, R.dimen.ui_gutter);
+        status.setPadding(statusPad, statusPad / 2, statusPad, statusPad / 2);
+        status.setText("Locating…");
         LayoutParams statusLp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-        statusLp.leftMargin = 8;
-        statusLp.topMargin = 8;
+        statusLp.leftMargin = MAP_ACTION_GAP_PX;
+        statusLp.topMargin = MAP_ACTION_GAP_PX;
         addView(status, statusLp);
 
-        Button zoomIn = mapButton("+");
-        Button zoomOut = mapButton("−");
-        Button recenter = mapButton("⌖");
-        Button openNav = mapButton("OPEN NAV");
+        zoomIn = mapButton(R.drawable.ic_zoom_in, "Zoom in", false);
+        zoomOut = mapButton(R.drawable.ic_zoom_out, "Zoom out", false);
+        recenter = mapButton(R.drawable.ic_my_location, "Follow location", false);
+        recenter.setImageTintList(AutomotiveUi.followTint(activity));
+        openNav = mapButton(R.drawable.ic_navigation, "Open navigation", true);
+
         zoomIn.setOnClickListener(v -> adjustZoom(1));
         zoomOut.setOnClickListener(v -> adjustZoom(-1));
         recenter.setOnClickListener(v -> recenterMap());
         openNav.setOnClickListener(v -> navigationLauncher.openNavigation(
                 lastLocation == null ? null : new Location(lastLocation)));
 
-        LayoutParams inLp = new LayoutParams(56, 56);
-        inLp.gravity = android.view.Gravity.TOP | android.view.Gravity.RIGHT;
-        inLp.topMargin = 8;
-        inLp.rightMargin = 8;
-        addView(zoomIn, inLp);
-
-        LayoutParams outLp = new LayoutParams(56, 56);
-        outLp.gravity = android.view.Gravity.TOP | android.view.Gravity.RIGHT;
-        outLp.topMargin = 68;
-        outLp.rightMargin = 8;
-        addView(zoomOut, outLp);
-
-        LayoutParams recenterLp = new LayoutParams(56, 56);
-        recenterLp.gravity = android.view.Gravity.TOP | android.view.Gravity.RIGHT;
-        recenterLp.topMargin = 128;
-        recenterLp.rightMargin = 8;
-        addView(recenter, recenterLp);
-
-        LayoutParams navLp = new LayoutParams(LayoutParams.WRAP_CONTENT, 52);
-        navLp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.LEFT;
-        navLp.leftMargin = 8;
-        navLp.bottomMargin = 8;
-        addView(openNav, navLp);
+        addView(zoomIn);
+        addView(zoomOut);
+        addView(recenter);
+        addView(openNav);
+        applyPreferences();
 
         locationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
         webView.loadUrl(MAP_URL);
@@ -132,22 +126,61 @@ final class MapPanel extends FrameLayout implements LocationListener {
                     .getPackageInfo(activity.getPackageName(), 0).versionName;
             if (installed != null && !installed.isEmpty()) version = installed;
         } catch (PackageManager.NameNotFoundException ignored) {
-            // The running package should always resolve; retain a deterministic fallback.
+            // Running package should resolve; retain deterministic fallback.
         }
         return "TS18Launcher/" + version + " (+https://github.com/cbkii/ts-theme)";
     }
 
-    private Button mapButton(String text) {
-        Button button = new Button(activity);
-        button.setAllCaps(false);
-        button.setText(text);
-        button.setTextColor(Color.WHITE);
-        button.setTextSize(15f);
-        button.setMinWidth(0);
-        button.setMinHeight(0);
-        button.setBackgroundColor(0xCC3A1C16);
-        button.setPadding(8, 0, 8, 0);
+    private ImageButton mapButton(int icon, String description, boolean primary) {
+        ImageButton button = new ImageButton(activity);
+        button.setImageResource(icon);
+        button.setContentDescription(description);
+        AutomotiveUi.styleIconButton(activity, button, primary);
         return button;
+    }
+
+    void applyPreferences() {
+        boolean controls = LauncherPrefs.mapControlsEnabled(activity);
+        int visibility = controls ? View.VISIBLE : View.GONE;
+        zoomIn.setVisibility(visibility);
+        zoomOut.setVisibility(visibility);
+        recenter.setVisibility(visibility);
+        openNav.setVisibility(visibility);
+
+        boolean right = LauncherPrefs.railOnRight(activity);
+        placeAction(zoomIn, 0, right, true);
+        placeAction(zoomOut, 1, right, true);
+        placeAction(recenter, 2, right, true);
+        placeAction(openNav, 0, right, false);
+        LayoutParams statusLp = (LayoutParams) status.getLayoutParams();
+        statusLp.gravity = (right ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP;
+        statusLp.leftMargin = right ? MAP_ACTION_GAP_PX : 0;
+        statusLp.rightMargin = right ? 0 : MAP_ACTION_GAP_PX;
+        statusLp.topMargin = MAP_ACTION_GAP_PX;
+        status.setLayoutParams(statusLp);
+        applyMapAppearance();
+    }
+
+    private void placeAction(View view, int row, boolean right, boolean top) {
+        LayoutParams lp = new LayoutParams(MAP_ACTION_PX, MAP_ACTION_PX);
+        lp.gravity = (right ? Gravity.RIGHT : Gravity.LEFT) | (top ? Gravity.TOP : Gravity.BOTTOM);
+        if (right) lp.rightMargin = MAP_ACTION_GAP_PX; else lp.leftMargin = MAP_ACTION_GAP_PX;
+        if (top) lp.topMargin = MAP_ACTION_GAP_PX + row * (MAP_ACTION_PX + MAP_ACTION_GAP_PX);
+        else lp.bottomMargin = MAP_ACTION_GAP_PX;
+        view.setLayoutParams(lp);
+    }
+
+    private void applyMapAppearance() {
+        if (!pageReady) return;
+        String mode = LauncherPrefs.mapAppearance(activity);
+        double opacity = 0.0;
+        if (LauncherPrefs.MAP_APPEARANCE_DIM.equals(mode)) {
+            opacity = 0.28;
+        } else if (LauncherPrefs.MAP_APPEARANCE_AUTO.equals(mode)) {
+            int night = activity.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+            if (night == Configuration.UI_MODE_NIGHT_YES) opacity = 0.24;
+        }
+        webView.evaluateJavascript(String.format(Locale.US, "setMapDim(%.2f)", opacity), null);
     }
 
     void start() {
@@ -155,11 +188,11 @@ final class MapPanel extends FrameLayout implements LocationListener {
         started = true;
         if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
-            status.setText("Location permission required");
+            showStatus("Location permission required");
             return;
         }
         if (locationManager == null) {
-            status.setText("Location service unavailable");
+            showStatus("Location unavailable");
             return;
         }
         try {
@@ -169,12 +202,12 @@ final class MapPanel extends FrameLayout implements LocationListener {
                 locationManager.requestLocationUpdates(
                         LocationManager.GPS_PROVIDER, 2000L, 5f, this, Looper.getMainLooper());
             } else {
-                status.setText("GPS unavailable");
+                showStatus("GPS unavailable");
             }
         } catch (SecurityException ignored) {
-            status.setText("Location permission unavailable");
+            showStatus("Location permission unavailable");
         } catch (IllegalArgumentException ignored) {
-            status.setText("GPS provider unavailable");
+            showStatus("GPS provider unavailable");
         }
     }
 
@@ -193,6 +226,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
 
     void resumeWebView() {
         webView.onResume();
+        applyPreferences();
         if (LauncherPrefs.mapEnabled(activity)) start();
     }
 
@@ -217,18 +251,18 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     private void recenterMap() {
-        if (pageReady) webView.evaluateJavascript("recenterMap()", null);
+        if (pageReady) {
+            webView.evaluateJavascript("recenterMap()", null);
+            recenter.setSelected(true);
+            scheduleMapHealthCheck();
+        }
     }
 
     @Override
     public void onLocationChanged(Location location) {
         if (location == null) return;
         lastLocation = new Location(location);
-        if (pageReady) {
-            renderLocation(lastLocation);
-        } else {
-            status.setText("GPS · map loading");
-        }
+        if (pageReady) renderLocation(lastLocation); else showStatus("Loading map…");
     }
 
     private void renderLocation(Location location) {
@@ -237,13 +271,10 @@ final class MapPanel extends FrameLayout implements LocationListener {
         String js = String.format(
                 Locale.US,
                 "setLocation(%.7f,%.7f,%.1f,%.1f,%s)",
-                location.getLatitude(),
-                location.getLongitude(),
-                accuracy,
-                bearing,
+                location.getLatitude(), location.getLongitude(), accuracy, bearing,
                 location.hasBearing() ? "true" : "false");
         webView.evaluateJavascript(js, null);
-        status.setText("GPS · map loading");
+        showStatus("Loading map…");
         scheduleMapHealthCheck();
     }
 
@@ -257,38 +288,46 @@ final class MapPanel extends FrameLayout implements LocationListener {
         if (destroyed || !pageReady) return;
         webView.evaluateJavascript("mapHealth()", value -> {
             if (destroyed || value == null) return;
+            boolean following = value.contains(":follow");
+            recenter.setSelected(following);
             if (value.contains("ok:")) {
-                status.setText(lastLocation == null ? "Map ready · waiting for GPS" : "GPS");
+                if (!tileBroker.lastFailure().isEmpty()) showStatus("Offline · cached map");
+                else hideStatus();
             } else if (value.contains("error:")) {
                 String detail = tileBroker.lastFailure();
-                if (detail.isEmpty()) detail = "tile render error";
-                status.setText(lastLocation == null
-                        ? "Map tiles · " + detail
-                        : "GPS · map tiles · " + detail);
+                showStatus(detail.isEmpty() ? "Map tile error" : "Map · " + detail);
             } else if (value.contains("runtime-error")) {
-                status.setText("Map runtime unavailable");
-            } else if (lastLocation != null) {
-                status.setText("GPS · map loading");
+                showStatus("Map runtime unavailable");
+            } else if (lastLocation == null) {
+                showStatus("Locating…");
+            } else {
+                showStatus("Loading map…");
             }
         });
+    }
+
+    private void showStatus(String text) {
+        status.setText(text);
+        status.setVisibility(View.VISIBLE);
+    }
+
+    private void hideStatus() {
+        status.setVisibility(View.GONE);
     }
 
     private void onMapPageReady(String url) {
         if (!MAP_URL.equals(url)) return;
         pageReady = true;
-        if (lastLocation != null) {
-            renderLocation(lastLocation);
-        } else {
-            status.setText("Map ready · waiting for GPS");
-        }
+        applyMapAppearance();
+        if (lastLocation != null) renderLocation(lastLocation); else showStatus("Locating…");
     }
 
     @Override public void onProviderEnabled(String provider) {
-        if (LocationManager.GPS_PROVIDER.equals(provider)) status.setText("Map ready · waiting for GPS");
+        if (LocationManager.GPS_PROVIDER.equals(provider)) showStatus("Locating…");
     }
 
     @Override public void onProviderDisabled(String provider) {
-        if (LocationManager.GPS_PROVIDER.equals(provider)) status.setText("GPS unavailable");
+        if (LocationManager.GPS_PROVIDER.equals(provider)) showStatus("GPS unavailable");
     }
 
     @Override public void onStatusChanged(String provider, int statusValue, Bundle extras) {}
@@ -303,8 +342,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
 
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            String url = request.getUrl().toString();
-            return !MAP_URL.equals(url);
+            return !MAP_URL.equals(request.getUrl().toString());
         }
 
         @Override

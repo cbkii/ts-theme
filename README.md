@@ -15,21 +15,29 @@ Package: `com.cbkii.ts18launcher`.
 
 The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes/controls existing Android media sessions only.
 
-### Dashboard
+### Automotive HOME
 
-Physical TS18 testing preserved the 55 px top/right Topway/SystemUI boundaries but showed the original controls were too small. The current layout therefore uses a **96 px left rail** and **72 px Radio | Music | DD MMM strip**, with visible press feedback. All launcher content remains at or left of x=1225 and SystemUI is not hidden.
+Exact TS18 testing preserves the 55 px top/right Topway/SystemUI boundaries. The redesigned HOME uses a **96 px side rail** and **88 px Radio | Music | DD MMM strip**. The rail can be placed on Driver side, Left or Right; on this exact Australian right-hand-drive unit Driver side means right. The mirror operation keeps content out of Topway's right-side SystemUI.
 
-The rail provides four configurable quick-launch slots plus Apps and Settings. Unset slots fall back to Navigation, Radio, Music and Bluetooth. Apps opens an in-HOME drawer over the map surface.
+The rail provides **3-6 configurable monochrome role-icon quick slots**, with Apps fixed as its final control. The first four unset slots fall back to Navigation, Radio, Music and Bluetooth. Settings is moved into the app-drawer header; tapping the date remains an intentional Settings shortcut.
+
+Radio/music use stable Previous | Play/Pause | Next ordering with an accent-primary centre control, larger touch regions and one-line marquee metadata. Fixed HOME controls use local project-authored monochrome vector icons. The full app grid continues to show installed-app icons because that grid's purpose is application identity.
+
+The UI uses black/charcoal surfaces, the warm orange accent, semantic dp/sp dimensions for inner controls, visible pressed/focused/disabled states, and short 140 ms feedback without scale/bounce animation. Physical SystemUI geometry remains exact raw pixels.
+
+### Apps drawer
+
+Apps opens an in-HOME overlay over the map surface. While covered, map GPS/WebView work is suspended and resumes when the drawer closes. The drawer has a 76dp header with Settings and Close icons, a user-configurable five-slot quick-access row, local app search, and a five-column grid with larger icons/labels. Search is local to already-discovered launcher activities; no service/background index is added.
 
 ### Map
 
-The first hand-written raster renderer was retired after physical testing showed blank OSM tiles and incomplete gesture behaviour despite working GPS and WebView script execution.
+The map uses pinned **Leaflet 1.9.4** in the existing lifecycle-bound WebView for pinch/double-tap zoom, inertial pan, follow/recentre, GPS marker, accuracy circle and bearing indication. Leaflet is SHA-256 verified at build time and bundled locally.
 
-The current map keeps the already-present WebView but uses pinned **Leaflet 1.9.4** for mature touch interaction. Leaflet JS/CSS are SHA-256-verified at build time and bundled into the APK; no mapping library is downloaded by HOME at runtime.
+Raster OpenStreetMap tiles are supplied through the framework-only `TileBroker`, with identifying User-Agent, bounded timeouts, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB cache. No bulk prefetch, JavaScript bridge, arbitrary browsing or native vector engine is added.
 
-Map features include pinch and double-tap zoom, inertial panning, recenter/follow, GPS marker, accuracy circle, optional bearing indication and the existing full-navigation hand-off. Raster tiles remain OpenStreetMap. Exact tile requests are intercepted by a small framework-only `TileBroker` using `HttpURLConnection`, an identifying User-Agent, bounded timeouts, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB cache. No bulk prefetch, JavaScript bridge, arbitrary browsing or native vector engine is added.
+Driver-facing map actions are icon-only zoom in, zoom out, follow/recentre and one filled navigation action. Settings can hide the map controls as a group. Follow state is visible through the location icon; healthy map status disappears, while locating/loading/offline/error states remain visible. Map appearance is Auto/Normal/Dim; Auto follows Android night mode rather than guessing vehicle illumination state.
 
-`OPEN NAV` hands off to the configured Google Maps, Waze, Organic Maps or OsmAnd/OsmAnd+ provider through public intents. Full routing/navigation remains owned by those applications.
+Full routing/navigation remains owned by the configured Google Maps, Waze, Organic Maps or OsmAnd/OsmAnd+ app through public hand-off intents.
 
 ### Media and radio
 
@@ -41,11 +49,11 @@ Third-party **NavRadio+ is `com.navimods.radio`** and exposed a usable separate 
 
 ## Safe HOME rollout
 
-The APK installs as an ordinary app first; its HOME alias is disabled by default. Configure and physically qualify the launcher while DoFun remains HOME, then explicitly enable/select the standalone HOME only after Gate B passes. DoFun remains the rollback launcher through reboot/cold-boot/ACC qualification.
+The APK installs as an ordinary app first; its HOME alias is disabled by default. Configure and physically qualify the launcher while DoFun remains HOME, then explicitly enable/select the standalone HOME only after the ordinary-Activity gates pass. DoFun remains the rollback launcher through reboot/cold-boot/ACC qualification.
 
 Reverse-camera hand-off/return is a **roadmapped physical lifecycle validation item only**. The launcher contains no reverse-camera implementation at this stage.
 
-See [Standalone launcher](docs/STANDALONE_LAUNCHER.md) for the current Gate B/C playbook.
+See [Standalone launcher](docs/STANDALONE_LAUNCHER.md) for the current qualification playbook.
 
 ## Magisk root policy
 
@@ -77,6 +85,6 @@ The separate **Standalone Launcher Candidate** workflow produces an explicitly v
 
 ## Physical validation boundary
 
-CI does not prove head-unit behaviour. Current physical evidence passes SystemUI geometry, quick-launch/drawer/navigation hand-off, Auxio-TS/Spotify generic media and NavRadio+ MediaSession behaviour. The Leaflet map pivot, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake still require exact-device validation. Reverse-camera hand-off/return remains roadmapped for later lifecycle validation, not current launcher functionality.
+CI does not prove head-unit behaviour. Current physical evidence passes the prior SystemUI geometry, quick-launch/drawer/navigation hand-off, Auxio-TS/Spotify generic media and NavRadio+ MediaSession behaviour. The redesigned automotive HOME, Leaflet map, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake still require exact-device validation. Reverse-camera hand-off/return remains roadmapped for later lifecycle validation, not current launcher functionality.
 
 Project-authored code/docs/assets are Apache-2.0. Bundled Leaflet retains its BSD-2-Clause licence. Vendor APKs, private signing material and device data are not committed.
