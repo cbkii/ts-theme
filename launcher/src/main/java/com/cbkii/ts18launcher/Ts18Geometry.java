@@ -17,17 +17,19 @@ final class Ts18Geometry {
         final int railX;
         final int contentLeft;
         final int contentRight;
+        final int safeRight;
         final int safeBottom;
         final int stripHeight;
         final int radioWidth;
         final int musicWidth;
 
-        Layout(int top, int railX, int contentLeft, int contentRight, int safeBottom,
-               int stripHeight, int radioWidth, int musicWidth) {
+        Layout(int top, int railX, int contentLeft, int contentRight, int safeRight,
+               int safeBottom, int stripHeight, int radioWidth, int musicWidth) {
             this.top = top;
             this.railX = railX;
             this.contentLeft = contentLeft;
             this.contentRight = contentRight;
+            this.safeRight = safeRight;
             this.safeBottom = safeBottom;
             this.stripHeight = stripHeight;
             this.radioWidth = radioWidth;
@@ -78,7 +80,7 @@ final class Ts18Geometry {
             musicWidth = Math.max(1, available - radioWidth - 1);
         }
 
-        return new Layout(top, railX, contentLeft, contentRight, safeBottom,
+        return new Layout(top, railX, contentLeft, contentRight, safeRight, safeBottom,
                 STRIP_HEIGHT, radioWidth, musicWidth);
     }
 }
