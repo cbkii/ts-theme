@@ -11,5 +11,4 @@
     <color name="ui_accent">#FF7043</color>
     <color name="ui_accent_dark">#E35D35</color>
     <color name="ui_ripple">#66FFFFFF</color>
-    <color name="ui_disabled">#59FFFFFF</color>
 </resources>
