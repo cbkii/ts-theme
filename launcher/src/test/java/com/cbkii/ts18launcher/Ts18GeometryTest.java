@@ -19,8 +19,9 @@ public class Ts18GeometryTest {
         assertEquals(1129, g.mapWidth());
         assertEquals(559, g.mapHeight());
         assertEquals(88, g.stripHeight);
-        assertEquals(406, g.radioWidth);
-        assertEquals(560, g.musicWidth);
+        assertEquals(376, g.radioWidth);
+        assertEquals(565, g.musicWidth);
+        assertEquals(188, g.dateWidth());
     }
 
     @Test
@@ -32,7 +33,9 @@ public class Ts18GeometryTest {
         assertEquals(1129, g.contentRight);
         assertEquals(1129, g.mapWidth());
         assertEquals(559, g.mapHeight());
-        assertEquals(163, g.dateWidth());
+        assertEquals(376, g.radioWidth);
+        assertEquals(565, g.musicWidth);
+        assertEquals(188, g.dateWidth());
     }
 
     @Test

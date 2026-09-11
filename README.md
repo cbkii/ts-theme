@@ -19,15 +19,19 @@ The launcher stays deliberately small: platform Android Views/Java, API 29, no C
 
 Exact TS18 testing preserves the 55 px top/right Topway/SystemUI boundaries. The redesigned HOME uses a **96 px side rail** and **88 px Radio | Music | DD MMM strip**. The rail can be placed on Driver side, Left or Right; on this exact Australian right-hand-drive unit Driver side means right. The mirror operation keeps content out of Topway's right-side SystemUI.
 
-The rail provides **3-6 configurable monochrome role-icon quick slots**, with Apps fixed as its final control. The first four unset slots fall back to Navigation, Radio, Music and Bluetooth. Settings is moved into the app-drawer header; tapping the date remains an intentional Settings shortcut.
+The rail order is fixed as **Apps at the top, 3-6 configurable monochrome role-icon slots in the middle, and Navigation at the bottom**. Settings remains in the app-drawer header; tapping the date remains an intentional Settings shortcut.
 
-Radio/music use stable Previous | Play/Pause | Next ordering with an accent-primary centre control, larger touch regions and one-line marquee metadata. Fixed HOME controls use local project-authored monochrome vector icons. The full app grid continues to show installed-app icons because that grid's purpose is application identity.
+Radio/music use stable Previous | Play/Pause | Next ordering with an accent-primary centre control, larger touch regions and an endless slow one-line marquee with five-second readable holds. Fixed HOME controls use local project-authored monochrome vector icons. The full app grid continues to show installed-app icons because that grid's purpose is application identity.
 
 The UI uses black/charcoal surfaces, the warm orange accent, semantic dp/sp dimensions for inner controls, visible pressed/focused/disabled states, and short 140 ms feedback without scale/bounce animation. Physical SystemUI geometry remains exact raw pixels.
 
+### Appearance
+
+Launcher chrome and map share Auto/Day/High contrast/Dim/Night appearance. Auto can use the ambient-light sensor or a schedule. Unavailable/stale sensor state falls back to schedule. Without a user schedule, the generic bounded fallback uses 07:00/19:00 day/night anchors, dim transition periods around those anchors and a central daytime high-glare window. User-selected anchors replace the defaults and may cross midnight. This is a generic approximation, not astronomical sunrise/sunset or vehicle-illumination authority.
+
 ### Apps drawer
 
-Apps opens an in-HOME overlay over the map surface. While covered, map GPS/WebView work is suspended and resumes when the drawer closes. The drawer has a 76dp header with Settings and Close icons, a user-configurable five-slot quick-access row, local app search, and a five-column grid with larger icons/labels. Search is local to already-discovered launcher activities; no service/background index is added.
+Apps opens an in-HOME overlay over the map surface. While covered, map GPS/WebView work is suspended and resumes when the drawer closes. The drawer has Settings and Close actions, a user-configurable five-slot quick-access row, always-visible local search with a prominent voice-search action, and a five-column grid with 72dp installed-app icons and readable labels. Search is local to already-discovered launcher activities; no service/background index is added.
 
 ### Map
 
@@ -35,9 +39,9 @@ The map uses pinned **Leaflet 1.9.4** in the existing lifecycle-bound WebView fo
 
 Raster OpenStreetMap tiles are supplied through the framework-only `TileBroker`, with identifying User-Agent, bounded timeouts, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB cache. No bulk prefetch, JavaScript bridge, arbitrary browsing or native vector engine is added.
 
-Driver-facing map actions are icon-only zoom in, zoom out, follow/recentre and one filled navigation action. Settings can hide the map controls as a group. Follow state is visible through the location icon; healthy map status disappears, while locating/loading/offline/error states remain visible. Map appearance is Auto/Normal/Dim; Auto follows Android night mode rather than guessing vehicle illumination state.
+Driver-facing map actions are icon-only zoom in, zoom out, follow/recentre and one filled navigation action. Settings can hide the map controls as a group. Follow state is visible through the location icon; healthy map status disappears, while locating/loading/offline/error states remain visible. Map brightness/contrast consumes the same appearance mode as launcher chrome.
 
-Full routing/navigation remains owned by the configured Google Maps, Waze, Organic Maps or OsmAnd/OsmAnd+ app through public hand-off intents.
+Full routing/navigation remains owned by the configured Google Maps, Waze, Organic Maps or OsmAnd/OsmAnd+ app through public hand-off intents. Current Organic Maps location/driving modes have been analysed and are recorded in [Organic Maps future driving-mode integration](docs/ORGANIC_MAPS_MODES.md); no private cross-package mode control is implemented.
 
 ### Media and radio
 
@@ -85,6 +89,6 @@ The separate **Standalone Launcher Candidate** workflow produces an explicitly v
 
 ## Physical validation boundary
 
-CI does not prove head-unit behaviour. Current physical evidence passes the prior SystemUI geometry, quick-launch/drawer/navigation hand-off, Auxio-TS/Spotify generic media and NavRadio+ MediaSession behaviour. The redesigned automotive HOME, Leaflet map, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake still require exact-device validation. Reverse-camera hand-off/return remains roadmapped for later lifecycle validation, not current launcher functionality.
+CI does not prove head-unit behaviour. Current physical evidence passes the prior SystemUI geometry, quick-launch/drawer/navigation hand-off, Auxio-TS/Spotify generic media and NavRadio+ MediaSession behaviour. The current Mono Drive HOME, Leaflet map, appearance automation, voice search, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake still require exact-device validation. Reverse-camera hand-off/return remains roadmapped for later lifecycle validation, not current launcher functionality.
 
 Project-authored code/docs/assets are Apache-2.0. Bundled Leaflet retains its BSD-2-Clause licence. Vendor APKs, private signing material and device data are not committed.

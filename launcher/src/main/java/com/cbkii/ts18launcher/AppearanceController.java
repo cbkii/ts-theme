@@ -30,12 +30,22 @@ final class AppearanceController implements SensorEventListener {
     AppearanceController(Context context, Callback callback) {
         this.context = context.getApplicationContext();
         this.callback = callback;
+        // Capture the mode used by the Activity while it is being constructed. If Settings
+        // changes the effective mode while HOME is stopped, start() can then request one
+        // recreation instead of silently accepting stale chrome colours.
+        deliveredMode = resolvedMode(this.context);
     }
 
     void start() {
         if (started) return;
         started = true;
-        deliveredMode = resolvedMode(context);
+
+        String currentMode = resolvedMode(context);
+        if (!currentMode.equals(deliveredMode)) {
+            deliveredMode = currentMode;
+            if (callback != null) callback.onAppearanceChanged(currentMode);
+        }
+
         if (LauncherPrefs.APPEARANCE_AUTO.equals(LauncherPrefs.appearanceMode(context))
                 && LauncherPrefs.AUTO_SOURCE_SENSOR.equals(LauncherPrefs.appearanceAutoSource(context))) {
             sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);

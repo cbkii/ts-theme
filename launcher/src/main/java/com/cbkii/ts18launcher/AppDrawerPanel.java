@@ -53,6 +53,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         setBackgroundColor(0xF7050505);
 
         int gap = AutomotiveUi.dimen(activity, R.dimen.driver_gap);
+        int target = AutomotiveUi.dimen(activity, R.dimen.driver_target_min);
         LinearLayout root = new LinearLayout(activity);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(gap, gap, gap, gap);
@@ -69,10 +70,10 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         ImageButton settings = iconButton(R.drawable.ic_settings, "Settings");
         settings.setOnClickListener(v -> activity.startActivity(new Intent(activity, SettingsActivity.class)));
-        header.addView(settings, new LinearLayout.LayoutParams(76, 76));
+        header.addView(settings, new LinearLayout.LayoutParams(target, target));
         ImageButton close = iconButton(R.drawable.ic_close, "Close apps");
         close.setOnClickListener(v -> hidePanel());
-        header.addView(close, new LinearLayout.LayoutParams(76, 76));
+        header.addView(close, new LinearLayout.LayoutParams(target, target));
         AutomotiveUi.linkHorizontal(java.util.Arrays.asList(settings, close));
         root.addView(header, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -114,7 +115,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         voice.setEnabled(voiceAvailable);
         voice.setContentDescription(voiceAvailable ? "Voice search" : "Voice search unavailable");
         voice.setOnClickListener(v -> activity.startActivityForResult(VoiceSearch.intent(), VoiceSearch.REQUEST_CODE));
-        searchRow.addView(voice, new LinearLayout.LayoutParams(76, ViewGroup.LayoutParams.MATCH_PARENT));
+        searchRow.addView(voice, new LinearLayout.LayoutParams(target, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(searchRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(activity, R.dimen.ui_search_height)));
@@ -175,6 +176,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     void refreshPreferences() {
         quickRow.removeAllViews();
         List<View> focus = new ArrayList<>();
+        int target = AutomotiveUi.dimen(activity, R.dimen.driver_target_min);
         for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++) {
             final int index = i;
             LinearLayout cell = new LinearLayout(activity);
@@ -190,10 +192,10 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                     activity.getResources().getDimension(R.dimen.ui_drawer_quick_label_text));
             label.setGravity(Gravity.CENTER);
-            label.setSingleLine(true);
+            label.setMaxLines(2);
             label.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            cell.addView(button, new LinearLayout.LayoutParams(76, 76));
-            cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 30));
+            cell.addView(button, new LinearLayout.LayoutParams(target, target));
+            cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 34));
             quickRow.addView(cell, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
             focus.add(button);
         }

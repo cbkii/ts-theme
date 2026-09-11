@@ -49,6 +49,7 @@ public final class AppDrawerActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         int gap = AutomotiveUi.dimen(this, R.dimen.driver_gap);
+        int target = AutomotiveUi.dimen(this, R.dimen.driver_target_min);
         root.setPadding(gap, gap, gap, gap);
 
         TextView header = new TextView(this);
@@ -94,7 +95,7 @@ public final class AppDrawerActivity extends Activity {
         AutomotiveUi.styleRailButton(this, voice);
         voice.setEnabled(voiceAvailable);
         voice.setOnClickListener(v -> startActivityForResult(VoiceSearch.intent(), VoiceSearch.REQUEST_CODE));
-        searchRow.addView(voice, new LinearLayout.LayoutParams(76, ViewGroup.LayoutParams.MATCH_PARENT));
+        searchRow.addView(voice, new LinearLayout.LayoutParams(target, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(searchRow, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(this, R.dimen.ui_search_height)));
 

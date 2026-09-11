@@ -1,7 +1,6 @@
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -18,13 +17,16 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("QUICK_ROLE_KEYS", prefs)
         self.assertIn("Math.max(3, Math.min(6", prefs)
 
-    def test_drawer_keeps_search_visible_and_adds_voice_quick_row(self):
+    def test_drawer_keeps_search_visible_voice_prominent_and_targets_semantic(self):
         drawer = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerPanel.java")
+        picker = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerActivity.java")
         self.assertIn('search.setHint("Search apps")', drawer)
         self.assertIn("R.drawable.ic_mic", drawer)
         self.assertIn("VoiceSearch.available(activity)", drawer)
         self.assertIn("DRAWER_QUICK_KEYS", drawer)
-        self.assertIn("76, 76", drawer)
+        self.assertIn("R.dimen.driver_target_min", drawer)
+        self.assertIn("R.dimen.driver_target_min", picker)
+        self.assertIn("label.setMaxLines(2)", drawer)
         self.assertIn("dismissKeyboard();", drawer)
 
     def test_slow_marquee_holds_five_seconds_and_repeats(self):
@@ -45,6 +47,8 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("Sensor.TYPE_LIGHT", controller)
         self.assertIn("SENSOR_STALE_MS", controller)
         self.assertIn("AppearanceSchedule.resolve", controller)
+        self.assertIn("deliveredMode = resolvedMode(this.context)", controller)
+        self.assertIn("if (!currentMode.equals(deliveredMode))", controller)
         self.assertIn("DEFAULT_DAY_START_MINUTES = 7 * 60", prefs)
         self.assertIn("DEFAULT_NIGHT_START_MINUTES = 19 * 60", prefs)
         self.assertIn("TRANSITION_MINUTES = 45", schedule)
@@ -70,6 +74,20 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("linkHorizontal", ui)
         self.assertIn("ui_focus_stroke", ui)
         self.assertIn("FEEDBACK_MS = 140L", ui)
+
+    def test_organic_maps_exact_modes_are_roadmap_only(self):
+        roadmap = self.read("docs/ORGANIC_MAPS_MODES.md")
+        for mode in ("PENDING_POSITION", "NOT_FOLLOW_NO_POSITION", "NOT_FOLLOW",
+                     "FOLLOW", "FOLLOW_AND_ROTATE"):
+            self.assertIn(mode, roadmap)
+        self.assertIn("roadmap note only", roadmap)
+        self.assertIn("explicit, versioned interface", roadmap)
+        launcher_java = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (ROOT / "launcher/src/main/java").rglob("*.java")
+        )
+        self.assertNotIn("nativeSwitchToNextMode", launcher_java)
+        self.assertNotIn("FOLLOW_AND_ROTATE", launcher_java)
 
 
 if __name__ == "__main__":
