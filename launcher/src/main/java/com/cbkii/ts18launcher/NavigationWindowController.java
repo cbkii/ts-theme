@@ -26,6 +26,7 @@ final class NavigationWindowController {
     private State state = State.IDLE;
     private NavigationWindowBounds bounds;
     private String activePackage = "";
+    private int activeTaskId = -1;
     private int generation;
     private boolean homeVisible;
 
@@ -37,11 +38,10 @@ final class NavigationWindowController {
         panel.setRetryAction(this::retry);
     }
 
-    State state() { return state; }
-
     void onHomeVisible() {
         if (state == State.DESTROYED) return;
         homeVisible = true;
+        if (state == State.FULLSCREEN_HANDOFF) state = State.SUSPENDED;
         NavigationWindowBounds current = panel.currentBounds();
         if (current != null) bounds = current;
         reconcile(false);
@@ -55,8 +55,8 @@ final class NavigationWindowController {
     void onLauncherOverlayOpened() {
         if (state == State.DESTROYED) return;
         state = State.SUSPENDED;
-        // Bring the HOME task/stack back to the foreground without destroying navigation state.
-        backend.focus(activity.getPackageName(), ignored -> { });
+        // Bring the HOME task/stack to the foreground without destroying the selected nav task.
+        backend.focus(activity.getPackageName(), -1, ignored -> { });
     }
 
     void onLauncherOverlayClosed() {
@@ -67,7 +67,7 @@ final class NavigationWindowController {
     void suspendForExperimentalMap() {
         if (state == State.DESTROYED) return;
         state = State.SUSPENDED;
-        backend.focus(activity.getPackageName(), ignored -> { });
+        backend.focus(activity.getPackageName(), -1, ignored -> { });
     }
 
     boolean openFullscreen(Location location) {
@@ -75,10 +75,13 @@ final class NavigationWindowController {
         String pkg = selectedPackage();
         if (pkg.isEmpty()) return false;
         final int request = ++generation;
+        final int taskId = activeTaskId;
         state = State.FULLSCREEN_HANDOFF;
-        backend.fullscreen(pkg, result -> {
+        backend.fullscreen(pkg, taskId, result -> {
             if (request != generation || state == State.DESTROYED) return;
-            // The normal navigation launch remains the universal fallback and also brings the task forward.
+            if (result.success && result.taskId > 0) activeTaskId = result.taskId;
+            // The normal navigation launch remains the universal fallback and also carries any
+            // location request. It should reuse the same task where Android's normal task rules allow.
             NavigationProvider.open(activity, pkg, location);
         });
         return true;
@@ -120,17 +123,36 @@ final class NavigationWindowController {
         String pkg = selectedPackage();
         if (pkg.isEmpty()) {
             activePackage = "";
+            activeTaskId = -1;
             state = State.FAILED;
             panel.showUnavailable("Choose a Navigation app in Settings");
             return;
         }
+        if (!pkg.equals(activePackage)) {
+            activePackage = pkg;
+            activeTaskId = -1;
+            state = State.IDLE;
+        }
 
-        if (!force && state == State.WINDOWED && pkg.equals(activePackage)) {
+        if (!force && activeTaskId > 0) {
             final int request = ++generation;
-            backend.verify(pkg, target, result -> {
+            final boolean restoreFocus = state == State.SUSPENDED;
+            backend.verify(pkg, target, activeTaskId, result -> {
                 if (!isCurrent(request, pkg)) return;
-                if (result.success) panel.showReady();
-                else launchAndWindow(pkg, target);
+                if (result.success) {
+                    activeTaskId = result.taskId;
+                    state = State.WINDOWED;
+                    if (restoreFocus) {
+                        backend.focus(pkg, activeTaskId, focus -> {
+                            if (!isCurrent(request, pkg)) return;
+                            if (focus.success) panel.showReady();
+                            else fail(focus);
+                        });
+                    } else panel.showReady();
+                    return;
+                }
+                if ("TASK_NOT_FOUND".equals(result.code)) activeTaskId = -1;
+                launchAndWindow(pkg, target);
             });
             return;
         }
@@ -149,6 +171,7 @@ final class NavigationWindowController {
         state = State.STARTING;
         panel.showStarting(AppResolver.labelFor(activity, pkg, "Navigation"));
         final int request = ++generation;
+        final int taskHint = activeTaskId;
 
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         try {
@@ -162,21 +185,37 @@ final class NavigationWindowController {
         }
 
         // The first launch can transiently stop HOME before the task has been resized. Do not cancel
-        // the operation solely because of that lifecycle transition; the generation/package guard is
-        // the authority and HOME will reconcile again when it resumes.
+        // the operation solely because of that lifecycle transition; generation + package + task
+        // identity are the authorities and HOME will reconcile again when it resumes.
         main.postDelayed(() -> {
             if (!isCurrent(request, pkg)) return;
-            backend.showWindowed(pkg, target, result -> {
+            backend.showWindowed(pkg, target, taskHint, result -> {
                 if (!isCurrent(request, pkg)) return;
-                if (result.success) {
-                    state = State.WINDOWED;
-                    panel.showReady();
-                } else {
-                    state = State.FAILED;
-                    panel.showUnavailable(failureText(result));
+                if (!result.success && taskHint > 0 && "TASK_NOT_FOUND".equals(result.code)) {
+                    // The previously validated task died between launch and reconciliation. Reacquire
+                    // exactly once after the explicit package launch; do not silently switch tasks later.
+                    activeTaskId = -1;
+                    backend.showWindowed(pkg, target, -1, reacquired -> handleWindowResult(request, pkg, reacquired));
+                    return;
                 }
+                handleWindowResult(request, pkg, result);
             });
         }, POST_LAUNCH_RECONCILE_MS);
+    }
+
+    private void handleWindowResult(int request, String pkg, NavigationHelperResult result) {
+        if (!isCurrent(request, pkg)) return;
+        if (result.success && result.taskId > 0) {
+            activeTaskId = result.taskId;
+            state = State.WINDOWED;
+            // startActivity made this task foreground before resize; avoid another focus operation here.
+            panel.showReady();
+        } else fail(result);
+    }
+
+    private void fail(NavigationHelperResult result) {
+        state = State.FAILED;
+        panel.showUnavailable(failureText(result));
     }
 
     private boolean isCurrent(int request, String pkg) {
@@ -201,6 +240,7 @@ final class NavigationWindowController {
             return "Native navigation needs Magisk root";
         if ("TASK_NOT_FOUND".equals(result.code)) return "Navigation task not found";
         if ("BOUNDS_MISMATCH".equals(result.code)) return "Navigation window was rejected";
+        if ("FULLSCREEN_REJECTED".equals(result.code)) return "Navigation fullscreen was rejected";
         if ("TIMEOUT".equals(result.code) || "INSTALL_TIMEOUT".equals(result.code))
             return "Navigation window timed out";
         return "Native navigation unavailable · " + result.code;
