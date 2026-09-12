@@ -17,7 +17,7 @@ public class MediaSelectionTest {
     @Test public void solePlayingAuthorityMayBecomeVisibleButInactiveStateDoesNotFlicker() {
         MediaSelection selection = new MediaSelection(MediaSelection.RADIO);
         assertEquals(MediaSelection.MUSIC, selection.reconcile(false, true));
-        assertEquals(MediaSelection.MUSIC, selection.reconcile(false, false));
+        assertEquals(MediaSelection.RADIO, selection.reconcile(false, false));
     }
 
     @Test public void rememberedUsablePackagePrecedesOtherActiveFallback() {

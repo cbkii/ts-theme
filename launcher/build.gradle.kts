@@ -108,4 +108,7 @@ tasks.matching { it.name == "assembleRelease" }.configureEach {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // JVM tests need a real JSONObject implementation; Android's compile stubs throw
+    // at runtime. This remains test-only and never enters the launcher APK.
+    testImplementation("org.json:json:20240303")
 }
