@@ -99,7 +99,9 @@ final class AppearanceController implements SensorEventListener {
         float sample = Math.max(0f, event.values[0]);
         lastLux = Float.isNaN(lastLux) ? sample : (lastLux * 0.75f + sample * 0.25f);
         lastLuxElapsedRealtime = SystemClock.elapsedRealtime();
-        reevaluate();
+        // Sensor callbacks are not guaranteed to run on the UI thread; keep the
+        // appearance callback (which recolours HOME views in place) main-thread bound.
+        handler.post(this::reevaluate);
     }
 
     @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
