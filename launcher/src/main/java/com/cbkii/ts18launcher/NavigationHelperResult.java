@@ -29,7 +29,7 @@ final class NavigationHelperResult {
     static NavigationHelperResult parse(String output) {
         String raw = output == null ? "" : output.trim();
         String line = lastProtocolLine(raw);
-        if (line.isEmpty()) return failure("NO_RESPONSE", raw);
+        if (line.isEmpty()) return failure(raw.isEmpty() ? "NO_RESPONSE" : "BAD_RESPONSE", raw);
         String[] pieces = line.split("\\s+");
         boolean ok = "OK".equals(pieces[0]);
         boolean fail = "FAIL".equals(pieces[0]);

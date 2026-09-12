@@ -1,6 +1,6 @@
 # Native navigation window
 
-This document defines the standalone launcher's experimental native HOME navigation implementation for CB's exact Topway TS18. It is deliberately separate from the Leaflet/WebView comparator retained by PR #10.
+This document defines the standalone launcher's native HOME navigation implementation for CB's exact Topway TS18. It is deliberately separate from the Leaflet/WebView comparator retained by PR #10.
 
 ## Exact-device evidence
 
@@ -14,9 +14,44 @@ The 2026-09-12 physical-state capture established a concrete bounded-task mechan
 
 The proven surface is therefore a real resizable Android task under the Topway window policy, not standard Android picture-in-picture.
 
-Android 10 ActivityManager exposes `am task resizeable` and `am task resize`. The latter is explicitly intended to force a task resizable and place it in a stack with the supplied bounds. Android 10 activity-start options also expose shell `--task` and `--windowingMode`, which lets the root helper request a known task in fullscreen mode without resizing every task in a shared freeform stack. This PR uses that Android task authority through a narrow Magisk-root helper instead of granting the launcher UID 1000, platform signing or signature permissions.
+A second exact evidence source is the pinned current `com.tw.video` APK, `TW_THEME.20241022` / versionCode 119, SHA-256 `07c37275f86c495f8e62a23bcfae32e75674f4ad30ccdbc269f25235cc159562`. Its ordinary DEX exposes the Topway desktop/floating-window library and corrects the earlier assumption that the HOME `DESKTOP_WINDOW_SERVICE` itself supplies `WindowInfo` over Binder.
 
-## Architecture
+## Two distinct Topway window contracts
+
+The recovered Video client establishes two separate contracts which must not be collapsed into one.
+
+### HOME discovery/configuration surface
+
+The current HOME is package-scoped queried for a service resolving:
+
+`cn.cardoor.desktop.window.DESKTOP_WINDOW_SERVICE`
+
+In the exact Video path this is a capability marker. The client does not bind that service. It then queries the current HOME's provider authority:
+
+`<HOME_PACKAGE>.ExportedProvider`
+
+using these exact URIs/keys:
+
+- `/kv_config/desktop_window_setting`;
+- `/kv_config/isCurrentUsedThemeInstanceDesktopWindow`.
+
+`com.cbkii.ts18launcher` therefore exposes a resolution-only marker service plus a read-only `com.cbkii.ts18launcher.ExportedProvider`. Until an actual cooperative Topway floating window is hosted, `desktop_window_setting` intentionally returns no row and the theme flag returns `false`. The launcher does not fabricate DoFun's still-unknown `windowName` or host-selection policy merely to manufacture a non-null `WindowInfo`.
+
+### Cooperative app floating-window Binder
+
+`com.tw.video` itself, not HOME, exports:
+
+`cn.cardoor.desktop.window.floating.intent.action.FLOATING_WINDOW_SERVER`
+
+The returned master/controller Binder lets a desktop host command an app-owned `IWindowView` such as `com.tw.video.CustomWindowView`. This is useful for cooperative Topway apps, but it is not a universal navigation-app transport.
+
+CB has separately reported that **Organic Maps, Google Maps, OsmAnd+ and Sygic all work well in the DoFun HOME and none implements this Topway floating-window contract**. That is user-observed behaviour of the exact environment; it does not by itself reveal DoFun's internal implementation. It is nevertheless decisive contrary evidence against making `FLOATING_WINDOW_SERVER` a prerequisite for the normal navigation surface.
+
+Accordingly PR #11 keeps the generic validated bounded-task lane for ordinary navigation apps and treats the recovered HOME marker/provider plus cooperative Binder as a separate OEM compatibility lane.
+
+See `docs/TOPWAY_DESKTOP_WINDOW_CONTRACT.md` for the recovered wire-level boundary.
+
+## Generic navigation architecture
 
 The map is not a child View of `LauncherActivity`.
 
@@ -45,6 +80,8 @@ For the normal HOME path:
 
 If the task is replaced or the bounds differ, the operation fails closed and the launcher exposes a retry/fallback surface.
 
+This is an implementation of the currently proven Android task authority, not a claim that DoFun internally invokes these exact shell commands. Physical qualification must establish whether the same apps retain the quality, touch and lifecycle behaviour observed under DoFun.
+
 ## Fullscreen handoff
 
 The fixed Navigation rail endpoint remains the normal fullscreen navigation action. For a validated task, the helper resolves the current top Activity from that exact task and invokes Android 10 ActivityManager with `--windowingMode 1 --task <taskId>` plus `FLAG_ACTIVITY_SINGLE_TOP`. This requests true fullscreen mode for the existing task without resizing an entire freeform stack or deliberately creating another task. The helper verifies that the same package/task pair remains and that the TaskRecord bounds clear to the Android-10 fullscreen state.
@@ -63,6 +100,9 @@ The implementation does not:
 
 - platform-sign the launcher or request `android.uid.system`;
 - use ActivityView/TaskView hidden APIs;
+- require `FLOATING_WINDOW_SERVER` from ordinary navigation apps;
+- invent a Binder implementation for the HOME marker service;
+- publish a guessed DoFun `WindowInfo`/`windowName`;
 - call standard Android PiP as the primary mechanism;
 - write `persist.tw.*` or `sys.tw.*` properties;
 - patch WindowManager/framework;
@@ -79,6 +119,7 @@ DoFun remains installed and enabled as recovery HOME.
 CI validates source/build/package contracts only. The exact TS18 must separately prove:
 
 - first HOME launch with Organic Maps already running and not running;
+- Google Maps, OsmAnd+ and Sygic windowing as separate compatibility cases rather than inferred from Organic Maps;
 - fully offline Organic Maps rendering;
 - pan/zoom/search/navigation touch inside the window;
 - rail/media controls outside the map;
@@ -91,6 +132,8 @@ CI validates source/build/package contracts only. The exact TS18 must separately
 - Organic Maps process death and deliberate task reacquisition;
 - launcher Activity/process recreation;
 - rail mirroring;
+- current `com.tw.video` no longer logging that the replacement HOME lacks `DESKTOP_WINDOW_SERVICE`;
+- current `com.tw.video` querying the replacement HOME provider without crash while the provider reports the safe inactive state;
 - reverse-camera takeover/return;
 - reboot and cold boot;
 - ACC sleep/wake.

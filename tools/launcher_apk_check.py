@@ -20,6 +20,8 @@ REQUIRED_DEX_MARKERS = (
     b"Lcom/cbkii/ts18launcher/AppDrawerActivity;",
     b"Lcom/cbkii/ts18launcher/SettingsActivity;",
     b"Lcom/cbkii/ts18launcher/MediaListenerService;",
+    b"Lcom/cbkii/ts18launcher/platform/TopwayDesktopWindowMarkerService;",
+    b"Lcom/cbkii/ts18launcher/platform/TopwayDesktopWindowProvider;",
 )
 REQUIRED_FILES = {
     "AndroidManifest.xml",
@@ -79,7 +81,8 @@ def inspect(apk: Path) -> None:
         "launcher envelope: PASS "
         f"apk_bytes={size} dex=1 native=0 "
         "kotlin=0 androidx=0 replugin=0 leaflet_map_assets=present "
-        "navigation_task_helper=present material_symbols_notice=present"
+        "navigation_task_helper=present topway_home_compat=present "
+        "material_symbols_notice=present"
     )
 
 
