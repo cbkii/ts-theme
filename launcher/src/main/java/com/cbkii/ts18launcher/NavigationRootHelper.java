@@ -105,7 +105,9 @@ final class NavigationRootHelper {
             if (!finished) {
                 process.destroy();
                 if (!process.waitFor(250L, TimeUnit.MILLISECONDS)) process.destroyForcibly();
-                return new ProcessResult(-1, readAll(process), true);
+                // Never perform an unbounded pipe read after killing a timed-out su process. A child
+                // may still own the inherited descriptor even after the shell has been terminated.
+                return new ProcessResult(-1, "", true);
             }
             return new ProcessResult(process.exitValue(), readAll(process), false);
         } catch (IOException e) {
