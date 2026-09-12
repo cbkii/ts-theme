@@ -30,15 +30,19 @@ activity_dump() {
   dumpsys activity activities 2>/dev/null
 }
 
+# task_hint=0 means acquire the first current task whose TaskRecord affinity is exactly pkg.
+# A non-zero task_hint requires BOTH package and task id to match, so another task cannot be adopted.
 find_task_record() {
   pkg="$1"
-  activity_dump | awk -v pkg="$pkg" '
+  task_hint="${2:-0}"
+  activity_dump | awk -v pkg="$pkg" -v task_hint="$task_hint" '
     /^[[:space:]]*Task id #[0-9]+/ {
       task=$0
       sub(/^.*#/, "", task)
       sub(/[^0-9].*$/, "", task)
     }
     /TaskRecord\{/ && index($0, " A=" pkg " ") {
+      if (task_hint != "0" && task != task_hint) next
       stack=$0
       sub(/^.*StackId=/, "", stack)
       sub(/[^0-9].*$/, "", stack)
@@ -49,9 +53,10 @@ find_task_record() {
 
 find_task_wait() {
   pkg="$1"
+  task_hint="${2:-0}"
   tries=0
   while [ "$tries" -lt 24 ]; do
-    record="$(find_task_record "$pkg")"
+    record="$(find_task_record "$pkg" "$task_hint")"
     [ -n "$record" ] && { printf '%s\n' "$record"; return 0; }
     tries=$((tries + 1))
     sleep 0.1
@@ -81,7 +86,9 @@ bounds_for_task() {
   '
 }
 
-component_for_task() {
+# Use Hist #0 rather than TaskRecord.mActivityComponent: the latter can retain a splash/root
+# identity while a different Activity is actually the current top of the task.
+top_component_for_task() {
   wanted="$1"
   activity_dump | awk -v wanted="$wanted" '
     /^[[:space:]]*Task id #[0-9]+/ {
@@ -89,9 +96,11 @@ component_for_task() {
       sub(/^.*#/, "", task)
       sub(/[^0-9].*$/, "", task)
       active=(task == wanted)
+      hist=0
       next
     }
-    active && /mActivityComponent=/ {
+    active && /\* Hist #0:/ { hist=1; next }
+    active && hist && /mActivityComponent=/ {
       line=$0
       sub(/^.*mActivityComponent=/, "", line)
       sub(/[[:space:]].*$/, "", line)
@@ -103,7 +112,9 @@ component_for_task() {
 
 read_task() {
   pkg="$1"
-  record="$(find_task_wait "$pkg")" || return 1
+  task_hint="${2:-0}"
+  valid_uint "$task_hint" || return 1
+  record="$(find_task_wait "$pkg" "$task_hint")" || return 1
   TASK_ID="${record%% *}"
   STACK_ID="${record#* }"
   valid_uint "$TASK_ID" || return 1
@@ -132,11 +143,12 @@ case "$action" in
     ;;
 
   status)
-    pkg="${2:-}"
+    pkg="${2:-}"; task_hint="${3:-0}"
     valid_package "$pkg" || fail BAD_PACKAGE
-    read_task "$pkg" || fail TASK_NOT_FOUND "package=$pkg"
+    valid_uint "$task_hint" || fail BAD_TASK
+    read_task "$pkg" "$task_hint" || fail TASK_NOT_FOUND "task=$task_hint" "package=$pkg"
     bounds="$(bounds_for_task "$TASK_ID")"
-    component="$(component_for_task "$TASK_ID")"
+    component="$(top_component_for_task "$TASK_ID")"
     [ -n "$bounds" ] || bounds=unknown
     [ -n "$component" ] || component=unknown
     printf 'OK code=STATUS task=%s stack=%s package=%s component=%s bounds=%s forcepip=%s\n' \
@@ -144,10 +156,11 @@ case "$action" in
     ;;
 
   window|verify)
-    pkg="${2:-}"; left="${3:-}"; top="${4:-}"; right="${5:-}"; bottom="${6:-}"
+    pkg="${2:-}"; left="${3:-}"; top="${4:-}"; right="${5:-}"; bottom="${6:-}"; task_hint="${7:-0}"
     valid_package "$pkg" || fail BAD_PACKAGE
+    valid_uint "$task_hint" || fail BAD_TASK
     validate_bounds "$left" "$top" "$right" "$bottom" || fail BAD_BOUNDS
-    read_task "$pkg" || fail TASK_NOT_FOUND "package=$pkg"
+    read_task "$pkg" "$task_hint" || fail TASK_NOT_FOUND "task=$task_hint" "package=$pkg"
     expected="$left,$top,$right,$bottom"
 
     if [ "$action" = "window" ]; then
@@ -155,36 +168,50 @@ case "$action" in
       am task resize "$TASK_ID" "$left" "$top" "$right" "$bottom" >/dev/null 2>&1 || \
         fail RESIZE_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg"
       sleep 0.15
-      record="$(find_task_record "$pkg")"
-      [ -n "$record" ] || fail TASK_LOST "package=$pkg"
-      current_task="${record%% *}"
-      [ "$current_task" = "$TASK_ID" ] || fail TASK_REPLACED "task=$current_task" "package=$pkg"
+      record="$(find_task_record "$pkg" "$TASK_ID")"
+      [ -n "$record" ] || fail TASK_REPLACED "task=$TASK_ID" "package=$pkg"
     fi
 
     actual="$(bounds_for_task "$TASK_ID")"
-    component="$(component_for_task "$TASK_ID")"
+    component="$(top_component_for_task "$TASK_ID")"
     [ -n "$component" ] || component=unknown
     [ "$actual" = "$expected" ] || fail BOUNDS_MISMATCH "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg" "component=$component" "bounds=${actual:-unknown}" "expected=$expected"
+    if [ "$action" = "window" ]; then result_code=WINDOW; else result_code=VERIFY; fi
     printf 'OK code=%s task=%s stack=%s package=%s component=%s bounds=%s forcepip=%s\n' \
-      "$(printf '%s' "$action" | tr '[:lower:]' '[:upper:]')" "$TASK_ID" "$STACK_ID" "$pkg" "$component" "$actual" "$(getprop sys.tw.forcepip 2>/dev/null)"
+      "$result_code" "$TASK_ID" "$STACK_ID" "$pkg" "$component" "$actual" "$(getprop sys.tw.forcepip 2>/dev/null)"
     ;;
 
   focus)
-    pkg="${2:-}"
+    pkg="${2:-}"; task_hint="${3:-0}"
     valid_package "$pkg" || fail BAD_PACKAGE
-    read_task "$pkg" || fail TASK_NOT_FOUND "package=$pkg"
+    valid_uint "$task_hint" || fail BAD_TASK
+    read_task "$pkg" "$task_hint" || fail TASK_NOT_FOUND "task=$task_hint" "package=$pkg"
     am task focus "$TASK_ID" >/dev/null 2>&1 || fail FOCUS_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg"
     printf 'OK code=FOCUS task=%s stack=%s package=%s\n' "$TASK_ID" "$STACK_ID" "$pkg"
     ;;
 
   fullscreen)
-    pkg="${2:-}"
+    pkg="${2:-}"; task_hint="${3:-0}"
     valid_package "$pkg" || fail BAD_PACKAGE
-    read_task "$pkg" || fail TASK_NOT_FOUND "package=$pkg"
-    # Android 10's resize-animated accepts null bounds, restoring the stack's normal fullscreen bounds.
-    am stack resize-animated "$STACK_ID" null >/dev/null 2>&1 || fail FULLSCREEN_RESIZE_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg"
-    am task focus "$TASK_ID" >/dev/null 2>&1 || fail FOCUS_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg"
-    printf 'OK code=FULLSCREEN task=%s stack=%s package=%s\n' "$TASK_ID" "$STACK_ID" "$pkg"
+    valid_uint "$task_hint" || fail BAD_TASK
+    read_task "$pkg" "$task_hint" || fail TASK_NOT_FOUND "task=$task_hint" "package=$pkg"
+    component="$(top_component_for_task "$TASK_ID")"
+    [ -n "$component" ] || fail COMPONENT_NOT_FOUND "task=$TASK_ID" "package=$pkg"
+    # Android 10 ActivityManagerShellCommand supports both --task and --windowingMode. Launching
+    # the current top Activity SINGLE_TOP into the same task requests true fullscreen mode without
+    # resizing an entire shared freeform stack or manufacturing another task.
+    am start --user 0 --windowingMode 1 --task "$TASK_ID" -f 0x20000000 -n "$component" >/dev/null 2>&1 || \
+      fail FULLSCREEN_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg" "component=$component"
+    sleep 0.15
+    record="$(find_task_record "$pkg" "$TASK_ID")"
+    [ -n "$record" ] || fail TASK_REPLACED "task=$TASK_ID" "package=$pkg"
+    actual="$(bounds_for_task "$TASK_ID")"
+    # Fullscreen TaskRecord bounds are empty (0,0,0,0) on this Android 10 family. If the vendor
+    # retains explicit display-sized bounds, runtime validation will expose FULLSCREEN_REJECTED
+    # rather than pretending the transition passed.
+    [ "$actual" = "0,0,0,0" ] || fail FULLSCREEN_REJECTED "task=$TASK_ID" "package=$pkg" "bounds=${actual:-unknown}"
+    printf 'OK code=FULLSCREEN task=%s stack=%s package=%s component=%s bounds=%s\n' \
+      "$TASK_ID" "$STACK_ID" "$pkg" "$component" "$actual"
     ;;
 
   *)
