@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825a76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -52,11 +52,11 @@ jobs:
           python3 tools/ts18_theme.py validate
           python3 -m unittest discover -s tests -v
           bash -n tools/*.sh scripts/termux/*.sh scripts/termux/lib/*.sh
-          sh -n scripts/magisk/*.sh
+          sh -n scripts/magisk/*.sh launcher/src/main/assets/nav/nav-window.sh
           python3 -m py_compile tools/launcher_apk_check.py
           shellcheck tools/*.sh
           shellcheck -x -P scripts/termux scripts/termux/*.sh scripts/termux/lib/*.sh
-          shellcheck -s sh scripts/magisk/*.sh
+          shellcheck -s sh scripts/magisk/*.sh launcher/src/main/assets/nav/nav-window.sh
           git diff --check
 
       - name: Fetch pinned RePlugin compatibility library
