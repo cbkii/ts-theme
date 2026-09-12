@@ -479,6 +479,9 @@ final class MapPanel extends FrameLayout implements LocationListener {
     /** Keeps accessibility click semantics explicit while Leaflet owns map gestures. */
     private final class TrackingWebView extends WebView {
         TrackingWebView(Context context) { super(context); }
+        @Override public boolean performClick() {
+            return super.performClick();
+        }
         @Override public boolean onTouchEvent(MotionEvent event) {
             boolean handled = super.onTouchEvent(event); // Leaflet owns gesture handling.
             if (event.getActionMasked() == MotionEvent.ACTION_UP) {
