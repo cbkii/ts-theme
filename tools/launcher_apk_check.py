@@ -29,6 +29,7 @@ REQUIRED_FILES = {
     "assets/map/vendor/leaflet.css",
     "assets/map/vendor/LEAFLET-LICENSE.txt",
     "assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt",
+    "assets/nav/nav-window.sh",
 }
 
 
@@ -77,7 +78,8 @@ def inspect(apk: Path) -> None:
     print(
         "launcher envelope: PASS "
         f"apk_bytes={size} dex=1 native=0 "
-        "kotlin=0 androidx=0 replugin=0 leaflet_map_assets=present material_symbols_notice=present"
+        "kotlin=0 androidx=0 replugin=0 leaflet_map_assets=present "
+        "navigation_task_helper=present material_symbols_notice=present"
     )
 
 
