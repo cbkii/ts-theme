@@ -161,8 +161,11 @@ final class NavigationWindowController {
             return;
         }
 
+        // The first launch can transiently stop HOME before the task has been resized. Do not cancel
+        // the operation solely because of that lifecycle transition; the generation/package guard is
+        // the authority and HOME will reconcile again when it resumes.
         main.postDelayed(() -> {
-            if (!isCurrent(request, pkg) || !homeVisible) return;
+            if (!isCurrent(request, pkg)) return;
             backend.showWindowed(pkg, target, result -> {
                 if (!isCurrent(request, pkg)) return;
                 if (result.success) {
