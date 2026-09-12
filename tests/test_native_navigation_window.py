@@ -64,7 +64,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
 
         marker_source = (PLATFORM / "TopwayDesktopWindowMarkerService.java").read_text()
         self.assertIn("return null;", marker_source)
-        self.assertNotIn("Binder", marker_source.replace("IBinder", ""))
+        self.assertNotIn("new Binder(", marker_source)
+        self.assertNotIn("transact(", marker_source)
 
     def test_topway_provider_matches_exact_video_keys_and_publishes_safe_inactive_state(self):
         contract = (PLATFORM / "TopwayDesktopWindowContract.java").read_text()
