@@ -169,13 +169,6 @@ final class MapPanel extends FrameLayout implements LocationListener {
         webView.setWebViewClient(new RestrictedMapClient());
         addView(webView, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
-            webView.setOnTouchListener((view, event) -> {
-                if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                    view.performClick();
-                    scheduleMapHealthCheck();
-                }
-                return false; // Leaflet owns touch handling.
-            });
             retry.setVisibility(View.GONE);
             pageReady = false;
             showStatus("Map loading", R.drawable.ic_my_location);
@@ -484,8 +477,15 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     /** Keeps accessibility click semantics explicit while Leaflet owns map gestures. */
-    private static final class TrackingWebView extends WebView {
+    private final class TrackingWebView extends WebView {
         TrackingWebView(Context context) { super(context); }
-        @Override public boolean performClick() { return super.performClick(); }
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            boolean handled = super.onTouchEvent(event); // Leaflet owns gesture handling.
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                performClick();
+                scheduleMapHealthCheck();
+            }
+            return handled;
+        }
     }
 }
