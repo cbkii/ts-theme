@@ -13,9 +13,9 @@ DoFun remains installed and enabled during launcher qualification.
 
 **Local, offline and private by default** is the repository-wide position for `ts-theme`.
 
-- Network access is optional rather than an assumed prerequisite for HOME operation.
+- **Network availability is optional.** Network access is not an assumed prerequisite for HOME operation.
 - Prefer on-device state, local media libraries and offline-capable navigation applications where practical.
-- Do not add remote analytics, tracking, remote configuration, cloud logging or user-behaviour telemetry by default.
+- There is **no remote analytics** by default. Do not add tracking, remote configuration, cloud logging or user-behaviour telemetry by default.
 - Diagnostics are explicit, bounded and local/exportable; the user decides whether to share them.
 - Remote services may be used only when a feature explicitly requires them and the dependency is visible, bounded and justified.
 
@@ -54,7 +54,7 @@ A **Warm media sources on HOME start** switch optionally pre-connects exported M
 
 On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. Third-party **NavRadio+ is `com.navimods.radio`**. Native Topway music/radio remain separately unverified; no private Topway command is guessed.
 
-### Shortcut APP / Icon model
+### Shortcut App / Icon model
 
 HOME and drawer quick slots use one card with two clearly labelled halves:
 
