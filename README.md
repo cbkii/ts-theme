@@ -15,15 +15,17 @@ Package: `com.cbkii.ts18launcher`.
 
 The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes/controls existing Android media sessions only.
 
-### Automotive HOME
+### TS18 Mono Drive HOME
 
 Exact TS18 testing preserves the 55 px top/right Topway/SystemUI boundaries. The redesigned HOME uses a **96 px side rail** and **88 px Radio | Music | DD MMM strip**. The rail can be placed on Driver side, Left or Right; on this exact Australian right-hand-drive unit Driver side means right. The mirror operation keeps content out of Topway's right-side SystemUI.
 
 The rail order is fixed as **Apps at the top, 3-6 configurable monochrome role-icon slots in the middle, and Navigation at the bottom**. Settings remains in the app-drawer header; tapping the date remains an intentional Settings shortcut.
 
-Radio/music use stable Previous | Play/Pause | Next ordering with an accent-primary centre control, larger touch regions and an endless slow one-line marquee with five-second readable holds. Fixed HOME controls use local project-authored monochrome vector icons. The full app grid continues to show installed-app icons because that grid's purpose is application identity.
+Radio/music use stable Previous | Play/Pause | Next ordering with an accent-primary centre control and larger touch regions. Each card now has a **primary title/station** slow marquee and a **static secondary artist/program/source** line. The transport cluster has its own Left/Right setting independent of rail/Driver-side placement.
 
-The UI uses black/charcoal surfaces, the warm orange accent, semantic dp/sp dimensions for inner controls, visible pressed/focused/disabled states, and short 140 ms feedback without scale/bounce animation. Physical SystemUI geometry remains exact raw pixels.
+Fixed functional UI glyphs use one pinned family: **Google Material Symbols Rounded**, vendored from `google/material-design-icons@40a7a292a79d9394157e1ea24f83d52d5e17c556` under Apache-2.0. There is no runtime icon dependency. See [icon sources](docs/ICON_SOURCES.md). The full app grid continues to show installed-app icons because that grid's purpose is application identity.
+
+The UI uses black/charcoal surfaces, the warm orange accent, semantic dp/sp dimensions for inner controls and redundant pressed/focused/disabled/selected feedback. Motion is deliberately restrained: 120 ms state/icon crossfade, 140 ms input feedback, 160 ms transient-panel reveal and 180 ms drawer transition. Physical SystemUI geometry remains exact raw pixels.
 
 ### Appearance
 
@@ -39,7 +41,7 @@ The map uses pinned **Leaflet 1.9.4** in the existing lifecycle-bound WebView fo
 
 Raster OpenStreetMap tiles are supplied through the framework-only `TileBroker`, with identifying User-Agent, bounded timeouts, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB cache. No bulk prefetch, JavaScript bridge, arbitrary browsing or native vector engine is added.
 
-Driver-facing map actions are icon-only zoom in, zoom out, follow/recentre and one filled navigation action. Settings can hide the map controls as a group. Follow state is visible through the location icon; healthy map status disappears, while locating/loading/offline/error states remain visible. Map brightness/contrast consumes the same appearance mode as launcher chrome.
+Driver-facing map actions are icon-only zoom in, zoom out, follow/recentre and one filled navigation action. Settings can hide the map controls as a group. Follow state is redundant rather than colour-only: selected Follow uses orange tint plus a 3dp accent outline/halo. Healthy map status disappears, while locating/loading/offline/error states remain visible. Map brightness/contrast consumes the same appearance mode as launcher chrome.
 
 Full routing/navigation remains owned by the configured Google Maps, Waze, Organic Maps or OsmAnd/OsmAnd+ app through public hand-off intents. Current Organic Maps location/driving modes have been analysed and are recorded in [Organic Maps future driving-mode integration](docs/ORGANIC_MAPS_MODES.md); no private cross-package mode control is implemented.
 
@@ -50,6 +52,10 @@ Generic music uses `MediaSessionManager` through user-granted notification-liste
 On this exact unit **`com.tw.media` is Auxio-TS**, not the native Topway music app. Auxio-TS and Spotify have been demonstrated through the generic MediaSession path.
 
 Third-party **NavRadio+ is `com.navimods.radio`** and exposed a usable separate MediaSession during testing. This is not evidence for native Topway radio. Stock Topway music and radio remain separately unverified; their exact package/session contracts must be established on-device before adding any Topway-specific adapter. No guessed private broadcasts, MCU controls or root key injection are used.
+
+## UX qualification
+
+[Mono Drive UX acceptance](docs/MONO_DRIVE_UX_ACCEPTANCE.md) is the quantitative acceptance contract. It defines static contrast/touch/motion gates, the 1280 x 720 API29 emulator matrix, and physical TS18 metrics for glance time, action taps, first-response latency, completion time, wrong-target rate and comparative CPU/PSS/frame evidence. These are qualification methods only; there is no parked-only runtime feature restriction.
 
 ## Safe HOME rollout
 
@@ -79,7 +85,7 @@ gradle :theme:lintDebug :theme:assembleDebug
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 ```
 
-`launcher:preBuild` fetches and verifies pinned Leaflet 1.9.4 deployment assets. CI also requires an empty launcher `releaseRuntimeClasspath`, builds the signed/minified release, verifies one DEX/no native/Kotlin/AndroidX/RePlugin payload and validates the APK signature.
+`launcher:preBuild` fetches and verifies pinned Leaflet 1.9.4 deployment assets. CI also requires an empty launcher `releaseRuntimeClasspath`, builds the signed/minified release, verifies one DEX/no native/Kotlin/AndroidX/RePlugin payload, checks the packaged Material Symbols attribution notice and validates the APK signature.
 
 ## Testing and candidate releases
 
@@ -89,6 +95,6 @@ The separate **Standalone Launcher Candidate** workflow produces an explicitly v
 
 ## Physical validation boundary
 
-CI does not prove head-unit behaviour. Current physical evidence passes the prior SystemUI geometry, quick-launch/drawer/navigation hand-off, Auxio-TS/Spotify generic media and NavRadio+ MediaSession behaviour. The current Mono Drive HOME, Leaflet map, appearance automation, voice search, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake still require exact-device validation. Reverse-camera hand-off/return remains roadmapped for later lifecycle validation, not current launcher functionality.
+CI does not prove head-unit behaviour. Current physical evidence passes the prior SystemUI geometry, quick-launch/drawer/navigation hand-off, Auxio-TS/Spotify generic media and NavRadio+ MediaSession behaviour. The current Mono Drive HOME, two-level media presentation, independent media-control side, Leaflet map, appearance automation, voice search, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake still require exact-device validation. Reverse-camera hand-off/return remains roadmapped for later lifecycle validation, not current launcher functionality.
 
-Project-authored code/docs/assets are Apache-2.0. Bundled Leaflet retains its BSD-2-Clause licence. Vendor APKs, private signing material and device data are not committed.
+Project-authored code/docs/assets are Apache-2.0. Vendored Material Symbols Rounded are Apache-2.0 and retain provenance/notice; bundled Leaflet retains its BSD-2-Clause licence. Vendor APKs, private signing material and device data are not committed.

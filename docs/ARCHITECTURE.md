@@ -33,7 +33,7 @@ Magisk root may perform bounded one-time setup/diagnostics but does not grant pl
 - bounded Magisk `cmd package set-home-activity` is an optional one-time equivalent;
 - DoFun is never automatically disabled or removed.
 
-## Geometry and automotive UI
+## Geometry and Mono Drive UI
 
 The physical panel is 1280 x 720. Exact-device testing established the ~55 px top/right Topway/SystemUI boundaries. Those physical boundaries remain raw-pixel authority while inner controls use semantic resources.
 
@@ -44,12 +44,20 @@ The automotive HOME uses:
 - 88 px Radio | Music | DD MMM strip;
 - 12-column 4/6/2 radio/music/date distribution over the usable content width;
 - safe-right x=1225;
-- mirrored content geometry that keeps the rail and map outside the Topway right SystemUI;
-- black base, charcoal cards, warm orange primary state, local monochrome role/vector icons and 140 ms pressed/focus feedback;
+- mirrored content geometry that keeps rail and map outside the Topway right SystemUI;
+- **independent Left/Right media-transport placement**, not derived from rail or RHD/LHD state;
+- black base, charcoal cards and warm orange primary state;
+- 120 ms state/icon crossfade, 140 ms press/focus feedback, 160 ms transient reveal and 180 ms drawer animation;
 - stable Previous | Play/Pause | Next ordering with the centre action visually primary;
-- endless slow metadata marquee with five-second readable holds.
+- primary media title/station as the slow endless marquee and static secondary artist/program/source context.
 
 `Ts18Geometry` handles both full-physical and decor-fitted Activity surfaces and never hides SystemUI.
+
+### Functional icon authority
+
+Fixed functional glyphs are vendored from one family: **Google Material Symbols Rounded** at `google/material-design-icons@40a7a292a79d9394157e1ea24f83d52d5e17c556`, Apache-2.0. Upstream vector path geometry is retained; intrinsic size is adapted to 36dp and theme tint is removed because launcher state tinting is applied by the owning views. See `docs/ICON_SOURCES.md` and packaged `assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt`.
+
+`ic_launcher.xml` remains project branding. Installed application icons remain full-colour in the app browser because they represent app identity, not fixed launcher roles.
 
 ## Appearance authority
 
@@ -71,6 +79,8 @@ The app drawer remains an in-HOME overlay covering only the map surface; map GPS
 
 A visible-only one-second reconciliation fallback exists because physical TS18 testing showed callback delivery alone did not update Auxio-TS metadata for every track change. It stops outside the visible launcher lifecycle.
 
+`MediaMetadataView` owns the two-level presentation: primary title/station uses the bounded-speed five-second-hold marquee, while secondary artist/program/source is static and end-ellipsised. The transport cluster is rebuilt from the same controller widgets according to the independent Media controls side preference, preserving Previous -> Play/Pause -> Next order on either side.
+
 On this exact TS18, `com.tw.media` is **Auxio-TS**. That result must not be treated as stock Topway music evidence. `com.tw.music` remains only an installed-package fallback candidate until its native-app runtime/session behaviour is tested.
 
 ## Radio
@@ -85,7 +95,7 @@ The map uses bundled **Leaflet 1.9.4** inside the lifecycle-bound WebView, with 
 
 Leaflet JS/CSS are fetched only during build from pinned HTTPS distribution endpoints and accepted only when their exact SHA-256 values match. HOME never downloads the map library at runtime.
 
-Driver-facing map actions are project-authored icon buttons: zoom in, zoom out, follow/recentre and one primary navigation action. They may be hidden as a group from Settings. Follow state is visible through the location icon's selected accent state. Healthy map status is hidden; only locating/loading/offline/error states are surfaced. Map filter/overlay state consumes the shared launcher appearance resolver.
+Driver-facing map actions are Material Symbols Rounded icon buttons: zoom in, zoom out, follow/recentre and one primary navigation action. They may be hidden as a group from Settings. Selected Follow uses redundant state: orange tint plus a 3dp accent outline/halo. Healthy map status is hidden; only locating/loading/offline/error states are surfaced. Map filter/overlay state consumes the shared launcher appearance resolver.
 
 ### Tile broker
 
@@ -101,7 +111,7 @@ Those are Organic Maps engine/JNI contracts, not a supported external launcher i
 
 ## App discovery/preferences
 
-The drawer queries `ACTION_MAIN` + `CATEGORY_LAUNCHER`. Preferences use `SharedPreferences` for role packages, per-slot role icons, 3-6 HOME middle slots, five drawer quick slots, rail side, media mode, map visibility/control visibility, appearance mode, Auto appearance source and optional day/night schedule anchors.
+The drawer queries `ACTION_MAIN` + `CATEGORY_LAUNCHER`. Preferences use `SharedPreferences` for role packages, per-slot role icons, 3-6 HOME middle slots, five drawer quick slots, rail side, **independent media-controls side**, media selection mode, map visibility/control visibility, appearance mode, Auto appearance source and optional day/night schedule anchors.
 
 ## Topway adapter
 
@@ -117,6 +127,8 @@ Reverse-camera hand-off/return is a **roadmapped physical vehicle-lifecycle vali
 
 ## Qualification boundary
 
-CI proves source contracts, empty launcher release-runtime dependency graph, lint/unit/build, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin envelope and required Leaflet assets/signature. It does not prove TS18 runtime behaviour.
+CI proves source contracts, colour contrast, empty launcher release-runtime dependency graph, lint/unit/build, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin envelope, required Leaflet assets and packaged Material Symbols attribution. It does not prove TS18 runtime behaviour.
 
-Current physical evidence proves the prior build's SystemUI geometry, quick slots/drawer/navigation hand-off, generic Auxio-TS/Spotify MediaSession path and third-party NavRadio+ session behaviour. The current Mono Drive HOME, Leaflet map, appearance automation, voice search, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake remain exact-device checks. Reverse-camera hand-off/return remains a later roadmapped lifecycle check.
+`docs/MONO_DRIVE_UX_ACCEPTANCE.md` defines the explicit 1280 x 720 emulator matrix and physical TS18 metrics for glance time, target accuracy, tap counts, visible-response latency, common-task completion and comparative CPU/PSS/frame evidence. These qualification procedures do not restrict runtime features to parked state.
+
+Current physical evidence proves the prior build's SystemUI geometry, quick slots/drawer/navigation hand-off, generic Auxio-TS/Spotify MediaSession path and third-party NavRadio+ session behaviour. The current Mono Drive HOME, two-level media cards, independent transport-side preference, Leaflet map, appearance automation, voice search, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake remain exact-device checks. Reverse-camera hand-off/return remains a later roadmapped lifecycle check.
