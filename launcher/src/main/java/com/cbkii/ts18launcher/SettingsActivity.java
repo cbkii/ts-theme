@@ -124,6 +124,13 @@ public final class SettingsActivity extends Activity {
         }
 
         addSection("Media");
+        addChoiceRow(R.drawable.ic_shortcut, "Media controls side", mediaControlsSideLabel(),
+                v -> choose("Media controls side",
+                        new String[] {"Left", "Right"},
+                        new String[] {LauncherPrefs.MEDIA_CONTROLS_LEFT, LauncherPrefs.MEDIA_CONTROLS_RIGHT},
+                        LauncherPrefs.mediaControlsSide(this), value -> {
+                            LauncherPrefs.setMediaControlsSide(this, value); render();
+                        }));
         addActionRow(R.drawable.ic_music, "Notification access",
                 MediaListenerService.hasNotificationAccess(this) ? "Granted" : "Required for media sessions",
                 v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
@@ -276,6 +283,10 @@ public final class SettingsActivity extends Activity {
         if (LauncherPrefs.RAIL_LEFT.equals(value)) return "Left";
         if (LauncherPrefs.RAIL_RIGHT.equals(value)) return "Right";
         return "Driver side · right on this TS18";
+    }
+    private String mediaControlsSideLabel() {
+        return LauncherPrefs.MEDIA_CONTROLS_LEFT.equals(LauncherPrefs.mediaControlsSide(this))
+                ? "Left · independent of rail" : "Right · independent of rail";
     }
     private String appearanceLabel() {
         String value = LauncherPrefs.appearanceMode(this);

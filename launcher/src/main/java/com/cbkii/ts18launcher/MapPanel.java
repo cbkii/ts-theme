@@ -109,6 +109,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
         zoomIn = mapButton(R.drawable.ic_zoom_in, "Zoom in", false);
         zoomOut = mapButton(R.drawable.ic_zoom_out, "Zoom out", false);
         recenter = mapButton(R.drawable.ic_my_location, "Follow location", false);
+        recenter.setBackground(AutomotiveUi.followModeBackground(activity));
         recenter.setImageTintList(AutomotiveUi.followTint(activity));
         openNav = mapButton(R.drawable.ic_navigation, "Open navigation", true);
         zoomIn.setOnClickListener(v -> adjustZoom(1));
@@ -272,12 +273,26 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     private void showStatus(String text, int icon) {
+        statusChip.animate().cancel();
         status.setText(text);
         statusIcon.setImageResource(icon);
-        statusChip.setVisibility(View.VISIBLE);
+        if (statusChip.getVisibility() != View.VISIBLE) {
+            statusChip.setAlpha(0f);
+            statusChip.setVisibility(View.VISIBLE);
+            statusChip.animate().alpha(1f).setDuration(AutomotiveUi.PANEL_REVEAL_MS).start();
+        } else {
+            statusChip.setAlpha(1f);
+        }
     }
 
-    private void hideStatus() { statusChip.setVisibility(View.GONE); }
+    private void hideStatus() {
+        if (statusChip.getVisibility() != View.VISIBLE) return;
+        statusChip.animate().cancel();
+        statusChip.animate().alpha(0f).setDuration(AutomotiveUi.STATE_CROSSFADE_MS).withEndAction(() -> {
+            statusChip.setVisibility(View.GONE);
+            statusChip.setAlpha(1f);
+        }).start();
+    }
 
     private void onMapPageReady(String url) {
         if (!MAP_URL.equals(url)) return;

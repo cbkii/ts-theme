@@ -21,6 +21,7 @@ final class LauncherPrefs {
     static final String KEY_DRAWER_QUICK_5 = "app.drawer.quick.5";
     static final String KEY_QUICK_COUNT = "ui.quick.count";
     static final String KEY_RAIL_POSITION = "ui.rail.position";
+    static final String KEY_MEDIA_CONTROLS_SIDE = "ui.media.controls.side";
     static final String KEY_MAP_ENABLED = "map.enabled";
     static final String KEY_MAP_CONTROLS_ENABLED = "map.controls.enabled";
     static final String KEY_MEDIA_MODE = "media.selection.mode";
@@ -38,6 +39,8 @@ final class LauncherPrefs {
     static final String RAIL_DRIVER = "driver";
     static final String RAIL_LEFT = "left";
     static final String RAIL_RIGHT = "right";
+    static final String MEDIA_CONTROLS_LEFT = "left";
+    static final String MEDIA_CONTROLS_RIGHT = "right";
 
     static final String APPEARANCE_AUTO = "auto";
     static final String APPEARANCE_DAY = "day";
@@ -119,6 +122,18 @@ final class LauncherPrefs {
     static boolean railOnRight(Context context) {
         String value = railPosition(context);
         return RAIL_DRIVER.equals(value) || RAIL_RIGHT.equals(value);
+    }
+
+    static String mediaControlsSide(Context context) {
+        String value = prefs(context).getString(KEY_MEDIA_CONTROLS_SIDE, MEDIA_CONTROLS_RIGHT);
+        return MEDIA_CONTROLS_LEFT.equals(value) ? MEDIA_CONTROLS_LEFT : MEDIA_CONTROLS_RIGHT;
+    }
+    static void setMediaControlsSide(Context context, String value) {
+        prefs(context).edit().putString(KEY_MEDIA_CONTROLS_SIDE,
+                MEDIA_CONTROLS_LEFT.equals(value) ? MEDIA_CONTROLS_LEFT : MEDIA_CONTROLS_RIGHT).apply();
+    }
+    static boolean mediaControlsOnLeft(Context context) {
+        return MEDIA_CONTROLS_LEFT.equals(mediaControlsSide(context));
     }
 
     static boolean mapEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_ENABLED, true); }

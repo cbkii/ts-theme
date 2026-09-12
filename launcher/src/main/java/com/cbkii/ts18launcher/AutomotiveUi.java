@@ -6,17 +6,21 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.InsetDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.StateListDrawable;
+import android.graphics.drawable.TransitionDrawable;
 import android.view.View;
 import android.widget.ImageButton;
 
 import java.util.List;
 
 final class AutomotiveUi {
+    static final long STATE_CROSSFADE_MS = 120L;
     static final long FEEDBACK_MS = 140L;
+    static final long PANEL_REVEAL_MS = 160L;
     static final long DRAWER_MS = 180L;
 
     private AutomotiveUi() {}
@@ -75,6 +79,18 @@ final class AutomotiveUi {
         states.addState(new int[] {android.R.attr.state_pressed},
                 rounded(context, R.color.ui_surface_pressed, R.color.ui_surface_pressed, 0));
         states.addState(new int[] {}, new ColorDrawable(Color.TRANSPARENT));
+        return ripple(context, states);
+    }
+
+    static RippleDrawable followModeBackground(Context context) {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_selected},
+                rounded(context, R.color.ui_surface_elevated, R.color.ui_accent, 3));
+        states.addState(new int[] {android.R.attr.state_focused},
+                rounded(context, R.color.ui_surface_focus, R.color.ui_accent, 3));
+        states.addState(new int[] {android.R.attr.state_pressed},
+                rounded(context, R.color.ui_surface_pressed, R.color.ui_surface_pressed, 0));
+        states.addState(new int[] {}, rounded(context, R.color.ui_surface, R.color.ui_surface, 0));
         return ripple(context, states);
     }
 
@@ -139,6 +155,22 @@ final class AutomotiveUi {
         attachFeedback(button);
     }
 
+    static void setIconWithCrossfade(Context context, ImageButton button, int iconRes) {
+        Object previousTag = button.getTag();
+        if (previousTag instanceof Integer && ((Integer) previousTag) == iconRes) return;
+        Drawable next = context.getDrawable(iconRes);
+        Drawable current = button.getDrawable();
+        button.setTag(iconRes);
+        if (current == null || next == null) {
+            button.setImageResource(iconRes);
+            return;
+        }
+        TransitionDrawable transition = new TransitionDrawable(new Drawable[] {current, next});
+        transition.setCrossFadeEnabled(true);
+        button.setImageDrawable(transition);
+        transition.startTransition((int) STATE_CROSSFADE_MS);
+    }
+
     static void attachFeedback(View view) {
         StateListAnimator animator = new StateListAnimator();
         ObjectAnimator disabled = ObjectAnimator.ofFloat(view, View.ALPHA, 0.35f);
@@ -180,7 +212,7 @@ final class AutomotiveUi {
         }
     }
 
-    private static RippleDrawable ripple(Context context, android.graphics.drawable.Drawable content) {
+    private static RippleDrawable ripple(Context context, Drawable content) {
         return new RippleDrawable(ColorStateList.valueOf(color(context, R.color.ui_ripple)),
                 content, rounded(context, android.R.color.white, android.R.color.white, 0));
     }
