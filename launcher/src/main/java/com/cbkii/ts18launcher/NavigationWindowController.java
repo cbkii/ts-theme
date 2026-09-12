@@ -129,9 +129,8 @@ final class NavigationWindowController {
             return;
         }
         if (!pkg.equals(activePackage)) {
-            activePackage = pkg;
-            activeTaskId = -1;
-            state = State.IDLE;
+            switchPackage(pkg, target);
+            return;
         }
 
         if (!force && activeTaskId > 0) {
@@ -156,6 +155,32 @@ final class NavigationWindowController {
             });
             return;
         }
+        launchAndWindow(pkg, target);
+    }
+
+    private void switchPackage(String pkg, NavigationWindowBounds target) {
+        final String previousPackage = activePackage;
+        final int previousTaskId = activeTaskId;
+        final int request = ++generation;
+        state = State.SUSPENDED;
+        panel.showStarting(AppResolver.labelFor(activity, pkg, "Navigation"));
+
+        if (previousPackage.isEmpty() || previousTaskId <= 0) {
+            adoptPackageAndLaunch(request, pkg, target);
+            return;
+        }
+
+        // A no-longer-selected freeform navigator must not remain the visible authority. Foreground
+        // HOME first, then launch/acquire the new configured package. Failure to focus HOME is
+        // fail-open for switching because the subsequent explicit launch still establishes authority.
+        backend.focus(activity.getPackageName(), -1, ignored -> adoptPackageAndLaunch(request, pkg, target));
+    }
+
+    private void adoptPackageAndLaunch(int request, String pkg, NavigationWindowBounds target) {
+        if (state == State.DESTROYED || request != generation || !homeVisible) return;
+        activePackage = pkg;
+        activeTaskId = -1;
+        state = State.IDLE;
         launchAndWindow(pkg, target);
     }
 
