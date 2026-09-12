@@ -56,6 +56,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             mediaRefreshHandler.postDelayed(this, MEDIA_REFRESH_INTERVAL_MS);
         }
     };
+    private NativeNavigationPanel nativeNavigationPanel;
+    private NavigationWindowController navigationWindowController;
     private MapPanel mapPanel;
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
@@ -75,6 +77,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         setContentView(root);
+
+        // Native navigation is the normal HOME map surface. It is added first so launcher chrome,
+        // the optional Leaflet comparator and the app drawer can deliberately cover it.
+        nativeNavigationPanel = new NativeNavigationPanel(this);
+        root.addView(nativeNavigationPanel);
+        navigationWindowController = new NavigationWindowController(this, nativeNavigationPanel);
+
         buildRail();
         buildRadioPanel();
         buildMusicPanel();
@@ -100,7 +109,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             root.clearFocus();
             appsButton.requestFocus();
             root.bringToFront();
-            if (mapPanel != null && ExperimentalMapPolicy.enabled(this)) mapPanel.resumeWebView();
+            root.post(this::updateMapVisibility);
         }
     }
 
@@ -121,6 +130,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         AutomotiveUi.styleRailButton(this, navigationButton, true);
         for (ImageButton button : quickButtons) AutomotiveUi.styleRailButton(this, button);
         applyRailConfiguration();
+        if (nativeNavigationPanel != null) nativeNavigationPanel.applyAppearance(this);
         if (appDrawerPanel != null) appDrawerPanel.applyAppearance();
         if (mapPanel != null) mapPanel.applyAppearance();
     }
@@ -145,6 +155,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (mapPanel != null) mapPanel.stop();
+        if (navigationWindowController != null) navigationWindowController.onHomeStopped();
         super.onStop();
     }
 
@@ -153,6 +164,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaRefreshHandler.removeCallbacksAndMessages(null);
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();
         if (mapPanel != null) mapPanel.destroy();
+        if (navigationWindowController != null) navigationWindowController.destroy();
         super.onDestroy();
     }
 
@@ -358,20 +370,33 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void updateMapVisibility() {
-        if (!ExperimentalMapPolicy.enabled(this)) {
-            if (mapPanel != null) { mapPanel.stop(); mapPanel.setVisibility(View.GONE); }
+        boolean experimentalLeaflet = ExperimentalMapPolicy.enabled(this);
+        if (experimentalLeaflet) {
+            nativeNavigationPanel.setVisibility(View.GONE);
+            navigationWindowController.suspendForExperimentalMap();
+            if (mapPanel == null) {
+                mapPanel = new MapPanel(this);
+                root.addView(mapPanel);
+                applyGeometry(root.getWidth(), root.getHeight());
+            }
+            mapPanel.applyPreferences();
+            mapPanel.setVisibility(View.VISIBLE);
+            if (appDrawerPanel != null && appDrawerPanel.isOpen()) { mapPanel.stop(); return; }
+            requestMapLocationIfNeeded();
+            mapPanel.resumeWebView();
             return;
         }
-        if (mapPanel == null) {
-            mapPanel = new MapPanel(this);
-            root.addView(mapPanel);
-            applyGeometry(root.getWidth(), root.getHeight());
+
+        if (mapPanel != null) {
+            mapPanel.stop();
+            mapPanel.setVisibility(View.GONE);
         }
-        mapPanel.applyPreferences();
-        mapPanel.setVisibility(View.VISIBLE);
-        if (appDrawerPanel != null && appDrawerPanel.isOpen()) { mapPanel.stop(); return; }
-        requestMapLocationIfNeeded();
-        mapPanel.resumeWebView();
+        nativeNavigationPanel.setVisibility(View.VISIBLE);
+        if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
+            navigationWindowController.onLauncherOverlayOpened();
+            return;
+        }
+        navigationWindowController.onHomeVisible();
     }
 
     private void requestMapLocationIfNeeded() {
@@ -388,6 +413,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         place(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);
         place(mediaText, g.metadataX(), g.top, g.metadataWidth(), g.stripHeight);
         placeCard(dateView, g.dateX(), g.top, g.dateWidth(), g.stripHeight);
+        if (nativeNavigationPanel != null) place(nativeNavigationPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (appDrawerPanel != null) place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
     }
@@ -453,18 +479,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void toggleAppDrawer() {
         if (appDrawerPanel == null) {
-            appDrawerPanel = new AppDrawerPanel(this, () -> {
-                if (mapPanel != null && ExperimentalMapPolicy.enabled(this)) {
-                    requestMapLocationIfNeeded();
-                    mapPanel.resumeWebView();
-                }
-            });
+            appDrawerPanel = new AppDrawerPanel(this, () -> root.post(this::updateMapVisibility));
             root.addView(appDrawerPanel);
             applyGeometry(root.getWidth(), root.getHeight());
         }
         if (appDrawerPanel.isOpen()) appDrawerPanel.hidePanel();
         else {
             if (mapPanel != null) mapPanel.stop();
+            if (!ExperimentalMapPolicy.enabled(this)) navigationWindowController.onLauncherOverlayOpened();
             appDrawerPanel.refreshPreferences();
             appDrawerPanel.showPanel();
         }
@@ -489,6 +511,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openNavigation(Location location) {
+        if (!ExperimentalMapPolicy.enabled(this)
+                && navigationWindowController != null
+                && navigationWindowController.openFullscreen(location)) return;
         String pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
         if (!NavigationProvider.open(this, pkg, location)) openPicker(LauncherPrefs.KEY_NAV);
     }

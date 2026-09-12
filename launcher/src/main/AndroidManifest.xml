@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -54,6 +55,33 @@
             android:name=".SettingsActivity"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false" />
+
+        <!--
+          Exact com.tw.video TW_THEME.20241022 evidence shows the current HOME is
+          package-scoped queried for this service action as a capability marker.
+          The inspected client does not bind this marker, so no unproven Binder
+          implementation is exposed here.
+        -->
+        <service
+            android:name=".platform.TopwayDesktopWindowMarkerService"
+            android:exported="true"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="cn.cardoor.desktop.window.DESKTOP_WINDOW_SERVICE" />
+            </intent-filter>
+        </service>
+
+        <!--
+          Read-only compatibility state consumed by exact Topway clients. The
+          provider intentionally publishes no fabricated WindowInfo while no
+          cooperative Topway floating window is active.
+        -->
+        <provider
+            android:name=".platform.TopwayDesktopWindowProvider"
+            android:authorities="com.cbkii.ts18launcher.ExportedProvider"
+            android:exported="true"
+            android:grantUriPermissions="false"
+            tools:ignore="ExportedContentProvider" />
 
         <service
             android:name=".MediaListenerService"
