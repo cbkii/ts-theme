@@ -79,12 +79,13 @@ final class MediaSourceBootstrapper {
         }
 
         MediaController exact = exactController(packageName);
-        if (exact != null) {
-            if (send(exact, command)) finish(callback, true, "");
-            else finish(callback, false, actionName(command) + " unavailable");
+        if (exact != null && send(exact, command)) {
+            finish(callback, true, "");
             return;
         }
 
+        // A dormant/partially initialised session may advertise no useful action yet.
+        // Continue through the bounded bootstrap path instead of turning the HOME button off.
         Pending pending = new Pending(sourceLabel, packageName, command, callback,
                 command == MediaListenerService.Command.PLAY_PAUSE);
         Connection connection = ensureConnection(packageName);
@@ -193,14 +194,14 @@ final class MediaSourceBootstrapper {
     }
 
     private void issueConnected(MediaController controller, Pending pending) {
-        if (pending.startIntent && isPlaying(controller)) {
-            finish(pending.callback, true, "");
-            return;
-        }
         if (send(controller, pending.command)) {
             MediaListenerService.refreshActiveSessions();
             finish(pending.callback, true, "");
-        } else finish(pending.callback, false, actionName(pending.command) + " unavailable");
+            return;
+        }
+        // A connected browser can still expose a session before its playback actions are ready.
+        // Give the source one bounded Activity bootstrap before reporting the action unavailable.
+        fallbackLaunch(pending);
     }
 
     private void fallbackLaunch(Pending pending) {
@@ -219,13 +220,15 @@ final class MediaSourceBootstrapper {
         MediaListenerService.refreshActiveSessions();
         MediaController exact = exactController(pending.packageName);
         if (exact != null) {
+            // Some sources auto-start when their Activity is opened. For an initial Play request,
+            // treat that as success rather than immediately toggling the newly-started source off.
             if (pending.startIntent && isPlaying(exact)) { finish(pending.callback, true, ""); return; }
             if (send(exact, pending.command)) { finish(pending.callback, true, ""); return; }
-            finish(pending.callback, false, actionName(pending.command) + " unavailable");
-            return;
         }
         if (SystemClock.uptimeMillis() >= deadline) {
-            finish(pending.callback, false, pending.sourceLabel + " did not become ready");
+            finish(pending.callback, false, exact == null
+                    ? pending.sourceLabel + " did not become ready"
+                    : actionName(pending.command) + " unavailable");
             return;
         }
         handler.postDelayed(() -> retryExact(pending, deadline), COMMAND_RETRY_MS);

@@ -2,15 +2,13 @@
 
 ## Status
 
-The `launcher/` module is the staged Android 10/API 29 HOME successor path. It can be installed and tested as an ordinary Activity before HOME changes. DoFun remains installed and enabled as recovery during qualification.
+`launcher/` is the staged Android 10/API 29 HOME successor path. Install and test it as an ordinary Activity before HOME changes. DoFun remains installed/enabled as recovery during qualification. CI is source/build evidence only, never physical TS18 proof.
 
-Exact-device evidence currently establishes that the prior launcher preserved Topway/SystemUI boundaries, quick-launch/drawer/navigation hand-off worked, `com.tw.media` is Auxio-TS on this unit, Auxio-TS/Spotify worked through generic MediaSession, and third-party NavRadio+ (`com.navimods.radio`) exposed a usable independent session. Native Topway music/radio and the current Leaflet/Mono Drive UI remain separately subject to physical validation. CI is never represented as physical TS18 proof.
+Exact-device evidence already established the Topway/SystemUI boundaries, basic quick-launch/drawer/navigation hand-off, `com.tw.media` as Auxio-TS, generic Auxio-TS/Spotify MediaSession behaviour and a usable independent NavRadio+ (`com.navimods.radio`) session. Native Topway music/radio remain separately unverified.
 
 ## Build/runtime envelope
 
-Requirements match CI: JDK 17, Gradle 9.5, Python 3, Android platform 29 and Build Tools 36.
-
-Leaflet 1.9.4 is fetched and SHA-256 verified during `launcher:preBuild`, then bundled into the APK. The release envelope remains one DEX, no native libraries, no Kotlin/AndroidX/RePlugin runtime and no added Android runtime dependency.
+JDK 17, Gradle 9.5, Android platform 29 and Build Tools 36. The release remains one DEX, no native libraries, no Kotlin/AndroidX/RePlugin runtime and no launcher-owned MediaSession/audio-focus authority.
 
 ```bash
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
@@ -20,159 +18,132 @@ Successful same-repository PR validation feeds the fixed draft release **000 Tes
 
 ## Automotive HOME UI
 
-Physical safe-area authority remains unchanged: full panel 1280 x 720, top content boundary 55 px, safe-right x=1225 and safe-bottom y=702. Those device coordinates remain raw pixels.
+Physical safe-area authority remains: panel 1280 x 720, top content boundary 55 px, safe-right x=1225, safe-bottom y=702. Proven device boundaries remain raw pixels.
 
-The driver-facing **TS18 Mono Drive** redesign uses:
+Mono Drive uses:
 
-- a 96 px rail on Driver side/Left/Right; Driver side is right for this exact Australian RHD TS18;
-- fixed rail order: Apps at the top, 3-6 configurable role-icon quick slots in the middle, Navigation at the bottom;
-- an 88 px strip with Radio controls, one shared active-metadata surface, Music controls and DD MMM;
-- Settings in the drawer header rather than consuming a prime rail slot; tapping DD MMM still opens Settings;
-- stable Previous | Play/Pause | Next ordering with the centre action visually primary;
-- a separately configurable **Radio / Music sides: Radio left / Radio right**, independent of rail/Driver-side placement;
-- black + charcoal surfaces, warm orange primary/selected state, 8dp/12dp spacing, rounded cards and explicit non-colour state cues;
-- semantic resource dimensions for inner UI while preserving exact physical Topway geometry.
+- 96 px Driver-side/Left/Right rail;
+- Apps fixed at top, 3-6 configurable middle slots, Navigation fixed at bottom;
+- Quick 1 defaults to **Settings**, directly below Apps, but remains configurable;
+- fixed Navigation uses the selected accent hue;
+- 88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip;
+- independent **Radio / Music sides** setting;
+- display-only transparent date; it launches nothing;
+- one shared two-level metadata surface;
+- stable Previous | Play/Pause | Next ordering and permanently actionable transport targets;
+- semantic resource dimensions for inner UI while exact Topway geometry stays physical.
 
-### Icons
+### Shortcut APP / ICON model
 
-All fixed functional UI glyphs use one pinned upstream family: **Google Material Symbols Rounded**, Apache-2.0, from `google/material-design-icons@40a7a292a79d9394157e1ea24f83d52d5e17c556`. The 24px upstream Android vectors are vendored locally with their path geometry retained, intrinsic size adapted to 36dp and runtime tint handled by launcher views. There is no runtime icon dependency. See [Icon sources](ICON_SOURCES.md) and the packaged `assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt`.
+Each HOME middle slot and drawer quick slot is one editor card with two labelled halves:
 
-The application launcher badge is project branding and is the intentional exception. Full app-drawer entries retain the installed app icons because that grid represents application identity.
+- **APP**: Choose app / Use role default / Change role;
+- **ICON**: Auto or a curated visual-only icon override.
 
-### Media cards
+Auto displays the real app icon for an explicit app target or the semantic monochrome role icon for a role target. An icon override never changes launch authority. Quick 1's default role is Settings.
 
-Radio and Music use a two-level glanceable hierarchy:
+All fixed/user-selectable monochrome glyphs use **Google Material Symbols Rounded**, pinned to `google/material-design-icons@40a7a292a79d9394157e1ea24f83d52d5e17c556`, Apache-2.0. Only the bounded catalogue is vendored; no runtime icon dependency is added. See [Icon sources](ICON_SOURCES.md).
 
-- **primary title/station**: 22sp medium, endless slow marquee only when it overflows;
-- **secondary artist/program/source**: 16sp static, one line, end-ellipsised;
-- primary marquee holds at the readable beginning for five seconds, scrolls at 24dp/s, holds at the end for five seconds, returns to the beginning and repeats;
-- Previous / Play-Pause / Next remain in stable order and unsupported actions remain disabled rather than moving;
-- changing Radio/Music sides swaps only the two control groups independently of rail side while leaving metadata reading direction unchanged;
-- Play/Pause state-icon changes use a 120ms crossfade.
+### Accent hue
 
-Tapping the metadata surface opens the selected media/radio source. Long-press behaviour remains limited to the already-defined configuration/permission path.
+Orange is the default. Settings provides the bounded Material-derived choices Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. The setting changes only the semantic accent role: selected/primary/focus surfaces or strokes, Settings section accents, the fixed Navigation icon and experimental-map location accent. Neutral black/charcoal/white surfaces and typography do not change.
 
-### Motion
+### Media controls and bootstrap
 
-Mono Drive uses micro-motion only:
+Radio and generic Music remain separate authorities. The Radio source glyph launches the configured/default Radio app; the Music source glyph launches the configured/default Music app. The shared metadata surface may open the source currently being displayed.
 
-- state/icon crossfade: **120ms**;
-- press/focus feedback: **140ms**;
-- transient panel/status reveal: **160ms**;
-- drawer open/close: **180ms**;
-- no bounce, spring, overshoot, scale or parallax animation.
+Transport buttons are never disabled merely because a session/action has not yet appeared. On a press, the launcher performs one bounded public-API chain:
+
+1. exact active MediaSession for the target package when available and capable;
+2. connect to an exported `android.media.browse.MediaBrowserService` and use its controller;
+3. if still unavailable, launch the configured source app once and retry the exact package session for at most about 4.5 seconds;
+4. show a short failure status instead of silently ignoring or greying the control.
+
+A source that already exposes a session but is not ready is still allowed through the bootstrap path; the existence of a dormant session is not treated as proof the control is impossible.
+
+Settings exposes **Warm media sources on HOME start**. When enabled (default), HOME pre-connects only exported standard MediaBrowser services; it does not foreground-launch their Activities. Disabling it leaves on-demand bootstrap intact.
+
+When Play/Pause is used to start a non-playing Music source, one best-effort Pause is first sent to genuinely playing Radio; starting Radio does the converse. The launcher never requests audio focus.
+
+The selected source owns the shared primary title/station slow marquee and static secondary artist/program/source. The last explicit source resolves simultaneous stale PLAYING claims. Generic music also remembers the last explicitly selected eligible package and retains the visible-only one-second reconciliation fallback from physical Auxio-TS testing.
 
 ## Appearance
 
-Display and map appearance use one shared effective mode:
+Auto / Day / High contrast / Dim / Night remain one shared launcher/map appearance authority. Auto may use ambient light or schedule; stale/unavailable sensor evidence falls back to schedule. Generic unset schedule uses 07:00 / 19:00 anchors with bounded transition/high-glare periods; user anchors may cross midnight.
 
-- **Auto** - source selectable as ambient-light sensor or schedule;
-- **Day**;
-- **High contrast** for high-glare conditions;
-- **Dim** around day/night transitions and low ambient light;
-- **Night**.
+The accent hue is orthogonal to appearance mode: appearance controls neutral luminance hierarchy, hue controls only the semantic accent.
 
-When Auto uses the sensor, stale or unavailable light-sensor evidence falls back to schedule. If the user has not supplied a schedule, the bounded generic schedule uses 07:00 day and 19:00 night anchors, a 45-minute transition period around each anchor, and a central daytime high-glare window. This is deliberately a location-independent approximation, not a claim to astronomical sunrise/sunset or vehicle illumination authority. User-set day/night times replace the generic anchors, including schedules crossing midnight.
+## Experimental HOME map
 
-The launcher chrome and Leaflet map consume the same resolved mode. Automatic sensor/schedule crossings update colours and map appearance in place; an explicit Settings change may use one controlled recreation so the visible chrome does not retain stale colours.
+The Leaflet/WebView surface is retained only as an **experimental physical-test comparator** and is **off by default on clean installs**. Upgrades preserve an already-stored explicit map setting.
+
+When enabled:
+
+- pinned local Leaflet 1.9.4 remains SHA-256 verified;
+- exact OSM raster tile requests stay inside native `TileBroker` with bounded HTTPS/cache/revalidation policy;
+- renderer recovery, process-local map state and offline-first stale cache behaviour remain available;
+- only zoom in, zoom out and follow/recentre remain as map controls;
+- those controls are always placed on the **opposite edge from the side rail**;
+- Settings can hide them all;
+- the duplicate map Navigation action has been removed because Navigation is already the fixed accented rail endpoint.
+
+The raster cache is not a full offline map database and cannot consume Organic Maps/OsmAnd/Google/Yandex offline data. The separate future windowed/native navigation architecture is intentionally outside this PR batch.
 
 ## Offline-first policy
 
-Network availability is optional. Core HOME operation must start and remain usable without Internet access: launching apps, settings, GPS/location, local media, cached map tiles, navigation hand-off and underlying MediaSession controls continue where the installed source permits. Organic Maps, OsmAnd/OsmAnd+, Auxio-TS, Auxio and VLC are recommended offline-capable ecosystem choices, not launcher dependencies. The bundled OSM raster cache is a situational map aid, not a complete offline navigation database.
+Internet availability is optional. Core HOME operation must remain usable without it. Prefer offline-capable navigation/media applications such as Organic Maps, OsmAnd/OsmAnd+, Auxio-TS, Auxio and VLC where appropriate. They remain external authorities rather than launcher dependencies.
 
 ## App drawer
 
-Apps opens a five-column in-HOME overlay over the map only. While fully covered, map GPS/WebView work is suspended and resumes when the drawer closes.
+The drawer keeps Settings and Close in its header, five configurable quick-access slots, always-visible local search/voice search and a five-column installed-app grid. Drawer quick slots use the same APP/ICON editor semantics as HOME slots.
 
-The drawer provides:
+## Configuration
 
-- a visible Settings gear and Close action in the header;
-- five user-configurable quick-access slots above the grid;
-- an always-visible local search field with a prominent voice-search action; the microphone remains visible and is disabled with an accessibility description if no speech recogniser is available;
-- local search by application label/package;
-- 72dp installed-app icons and readable labels in the full grid;
-- 80dp minimum drawer action targets;
-- lazy app-icon loading retained for the main grid.
+SAF JSON export/import is versioned, whitelisted and transactional. It includes app/role assignments, slot count, rail and Radio/Music sides, map settings, media mode, startup media warm-up, accent hue, quick-slot icon overrides and appearance settings/schedule. It excludes secrets, caches and location history.
 
-## Home-screen map
+## Read-only physical evidence collector
 
-The map remains bundled Leaflet 1.9.4 inside a restricted lifecycle-bound WebView. `TileBroker` supplies only exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` requests through framework `HttpURLConnection`, preserving identifying User-Agent, bounded timeouts, normal TLS, HTTP freshness/revalidation, stale fallback, 64 MiB disk ceiling and no bulk prefetch.
+`scripts/termux/collect-window-media-evidence.sh` is a bounded read-only discriminator for the next physical round and the separate future map-windowing investigation. It captures:
 
-The automotive map surface provides icon-only zoom in, zoom out, follow/recentre and primary open-navigation actions. All map buttons can be hidden together from Settings without changing map/network lifecycle.
+- `wm size` / `wm density` and display state;
+- freeform/PiP feature/settings reads;
+- DoFun, Organic Maps, launcher, NavRadio+, Auxio-TS/native-music package state;
+- task/window/surface information;
+- exported MediaBrowser services and active MediaSessions/actions;
+- launcher preferences when root-readable;
+- bounded relevant logcat.
 
-Follow/free is not communicated by colour alone: selected follow uses the orange icon **and** a 3dp accent outline/halo. Manual pan leaves follow mode and removes both selected cues; recenter restores them. Healthy GPS/tile state has no permanent status text. Only locating, loading, cached/offline and meaningful error states are surfaced, with 160ms reveal/120ms dismissal. Map brightness/contrast follows the shared appearance resolver rather than maintaining a separate theme authority.
+It does not press playback keys, launch/stop tasks, change settings, alter packages or manipulate windows. Permission/timeout/root failures are BLOCKED/UNKNOWN, not negative evidence.
 
-Full route calculation/navigation remains owned by Organic Maps, Google Maps, Waze or OsmAnd through public hand-off intents.
+For the most useful DoFun-window capture, run it while DoFun is visibly hosting Organic Maps:
 
-### Organic Maps future modes
+```bash
+bash scripts/termux/collect-window-media-evidence.sh
+```
 
-The current `cbkii/organicmaps` fork defines exact location modes `PENDING_POSITION=0`, `NOT_FOLLOW_NO_POSITION=1`, `NOT_FOLLOW=2`, `FOLLOW=3`, and `FOLLOW_AND_ROTATE=4` in `LocationState`. Those modes and `setDrivingViewEnabled()` are recorded in [Organic Maps future driving-mode integration](ORGANIC_MAPS_MODES.md) as future planned targets only. They are not a supported cross-package API, so this launcher does not invoke private/JNI methods, reflection, root input injection or guessed broadcasts to control them.
-
-## Generic music authority
-
-Generic music uses one existing Android MediaSession selected by notification-listener authority. It creates no player, queue, session or audio-focus owner.
-
-- **Auto** follows Android active-session priority while excluding the resolved radio and telecom/call sessions.
-- **Prefer music app** selects the configured Music package while it has an active session, then falls back to Auto.
-- previous/play-pause/next dispatch once to the selected controller only when advertised.
-- a visible-only one-second reconciliation fallback remains because physical TS18 testing showed callback delivery alone did not reliably update Auxio-TS metadata for every track change.
-
-On this TS18, `com.tw.media` is **Auxio-TS**. It is not stock Topway evidence. `com.tw.music` is only an installed fallback candidate until physically tested.
-
-## Radio authority
-
-Radio remains independent from generic music. Third-party NavRadio+ (`com.navimods.radio`) exposed a usable MediaSession in the tested state. Native Topway radio remains unverified; no stock-radio package/private broadcast/root key/MCU command is guessed.
-
-## Settings
-
-Settings uses framework-only automotive rows rather than generic full-width buttons:
-
-- icon + primary label + current value for rows;
-- native `Switch` for Dashboard map and Map controls;
-- single-choice dialogs for rail position, **independent Radio/Music sides**, 3-6 middle quick-slot count, display appearance, Auto appearance source and media selection mode;
-- time pickers for user-configured day/night schedule anchors plus one action to restore the generic schedule;
-- package and role-icon picker rows for six HOME middle slots and five drawer quick slots, each with an immediate Use role default or Clear assignment action;
-- versioned JSON export/import and reset-to-defaults through the Storage Access Framework, with a review summary, package validation and transactional commit;
-- Advanced HOME/recovery section at the bottom;
-- confirmation before Magisk HOME assignment or disabling the HOME candidate.
-
-## UX acceptance contract
-
-[Mono Drive UX acceptance](MONO_DRIVE_UX_ACCEPTANCE.md) is the explicit item-28/item-29 qualification contract. It defines:
-
-- static target/contrast/line-count/motion gates;
-- a 1280 x 720 API29 emulator matrix including independent rail/media-side combinations;
-- physical TS18 task metrics for <=1.0s median glance recognition, one-tap Navigation and Play/Pause, <=2-tap drawer launch, >=98% target accuracy, <100ms visible-response onset for >=95% of trials, <2% wrong-target rate and <=2.0s 95th-percentile common-action completion;
-- same-device performance comparison using the bounded measurement helper;
-- explicit BLOCKED / BASELINE REQUIRED results where the evidence needed for a metric does not exist.
-
-These are qualification procedures only. They do not add a parked-only runtime mode or disable features while driving.
-
-## Physical requalification after this UI change
+## Physical requalification after this batch
 
 Keep DoFun as HOME and test the launcher as an ordinary Activity first.
 
-1. Confirm both left and right rail positions keep all interactive content out of the Topway top/right SystemUI and that Driver side resolves to the desired right-side layout.
-2. Independently test Radio/Music sides (Radio left and Radio right) with each rail side; changing one setting must not alter the other.
-3. Exercise middle quick-slot counts 3, 4, 5 and 6; Apps must remain fixed at the top and Navigation fixed at the bottom, with every visible target usable.
-4. Confirm the 88 px media strip, single shared metadata region and larger transport targets fit without clipping; Previous/Play-Pause/Next must remain stable and capability-aware.
-5. Confirm five-second slow-marquee holds/repeat and static secondary metadata; verify play/pause crossfade does not flicker.
-6. Confirm the date still opens Settings, Apps opens only the drawer, the drawer gear opens Settings and Close closes the overlay.
-7. Configure and launch all five drawer quick-access entries; verify local text search and voice-to-search filtering in both drawer and picker.
-8. Confirm Leaflet tiles/GPS/bearing/accuracy, pan/inertia, pinch/double-tap, follow/recentre and navigation hand-off. Test Map controls ON/OFF and ensure follow selected remains recognisable without relying only on orange colour.
-9. Exercise Auto with Sensor and Schedule, explicit Day/High contrast/Dim/Night, a custom day/night schedule, and generic 07:00/19:00 fallback. Confirm automatic crossings update launcher chrome and map in place and explicit Settings changes do not leave stale colours.
-10. Exercise HOME `onNewIntent()` while the drawer/search/keyboard is open; verify dashboard-root restoration without losing media selection or process-local map centre/zoom/follow state.
-11. With network disabled, verify a cached tile returns immediately and an uncached tile fails promptly; then restore network and verify normal HTTPS/ETag/Last-Modified behaviour.
-12. Where safely reproducible, terminate the WebView renderer once and verify one automatic local recovery with map state restoration; a subsequent failure must stop at Map unavailable with an explicit retry.
-13. Recheck Auxio-TS/Spotify metadata/actions and NavRadio+ only where relevant to changed presentation.
-14. Separately test native Topway music and native Topway radio; capture package/session evidence before proposing any adapter if public MediaSession is inadequate.
-15. Run the quantitative emulator/physical protocol in `MONO_DRIVE_UX_ACCEPTANCE.md` and use `scripts/termux/measure-standalone-launcher.sh` after a settled map session for CPU/RAM/frame evidence.
+1. Verify Apps -> default Settings slot -> other configured slots -> accented Navigation order and rail geometry.
+2. Confirm date is inert/transparent and metadata has no hidden Settings shortcut.
+3. Configure HOME/drawer slots through the APP and ICON columns; verify Auto versus explicit icon override never changes launch target.
+4. Test all accent hues for contrast and ensure only accent-role elements change.
+5. Test Radio and Music source glyphs: each must open its configured/default source.
+6. With sources stopped/cold, press Play, Previous and Next and record bootstrap latency/result. Controls must remain enabled.
+7. Test startup warm-up ON and OFF. ON must not visibly open source Activities at HOME start.
+8. Start Music while Radio is genuinely playing and confirm Radio receives best-effort Pause before Music starts; test the reverse direction.
+9. Reconfirm shared metadata arbitration when both sessions claim PLAYING.
+10. Confirm the experimental map is off on a clean/default configuration. When deliberately enabled, verify no duplicate map Navigation action and that zoom/follow controls sit opposite the rail.
+11. Run `collect-window-media-evidence.sh` while DoFun visibly hosts Organic Maps for the separate map architecture thread.
+12. Re-run the quantitative protocol in `MONO_DRIVE_UX_ACCEPTANCE.md` plus `measure-standalone-launcher.sh`.
+13. Only after ordinary-Activity gates pass continue HOME/reboot/cold-boot/ACC qualification.
 
-Only after ordinary-Activity checks pass should HOME/reboot/cold-boot/ACC qualification continue. Reverse-camera hand-off/return remains a roadmapped lifecycle regression check only; there is no reverse-camera implementation in this launcher.
+Native Topway radio/music, Bluetooth/projection, reverse-camera behaviour and the future windowed navigation architecture remain unclaimed unless separately physically exercised.
 
 ## Rollback
 
-DoFun remains installed/enabled throughout qualification. Launcher Settings can disable the HOME candidate while keeping the app installed. The Termux helper can restore its saved pre-change HOME:
+DoFun remains installed/enabled throughout qualification. Launcher Settings can disable the HOME candidate. The Termux helper can restore the saved pre-change HOME:
 
 ```bash
 bash scripts/termux/install-standalone-launcher.sh --rollback-home

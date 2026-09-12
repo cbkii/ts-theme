@@ -57,6 +57,7 @@ capture_root_readonly() {
 
 finalize() {
   local rc=$?
+  trap - EXIT INT TERM HUP
   log "finalize rc=$rc warnings=$WARNINGS"
   if command -v sha256sum >/dev/null 2>&1; then
     (cd "$OUT" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS.txt 2>/dev/null) || true

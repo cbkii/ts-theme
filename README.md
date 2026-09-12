@@ -13,69 +13,100 @@ DoFun remains installed and enabled during launcher qualification.
 
 Package: `com.cbkii.ts18launcher`.
 
-The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes/controls existing Android media sessions only.
+The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes existing Android media sessions; bounded media bootstrap uses only standard MediaSession/MediaBrowser surfaces plus a last-resort ordinary app launch.
 
 ### TS18 Mono Drive HOME
 
-Exact TS18 testing preserves the 55 px top/right Topway/SystemUI boundaries. The redesigned HOME uses a **96 px side rail** and **88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip**. The rail can be placed on Driver side, Left or Right; on this exact Australian right-hand-drive unit Driver side means right. The mirror operation keeps content out of Topway's right-side SystemUI. Radio/Music control groups can be swapped independently with `Radio / Music sides`.
+Exact TS18 testing preserves the 55 px top/right Topway/SystemUI boundaries. HOME uses a **96 px side rail** and **88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip**. The rail can be Driver side, Left or Right; on this exact Australian RHD unit Driver side means right. Radio/Music control groups can be swapped independently with `Radio / Music sides`.
 
-The rail order is fixed as **Apps at the top, 3-6 configurable monochrome role-icon slots in the middle, and Navigation at the bottom**. Settings remains in the app-drawer header; tapping the date remains an intentional Settings shortcut.
+The rail order is fixed as **Apps at the top, 3-6 configurable quick slots in the middle, and Navigation at the bottom**. Quick 1 defaults to the **Settings** role so setup is discoverable directly below Apps, but every middle slot remains configurable. The fixed Navigation button uses the selected accent hue. The date is display-only: it is transparent, non-clickable and non-focusable.
 
-Radio/music use stable Previous | Play/Pause | Next ordering with an accent-primary centre control and larger touch regions. The selected source owns one shared **primary title/station** slow marquee and one **static secondary artist/program/source** line. Each quick slot is explicitly a role shortcut or an app shortcut: role slots show their semantic glyph and fallback authority, while app slots show the installed application's identity/icon. Pickers expose `Use role default` or `Clear assignment` immediately. The Radio/Music group side is independent of rail/Driver-side placement.
+Each quick slot has two independent settings:
 
-Fixed functional UI glyphs use one pinned family: **Google Material Symbols Rounded**, vendored from `google/material-design-icons@40a7a292a79d9394157e1ea24f83d52d5e17c556` under Apache-2.0. There is no runtime icon dependency. See [icon sources](docs/ICON_SOURCES.md). The full app grid continues to show installed-app icons because that grid's purpose is application identity.
+- **APP** - choose an installed app, use the semantic role default, or change role;
+- **ICON** - `Auto` or a curated Material Symbols Rounded appearance override.
 
-The UI uses black/charcoal surfaces, the warm orange accent, semantic dp/sp dimensions for inner controls and redundant pressed/focused/disabled/selected feedback. Motion is deliberately restrained: 120 ms state/icon crossfade, 140 ms input feedback, 160 ms transient-panel reveal and 180 ms drawer transition. Physical SystemUI geometry remains exact raw pixels.
+`Auto` is truthful: an explicit app shortcut displays the installed app's icon, while a role shortcut displays its semantic monochrome role glyph. An icon override is visual only and never changes what launches.
 
-### Appearance
+Fixed/user-selectable monochrome glyphs use one pinned family: **Google Material Symbols Rounded**, vendored from `google/material-design-icons@40a7a292a79d9394157e1ea24f83d52d5e17c556` under Apache-2.0. The curated picker includes useful automotive/general appearances without shipping a whole icon library. See [icon sources](docs/ICON_SOURCES.md).
 
-Launcher chrome and map share Auto/Day/High contrast/Dim/Night appearance. Auto can use the ambient-light sensor or a schedule. Unavailable/stale sensor state falls back to schedule. Without a user schedule, the generic bounded fallback uses 07:00/19:00 day/night anchors, dim transition periods around those anchors and a central daytime high-glare window. User-selected anchors replace the defaults and may cross midnight. This is a generic approximation, not astronomical sunrise/sunset or vehicle-illumination authority.
-
-### Apps drawer
-
-Apps opens an in-HOME overlay over the map surface. While covered, map GPS/WebView work is suspended and resumes when the drawer closes. The drawer has Settings and Close actions, a user-configurable five-slot quick-access row, always-visible local search with a prominent voice-search action, and a five-column grid with 72dp installed-app icons and readable labels. Search is local to already-discovered launcher activities; no service/background index is added.
-
-### Map
-
-The map uses pinned **Leaflet 1.9.4** in the existing lifecycle-bound WebView for pinch/double-tap zoom, inertial pan, follow/recentre, GPS marker, accuracy circle and bearing indication. Leaflet is SHA-256 verified at build time and bundled locally.
-
-Raster OpenStreetMap tiles are supplied through the framework-only `TileBroker`, with identifying User-Agent, bounded timeouts, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB cache. When Android reports no usable network, cached tiles return immediately and uncached tiles fail promptly; network presence is not treated as proof that the public Internet works. No bulk prefetch, JavaScript bridge, arbitrary browsing or native vector engine is added.
-
-Driver-facing map actions are icon-only zoom in, zoom out, follow/recentre and one filled navigation action. Settings can hide the map controls as a group. Follow state is redundant rather than colour-only: selected Follow uses orange tint plus a 3dp accent outline/halo. Healthy map status disappears, while locating/loading/offline/error states remain visible. Map brightness/contrast consumes the same appearance mode as launcher chrome.
-
-Full routing/navigation remains owned by the configured Google Maps, Waze, Organic Maps or OsmAnd/OsmAnd+ app through public hand-off intents. Current Organic Maps location/driving modes have been analysed and are recorded in [Organic Maps future driving-mode integration](docs/ORGANIC_MAPS_MODES.md); no private cross-package mode control is implemented.
+The UI uses black/charcoal surfaces and a configurable Material-derived accent palette. **Orange remains the default**, with Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red available. Hue affects only the existing accent role: primary/selected/focus elements, section accents, fixed Navigation and the map location accent; neutral black/charcoal/white hierarchy is unchanged.
 
 ### Media and radio
 
-Generic music uses `MediaSessionManager` through user-granted notification-listener access. Auto follows Android active-session priority while excluding the resolved radio/telecom sessions; Prefer music app selects the configured package while it has a session. Capability-aware previous/play-pause/next actions are sent exactly once to one controller. A visible-only one-second reconciliation fallback addresses the physical TS18 observation that metadata callbacks were not always delivered for every track change.
+Radio and generic Music remain separate authorities. The shared metadata surface displays the selected source using a 22sp slow-marquee primary title/station plus a static 16sp secondary artist/program/source. Last explicit source selection resolves stale simultaneous `PLAYING` reports.
 
-The launcher remembers the last explicitly selected eligible generic music package. Selection order is configured `Prefer music app` when its session exists, then that remembered package when usable, then the deterministic active-session fallback. Radio and generic music remain separate authorities. If both report playing, the last explicitly selected source wins; if neither plays, that source remains selected.
+The Radio source icon always opens the configured/default Radio application. The Music source icon always opens the configured/default Music application. Shared metadata may open the source currently being displayed.
 
-On this exact unit **`com.tw.media` is Auxio-TS**, not the native Topway music app. Auxio-TS and Spotify have been demonstrated through the generic MediaSession path.
+Previous / Play-Pause / Next controls remain visibly and physically usable at all times. A press uses this bounded public-API sequence:
 
-Third-party **NavRadio+ is `com.navimods.radio`** and exposed a usable separate MediaSession during testing. This is not evidence for native Topway radio. Stock Topway music and radio remain separately unverified; their exact package/session contracts must be established on-device before adding any Topway-specific adapter. No guessed private broadcasts, MCU controls or root key injection are used.
+1. exact matching active MediaSession if usable;
+2. exported standard `android.media.browse.MediaBrowserService` if available;
+3. one ordinary source-app launch and bounded session retry (maximum about 4.5 seconds);
+4. short visible `... unavailable` / `... did not become ready` status rather than a disabled or silent button.
 
-## UX qualification
+A Settings switch, **Warm media sources on HOME start**, optionally pre-connects exported MediaBrowser services without opening their Activity UI. It is enabled by default but can be disabled. The launcher creates no MediaSession and never owns audio focus.
 
-[Mono Drive UX acceptance](docs/MONO_DRIVE_UX_ACCEPTANCE.md) is the quantitative acceptance contract. It defines static contrast/touch/motion gates, the 1280 x 720 API29 emulator matrix, and physical TS18 metrics for glance time, action taps, first-response latency, completion time, wrong-target rate and comparative CPU/PSS/frame evidence. These are qualification methods only; there is no parked-only runtime feature restriction.
+When Play/Pause is used to start a non-playing Music source, the launcher first sends one best-effort Pause to a genuinely playing Radio source; starting Radio similarly pauses Music. Pausing the selected source does not arbitrarily stop the other source.
+
+Generic music selection still supports Auto and Prefer music app, remembers the last explicitly selected eligible music package, and retains the visible-only one-second reconciliation fallback because physical TS18 testing showed callback-only metadata could become stale.
+
+On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. Third-party **NavRadio+ is `com.navimods.radio`**. Stock Topway music/radio remain separately unverified and no private Topway command is guessed.
+
+### Appearance
+
+Launcher chrome and the experimental map share Auto/Day/High contrast/Dim/Night appearance. Auto can use the ambient-light sensor or a schedule. Unavailable/stale sensor state falls back to schedule. Without a user schedule, the generic fallback uses 07:00/19:00 anchors, transition periods around those anchors and a central daytime high-glare window. User-selected anchors replace the defaults and may cross midnight.
+
+### Apps drawer
+
+Apps opens an in-HOME overlay. The drawer has Settings and Close actions, five user-configurable quick-access slots, always-visible local search with a prominent voice-search action, and a five-column grid with 72dp installed-app icons and readable labels. Drawer quick slots use the same APP/ICON model as HOME middle slots.
+
+### Experimental HOME map
+
+The Leaflet/WebView implementation is retained **only as an experimental physical-test comparator and is OFF by default on a clean install**. An existing explicit map preference is preserved during upgrades.
+
+When enabled it uses pinned Leaflet 1.9.4 and launcher-owned `TileBroker` for exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` raster requests, with identifying User-Agent, bounded timeouts, HTTP freshness/ETag/Last-Modified revalidation, stale-cache fallback, 64 MiB disk ceiling, no bulk prefetch, no arbitrary browsing and no JS bridge. The raster cache is not an Organic Maps/OsmAnd/Google/Yandex offline-map database.
+
+The duplicate map Navigation button has been removed. Navigation remains the permanent accented rail endpoint. Map-only controls are zoom in, zoom out and follow/recentre; when shown they stay on the **opposite edge from the side rail** and may still be hidden together in Settings.
+
+The larger WebView-vs-native/windowed navigation decision is intentionally outside this PR batch. Organic Maps remains the preferred offline navigation authority and full routing/navigation remains a public hand-off to the configured navigation app.
 
 ## Offline-first policy
 
-Network availability is optional. Core HOME operation must start and remain usable without Internet access: app launching, settings, GPS/location, local media, cached map tiles, navigation hand-off and underlying MediaSession controls continue where their installed source permits. Recommended offline-capable choices are Organic Maps, OsmAnd/OsmAnd+, Auxio-TS, Auxio and VLC, but they are not hard dependencies. The launcher map is a situational Leaflet view; its OSM raster cache is not a complete offline navigation database.
+Network availability is optional. Core HOME operation must start and remain usable without Internet access: app launching, settings, GPS/location, local media, cached experimental-map tiles, navigation hand-off and underlying media controls continue where the installed source permits.
+
+Recommended offline-capable ecosystem choices include **Organic Maps** and **OsmAnd/OsmAnd+** for navigation, and **Auxio-TS, Auxio and VLC** for local music. These are recommendations, not launcher dependencies.
+
+## Configuration and diagnostics
+
+Versioned SAF JSON export/import includes app/role assignments, quick-slot count, rail and Radio/Music sides, map settings, media mode, startup media warm-up, accent hue, icon overrides and appearance schedule. It does not export caches, secrets or location history.
+
+Read-only physical evidence helpers:
+
+- `scripts/termux/measure-standalone-launcher.sh` - CPU/RAM/frame and settled runtime measurements;
+- `scripts/termux/collect-window-media-evidence.sh` - bounded task/window/freeform/PiP, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture for the separate future map-windowing investigation and media bootstrap validation.
+
+The evidence collector does not change settings/tasks/packages/playback/window state. Permission/time-out/root gaps remain BLOCKED/UNKNOWN rather than negative evidence.
+
+## UX qualification
+
+[Mono Drive UX acceptance](docs/MONO_DRIVE_UX_ACCEPTANCE.md) defines the quantitative acceptance contract: contrast/touch/motion gates, the 1280 x 720 API29 emulator matrix, and physical TS18 metrics for glance time, action taps, response latency, completion time, wrong-target rate and comparative CPU/PSS/frame evidence.
+
+Physical validation is still required for the new always-ready media bootstrap/warm-up, mutual Radio/Music start behaviour, quick-slot APP/ICON editor, accent palette, inert date, fixed accented Navigation endpoint and experimental map defaults/controls.
 
 ## Safe HOME rollout
 
-The APK installs as an ordinary app first; its HOME alias is disabled by default. Configure and physically qualify the launcher while DoFun remains HOME, then explicitly enable/select the standalone HOME only after the ordinary-Activity gates pass. DoFun remains the rollback launcher through reboot/cold-boot/ACC qualification.
+Install/test the APK as an ordinary Activity first; its HOME alias is disabled by default. Configure and physically qualify while DoFun remains HOME, then explicitly enable/select standalone HOME only after ordinary-Activity gates pass. DoFun remains the rollback launcher through reboot/cold-boot/ACC qualification.
 
-Reverse-camera hand-off/return is a **roadmapped physical lifecycle validation item only**. The launcher contains no reverse-camera implementation at this stage.
+Reverse-camera hand-off/return is a roadmapped physical lifecycle item only. The launcher contains no reverse-camera implementation.
 
-See [Standalone launcher](docs/STANDALONE_LAUNCHER.md) for the current qualification playbook.
+See [Standalone launcher](docs/STANDALONE_LAUNCHER.md) for the qualification playbook.
 
 ## Magisk root policy
 
-This user-owned TS18 is Magisk-rooted. Root may be used for bounded one-time HOME assignment, diagnostics and reversible setup where it materially reduces runtime cost. It is not treated as platform signing, UID 1000, protected SELinux, MCU/CAN or partition-write authority. The launcher does not poll through `su` or disable protected Topway packages.
+This user-owned TS18 is Magisk-rooted. Root may be used for bounded one-time HOME assignment, read-only diagnostics and reversible setup where it materially reduces runtime cost. It is not treated as platform signing, UID 1000, protected SELinux, MCU/CAN or partition-write authority. The launcher does not poll through `su` or disable protected Topway packages.
 
-A bounded Termux installer/rollback helper is provided at `scripts/termux/install-standalone-launcher.sh`; read-only runtime measurement is provided at `scripts/termux/measure-standalone-launcher.sh`.
+A bounded Termux installer/rollback helper is provided at `scripts/termux/install-standalone-launcher.sh`.
 
 ## Legacy DoFun theme
 
@@ -93,14 +124,6 @@ gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 
 `launcher:preBuild` fetches and verifies pinned Leaflet 1.9.4 deployment assets. CI also requires an empty launcher `releaseRuntimeClasspath`, builds the signed/minified release, verifies one DEX/no native/Kotlin/AndroidX/RePlugin payload, checks the packaged Material Symbols attribution notice and validates the APK signature.
 
-## Testing and candidate releases
+Successful same-repository PR `Validate` runs refresh the fixed draft **000 Testing Only Version**. Use `TS18-Standalone-Launcher-TESTING.apk` for upgrade-compatible physical testing.
 
-Successful same-repository PR `Validate` runs refresh the fixed draft **000 Testing Only Version**. Use `TS18-Standalone-Launcher-TESTING.apk` for upgrade-compatible physical testing. **Refresh Testing APK Draft** can also build a PR number, branch, tag or commit SHA manually.
-
-The separate **Standalone Launcher Candidate** workflow produces an explicitly versioned qualified bundle and may optionally publish a prerelease. The legacy **Manual Release** workflow remains separate.
-
-## Physical validation boundary
-
-CI does not prove head-unit behaviour. Current physical evidence passes the prior SystemUI geometry, quick-launch/drawer/navigation hand-off, Auxio-TS/Spotify generic media and NavRadio+ MediaSession behaviour. The current Mono Drive HOME, two-level media presentation, independent Radio/Music sides, Leaflet map, appearance automation, voice search, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake still require exact-device validation. Reverse-camera hand-off/return remains roadmapped for later lifecycle validation, not current launcher functionality.
-
-Project-authored code/docs/assets are Apache-2.0. Vendored Material Symbols Rounded are Apache-2.0 and retain provenance/notice; bundled Leaflet retains its BSD-2-Clause licence. Vendor APKs, private signing material and device data are not committed.
+CI proves source/build/release contracts only. It does not prove physical head-unit behaviour.
