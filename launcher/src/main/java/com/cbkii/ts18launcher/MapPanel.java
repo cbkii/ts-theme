@@ -10,6 +10,9 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -20,6 +23,11 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.RenderProcessGoneDetail;
+import android.view.MotionEvent;
+import android.widget.Button;
+import org.json.JSONObject;
+import org.json.JSONException;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -42,7 +50,16 @@ final class MapPanel extends FrameLayout implements LocationListener {
 
     private final Activity activity;
     private final NavigationLauncher navigationLauncher;
-    private final WebView webView;
+    private WebView webView;
+    private static final MapState MAP_STATE = new MapState();
+    // Recovery is bounded for this map lifecycle. A clean Activity recreation starts
+    // with a fresh guard; a renderer failure in this instance can never loop forever.
+    private final RendererRecovery recovery = new RendererRecovery();
+    private static Location processLastLocation;
+    private final Button retry;
+    private boolean active;
+    private boolean recoveryPending;
+    private final Runnable loadTimeout = this::failUnavailable;
     private final LinearLayout statusChip;
     private final ImageView statusIcon;
     private final TextView status;
@@ -57,7 +74,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
     private boolean started;
     private boolean pageReady;
     private boolean destroyed;
-    private Location lastLocation;
+    private Location lastLocation = processLastLocation == null ? null : new Location(processLastLocation);
 
     MapPanel(Activity activity, NavigationLauncher navigationLauncher) {
         super(activity);
@@ -65,26 +82,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
         this.navigationLauncher = navigationLauncher;
         setBackgroundColor(Color.BLACK);
 
-        String userAgent = mapUserAgent();
-        tileBroker = new TileBroker(activity.getCacheDir(), userAgent);
-        webView = new WebView(activity);
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(false);
-        settings.setDatabaseEnabled(false);
-        settings.setAllowContentAccess(false);
-        settings.setAllowFileAccess(true);
-        settings.setGeolocationEnabled(false);
-        settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setLoadsImagesAutomatically(true);
-        settings.setBlockNetworkLoads(false);
-        settings.setSupportZoom(false);
-        settings.setUserAgentString(userAgent);
-        webView.setBackgroundColor(Color.BLACK);
-        webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, false);
-        webView.setWebViewClient(new RestrictedMapClient());
-        addView(webView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        tileBroker = new TileBroker(activity.getCacheDir(), mapUserAgent(), this::definitelyOffline);
 
         statusChip = new LinearLayout(activity);
         statusChip.setGravity(Gravity.CENTER_VERTICAL);
@@ -121,8 +119,105 @@ final class MapPanel extends FrameLayout implements LocationListener {
         AutomotiveUi.linkVertical(java.util.Arrays.asList(zoomIn, zoomOut, recenter));
         applyPreferences();
 
+        retry = new Button(activity);
+        retry.setText("Retry map");
+        retry.setContentDescription("Retry unavailable map");
+        retry.setOnClickListener(v -> {
+            if (destroyed || webView != null) return;
+            recovery.retry();
+            createWebView();
+            if (active) start();
+        });
+        LayoutParams retryLp = new LayoutParams(240, 88, Gravity.CENTER);
+        addView(retry, retryLp);
+        retry.setVisibility(View.GONE);
         locationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
-        webView.loadUrl(MAP_URL);
+        if (recovery.blocked()) showUnavailable(); else createWebView();
+    }
+
+    private boolean definitelyOffline() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) activity.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager == null) return false; // Unknown, not proof of disconnection.
+            Network network = manager.getActiveNetwork();
+            if (network == null) return true;
+            NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
+            // No VALIDATED requirement: captive portals/unvalidated networks still use normal HTTPS.
+            return capabilities != null && !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (RuntimeException ignored) { return false; }
+    }
+
+    private void createWebView() {
+        if (destroyed || webView != null || recovery.blocked()) return;
+        try {
+        webView = new WebView(activity);
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(false);
+        settings.setDatabaseEnabled(false);
+        settings.setAllowContentAccess(false);
+        settings.setAllowFileAccess(true);
+        settings.setGeolocationEnabled(false);
+        settings.setMediaPlaybackRequiresUserGesture(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setLoadsImagesAutomatically(true);
+        settings.setBlockNetworkLoads(false);
+        settings.setSupportZoom(false);
+        settings.setUserAgentString(mapUserAgent());
+        webView.setBackgroundColor(Color.BLACK);
+        webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, false);
+        webView.setWebViewClient(new RestrictedMapClient());
+        addView(webView, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
+            webView.setOnTouchListener((view, event) -> {
+                if (event.getActionMasked() == MotionEvent.ACTION_UP) scheduleMapHealthCheck();
+                return false; // Leaflet owns touch handling.
+            });
+            retry.setVisibility(View.GONE);
+            pageReady = false;
+            showStatus("Map loading", R.drawable.ic_my_location);
+            webView.loadUrl(MAP_URL);
+            if (!active) webView.onPause();
+            mainHandler.removeCallbacks(loadTimeout);
+            mainHandler.postDelayed(loadTimeout, 10_000L);
+        } catch (RuntimeException ignored) { failUnavailable(); }
+    }
+
+    private void detachWebView() {
+        mainHandler.removeCallbacks(loadTimeout);
+        mainHandler.removeCallbacks(mapHealthCheck);
+        pageReady = false;
+        WebView dead = webView;
+        webView = null;
+        if (dead != null) { removeView(dead); dead.destroy(); }
+    }
+
+    private void failUnavailable() {
+        if (destroyed) return;
+        recovery.creationFailed();
+        detachWebView();
+        showUnavailable();
+    }
+
+    private void showUnavailable() {
+        showStatus("Map unavailable", R.drawable.ic_my_location);
+        retry.setVisibility(View.VISIBLE);
+        if (started && locationManager != null) {
+            try { locationManager.removeUpdates(this); } catch (SecurityException ignored) {}
+        }
+        started = false;
+    }
+
+    void applyAppearance() {
+        statusChip.setBackground(AutomotiveUi.chipBackground(activity));
+        statusIcon.setColorFilter(AutomotiveUi.color(activity, R.color.ui_icon));
+        status.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
+        AutomotiveUi.styleMapButton(activity, zoomIn, false);
+        AutomotiveUi.styleMapButton(activity, zoomOut, false);
+        AutomotiveUi.styleMapButton(activity, openNav, true);
+        recenter.setBackground(AutomotiveUi.followModeBackground(activity));
+        recenter.setImageTintList(AutomotiveUi.followTint(activity));
+        applyMapAppearance();
     }
 
     private String mapUserAgent() {
@@ -171,13 +266,13 @@ final class MapPanel extends FrameLayout implements LocationListener {
     }
 
     private void applyMapAppearance() {
-        if (!pageReady) return;
+        if (!pageReady || webView == null) return;
         String mode = AppearanceController.resolvedMode(activity);
         webView.evaluateJavascript("setMapAppearance('" + mode + "')", null);
     }
 
     void start() {
-        if (started) return;
+        if (started || !active || webView == null) return;
         started = true;
         if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -203,19 +298,24 @@ final class MapPanel extends FrameLayout implements LocationListener {
             try { locationManager.removeUpdates(this); } catch (SecurityException ignored) {}
         }
         started = false;
+        active = false;
+        captureMapState();
         mainHandler.removeCallbacks(mapHealthCheck);
-        webView.onPause();
+        if (webView != null) webView.onPause();
     }
 
     void resumeWebView() {
-        webView.onResume();
+        if (destroyed) return;
+        active = true;
+        if (recoveryPending) { recoveryPending = false; createWebView(); }
+        if (webView != null) webView.onResume();
         applyPreferences();
         if (LauncherPrefs.mapEnabled(activity)) start();
     }
 
     void destroy() {
         destroyed = true; stop(); mainHandler.removeCallbacksAndMessages(null);
-        removeView(webView); webView.destroy();
+        detachWebView();
     }
 
     void onLocationPermissionResult() { started = false; start(); }
@@ -235,7 +335,9 @@ final class MapPanel extends FrameLayout implements LocationListener {
     @Override public void onLocationChanged(Location location) {
         if (location == null) return;
         lastLocation = new Location(location);
-        if (pageReady) renderLocation(lastLocation); else showStatus("Map loading", R.drawable.ic_my_location);
+        processLastLocation = new Location(location);
+        if (pageReady) renderLocation(lastLocation);
+        else if (webView != null) showStatus("Map loading", R.drawable.ic_my_location);
     }
 
     private void renderLocation(Location location) {
@@ -245,31 +347,60 @@ final class MapPanel extends FrameLayout implements LocationListener {
                 location.getLatitude(), location.getLongitude(), accuracy, bearing,
                 location.hasBearing() ? "true" : "false");
         webView.evaluateJavascript(js, null);
-        showStatus("Map loading", R.drawable.ic_my_location);
         scheduleMapHealthCheck();
     }
 
     private void scheduleMapHealthCheck() {
-        if (destroyed || !pageReady) return;
+        if (destroyed || !active || !pageReady || webView == null) return;
         mainHandler.removeCallbacks(mapHealthCheck);
         mainHandler.postDelayed(mapHealthCheck, HEALTH_CHECK_DELAY_MS);
     }
 
     private void checkMapHealth() {
-        if (destroyed || !pageReady) return;
-        webView.evaluateJavascript("mapHealth()", value -> {
-            if (destroyed || value == null) return;
-            recenter.setSelected(value.contains(":follow"));
-            if (value.contains("ok:")) {
-                if (!tileBroker.lastFailure().isEmpty()) showStatus("Map offline", R.drawable.ic_my_location);
+        if (destroyed || !active || !pageReady || webView == null) return;
+        WebView current = webView;
+        current.evaluateJavascript("mapSnapshot()", value -> {
+            if (destroyed || current != webView || !active || value == null) return;
+            try {
+                JSONObject snapshot = decodeSnapshot(value);
+                updateMapState(snapshot);
+                String health = snapshot.optString("health");
+                recenter.setSelected(MAP_STATE.follow);
+                TileState.Snapshot tiles = tileBroker.recentState();
+                long now = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
+                if (health.startsWith("ok:")) hideStatus(); // Fresh/stale cached tiles are useful and quiet.
+                else if (health.startsWith("error:") && tiles != null && tiles.recentFailure(now))
+                    showStatus("Map offline", R.drawable.ic_my_location);
+                else if (lastLocation == null) showStatus("Locating…", R.drawable.ic_my_location);
+                else if (health.startsWith("loading:")) showStatus("Map loading", R.drawable.ic_my_location);
                 else hideStatus();
-            } else if (value.contains("error:")) {
-                showStatus("Map offline", R.drawable.ic_my_location);
-            } else if (value.contains("runtime-error")) {
-                showStatus("Map unavailable", R.drawable.ic_my_location);
-            } else if (lastLocation == null) showStatus("Locating…", R.drawable.ic_my_location);
-            else showStatus("Map loading", R.drawable.ic_my_location);
+            } catch (JSONException ignored) { failUnavailable(); }
         });
+    }
+
+    private void captureMapState() {
+        if (!pageReady || webView == null) return;
+        WebView current = webView;
+        current.evaluateJavascript("mapSnapshot()", value -> {
+            if (destroyed || current != webView || value == null) return;
+            try { updateMapState(decodeSnapshot(value)); } catch (JSONException ignored) { /* Retain last valid viewport. */ }
+        });
+    }
+
+    private void updateMapState(JSONObject snapshot) throws JSONException {
+        if (snapshot.optBoolean("hasCentre")) MAP_STATE.update(snapshot.getInt("zoom"),
+                snapshot.getBoolean("follow"), snapshot.getDouble("latitude"), snapshot.getDouble("longitude"));
+    }
+
+    /** evaluateJavascript returns JSON-encoded values; accept both object and quoted JSON. */
+    private static JSONObject decodeSnapshot(String value) throws JSONException {
+        if (value == null) throw new JSONException("missing map snapshot");
+        String json = value.trim();
+        if (json.startsWith("\"")) {
+            Object unwrapped = new org.json.JSONTokener(json).nextValue();
+            if (unwrapped instanceof String) json = ((String) unwrapped).trim();
+        }
+        return new JSONObject(json);
     }
 
     private void showStatus(String text, int icon) {
@@ -296,9 +427,21 @@ final class MapPanel extends FrameLayout implements LocationListener {
 
     private void onMapPageReady(String url) {
         if (!MAP_URL.equals(url)) return;
-        pageReady = true;
-        applyMapAppearance();
-        if (lastLocation != null) renderLocation(lastLocation); else showStatus("Locating…", R.drawable.ic_my_location);
+        WebView current = webView;
+        if (current == null) return;
+        current.evaluateJavascript("typeof mapSnapshot === 'function'", value -> {
+            if (destroyed || current != webView) return;
+            if (!"true".equals(value)) { failUnavailable(); return; }
+            mainHandler.removeCallbacks(loadTimeout);
+            pageReady = true;
+            applyMapAppearance();
+            if (lastLocation != null) renderLocation(lastLocation);
+            if (MAP_STATE.hasCentre) current.evaluateJavascript(String.format(Locale.US,
+                    "restoreMapState(%d,%s,%.7f,%.7f)", MAP_STATE.zoom, MAP_STATE.follow,
+                    MAP_STATE.latitude, MAP_STATE.longitude), null);
+            recenter.setSelected(MAP_STATE.follow);
+            scheduleMapHealthCheck();
+        });
     }
 
     @Override public void onProviderEnabled(String provider) {
@@ -311,7 +454,18 @@ final class MapPanel extends FrameLayout implements LocationListener {
 
     private final class RestrictedMapClient extends WebViewClient {
         private final byte[] blocked = "blocked".getBytes(StandardCharsets.UTF_8);
-        @Override public void onPageFinished(WebView view, String url) { onMapPageReady(url); }
+        @Override public void onPageFinished(WebView view, String url) {
+            if (view == webView) onMapPageReady(url);
+        }
+        @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+            if (view != webView) { removeView(view); view.destroy(); return true; }
+            detachWebView();
+            if (!destroyed && recovery.failed()) {
+                if (active) mainHandler.post(MapPanel.this::createWebView);
+                else recoveryPending = true;
+            } else if (!destroyed) showUnavailable();
+            return true;
+        }
         @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             return !MAP_URL.equals(request.getUrl().toString());
         }

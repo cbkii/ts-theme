@@ -16,6 +16,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.BaseAdapter;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.GridView;
 import android.widget.ImageButton;
@@ -63,6 +64,18 @@ public final class AppDrawerActivity extends Activity {
         header.setPadding(gap, 0, gap, 0);
         root.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(this, R.dimen.ui_drawer_header_height)));
+
+        if (pickKey != null && !pickKey.isEmpty()) {
+            Button clear = new Button(this);
+            clear.setText(RoleIconCatalog.hasDefault(ShortcutSlot.role(this, pickKey))
+                    ? "Use role default" : "Clear assignment");
+            clear.setOnClickListener(v -> {
+                LauncherPrefs.setPackage(this, pickKey, null);
+                MediaListenerService.refreshActiveSessions();
+                finish();
+            });
+            root.addView(clear, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, target));
+        }
 
         LinearLayout searchRow = new LinearLayout(this);
         searchRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -159,6 +172,11 @@ public final class AppDrawerActivity extends Activity {
     private void onEntry(Entry entry) {
         if (pickKey != null && !pickKey.isEmpty()) {
             LauncherPrefs.setPackage(this, pickKey, entry.packageName);
+            if (LauncherPrefs.KEY_MUSIC.equals(pickKey)) {
+                LauncherPrefs.rememberMusic(this, entry.packageName);
+                LauncherPrefs.selectSource(this, MediaSelection.MUSIC);
+            }
+            MediaListenerService.refreshActiveSessions();
             Toast.makeText(this, entry.label + " selected", Toast.LENGTH_SHORT).show();
             finish();
             return;

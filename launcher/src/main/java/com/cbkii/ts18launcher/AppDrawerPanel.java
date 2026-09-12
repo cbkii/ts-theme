@@ -159,15 +159,38 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     }
 
     void hideImmediately() {
-        if (!isOpen()) return;
         animate().cancel();
         dismissKeyboard();
         setAlpha(1f);
         setVisibility(View.GONE);
     }
 
+    void restoreDashboardRoot() {
+        hideImmediately();
+        search.setText("");
+        filter("");
+        grid.setSelection(0);
+    }
+
+    void applyAppearance() {
+        setBackgroundColor(AutomotiveUi.color(activity, R.color.ui_black));
+        recolour(this);
+        refreshPreferences();
+        adapter.notifyDataSetChanged();
+    }
+
+    private void recolour(View view) {
+        if (view instanceof TextView) ((TextView) view).setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
+        if (view instanceof EditText) ((EditText) view).setHintTextColor(AutomotiveUi.color(activity, R.color.ui_text_secondary));
+        if (view instanceof ImageButton) AutomotiveUi.styleRailButton(activity, (ImageButton) view);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) recolour(group.getChildAt(i));
+        }
+    }
+
     void applyVoiceSearch(String query) {
-        if (query == null || query.trim().isEmpty()) return;
+        if (!isOpen() || query == null || query.trim().isEmpty()) return;
         search.setText(query.trim());
         search.setSelection(search.length());
         search.clearFocus();
@@ -185,6 +208,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             cell.setGravity(Gravity.CENTER);
             String role = LauncherPrefs.drawerQuickRole(activity, i);
             ImageButton button = iconButton(RoleIconCatalog.icon(role), RoleIconCatalog.label(role));
+            ShortcutSlot.bind(activity, button, LauncherPrefs.DRAWER_QUICK_KEYS[i]);
             button.setOnClickListener(v -> openDrawerQuick(index));
             button.setOnLongClickListener(v -> { openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]); return true; });
             TextView label = new TextView(activity);
@@ -248,21 +272,12 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         adapter.notifyDataSetChanged();
     }
 
-    private String resolveDrawerQuickPackage(int index) {
-        String direct = LauncherPrefs.packageFor(activity, LauncherPrefs.DRAWER_QUICK_KEYS[index]);
-        return direct.isEmpty() ? RoleIconCatalog.fallbackPackage(activity,
-                LauncherPrefs.drawerQuickRole(activity, index)) : direct;
-    }
-
     private String drawerQuickLabel(int index) {
-        String role = LauncherPrefs.drawerQuickRole(activity, index);
-        String pkg = resolveDrawerQuickPackage(index);
-        return AppResolver.labelFor(activity, pkg, RoleIconCatalog.label(role));
+        return ShortcutSlot.label(activity, LauncherPrefs.DRAWER_QUICK_KEYS[index]);
     }
 
     private void openDrawerQuick(int index) {
-        String pkg = resolveDrawerQuickPackage(index);
-        if (!AppResolver.launchPackage(activity, pkg)) openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]);
+        if (!ShortcutSlot.launch(activity, LauncherPrefs.DRAWER_QUICK_KEYS[index])) openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]);
     }
 
     private void openPicker(String key) {

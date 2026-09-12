@@ -17,18 +17,22 @@ These are repository gates and may be asserted without physical-device evidence:
 
 ## Emulator acceptance - 1280 x 720
 
-Run the current testing APK in an API 29 landscape emulator configured to 1280 x 720. Exercise both rail positions and both independent media-control sides.
+Run the current testing APK in an API 29 landscape emulator configured to 1280 x 720. Exercise both rail positions and both independent Radio/Music-side arrangements.
 
 PASS requires all of the following:
 
 1. Topway-equivalent reserved regions remain unobscured in the geometry harness: no interactive content right of x=1225 or above y=55 when full physical bounds are supplied.
 2. Apps remains the top rail endpoint, Navigation remains the bottom endpoint and 3, 4, 5 and 6 middle-slot configurations fit without overlap.
-3. Radio/Music primary metadata is one slow-marquee line and secondary context is one static ellipsised line; neither overlaps the role icon or transport cluster.
-4. Media controls Left/Right changes only the media-card transport-cluster side. It does not mutate rail side or map-control side.
+3. Radio and Music share exactly one active metadata region: the selected source's primary metadata is one slow-marquee line and secondary context is one static ellipsised line; neither overlaps either source/control group.
+4. Radio/Music sides changes only which group is left/right. It does not mutate rail side or map-control side.
 5. Play/Pause icon changes crossfade in 120ms; map/status reveal is 160ms; drawer open/close is 180ms.
 6. Follow mode is distinguishable without colour: selected state has the accent outline/halo in addition to orange tint.
 7. Text search and voice-search controls remain visible in the drawer; absence of a speech recogniser disables only the mic action.
 8. Day, High contrast, Dim and Night screenshots remain legible at normal emulator brightness and retain at least the defined static contrast contract.
+
+9. Repeated HOME intents close the drawer, clear search/keyboard state and restore the dashboard root without resetting media selection, map centre, zoom or follow/free state.
+10. With no usable network, a cached tile is shown immediately (fresh or stale) and an uncached tile fails promptly; a historical tile failure does not keep healthy cached use labelled offline.
+11. A renderer failure permits one automatic local WebView recreation only. A second failure leaves a stable `Map unavailable` state with an explicit retry action.
 
 Record screenshots for Right rail + Right media controls, Right rail + Left media controls, Left rail + Right media controls, High contrast and Night.
 
@@ -64,6 +68,8 @@ Measure glance/task timing from video at 60fps or better where practical. If vid
 ### Appearance and high-sun/night checks
 
 Test explicit Day, High contrast, Dim and Night plus Auto/Sensor and Auto/Schedule. PASS requires launcher chrome and Leaflet map to change together, no stale mode after returning from Settings, readable primary/secondary metadata, and no state communicated by colour alone where a selected/disabled/focused state is required.
+
+Automatic sensor/schedule transitions must update in place; repeated Activity/WebView recreation is a failure unless an explicit Settings change requested it.
 
 For the generic schedule, check representative times around the 07:00 and 19:00 anchors and central daytime high-glare period. For a custom schedule, verify the user-entered day/night anchors replace the defaults, including a schedule crossing midnight.
 

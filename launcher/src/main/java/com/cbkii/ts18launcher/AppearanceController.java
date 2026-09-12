@@ -31,8 +31,7 @@ final class AppearanceController implements SensorEventListener {
         this.context = context.getApplicationContext();
         this.callback = callback;
         // Capture the mode used by the Activity while it is being constructed. If Settings
-        // changes the effective mode while HOME is stopped, start() can then request one
-        // recreation instead of silently accepting stale chrome colours.
+        // changes the effective mode while HOME is stopped, start() updates colours in place.
         deliveredMode = resolvedMode(this.context);
     }
 

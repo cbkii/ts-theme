@@ -35,3 +35,13 @@ The upstream vector path geometry is retained. Local copies remove the theme-lev
 The repository root `LICENSE` contains the Apache License 2.0 terms. The launcher also packages `assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt` with the upstream revision and modification notice.
 
 The application launcher badge (`ic_launcher.xml`) is project branding, not a functional UI glyph, and is intentionally not sourced from Material Symbols.
+
+- `ic_home.xml` <- `home` (same pinned revision).
+
+- `ic_work.xml` <- `work` (same pinned revision).
+
+- `ic_camera.xml` <- `photo_camera` (same pinned revision).
+
+- `ic_video.xml` <- `movie` (same pinned revision).
+
+- `ic_weather.xml` <- `partly_cloudy_day` (same pinned revision).

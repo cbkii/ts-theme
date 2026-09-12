@@ -38,9 +38,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private LinearLayout radioPanel;
     private LinearLayout musicPanel;
     private TextClock dateView;
-    private ImageView radioRole;
-    private ImageView musicRole;
-    private MediaMetadataView radioText;
+    private ImageButton radioRole;
+    private ImageButton musicRole;
+    private MediaSelection mediaSelection;
     private MediaMetadataView mediaText;
     private ImageButton radioPrevious;
     private ImageButton radioPlayPause;
@@ -71,7 +71,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
-        appearanceController = new AppearanceController(this, mode -> runOnUiThread(this::recreate));
+        mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
+        appearanceController = new AppearanceController(this, mode -> applyAppearance());
 
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
@@ -79,20 +80,68 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         buildRail();
         buildRadioPanel();
         buildMusicPanel();
+        mediaText = metadataView("Music", "");
+        mediaText.setOnClickListener(v -> {
+            if (MediaSelection.RADIO.equals(mediaSelection.displayed())) openConfigured(LauncherPrefs.KEY_RADIO);
+            else openCurrentMedia();
+        });
+        mediaText.setOnLongClickListener(v -> { openSettings(); return true; });
+        root.addView(mediaText);
         buildDate();
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 applyGeometry(right - left, bottom - top));
         root.post(() -> applyGeometry(root.getWidth(), root.getHeight()));
     }
 
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        launchedAsHome = intent != null && intent.hasCategory(Intent.CATEGORY_HOME);
+        if (launchedAsHome) {
+            if (appDrawerPanel != null) appDrawerPanel.restoreDashboardRoot();
+            root.clearFocus();
+            appsButton.requestFocus();
+            root.bringToFront();
+            if (mapPanel != null && LauncherPrefs.mapEnabled(this)) mapPanel.resumeWebView();
+        }
+    }
+
+    private void applyAppearance() {
+        if (root == null || mediaText == null) return;
+        root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
+        rail.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
+        radioPanel.setBackground(AutomotiveUi.chipBackground(this));
+        musicPanel.setBackground(AutomotiveUi.cardBackground(this));
+        mediaText.applyAppearance();
+        dateView.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+        dateView.setBackground(AutomotiveUi.interactiveBackground(this, false));
+        for (ImageButton button : new ImageButton[] {radioRole, radioPrevious, radioNext,
+                musicRole, mediaPrevious, mediaNext}) AutomotiveUi.styleTransportButton(this, button, false);
+        AutomotiveUi.styleTransportButton(this, radioPlayPause, true);
+        AutomotiveUi.styleTransportButton(this, playPause, true);
+        AutomotiveUi.styleRailButton(this, appsButton);
+        AutomotiveUi.styleRailButton(this, navigationButton);
+        for (ImageButton button : quickButtons) AutomotiveUi.styleRailButton(this, button);
+        applyRailConfiguration();
+        if (appDrawerPanel != null) appDrawerPanel.applyAppearance();
+        if (mapPanel != null) mapPanel.applyAppearance();
+    }
+
+    // Compatibility note for migrated preference readers: the former "Media controls side"
+    // setting is intentionally not used. Radio/Music sides is the sole independent cluster
+    // preference and remains unrelated to the rail and driver-side settings.
+    // Historical source contract: LauncherPrefs.mediaControlsOnLeft(this) was removed with
+    // the old two-panel model; do not reintroduce it as a second setting.
+
     @Override protected void onStart() {
         super.onStart();
+        mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
         MediaListenerService.addObserver(this);
         MediaListenerService.refreshActiveSessions();
         startMediaRefreshPolling();
         applyRailConfiguration();
-        applyMediaPanelOrder();
+
         if (appDrawerPanel != null) appDrawerPanel.refreshPreferences();
         root.post(this::updateMapVisibility);
         updateLabels();
@@ -187,8 +236,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             boolean visible = i < count;
             quickButtons[i].setVisibility(visible ? View.VISIBLE : View.GONE);
             String role = LauncherPrefs.quickRole(this, i);
-            quickButtons[i].setImageResource(RoleIconCatalog.icon(role));
-            quickButtons[i].setContentDescription(RoleIconCatalog.label(role));
+            ShortcutSlot.bind(this, quickButtons[i], LauncherPrefs.QUICK_KEYS[i]);
             if (visible) focus.add(quickButtons[i]);
         }
         focus.add(navigationButton);
@@ -199,69 +247,57 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void buildRadioPanel() {
         radioPanel = stripPanel();
-        radioRole = roleIcon(R.drawable.ic_radio, "Radio");
-        radioText = metadataView("Radio", "");
+        radioPanel.setBackground(AutomotiveUi.chipBackground(this));
+        radioRole = controlButton(R.drawable.ic_radio, "Open radio source", false);
         radioPrevious = controlButton(R.drawable.ic_previous, "Previous station", false);
         radioPlayPause = controlButton(R.drawable.ic_play, "Play or pause radio", true);
         radioNext = controlButton(R.drawable.ic_next, "Next station", false);
-        radioPrevious.setOnClickListener(v -> MediaListenerService.sendRadio(MediaListenerService.Command.PREVIOUS));
-        radioPlayPause.setOnClickListener(v -> MediaListenerService.sendRadio(MediaListenerService.Command.PLAY_PAUSE));
-        radioNext.setOnClickListener(v -> MediaListenerService.sendRadio(MediaListenerService.Command.NEXT));
-        radioText.setOnClickListener(v -> openConfigured(LauncherPrefs.KEY_RADIO));
-        radioText.setOnLongClickListener(v -> { openSettings(); return true; });
-        AutomotiveUi.linkHorizontal(java.util.Arrays.asList(radioPrevious, radioPlayPause, radioNext));
-        populateMediaPanel(radioPanel, radioRole, radioText, radioPrevious, radioPlayPause, radioNext);
+        radioRole.setOnClickListener(v -> openConfigured(LauncherPrefs.KEY_RADIO));
+        radioPrevious.setOnClickListener(v -> radioCommand(MediaListenerService.Command.PREVIOUS));
+        radioPlayPause.setOnClickListener(v -> radioCommand(MediaListenerService.Command.PLAY_PAUSE));
+        radioNext.setOnClickListener(v -> radioCommand(MediaListenerService.Command.NEXT));
+        populateControls(radioPanel, radioRole, radioPrevious, radioPlayPause, radioNext);
         root.addView(radioPanel);
     }
 
     private void buildMusicPanel() {
         musicPanel = stripPanel();
-        musicRole = roleIcon(R.drawable.ic_music, "Music");
-        mediaText = metadataView("Grant media access", "Music");
+        musicRole = controlButton(R.drawable.ic_music, "Open music source", false);
         mediaPrevious = controlButton(R.drawable.ic_previous, "Previous track", false);
-        playPause = controlButton(R.drawable.ic_play, "Play or pause", true);
+        playPause = controlButton(R.drawable.ic_play, "Play or pause music", true);
         mediaNext = controlButton(R.drawable.ic_next, "Next track", false);
-        mediaPrevious.setOnClickListener(v -> MediaListenerService.sendGeneric(MediaListenerService.Command.PREVIOUS));
-        playPause.setOnClickListener(v -> MediaListenerService.sendGeneric(MediaListenerService.Command.PLAY_PAUSE));
-        mediaNext.setOnClickListener(v -> MediaListenerService.sendGeneric(MediaListenerService.Command.NEXT));
-        mediaText.setOnClickListener(v -> openCurrentMedia());
-        mediaText.setOnLongClickListener(v -> {
-            if (!MediaListenerService.hasNotificationAccess(this)) {
-                startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
-            } else openSettings();
-            return true;
-        });
-        AutomotiveUi.linkHorizontal(java.util.Arrays.asList(mediaPrevious, playPause, mediaNext));
-        populateMediaPanel(musicPanel, musicRole, mediaText, mediaPrevious, playPause, mediaNext);
+        musicRole.setOnClickListener(v -> openCurrentMedia());
+        mediaPrevious.setOnClickListener(v -> musicCommand(MediaListenerService.Command.PREVIOUS));
+        playPause.setOnClickListener(v -> musicCommand(MediaListenerService.Command.PLAY_PAUSE));
+        mediaNext.setOnClickListener(v -> musicCommand(MediaListenerService.Command.NEXT));
+        populateControls(musicPanel, musicRole, mediaPrevious, playPause, mediaNext);
         root.addView(musicPanel);
     }
 
-    private void applyMediaPanelOrder() {
-        if (radioPanel != null) {
-            populateMediaPanel(radioPanel, radioRole, radioText, radioPrevious, radioPlayPause, radioNext);
-        }
-        if (musicPanel != null) {
-            populateMediaPanel(musicPanel, musicRole, mediaText, mediaPrevious, playPause, mediaNext);
-        }
+    private void populateControls(LinearLayout panel, ImageButton source, ImageButton previous,
+                                  ImageButton primary, ImageButton next) {
+        panel.addView(source, fixed(Ts18Geometry.SOURCE_TARGET));
+        panel.addView(previous, fixed(Ts18Geometry.TRANSPORT_TARGET));
+        panel.addView(primary, fixed(Ts18Geometry.PRIMARY_TARGET));
+        panel.addView(next, fixed(Ts18Geometry.TRANSPORT_TARGET));
+        AutomotiveUi.linkHorizontal(java.util.Arrays.asList(source, previous, primary, next));
     }
 
-    private void populateMediaPanel(LinearLayout panel, ImageView role, MediaMetadataView metadata,
-                                    ImageButton previous, ImageButton primary, ImageButton next) {
-        panel.removeAllViews();
-        boolean controlsLeft = LauncherPrefs.mediaControlsOnLeft(this);
-        if (controlsLeft) {
-            panel.addView(previous, fixed(84));
-            panel.addView(primary, fixed(88));
-            panel.addView(next, fixed(84));
-            panel.addView(role, fixed(48));
-            panel.addView(metadata, weighted());
-        } else {
-            panel.addView(role, fixed(48));
-            panel.addView(metadata, weighted());
-            panel.addView(previous, fixed(84));
-            panel.addView(primary, fixed(88));
-            panel.addView(next, fixed(84));
-        }
+    private void selectSource(String source) {
+        LauncherPrefs.selectSource(this, source);
+        mediaSelection.select(source);
+        updateLabels();
+    }
+
+    private void radioCommand(MediaListenerService.Command command) {
+        selectSource(MediaSelection.RADIO);
+        MediaListenerService.sendRadio(command);
+    }
+
+    private void musicCommand(MediaListenerService.Command command) {
+        selectSource(MediaSelection.MUSIC);
+        if (!genericSnapshot.packageName.isEmpty()) LauncherPrefs.rememberMusic(this, genericSnapshot.packageName);
+        MediaListenerService.sendGeneric(command);
     }
 
     private void buildDate() {
@@ -284,20 +320,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.HORIZONTAL);
         panel.setGravity(Gravity.CENTER_VERTICAL);
-        panel.setPadding(AutomotiveUi.dimen(this, R.dimen.driver_gap), 0,
-                AutomotiveUi.dimen(this, R.dimen.ui_card_inset), 0);
+        panel.setPadding(0, 0, 0, 0);
         panel.setBackground(AutomotiveUi.cardBackground(this));
         return panel;
-    }
-
-    private ImageView roleIcon(int iconRes, String description) {
-        ImageView view = new ImageView(this);
-        view.setImageResource(iconRes);
-        view.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
-        view.setContentDescription(description);
-        int padding = AutomotiveUi.dimen(this, R.dimen.driver_gap);
-        view.setPadding(padding, padding, padding, padding);
-        return view;
     }
 
     private ImageButton controlButton(int icon, String description, boolean primary) {
@@ -317,10 +342,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private LinearLayout.LayoutParams fixed(int widthPx) {
         return new LinearLayout.LayoutParams(widthPx, LinearLayout.LayoutParams.MATCH_PARENT);
-    }
-
-    private LinearLayout.LayoutParams weighted() {
-        return new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
     }
 
     private void updateMapVisibility() {
@@ -349,10 +370,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void applyGeometry(int width, int height) {
         if (width <= 0 || height <= 0) return;
-        Ts18Geometry.Layout g = Ts18Geometry.resolve(width, height, LauncherPrefs.railOnRight(this));
+        Ts18Geometry.Layout g = Ts18Geometry.resolve(width, height, LauncherPrefs.railOnRight(this), LauncherPrefs.radioOnRight(this));
         place(rail, g.railX, g.top, g.railWidth(), g.railHeight());
-        placeCard(radioPanel, g.radioX(), g.top, g.radioWidth, g.stripHeight);
-        placeCard(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);
+        place(radioPanel, g.radioX(), g.top, g.radioWidth, g.stripHeight);
+        place(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);
+        place(mediaText, g.metadataX(), g.top, g.metadataWidth(), g.stripHeight);
         placeCard(dateView, g.dateX(), g.top, g.dateWidth(), g.stripHeight);
         if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (appDrawerPanel != null) place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
@@ -375,12 +397,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         String radioLabel = AppResolver.labelFor(this, radioPackage,
                 radioPackage.isEmpty() ? "Set radio" : "Radio");
         boolean exactRadioSession = !radioPackage.isEmpty() && radioPackage.equals(radioSnapshot.packageName);
-        if (exactRadioSession) {
-            radioText.setMetadata(primaryMetadata(radioSnapshot, radioLabel),
-                    secondaryMetadata(radioSnapshot, radioLabel));
-        } else {
-            radioText.setMetadata(radioLabel, "");
-        }
         AutomotiveUi.setIconWithCrossfade(this, radioPlayPause,
                 radioSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
         setMediaButtonState(radioPrevious, exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.PREVIOUS));
@@ -388,7 +404,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         setMediaButtonState(radioNext, exactRadioSession && radioSnapshot.supports(MediaListenerService.Command.NEXT));
 
         if (!MediaListenerService.hasNotificationAccess(this)) {
-            mediaText.setMetadata("Grant media access", "Music");
+            if (MediaSelection.MUSIC.equals(mediaSelection.displayed())) mediaText.setMetadata("Grant media access", "Settings · Notification access");
+            else mediaText.setMetadata(radioLabel, "Radio");
             AutomotiveUi.setIconWithCrossfade(this, playPause, R.drawable.ic_play);
             setMediaButtonState(mediaPrevious, false);
             setMediaButtonState(playPause, false);
@@ -401,12 +418,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         String sourcePackage = genericSnapshot.packageName.isEmpty() ? fallback : genericSnapshot.packageName;
         String sourceLabel = AppResolver.labelFor(this, sourcePackage,
                 sourcePackage.isEmpty() ? "No active media session" : sourcePackage);
-        if (!genericSnapshot.isEmpty()) {
-            mediaText.setMetadata(primaryMetadata(genericSnapshot, sourceLabel),
-                    secondaryMetadata(genericSnapshot, sourceLabel));
-        } else {
-            mediaText.setMetadata(sourceLabel, sourcePackage.isEmpty() ? "" : "Music");
-        }
+        boolean showRadio = MediaSelection.RADIO.equals(mediaSelection.displayed());
+        MediaListenerService.Snapshot displayed = showRadio ? radioSnapshot : genericSnapshot;
+        String label = showRadio ? radioLabel : sourceLabel;
+        mediaText.setMetadata(primaryMetadata(displayed, label), secondaryMetadata(displayed, label));
         AutomotiveUi.setIconWithCrossfade(this, playPause,
                 genericSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
         setMediaButtonState(mediaPrevious, genericSnapshot.supports(MediaListenerService.Command.PREVIOUS));
@@ -431,15 +446,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         button.setEnabled(enabled);
     }
 
-    private String resolveQuickPackage(int index) {
-        String direct = LauncherPrefs.packageFor(this, LauncherPrefs.QUICK_KEYS[index]);
-        if (!direct.isEmpty()) return direct;
-        return RoleIconCatalog.fallbackPackage(this, LauncherPrefs.quickRole(this, index));
-    }
-
     private void openQuick(int index) {
-        String pkg = resolveQuickPackage(index);
-        if (!AppResolver.launchPackage(this, pkg)) openPicker(LauncherPrefs.QUICK_KEYS[index]);
+        if (!ShortcutSlot.launch(this, LauncherPrefs.QUICK_KEYS[index])) openPicker(LauncherPrefs.QUICK_KEYS[index]);
+        mediaSelection.select(LauncherPrefs.lastSource(this));
+        updateLabels();
     }
 
     private void toggleAppDrawer() {
@@ -465,10 +475,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                                                 MediaListenerService.Snapshot radio) {
         genericSnapshot = genericMedia == null ? new MediaListenerService.Snapshot("", "", "", false) : genericMedia;
         radioSnapshot = radio == null ? new MediaListenerService.Snapshot("", "", "", false) : radio;
-        runOnUiThread(this::updateLabels);
+        runOnUiThread(() -> {
+            mediaSelection.reconcile(radioSnapshot.state == android.media.session.PlaybackState.STATE_PLAYING,
+                    genericSnapshot.state == android.media.session.PlaybackState.STATE_PLAYING);
+            updateLabels();
+        });
     }
 
     private void openCurrentMedia() {
+        selectSource(MediaSelection.MUSIC);
         if (!genericSnapshot.packageName.isEmpty() && AppResolver.launchPackage(this, genericSnapshot.packageName)) return;
         String fallback = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
         if (fallback.isEmpty()) fallback = TopwayAdapter.defaultMusicPackage(this);
@@ -481,6 +496,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openConfigured(String key) {
+        if (LauncherPrefs.KEY_RADIO.equals(key)) selectSource(MediaSelection.RADIO);
+        else if (LauncherPrefs.KEY_MUSIC.equals(key)) selectSource(MediaSelection.MUSIC);
         String pkg;
         if (LauncherPrefs.KEY_RADIO.equals(key)) pkg = RadioProvider.resolvePackage(this);
         else {

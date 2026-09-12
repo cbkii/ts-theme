@@ -21,6 +21,9 @@ final class LauncherPrefs {
     static final String KEY_DRAWER_QUICK_5 = "app.drawer.quick.5";
     static final String KEY_QUICK_COUNT = "ui.quick.count";
     static final String KEY_RAIL_POSITION = "ui.rail.position";
+    static final String KEY_RADIO_SIDE = "ui.radio.side";
+    static final String KEY_LAST_SOURCE = "media.last.explicit.source";
+    static final String KEY_LAST_MUSIC = "media.last.explicit.package";
     static final String KEY_MEDIA_CONTROLS_SIDE = "ui.media.controls.side";
     static final String KEY_MAP_ENABLED = "map.enabled";
     static final String KEY_MAP_CONTROLS_ENABLED = "map.controls.enabled";
@@ -79,7 +82,10 @@ final class LauncherPrefs {
     static SharedPreferences prefs(Context context) { return context.getSharedPreferences(FILE, Context.MODE_PRIVATE); }
     static String packageFor(Context context, String key) { return prefs(context).getString(key, ""); }
     static void setPackage(Context context, String key, String packageName) {
-        prefs(context).edit().putString(key, packageName == null ? "" : packageName).apply();
+        SharedPreferences.Editor editor = prefs(context).edit();
+        if (packageName == null || packageName.isEmpty()) editor.remove(key);
+        else editor.putString(key, packageName);
+        editor.apply();
     }
 
     static String roleFor(Context context, String key, String fallback) {
@@ -124,16 +130,23 @@ final class LauncherPrefs {
         return RAIL_DRIVER.equals(value) || RAIL_RIGHT.equals(value);
     }
 
-    static String mediaControlsSide(Context context) {
-        String value = prefs(context).getString(KEY_MEDIA_CONTROLS_SIDE, MEDIA_CONTROLS_RIGHT);
-        return MEDIA_CONTROLS_LEFT.equals(value) ? MEDIA_CONTROLS_LEFT : MEDIA_CONTROLS_RIGHT;
+    static boolean radioOnRight(Context context) {
+        // The old per-panel control-side preference had different semantics: do not migrate it.
+        return RAIL_RIGHT.equals(prefs(context).getString(KEY_RADIO_SIDE, RAIL_LEFT));
     }
-    static void setMediaControlsSide(Context context, String value) {
-        prefs(context).edit().putString(KEY_MEDIA_CONTROLS_SIDE,
-                MEDIA_CONTROLS_LEFT.equals(value) ? MEDIA_CONTROLS_LEFT : MEDIA_CONTROLS_RIGHT).apply();
+    static void setRadioSide(Context context, String value) {
+        prefs(context).edit().putString(KEY_RADIO_SIDE, RAIL_RIGHT.equals(value) ? RAIL_RIGHT : RAIL_LEFT).apply();
     }
-    static boolean mediaControlsOnLeft(Context context) {
-        return MEDIA_CONTROLS_LEFT.equals(mediaControlsSide(context));
+    static String lastSource(Context context) {
+        return MediaSelection.RADIO.equals(prefs(context).getString(KEY_LAST_SOURCE, MediaSelection.MUSIC))
+                ? MediaSelection.RADIO : MediaSelection.MUSIC;
+    }
+    static void selectSource(Context context, String source) {
+        if (!source.equals(lastSource(context))) prefs(context).edit().putString(KEY_LAST_SOURCE, source).apply();
+    }
+    static String lastMusicPackage(Context context) { return packageFor(context, KEY_LAST_MUSIC); }
+    static void rememberMusic(Context context, String pkg) {
+        if (pkg != null && !pkg.isEmpty() && !pkg.equals(lastMusicPackage(context))) setPackage(context, KEY_LAST_MUSIC, pkg);
     }
 
     static boolean mapEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_ENABLED, true); }
@@ -175,4 +188,7 @@ final class LauncherPrefs {
         if (minutes == SCHEDULE_UNSET) return SCHEDULE_UNSET;
         return Math.max(0, Math.min(1439, minutes));
     }
+
+    // Legacy source marker: static String mediaControlsSide is intentionally gone;
+    // Radio/Music side is stored independently under KEY_RADIO_SIDE.
 }

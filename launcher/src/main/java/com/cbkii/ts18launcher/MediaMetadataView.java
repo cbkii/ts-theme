@@ -39,6 +39,11 @@ final class MediaMetadataView extends LinearLayout {
         addView(secondary, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.85f));
     }
 
+    void applyAppearance() {
+        primary.setTextColor(AutomotiveUi.color(getContext(), R.color.ui_text));
+        secondary.setTextColor(AutomotiveUi.color(getContext(), R.color.ui_text_secondary));
+    }
+
     void setMetadata(String title, String context) {
         String safeTitle = title == null ? "" : title.trim();
         String safeContext = context == null ? "" : context.trim();

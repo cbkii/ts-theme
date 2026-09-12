@@ -19,9 +19,10 @@ public class Ts18GeometryTest {
         assertEquals(1129, g.mapWidth());
         assertEquals(559, g.mapHeight());
         assertEquals(88, g.stripHeight);
-        assertEquals(376, g.radioWidth);
-        assertEquals(565, g.musicWidth);
-        assertEquals(188, g.dateWidth());
+        assertEquals(Ts18Geometry.CONTROL_WIDTH, g.radioWidth);
+        assertEquals(Ts18Geometry.CONTROL_WIDTH, g.musicWidth);
+        assertEquals(144, g.dateWidth());
+        assertTrue(g.metadataWidth() > 300);
     }
 
     @Test
@@ -33,9 +34,10 @@ public class Ts18GeometryTest {
         assertEquals(1129, g.contentRight);
         assertEquals(1129, g.mapWidth());
         assertEquals(559, g.mapHeight());
-        assertEquals(376, g.radioWidth);
-        assertEquals(565, g.musicWidth);
-        assertEquals(188, g.dateWidth());
+        assertEquals(Ts18Geometry.CONTROL_WIDTH, g.radioWidth);
+        assertEquals(Ts18Geometry.CONTROL_WIDTH, g.musicWidth);
+        assertEquals(144, g.dateWidth());
+        assertTrue(g.metadataWidth() > 300);
     }
 
     @Test
@@ -47,6 +49,21 @@ public class Ts18GeometryTest {
         assertEquals(88, g.mapY());
         assertEquals(1129, g.mapWidth());
         assertEquals(559, g.mapHeight());
+    }
+
+    @Test
+    public void sidebarHiddenProfileUsesOnlyPhysicalDisplayEdge() {
+        Ts18Geometry.Layout g = Ts18Geometry.resolveForSidebar(1280, 720, false, false, false);
+        assertEquals(1280, g.contentRight);
+        assertEquals(1184, g.mapWidth());
+        assertTrue(g.metadataWidth() > 300);
+    }
+
+    @Test
+    public void sidebarVisibleProfileRetainsProvenSafeRightBoundary() {
+        Ts18Geometry.Layout g = Ts18Geometry.resolveForSidebar(1280, 720, false, false, true);
+        assertEquals(1225, g.contentRight);
+        assertEquals(1129, g.mapWidth());
     }
 
     @Test

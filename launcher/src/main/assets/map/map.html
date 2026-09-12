@@ -47,10 +47,12 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
   window.setLocation=function(latitude,longitude,accuracy,bearing,hasBearing){
     const point=L.latLng(Number(latitude),Number(longitude));
     if(!hasLocation){
-      map.setView(point,15,{animate:false});layer.addTo(map);
+      if(!map._loaded) map.setView(point,15,{animate:false});
+      else if(follow) map.panTo(point,{animate:false});
+      if(!map.hasLayer(layer))layer.addTo(map);
       marker=L.marker(point,{icon:markerIcon(bearing,hasBearing),interactive:false,riseOnHover:false}).addTo(map);
       accuracyCircle=L.circle(point,{radius:Math.max(0,Number(accuracy)||0),interactive:false,weight:1,opacity:.55,fillOpacity:.08}).addTo(map);
-      hasLocation=true;follow=true;ready=true;return;
+      hasLocation=true;ready=true;return;
     }
     marker.setLatLng(point);marker.setIcon(markerIcon(bearing,hasBearing));
     accuracyCircle.setLatLng(point);accuracyCircle.setRadius(Math.max(0,Number(accuracy)||0));
@@ -66,6 +68,19 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#111;f
     else if(mode==="dim"){opacity=.18;filter="brightness(.72) saturate(.78) contrast(1.08)";}
     else if(mode==="high_contrast"){filter="brightness(.92) saturate(.85) contrast(1.18)";}
     node.style.filter=filter;dim.style.opacity=String(opacity);
+  };
+  window.restoreMapState=function(zoom,isFollow,latitude,longitude){
+    if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||zoom<2||zoom>19)return;
+    follow=Boolean(isFollow);
+    const centre=follow&&marker?marker.getLatLng():L.latLng(latitude,longitude);
+    map.setView(centre,zoom,{animate:false});
+    if(!map.hasLayer(layer))layer.addTo(map);
+  };
+  window.mapSnapshot=function(){
+    const hasCentre=map._loaded===true;
+    const centre=hasCentre?map.getCenter():null;
+    return {hasCentre:hasCentre,zoom:hasCentre?map.getZoom():15,follow:follow,
+      latitude:centre?centre.lat:0,longitude:centre?centre.lng:0,health:window.mapHealth()};
   };
   window.mapHealth=function(){
     const state=follow?"follow":"free";

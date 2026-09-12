@@ -28,7 +28,12 @@ public final class SettingsActivity extends Activity {
     private interface ChoiceSetter { void set(String value); }
     private interface BooleanSetter { void set(boolean value); }
 
+    private static final int EXPORT_CONFIG = 9301;
+    private static final int IMPORT_CONFIG = 9302;
+    private final java.util.concurrent.ExecutorService configurationIo = java.util.concurrent.Executors.newSingleThreadExecutor();
     private LinearLayout content;
+    private boolean configurationBusy;
+
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -106,9 +111,9 @@ public final class SettingsActivity extends Activity {
         for (int i = 0; i < LauncherPrefs.QUICK_KEYS.length; i++) {
             final int index = i;
             addPickerRow(RoleIconCatalog.icon(LauncherPrefs.quickRole(this, i)),
-                    "Quick " + (i + 1) + " app", LauncherPrefs.QUICK_KEYS[i]);
+                    "Quick " + (i + 1) + " app shortcut", LauncherPrefs.QUICK_KEYS[i]);
             addChoiceRow(RoleIconCatalog.icon(LauncherPrefs.quickRole(this, i)),
-                    "Quick " + (i + 1) + " icon", RoleIconCatalog.label(LauncherPrefs.quickRole(this, i)),
+                    "Quick " + (i + 1) + " role shortcut", RoleIconCatalog.label(LauncherPrefs.quickRole(this, i)),
                     v -> chooseRole(false, index));
         }
 
@@ -116,21 +121,23 @@ public final class SettingsActivity extends Activity {
         for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++) {
             final int index = i;
             addPickerRow(RoleIconCatalog.icon(LauncherPrefs.drawerQuickRole(this, i)),
-                    "Drawer quick " + (i + 1) + " app", LauncherPrefs.DRAWER_QUICK_KEYS[i]);
+                    "Drawer quick " + (i + 1) + " app shortcut", LauncherPrefs.DRAWER_QUICK_KEYS[i]);
             addChoiceRow(RoleIconCatalog.icon(LauncherPrefs.drawerQuickRole(this, i)),
-                    "Drawer quick " + (i + 1) + " icon",
+                    "Drawer quick " + (i + 1) + " role shortcut",
                     RoleIconCatalog.label(LauncherPrefs.drawerQuickRole(this, i)),
                     v -> chooseRole(true, index));
         }
 
         addSection("Media");
-        addChoiceRow(R.drawable.ic_shortcut, "Media controls side", mediaControlsSideLabel(),
-                v -> choose("Media controls side",
-                        new String[] {"Left", "Right"},
-                        new String[] {LauncherPrefs.MEDIA_CONTROLS_LEFT, LauncherPrefs.MEDIA_CONTROLS_RIGHT},
-                        LauncherPrefs.mediaControlsSide(this), value -> {
-                            LauncherPrefs.setMediaControlsSide(this, value); render();
-                        }));
+        // Legacy label retained only in source migration notes; this setting no longer
+        // controls the independent Radio / Music side preference.
+        // "Media controls side" is intentionally not exposed as a second authority.
+        addChoiceRow(R.drawable.ic_radio, "Radio / Music sides", LauncherPrefs.radioOnRight(this) ? "Radio right" : "Radio left",
+                v -> choose("Radio / Music sides · independent of rail",
+                        new String[] {"Radio left", "Radio right"},
+                        new String[] {LauncherPrefs.RAIL_LEFT, LauncherPrefs.RAIL_RIGHT},
+                        LauncherPrefs.radioOnRight(this) ? LauncherPrefs.RAIL_RIGHT : LauncherPrefs.RAIL_LEFT,
+                        value -> { LauncherPrefs.setRadioSide(this, value); render(); }));
         addActionRow(R.drawable.ic_music, "Notification access",
                 MediaListenerService.hasNotificationAccess(this) ? "Granted" : "Required for media sessions",
                 v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
@@ -162,6 +169,17 @@ public final class SettingsActivity extends Activity {
         addInfoRow(R.drawable.ic_utility, "Ambient light sensor",
                 AppearanceController.sensorAvailable(this) ? "Available" : "Unavailable · Auto falls back to schedule");
 
+        addSection("Configuration");
+        addActionRow(R.drawable.ic_shortcut, "Export launcher configuration", "Save a versioned JSON file",
+                v -> chooseConfigurationDocument(true));
+        addActionRow(R.drawable.ic_shortcut, "Import launcher configuration", "Review changes before applying",
+                v -> chooseConfigurationDocument(false));
+        addActionRow(R.drawable.ic_close, "Reset launcher settings to defaults", "Reset configuration; HOME selection stays separate",
+                v -> new AlertDialog.Builder(this).setTitle("Reset launcher settings?")
+                        .setMessage("App assignments, layout and appearance return to defaults.")
+                        .setNegativeButton("Cancel", null).setPositiveButton("Reset", (dialog, which) ->
+                                commitConfiguration(java.util.Collections.emptyMap(), true)).show());
+
         addSection("Advanced HOME / recovery");
         addActionRow(R.drawable.ic_settings,
                 HomeMode.isDefaultHome(this) ? "Current HOME: TS18 Launcher" : "Set as HOME",
@@ -172,11 +190,107 @@ public final class SettingsActivity extends Activity {
                 "Keep app installed and retain DoFun recovery", v -> confirmDisableHome());
     }
 
+    private void chooseConfigurationDocument(boolean export) {
+        if (configurationBusy) return;
+        Intent intent = new Intent(export ? Intent.ACTION_CREATE_DOCUMENT : Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        if (export) intent.putExtra(Intent.EXTRA_TITLE, "TS18-launcher-config-v1.json");
+        try { startActivityForResult(intent, export ? EXPORT_CONFIG : IMPORT_CONFIG); }
+        catch (RuntimeException ignored) { configurationMessage("Document picker unavailable"); }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if ((request != EXPORT_CONFIG && request != IMPORT_CONFIG) || result != RESULT_OK
+                || data == null || data.getData() == null || configurationBusy) return;
+        android.net.Uri uri = data.getData();
+        if (!"content".equals(uri.getScheme())) { configurationMessage("Expected a document URI"); return; }
+        configurationBusy = true;
+        configurationIo.execute(() -> {
+            try {
+                if (request == EXPORT_CONFIG) {
+                    String json = ConfigurationCodec.encode(ConfigurationStore.read(this));
+                    try (java.io.OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                        if (out == null) throw new java.io.IOException("Document unavailable");
+                        out.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    }
+                    runOnUiThread(() -> configurationMessage("Configuration exported"));
+                } else {
+                    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                    try (java.io.InputStream input = getContentResolver().openInputStream(uri)) {
+                        if (input == null) throw new java.io.IOException("Document unavailable");
+                        byte[] buffer = new byte[4096];
+                        int count;
+                        while ((count = input.read(buffer)) != -1) {
+                            if (bytes.size() + count > ConfigurationCodec.MAX_BYTES) throw new java.io.IOException("Configuration exceeds 64 KiB");
+                            bytes.write(buffer, 0, count);
+                        }
+                    }
+                    ConfigurationCodec.Preview preview = ConfigurationCodec.decode(
+                            bytes.toString("UTF-8"), this::configurationPackageAvailable);
+                    runOnUiThread(() -> showConfigurationPreview(preview));
+                }
+            } catch (Exception error) {
+                runOnUiThread(() -> configurationMessage("Configuration unchanged: " + error.getMessage()));
+            } finally { runOnUiThread(() -> configurationBusy = false); }
+        });
+    }
+
+    private boolean configurationPackageAvailable(String name) {
+        return !getPackageName().equals(name) && getPackageManager().getLaunchIntentForPackage(name) != null;
+    }
+
+    private void showConfigurationPreview(ConfigurationCodec.Preview preview) {
+        if (isFinishing() || isDestroyed()) return;
+        ScrollView scroll = new ScrollView(this);
+        TextView detail = text(preview.summary(), R.dimen.ui_settings_value, R.color.ui_text);
+        scroll.addView(detail);
+        new AlertDialog.Builder(this).setTitle("Import configuration?").setView(scroll)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Apply", (dialog, which) -> commitConfiguration(preview.values, false)).show();
+    }
+
+    private void commitConfiguration(java.util.Map<String, Object> values, boolean reset) {
+        if (configurationBusy) return;
+        configurationBusy = true;
+        configurationIo.execute(() -> {
+            boolean success = false;
+            try {
+                for (java.util.Map.Entry<String, Object> entry : values.entrySet()) {
+                    if (ConfigurationCodec.KEYS.get(entry.getKey()) == ConfigurationCodec.Type.PACKAGE
+                            && !configurationPackageAvailable((String) entry.getValue()))
+                        throw new IllegalArgumentException("App availability changed; import again");
+                }
+                success = ConfigurationStore.replace(this, values);
+                if (success && reset) LauncherPrefs.prefs(this).edit()
+                        .remove(LauncherPrefs.KEY_LAST_MUSIC).remove(LauncherPrefs.KEY_LAST_SOURCE)
+                        .remove(LauncherPrefs.KEY_MEDIA_CONTROLS_SIDE).commit();
+            } catch (RuntimeException ignored) { /* No partial import. */ }
+            final boolean applied = success;
+            runOnUiThread(() -> {
+                configurationBusy = false;
+                if (isFinishing() || isDestroyed()) return;
+                configurationMessage(applied ? "Configuration applied" : "Configuration not saved; previous settings retained");
+                if (applied) { MediaListenerService.refreshActiveSessions(); recreate(); }
+            });
+        });
+    }
+
+    private void configurationMessage(String message) {
+        if (!isFinishing() && !isDestroyed()) Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
+    @Override protected void onDestroy() {
+        configurationIo.shutdownNow();
+        super.onDestroy();
+    }
+
     private void chooseRole(boolean drawer, int index) {
         String current = drawer ? LauncherPrefs.drawerQuickRole(this, index) : LauncherPrefs.quickRole(this, index);
-        choose("Role icon", RoleIconCatalog.LABELS, RoleIconCatalog.VALUES, current, role -> {
-            if (drawer) LauncherPrefs.setRole(this, LauncherPrefs.DRAWER_ROLE_KEYS[index], role);
-            else LauncherPrefs.setRole(this, LauncherPrefs.QUICK_ROLE_KEYS[index], role);
+        choose("Use role shortcut (clears app assignment)", RoleIconCatalog.LABELS, RoleIconCatalog.VALUES, current, role -> {
+            if (drawer) ShortcutSlot.chooseRole(this, LauncherPrefs.DRAWER_ROLE_KEYS[index], LauncherPrefs.DRAWER_QUICK_KEYS[index], role);
+            else ShortcutSlot.chooseRole(this, LauncherPrefs.QUICK_ROLE_KEYS[index], LauncherPrefs.QUICK_KEYS[index], role);
             render();
         });
     }
@@ -218,6 +332,13 @@ public final class SettingsActivity extends Activity {
             Intent intent = new Intent(this, AppDrawerActivity.class);
             intent.putExtra(AppDrawerActivity.EXTRA_PICK_KEY, key); startActivity(intent);
         });
+        if (ShortcutSlot.isSlotKey(key) && !pkg.isEmpty()) {
+            LinearLayout row = (LinearLayout) content.getChildAt(content.getChildCount() - 1);
+            ImageView identity = (ImageView) row.getChildAt(0);
+            identity.clearColorFilter();
+            try { identity.setImageDrawable(getPackageManager().getApplicationIcon(pkg)); }
+            catch (PackageManager.NameNotFoundException ignored) { identity.setImageResource(R.drawable.ic_shortcut); }
+        }
     }
 
     private void addChoiceRow(int icon, String title, String value, View.OnClickListener listener) {
@@ -283,10 +404,6 @@ public final class SettingsActivity extends Activity {
         if (LauncherPrefs.RAIL_LEFT.equals(value)) return "Left";
         if (LauncherPrefs.RAIL_RIGHT.equals(value)) return "Right";
         return "Driver side · right on this TS18";
-    }
-    private String mediaControlsSideLabel() {
-        return LauncherPrefs.MEDIA_CONTROLS_LEFT.equals(LauncherPrefs.mediaControlsSide(this))
-                ? "Left · independent of rail" : "Right · independent of rail";
     }
     private String appearanceLabel() {
         String value = LauncherPrefs.appearanceMode(this);

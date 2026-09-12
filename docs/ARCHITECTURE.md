@@ -41,11 +41,11 @@ The automotive HOME uses:
 
 - 96 px side rail, user-selectable as Driver side/Left/Right; Driver side is right on this exact Australian RHD TS18;
 - fixed rail order Apps -> 3-6 configurable role-icon middle slots -> Navigation;
-- 88 px Radio | Music | DD MMM strip;
-- 12-column 4/6/2 radio/music/date distribution over the usable content width;
+- 88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip;
+- fixed-width Radio and Music control groups with one shared metadata region and a compact DD MMM date surface;
 - safe-right x=1225;
 - mirrored content geometry that keeps rail and map outside the Topway right SystemUI;
-- **independent Left/Right media-transport placement**, not derived from rail or RHD/LHD state;
+- **independent Radio-left/Radio-right group placement**, not derived from rail or RHD/LHD state;
 - black base, charcoal cards and warm orange primary state;
 - 120 ms state/icon crossfade, 140 ms press/focus feedback, 160 ms transient reveal and 180 ms drawer animation;
 - stable Previous | Play/Pause | Next ordering with the centre action visually primary;
@@ -65,7 +65,7 @@ Launcher chrome and map use one effective appearance resolver rather than separa
 
 Without a user schedule, the location-independent fallback anchors day at 07:00 and night at 19:00, treats +/-45 minutes around those transitions as Dim, and uses a central daylight window for High contrast. User-configured day/night anchors replace those defaults and may cross midnight. This deliberately does not claim vehicle illumination or astronomical sunrise/sunset authority.
 
-The appearance controller captures the mode used when HOME is created and rechecks it on `onStart`; if Settings changed the effective mode while HOME was stopped, the callback recreates the launcher once so existing chrome does not retain stale colours. Sensor/schedule changes while visible are reevaluated event-driven/once per minute.
+The appearance controller updates visible launcher and map colours in place when sensor/schedule mode changes; it does not repeatedly recreate HOME or WebView. Explicit Settings changes may use one controlled recreation. Sensor samples expire after five minutes and then use the schedule fallback.
 
 ## Dashboard/app surface
 
@@ -79,7 +79,7 @@ The app drawer remains an in-HOME overlay covering only the map surface; map GPS
 
 A visible-only one-second reconciliation fallback exists because physical TS18 testing showed callback delivery alone did not update Auxio-TS metadata for every track change. It stops outside the visible launcher lifecycle.
 
-`MediaMetadataView` owns the two-level presentation: primary title/station uses the bounded-speed five-second-hold marquee, while secondary artist/program/source is static and end-ellipsised. The transport cluster is rebuilt from the same controller widgets according to the independent Media controls side preference, preserving Previous -> Play/Pause -> Next order on either side.
+`MediaMetadataView` owns the single shared two-level presentation: the selected source's primary title/station uses the bounded-speed five-second-hold marquee, while secondary artist/program/source is static and end-ellipsised. Radio and Music retain separate source/transport controls and dispatch paths; only the group positions swap according to the independent Radio/Music sides preference, preserving Previous -> Play/Pause -> Next order on either side.
 
 On this exact TS18, `com.tw.media` is **Auxio-TS**. That result must not be treated as stock Topway music evidence. `com.tw.music` remains only an installed-package fallback candidate until its native-app runtime/session behaviour is tested.
 
@@ -99,9 +99,15 @@ Driver-facing map actions are Material Symbols Rounded icon buttons: zoom in, zo
 
 ### Tile broker
 
-WebView does not own tile HTTP. `TileBroker` intercepts only exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` requests and uses framework `HttpURLConnection` with identifying User-Agent, bounded connect/read timeouts, normal platform TLS, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB disk cache. No bulk download or prefetch is used.
+WebView does not own tile HTTP. `TileBroker` intercepts only exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` requests and uses framework `HttpURLConnection` with identifying User-Agent, bounded connect/read timeouts, normal platform TLS, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB disk cache. With no usable network it returns fresh/stale cache immediately or fails an uncached tile promptly. No bulk download or prefetch is used.
 
 WebView remains restricted to local map assets plus the exact OSM tile origin and exposes no JavaScript-to-Java bridge. Full route calculation/navigation remains with Organic Maps, Google Maps, Waze or OsmAnd via public hand-off intents.
+
+Renderer termination is handled with one bounded automatic WebView recreation. The dead instance is detached and destroyed, local Leaflet is reloaded and the in-memory viewport/follow state plus last GPS fix are restored. Repeated failure stops automatic recreation and exposes an explicit retry; no crash/reload loop or location history is persisted.
+
+### Offline-first policy
+
+Network availability is optional. Core HOME operation must start and remain usable without Internet access. App launching, settings, GPS/location, local media, cached map tiles, navigation hand-off and the underlying MediaSession controls remain available where their installed source permits. Organic Maps, OsmAnd/OsmAnd+, Auxio-TS, Auxio and VLC are recommended offline-capable choices without becoming launcher dependencies; the OSM raster cache is not a complete offline navigation database. `ConnectivityManager` is used only to identify a definite no-network condition, never as proof that the public Internet is reachable.
 
 ## Organic Maps future integration
 
@@ -111,7 +117,7 @@ Those are Organic Maps engine/JNI contracts, not a supported external launcher i
 
 ## App discovery/preferences
 
-The drawer queries `ACTION_MAIN` + `CATEGORY_LAUNCHER`. Preferences use `SharedPreferences` for role packages, per-slot role icons, 3-6 HOME middle slots, five drawer quick slots, rail side, **independent media-controls side**, media selection mode, map visibility/control visibility, appearance mode, Auto appearance source and optional day/night schedule anchors.
+The drawer queries `ACTION_MAIN` + `CATEGORY_LAUNCHER`. Preferences use `SharedPreferences` for role packages, per-slot role icons, 3-6 HOME middle slots, five drawer quick slots, rail side, **independent Radio/Music side**, last explicit source/package, media selection mode, map visibility/control visibility, appearance mode, Auto appearance source and optional day/night schedule anchors. Versioned JSON export/import whitelists these settings through Storage Access Framework and validates package availability before a transactional commit.
 
 ## Topway adapter
 

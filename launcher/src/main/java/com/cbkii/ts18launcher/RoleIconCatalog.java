@@ -12,13 +12,20 @@ final class RoleIconCatalog {
     static final String PHONE = "phone";
     static final String FAVORITE = "favorite";
     static final String UTILITY = "utility";
+    static final String HOME = "home";
+    static final String WORK = "work";
+    static final String SEARCH = "search";
+    static final String CAMERA = "camera";
+    static final String SETTINGS = "settings";
+    static final String VIDEO = "video";
+    static final String WEATHER = "weather";
     static final String GENERIC = "generic";
 
     static final String[] VALUES = {
-            NAVIGATION, RADIO, MUSIC, BLUETOOTH, PHONE, FAVORITE, UTILITY, GENERIC
+            NAVIGATION, RADIO, MUSIC, BLUETOOTH, PHONE, FAVORITE, HOME, WORK, SEARCH, CAMERA, SETTINGS, UTILITY, VIDEO, WEATHER, GENERIC
     };
     static final String[] LABELS = {
-            "Navigation", "Radio", "Music", "Bluetooth", "Phone", "Favourite", "Utility", "Generic"
+            "Navigation", "Radio", "Music", "Bluetooth", "Phone", "Favourite", "Home", "Work", "Search", "Camera", "Settings", "Utility", "Media/video", "Weather", "App/shortcut"
     };
 
     private RoleIconCatalog() {}
@@ -57,6 +64,13 @@ final class RoleIconCatalog {
         if (BLUETOOTH.equals(role)) return R.drawable.ic_bluetooth;
         if (PHONE.equals(role)) return R.drawable.ic_phone;
         if (FAVORITE.equals(role)) return R.drawable.ic_star;
+        if (HOME.equals(role)) return R.drawable.ic_home;
+        if (WORK.equals(role)) return R.drawable.ic_work;
+        if (SEARCH.equals(role)) return R.drawable.ic_search;
+        if (CAMERA.equals(role)) return R.drawable.ic_camera;
+        if (SETTINGS.equals(role)) return R.drawable.ic_settings;
+        if (VIDEO.equals(role)) return R.drawable.ic_video;
+        if (WEATHER.equals(role)) return R.drawable.ic_weather;
         if (UTILITY.equals(role)) return R.drawable.ic_utility;
         return R.drawable.ic_shortcut;
     }
@@ -66,6 +80,27 @@ final class RoleIconCatalog {
         return "Generic";
     }
 
+    static boolean hasDefault(String role) {
+        return NAVIGATION.equals(role) || RADIO.equals(role) || MUSIC.equals(role)
+                || BLUETOOTH.equals(role) || PHONE.equals(role) || CAMERA.equals(role) || SETTINGS.equals(role);
+    }
+
+    static boolean launch(Context context, String role) {
+        if (MUSIC.equals(role)) LauncherPrefs.selectSource(context, MediaSelection.MUSIC);
+        if (RADIO.equals(role)) LauncherPrefs.selectSource(context, MediaSelection.RADIO);
+        if (NAVIGATION.equals(role)) return NavigationProvider.open(context, fallbackPackage(context, role), null);
+        if (SETTINGS.equals(role)) {
+            context.startActivity(new android.content.Intent(context, SettingsActivity.class)); return true;
+        }
+        if (PHONE.equals(role) || CAMERA.equals(role)) {
+            android.content.Intent intent = new android.content.Intent(PHONE.equals(role)
+                    ? android.content.Intent.ACTION_DIAL : android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA);
+            try { context.startActivity(intent); return true; } catch (RuntimeException ignored) { return false; }
+        }
+        // Home/Work are semantics only; no destinations or routing are owned here.
+        return AppResolver.launchPackage(context, fallbackPackage(context, role));
+    }
+
     static String fallbackPackage(Context context, String role) {
         if (NAVIGATION.equals(role)) return LauncherPrefs.packageFor(context, LauncherPrefs.KEY_NAV);
         if (RADIO.equals(role)) return RadioProvider.resolvePackage(context);
@@ -73,7 +108,7 @@ final class RoleIconCatalog {
             String pkg = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_MUSIC);
             return pkg.isEmpty() ? TopwayAdapter.defaultMusicPackage(context) : pkg;
         }
-        if (BLUETOOTH.equals(role) || PHONE.equals(role)) {
+        if (BLUETOOTH.equals(role)) {
             return LauncherPrefs.packageFor(context, LauncherPrefs.KEY_BLUETOOTH);
         }
         return "";
