@@ -57,10 +57,13 @@ capture_root_readonly() {
 
 finalize() {
   local rc=$?
+  local sums_tmp="$OUT/.SHA256SUMS.tmp"
   trap - EXIT INT TERM HUP
   log "finalize rc=$rc warnings=$WARNINGS"
   if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$OUT" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS.txt 2>/dev/null) || true
+    (cd "$OUT" && find . -type f ! -name SHA256SUMS.txt ! -name .SHA256SUMS.tmp -print0 \
+      | sort -z | xargs -0 -r sha256sum) >"$sums_tmp" 2>/dev/null || true
+    if [ -s "$sums_tmp" ]; then mv "$sums_tmp" "$OUT/SHA256SUMS.txt"; else rm -f "$sums_tmp"; fi
   fi
   rm -f "$ARCHIVE"
   if command -v zip >/dev/null 2>&1; then
@@ -93,7 +96,7 @@ capture identity/uname.txt uname -a
 capture display/wm-size.txt wm size
 capture display/wm-density.txt wm density
 capture display/dumpsys-display.txt dumpsys display
-capture display/settings-freeform.txt sh -c 'for k in enable_freeform_support force_resizable_activities development_force_resizable_activities; do printf "%s=" "$k"; settings get global "$k" 2>&1; done'
+capture_sh display/settings-freeform.txt "for k in enable_freeform_support force_resizable_activities development_force_resizable_activities; do printf '%s=' \"\$k\"; settings get global \"\$k\" 2>&1; done"
 
 capture packages/features.txt pm list features
 capture_sh packages/window-features.txt "pm list features 2>&1 | grep -Ei 'freeform|picture.in.picture|pip|automotive|leanback|screen|touch' || true"
