@@ -1,7 +1,7 @@
 # Repository working rules
 
 - Target CB's exact Topway TS18 first: Android 10/API 29, physical 1280 x 720. Present exact-device evidence outranks historical assumptions.
-- **Local/offline/private by default** is repository policy. Core HOME operation must not require Internet access. Do not add remote analytics, tracking, cloud telemetry, remote configuration or automatic upload of diagnostic/user-behaviour data by default. Diagnostics stay bounded, local/exportable and user-controlled.
+- **Local/offline/private by default** is repository policy. Core HOME operation must not require Internet access. **No analytics** are added by default: do not add remote analytics, tracking, cloud telemetry, remote configuration or automatic upload of diagnostic/user-behaviour data. Diagnostics stay bounded, local/exportable and user-controlled.
 - The standalone launcher is a separate ordinary Android package (`com.cbkii.ts18launcher`). The legacy DoFun/RePlugin theme remains a rollback/reference lane until standalone HOME passes physical qualification.
 - Do not reuse `launcher.variety.theme.plugin.sfp_cbk_black` as the standalone launcher identity. That package remains the legacy DoFun/RePlugin plug-in identity.
 - Preserve the exact-device SystemUI safe area: keep visible/interactive launcher content at or left of x=1225 and below the observed top SystemUI boundary when the Activity receives full physical bounds. The dashboard retains a 96 px rail and 88 px top media strip; the rail may mirror left/right without entering the Topway SystemUI region. When Android decor already consumes bars, use fitted content bounds rather than adding insets twice.
