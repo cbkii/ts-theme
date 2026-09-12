@@ -86,6 +86,21 @@ bounds_for_task() {
   '
 }
 
+wait_for_bounds() {
+  wanted="$1"
+  expected="$2"
+  tries=0
+  actual=""
+  while [ "$tries" -lt 15 ]; do
+    actual="$(bounds_for_task "$wanted")"
+    [ "$actual" = "$expected" ] && { printf '%s\n' "$actual"; return 0; }
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+  printf '%s\n' "${actual:-unknown}"
+  return 1
+}
+
 # Use Hist #0 rather than TaskRecord.mActivityComponent: the latter can retain a splash/root
 # identity while a different Activity is actually the current top of the task.
 top_component_for_task() {
@@ -167,15 +182,14 @@ case "$action" in
       am task resizeable "$TASK_ID" 2 >/dev/null 2>&1 || fail RESIZEABLE_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg"
       am task resize "$TASK_ID" "$left" "$top" "$right" "$bottom" >/dev/null 2>&1 || \
         fail RESIZE_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg"
-      sleep 0.15
       record="$(find_task_record "$pkg" "$TASK_ID")"
       [ -n "$record" ] || fail TASK_REPLACED "task=$TASK_ID" "package=$pkg"
     fi
 
-    actual="$(bounds_for_task "$TASK_ID")"
+    actual="$(wait_for_bounds "$TASK_ID" "$expected")" || \
+      fail BOUNDS_MISMATCH "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg" "bounds=$actual" "expected=$expected"
     component="$(top_component_for_task "$TASK_ID")"
     [ -n "$component" ] || component=unknown
-    [ "$actual" = "$expected" ] || fail BOUNDS_MISMATCH "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg" "component=$component" "bounds=${actual:-unknown}" "expected=$expected"
     if [ "$action" = "window" ]; then result_code=WINDOW; else result_code=VERIFY; fi
     printf 'OK code=%s task=%s stack=%s package=%s component=%s bounds=%s forcepip=%s\n' \
       "$result_code" "$TASK_ID" "$STACK_ID" "$pkg" "$component" "$actual" "$(getprop sys.tw.forcepip 2>/dev/null)"
@@ -202,14 +216,12 @@ case "$action" in
     # resizing an entire shared freeform stack or manufacturing another task.
     am start --user 0 --windowingMode 1 --task "$TASK_ID" -f 0x20000000 -n "$component" >/dev/null 2>&1 || \
       fail FULLSCREEN_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg" "component=$component"
-    sleep 0.15
     record="$(find_task_record "$pkg" "$TASK_ID")"
     [ -n "$record" ] || fail TASK_REPLACED "task=$TASK_ID" "package=$pkg"
-    actual="$(bounds_for_task "$TASK_ID")"
-    # Fullscreen TaskRecord bounds are empty (0,0,0,0) on this Android 10 family. If the vendor
-    # retains explicit display-sized bounds, runtime validation will expose FULLSCREEN_REJECTED
-    # rather than pretending the transition passed.
-    [ "$actual" = "0,0,0,0" ] || fail FULLSCREEN_REJECTED "task=$TASK_ID" "package=$pkg" "bounds=${actual:-unknown}"
+    # Fullscreen TaskRecord bounds are empty (0,0,0,0) on this Android 10 family. Bounded polling
+    # tolerates normal WindowManager/configuration propagation without accepting a stale freeform task.
+    actual="$(wait_for_bounds "$TASK_ID" "0,0,0,0")" || \
+      fail FULLSCREEN_REJECTED "task=$TASK_ID" "package=$pkg" "bounds=$actual"
     printf 'OK code=FULLSCREEN task=%s stack=%s package=%s component=%s bounds=%s\n' \
       "$TASK_ID" "$STACK_ID" "$pkg" "$component" "$actual"
     ;;
