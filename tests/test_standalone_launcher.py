@@ -126,8 +126,9 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("if (!LauncherPrefs.prefs(context).contains(LauncherPrefs.KEY_MAP_ENABLED)) return false", policy)
         self.assertIn("return LauncherPrefs.mapEnabled(context)", policy)
 
-    def test_home_has_fixed_endpoints_configurable_middle_and_navigation_handoff(self):
+    def test_home_has_fixed_endpoints_optional_weighted_middle_and_navigation_handoff(self):
         prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
+        personal = self.read("launcher/src/main/java/com/cbkii/ts18launcher/UiPersonalizationPrefs.java")
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         roles = self.read("launcher/src/main/java/com/cbkii/ts18launcher/RoleIconCatalog.java")
         drawer = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerPanel.java")
@@ -139,10 +140,14 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("KEY_DRAWER_QUICK_5", prefs)
         self.assertIn("QUICK_ROLE_KEYS", prefs)
         self.assertIn("Math.max(3, Math.min(6, value))", prefs)
+        self.assertIn("KEY_HOME_SHORTCUTS_ENABLED", personal)
         self.assertIn("MAX_QUICK_SLOTS = 6", launcher)
         self.assertIn("ImageButton[] quickButtons", launcher)
+        self.assertIn("FrameLayout[] quickCells", launcher)
         self.assertLess(launcher.index("rail.addView(appsButton"), launcher.index("rail.addView(quickRail"))
         self.assertLess(launcher.index("rail.addView(quickRail"), launcher.index("rail.addView(navigationButton"))
+        self.assertIn("new LinearLayout.LayoutParams(\n                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)", launcher)
+        self.assertIn("homeShortcutsEnabled(this)", launcher)
         self.assertIn("case 0: return SETTINGS", roles)
         self.assertIn("styleRailButton(this, navigationButton, true)", launcher)
         self.assertIn("LauncherPrefs.railOnRight(this)", launcher)
@@ -164,7 +169,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("geo:", nav)
         self.assertIn("waze://", nav)
 
-    def test_automotive_ui_uses_local_vectors_semantic_dimensions_and_inert_date(self):
+    def test_automotive_ui_uses_local_vectors_gradients_semantic_dimensions_and_inert_date(self):
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         metadata = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MediaMetadataView.java")
         ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
@@ -185,7 +190,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
             self.assertIn(required, drawables)
         self.assertIn("HOTSEAT_WIDTH = 96", geometry)
         self.assertIn("STRIP_HEIGHT = 88", geometry)
-        self.assertIn("GRID_COLUMNS = 12", geometry)
+        self.assertIn("DATE_WIDTH = 128", geometry)
         for token in (
             "ui_metadata_text", "ui_metadata_secondary_text", "ui_drawer_icon", "ui_settings_row_height",
             "driver_target_min", "driver_target_primary", "driver_gap", "driver_gap_large",
@@ -196,11 +201,13 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("FEEDBACK_MS = 140L", ui)
         self.assertIn("PANEL_REVEAL_MS = 160L", ui)
         self.assertIn("DRAWER_MS = 180L", ui)
+        self.assertIn("mediaGroupBackground", ui)
+        self.assertIn("subtleTransportBackground", ui)
+        self.assertIn("GradientDrawable.Orientation", ui)
         self.assertIn("state_focused", ui)
         self.assertIn("state_pressed", ui)
         self.assertIn("linkVertical", ui)
         self.assertIn("linkHorizontal", ui)
-        self.assertIn("primaryTransportBackground", ui)
         self.assertIn("MediaMetadataView", launcher)
         self.assertIn("SlowMarqueeTextView", metadata)
         self.assertIn("setIconWithCrossfade", launcher)
@@ -209,8 +216,10 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("dateView.setClickable(false)", launcher)
         self.assertNotIn("dateView.setOnClickListener", launcher)
 
-    def test_settings_cover_shortcut_editor_accent_warmup_and_advanced_home(self):
+    def test_settings_cover_shortcut_editor_palette_warmup_and_advanced_home(self):
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
+        editor = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ShortcutEditorView.java")
+        palette = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AccentPaletteRow.java")
         picker = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerActivity.java")
         self.assertIn("new Switch(this)", settings)
         self.assertIn('addSection("Appearance")', settings)
@@ -218,18 +227,20 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('"Map controls"', settings)
         self.assertIn('"Experimental Leaflet map"', settings)
         self.assertIn('"Display appearance"', settings)
-        self.assertIn('"Accent hue"', settings)
         self.assertIn('"Auto appearance source"', settings)
-        self.assertIn('"Middle quick slots"', settings)
         self.assertIn('"Rail position"', settings)
+        self.assertIn('"Show HOME quick shortcuts"', settings)
+        self.assertIn('"Shortcut count"', settings)
+        self.assertIn("if (homeShortcuts)", settings)
         self.assertIn('"Radio / Music sides"', settings)
         self.assertIn('"Warm media sources on HOME start"', settings)
-        self.assertIn('shortcutEditorCell("APP"', settings)
-        self.assertIn('shortcutEditorCell("ICON"', settings)
-        self.assertIn("SlotIconCatalog.LABELS", settings)
+        self.assertIn('editorCell("App"', editor)
+        self.assertIn('editorCell("Icon"', editor)
+        self.assertIn("getApplicationIcon(pkg)", editor)
+        self.assertIn("SlotIconCatalog.LABELS", editor)
+        self.assertIn("AccentPalette.baseColor(value)", palette)
         self.assertIn("TimePickerDialog", settings)
         self.assertIn("setSingleChoiceItems", settings)
-        self.assertIn("DRAWER_QUICK_KEYS", settings)
         self.assertIn('setHint("Search apps")', picker)
         self.assertIn("R.drawable.ic_mic", picker)
         self.assertNotIn("androidx.preference", settings)
@@ -280,11 +291,8 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("APK application ID mismatch", installer)
         self.assertIn("FAILED: rollback did not complete cleanly", installer)
         for forbidden in (
-            "pm uninstall com.dofun.variety",
-            "pm disable --user 0 com.dofun.variety",
-            "setenforce 0",
-            "mount -o rw,remount /system",
-            "rm -rf /data/user/0/com.dofun.variety",
+            "pm uninstall com.dofun.variety", "pm disable --user 0 com.dofun.variety",
+            "setenforce 0", "mount -o rw,remount /system", "rm -rf /data/user/0/com.dofun.variety",
         ):
             self.assertNotIn(forbidden, installer)
 
@@ -309,8 +317,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("GH_REPO: ${{ github.repository }}", workflow)
         self.assertNotIn('gh release create "$tag" qualified/*', workflow)
         for match in re.finditer(r"uses:\s+([^\s]+)", workflow):
-            action = match.group(1)
-            self.assertRegex(action, r"@(?:[0-9a-f]{40})$")
+            self.assertRegex(match.group(1), r"@(?:[0-9a-f]{40})$")
 
 
 if __name__ == "__main__":

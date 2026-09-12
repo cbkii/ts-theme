@@ -7,7 +7,6 @@ import android.app.AlertDialog;
 import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
@@ -70,14 +69,6 @@ public final class SettingsActivity extends Activity {
                         LauncherPrefs.railPosition(this), value -> {
                             LauncherPrefs.setRailPosition(this, value); render();
                         }));
-        addChoiceRow(R.drawable.ic_shortcut, "Middle quick slots",
-                Integer.toString(LauncherPrefs.quickCount(this)),
-                v -> choose("Middle quick slots",
-                        new String[] {"3", "4", "5", "6"},
-                        new String[] {"3", "4", "5", "6"},
-                        Integer.toString(LauncherPrefs.quickCount(this)), value -> {
-                            LauncherPrefs.setQuickCount(this, Integer.parseInt(value)); render();
-                        }));
         addChoiceRow(R.drawable.ic_settings, "Display appearance", appearanceLabel(),
                 v -> choose("Display appearance",
                         new String[] {"Auto", "Day", "High contrast", "Dim", "Night"},
@@ -87,13 +78,7 @@ public final class SettingsActivity extends Activity {
                         LauncherPrefs.appearanceMode(this), value -> {
                             LauncherPrefs.setAppearanceMode(this, value); recreate();
                         }));
-        addChoiceRow(R.drawable.ic_palette, "Accent hue",
-                AccentPalette.label(UiPersonalizationPrefs.accentHue(this)),
-                v -> choose("Accent hue · selected/primary elements only",
-                        AccentPalette.LABELS, AccentPalette.VALUES,
-                        UiPersonalizationPrefs.accentHue(this), value -> {
-                            UiPersonalizationPrefs.setAccentHue(this, value); recreate();
-                        }));
+        addAccentPaletteRow();
         addChoiceRow(R.drawable.ic_utility, "Auto appearance source", autoSourceLabel(),
                 v -> choose("Auto appearance source",
                         new String[] {"Ambient light sensor", "Schedule"},
@@ -113,10 +98,27 @@ public final class SettingsActivity extends Activity {
         addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom and follow controls",
                 LauncherPrefs.mapControlsEnabled(this), checked -> LauncherPrefs.setMapControlsEnabled(this, checked));
 
-        addSection("HOME middle quick launch");
-        content.addView(text("Each slot has an independent launch target and visual icon. Auto keeps the app/role identity.",
-                R.dimen.ui_settings_value, R.color.ui_text_secondary));
-        for (int i = 0; i < LauncherPrefs.QUICK_KEYS.length; i++) addShortcutEditor(false, i);
+        addSection("HOME shortcuts");
+        boolean homeShortcuts = UiPersonalizationPrefs.homeShortcutsEnabled(this);
+        addSwitchRow(R.drawable.ic_shortcut, "Show HOME quick shortcuts",
+                "Configurable slots between Apps and Navigation",
+                homeShortcuts, checked -> {
+                    UiPersonalizationPrefs.setHomeShortcutsEnabled(this, checked);
+                    render();
+                });
+        if (homeShortcuts) {
+            addChoiceRow(R.drawable.ic_shortcut, "Shortcut count",
+                    Integer.toString(LauncherPrefs.quickCount(this)),
+                    v -> choose("HOME shortcut count",
+                            new String[] {"3", "4", "5", "6"},
+                            new String[] {"3", "4", "5", "6"},
+                            Integer.toString(LauncherPrefs.quickCount(this)), value -> {
+                                LauncherPrefs.setQuickCount(this, Integer.parseInt(value)); render();
+                            }));
+            content.addView(text("Each slot has an independent launch target and visual icon. Auto keeps the app/role identity.",
+                    R.dimen.ui_settings_value, R.color.ui_text_secondary));
+            for (int i = 0; i < LauncherPrefs.QUICK_KEYS.length; i++) addShortcutEditor(false, i);
+        }
 
         addSection("Drawer quick access");
         for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++) addShortcutEditor(true, i);
@@ -184,110 +186,18 @@ public final class SettingsActivity extends Activity {
                 "Keep app installed and retain DoFun recovery", v -> confirmDisableHome());
     }
 
+    private void addAccentPaletteRow() {
+        AccentPaletteRow row = new AccentPaletteRow(this, this::recreate);
+        addRow(row);
+    }
+
     private void addShortcutEditor(boolean drawer, int index) {
-        String title = (drawer ? "Drawer " : "Quick ") + (index + 1);
-        String packageKey = drawer ? LauncherPrefs.DRAWER_QUICK_KEYS[index] : LauncherPrefs.QUICK_KEYS[index];
-        String role = drawer ? LauncherPrefs.drawerQuickRole(this, index) : LauncherPrefs.quickRole(this, index);
-        String iconAppearance = drawer ? UiPersonalizationPrefs.drawerQuickIcon(this, index)
-                : UiPersonalizationPrefs.quickIcon(this, index);
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(AutomotiveUi.cardBackground(this));
-        int gap = AutomotiveUi.dimen(this, R.dimen.driver_gap);
-        card.setPadding(gap, gap / 2, gap, gap);
-        TextView heading = text(title, R.dimen.ui_settings_section, R.color.ui_text);
-        card.addView(heading, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 36));
-
-        LinearLayout columns = new LinearLayout(this);
-        columns.setOrientation(LinearLayout.HORIZONTAL);
-        columns.setGravity(Gravity.CENTER_VERTICAL);
-        View app = shortcutEditorCell("APP", shortcutTargetLabel(packageKey, role), shortcutTargetIcon(packageKey, role),
-                v -> chooseShortcutTarget(drawer, index));
-        View icon = shortcutEditorCell("ICON", SlotIconCatalog.label(iconAppearance),
-                SlotIconCatalog.AUTO.equals(iconAppearance) ? autoIconFor(packageKey, role) : SlotIconCatalog.icon(iconAppearance),
-                v -> chooseShortcutIcon(drawer, index));
-        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-        half.rightMargin = gap / 2;
-        columns.addView(app, half);
-        LinearLayout.LayoutParams second = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-        second.leftMargin = gap / 2;
-        columns.addView(icon, second);
-        card.addView(columns, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
+        ShortcutEditorView editor = new ShortcutEditorView(this, drawer, index, this::render);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(this, R.dimen.ui_settings_shortcut_editor_height));
         lp.topMargin = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
         lp.bottomMargin = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
-        content.addView(card, lp);
-    }
-
-    private View shortcutEditorCell(String heading, String value, int iconRes, View.OnClickListener listener) {
-        LinearLayout cell = new LinearLayout(this);
-        cell.setGravity(Gravity.CENTER_VERTICAL);
-        cell.setPadding(AutomotiveUi.dimen(this, R.dimen.driver_gap), 0,
-                AutomotiveUi.dimen(this, R.dimen.driver_gap), 0);
-        cell.setBackground(AutomotiveUi.interactiveBackground(this, false));
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(iconRes);
-        icon.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
-        int pad = AutomotiveUi.dimen(this, R.dimen.driver_gap);
-        icon.setPadding(pad, pad, pad, pad);
-        cell.addView(icon, new LinearLayout.LayoutParams(56, 56));
-        LinearLayout labels = new LinearLayout(this);
-        labels.setOrientation(LinearLayout.VERTICAL);
-        labels.setGravity(Gravity.CENTER_VERTICAL);
-        TextView caption = text(heading, R.dimen.ui_settings_value, R.color.ui_accent);
-        TextView detail = text(value, R.dimen.ui_settings_value, R.color.ui_text);
-        detail.setSingleLine(true);
-        detail.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        labels.addView(caption);
-        labels.addView(detail);
-        cell.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        cell.setFocusable(true);
-        cell.setOnClickListener(listener);
-        AutomotiveUi.attachFeedback(cell);
-        return cell;
-    }
-
-    private String shortcutTargetLabel(String packageKey, String role) {
-        String pkg = LauncherPrefs.packageFor(this, packageKey);
-        return pkg.isEmpty() ? "Role · " + RoleIconCatalog.label(role) : AppResolver.labelFor(this, pkg, pkg);
-    }
-
-    private int shortcutTargetIcon(String packageKey, String role) {
-        return LauncherPrefs.packageFor(this, packageKey).isEmpty()
-                ? RoleIconCatalog.icon(role) : R.drawable.ic_apps;
-    }
-
-    private int autoIconFor(String packageKey, String role) {
-        return LauncherPrefs.packageFor(this, packageKey).isEmpty() ? RoleIconCatalog.icon(role) : R.drawable.ic_apps;
-    }
-
-    private void chooseShortcutTarget(boolean drawer, int index) {
-        String packageKey = drawer ? LauncherPrefs.DRAWER_QUICK_KEYS[index] : LauncherPrefs.QUICK_KEYS[index];
-        new AlertDialog.Builder(this).setTitle((drawer ? "Drawer " : "Quick ") + (index + 1) + " app")
-                .setItems(new String[] {"Choose app", "Use role default", "Change role"}, (dialog, which) -> {
-                    if (which == 0) {
-                        Intent intent = new Intent(this, AppDrawerActivity.class);
-                        intent.putExtra(AppDrawerActivity.EXTRA_PICK_KEY, packageKey);
-                        startActivity(intent);
-                    } else if (which == 1) {
-                        LauncherPrefs.setPackage(this, packageKey, null);
-                        MediaListenerService.refreshActiveSessions();
-                        render();
-                    } else chooseRole(drawer, index);
-                }).setNegativeButton("Cancel", null).show();
-    }
-
-    private void chooseShortcutIcon(boolean drawer, int index) {
-        String current = drawer ? UiPersonalizationPrefs.drawerQuickIcon(this, index)
-                : UiPersonalizationPrefs.quickIcon(this, index);
-        choose("Icon appearance · visual only", SlotIconCatalog.LABELS, SlotIconCatalog.VALUES, current, value -> {
-            if (drawer) UiPersonalizationPrefs.setDrawerQuickIcon(this, index, value);
-            else UiPersonalizationPrefs.setQuickIcon(this, index, value);
-            render();
-        });
+        content.addView(editor, lp);
     }
 
     private void chooseConfigurationDocument(boolean export) {
@@ -323,7 +233,8 @@ public final class SettingsActivity extends Activity {
                         byte[] buffer = new byte[4096];
                         int count;
                         while ((count = input.read(buffer)) != -1) {
-                            if (bytes.size() + count > ConfigurationCodec.MAX_BYTES) throw new java.io.IOException("Configuration exceeds 64 KiB");
+                            if (bytes.size() + count > ConfigurationCodec.MAX_BYTES)
+                                throw new java.io.IOException("Configuration exceeds 64 KiB");
                             bytes.write(buffer, 0, count);
                         }
                     }
@@ -384,15 +295,6 @@ public final class SettingsActivity extends Activity {
     @Override protected void onDestroy() {
         configurationIo.shutdownNow();
         super.onDestroy();
-    }
-
-    private void chooseRole(boolean drawer, int index) {
-        String current = drawer ? LauncherPrefs.drawerQuickRole(this, index) : LauncherPrefs.quickRole(this, index);
-        choose("Use role shortcut (clears app assignment)", RoleIconCatalog.LABELS, RoleIconCatalog.VALUES, current, role -> {
-            if (drawer) ShortcutSlot.chooseRole(this, LauncherPrefs.DRAWER_ROLE_KEYS[index], LauncherPrefs.DRAWER_QUICK_KEYS[index], role);
-            else ShortcutSlot.chooseRole(this, LauncherPrefs.QUICK_ROLE_KEYS[index], LauncherPrefs.QUICK_KEYS[index], role);
-            render();
-        });
     }
 
     private void chooseTime(boolean day) {

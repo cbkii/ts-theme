@@ -47,6 +47,12 @@ final class AccentPalette {
         return "Orange";
     }
 
+    static int baseColor(String value) {
+        String safe = safe(value);
+        for (int i = 0; i < VALUES.length; i++) if (VALUES[i].equals(safe)) return BASE[i];
+        return BASE[0];
+    }
+
     static int color(Context context, boolean dark) {
         String selected = safe(UiPersonalizationPrefs.accentHue(context));
         for (int i = 0; i < VALUES.length; i++) if (VALUES[i].equals(selected)) return dark ? DARK[i] : BASE[i];

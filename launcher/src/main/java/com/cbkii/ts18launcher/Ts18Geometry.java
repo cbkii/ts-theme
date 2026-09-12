@@ -18,7 +18,7 @@ final class Ts18Geometry {
     static final int TRANSPORT_TARGET = 84;
     static final int PRIMARY_TARGET = 88;
     static final int CONTROL_WIDTH = SOURCE_TARGET + 2 * TRANSPORT_TARGET + PRIMARY_TARGET;
-    static final int DATE_WIDTH = 144;
+    static final int DATE_WIDTH = 128;
     static final int RAIL_ENDPOINT_HEIGHT = 80;
     static final int RAIL_QUICK_HEIGHT = 80;
 

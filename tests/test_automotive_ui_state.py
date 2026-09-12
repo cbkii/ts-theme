@@ -19,6 +19,19 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("Math.max(3, Math.min(6", prefs)
         self.assertIn("case 0: return SETTINGS", roles)
         self.assertIn("styleRailButton(this, navigationButton, true)", launcher)
+        self.assertIn("FrameLayout[] quickCells", launcher)
+        self.assertIn("new LinearLayout.LayoutParams(\n                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)", launcher)
+
+    def test_home_shortcut_section_can_hide_without_moving_navigation_endpoint(self):
+        launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
+        personal = self.read("launcher/src/main/java/com/cbkii/ts18launcher/UiPersonalizationPrefs.java")
+        self.assertIn("KEY_HOME_SHORTCUTS_ENABLED", personal)
+        self.assertIn("homeShortcutsEnabled(this)", launcher)
+        self.assertIn("quickCells[i].setVisibility", launcher)
+        self.assertIn('"Show HOME quick shortcuts"', settings)
+        self.assertIn("if (homeShortcuts)", settings)
+        self.assertIn('"Shortcut count"', settings)
 
     def test_functional_icons_use_one_pinned_material_symbols_rounded_family(self):
         sources = self.read("docs/ICON_SOURCES.md")
@@ -47,11 +60,12 @@ class AutomotiveUiStateTests(unittest.TestCase):
             self.assertIn('android:viewportHeight="960"', xml, name)
             self.assertNotIn("?attr/colorControlNormal", xml, name)
 
-    def test_radio_music_shared_metadata_and_side_setting_are_independent(self):
+    def test_radio_music_shared_metadata_side_setting_and_visual_priority(self):
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         metadata = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MediaMetadataView.java")
         prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
+        ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
         self.assertIn("MediaMetadataView", launcher)
         self.assertIn("SlowMarqueeTextView", metadata)
         self.assertIn("secondary.setSingleLine(true)", metadata)
@@ -60,6 +74,11 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn('"Radio / Music sides"', settings)
         self.assertIn("independent of rail", settings)
         self.assertIn("LauncherPrefs.radioOnRight(this)", launcher)
+        self.assertIn("updateMediaPresentation", launcher)
+        self.assertIn("mediaGroupBackground", launcher)
+        self.assertIn("styleSourcePrimaryButton", launcher)
+        self.assertIn("subtleTransportBackground", ui)
+        self.assertIn("GradientDrawable.Orientation", ui)
         self.assertNotIn('addChoiceRow(R.drawable.ic_radio, "Media controls side"', settings)
 
     def test_transport_is_always_ready_and_bootstraps_public_media_surfaces(self):
@@ -77,8 +96,10 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertNotIn("requestAudioFocus", bootstrap)
         self.assertNotIn("new MediaSession(", bootstrap)
 
-    def test_date_is_inert_and_metadata_has_no_settings_long_press(self):
+    def test_date_is_inert_narrower_and_metadata_has_no_settings_long_press(self):
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        geometry = self.read("launcher/src/main/java/com/cbkii/ts18launcher/Ts18Geometry.java")
+        self.assertIn("DATE_WIDTH = 128", geometry)
         self.assertIn("dateView.setBackgroundColor(android.graphics.Color.TRANSPARENT)", launcher)
         self.assertIn("dateView.setFocusable(false)", launcher)
         self.assertIn("dateView.setClickable(false)", launcher)
@@ -86,15 +107,17 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertNotIn("dateView.setOnClickListener", launcher)
         self.assertNotIn("mediaText.setOnLongClickListener", launcher)
 
-    def test_shortcut_editor_separates_app_and_icon_and_keeps_icon_visual_only(self):
-        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
+    def test_shortcut_editor_separates_app_and_icon_and_previews_real_app_identity(self):
+        editor = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ShortcutEditorView.java")
         slot = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ShortcutSlot.java")
         catalog = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SlotIconCatalog.java")
-        self.assertIn('shortcutEditorCell("APP"', settings)
-        self.assertIn('shortcutEditorCell("ICON"', settings)
-        self.assertIn('"Choose app", "Use role default", "Change role"', settings)
-        self.assertIn('"Icon appearance · visual only"', settings)
-        self.assertIn("SlotIconCatalog.LABELS", settings)
+        self.assertIn('editorCell("App"', editor)
+        self.assertIn('editorCell("Icon"', editor)
+        self.assertIn('"Choose app", "Use role default", "Change role"', editor)
+        self.assertIn('"Icon appearance · visual only"', editor)
+        self.assertIn("getApplicationIcon(pkg)", editor)
+        self.assertIn("preview.tint", editor)
+        self.assertIn("SlotIconCatalog.LABELS", editor)
         self.assertIn("Curated visual-only quick-slot icon catalogue", catalog)
         self.assertIn("iconAppearance(context, key)", slot)
         self.assertGreaterEqual(catalog.count("static final String "), 25)
@@ -118,13 +141,15 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("handler.postDelayed(restart, HOLD_MS)", marquee)
         self.assertIn("scrollTo(0, 0)", marquee)
 
-    def test_accent_palette_is_limited_and_all_base_choices_contrast_with_black(self):
+    def test_accent_palette_is_limited_circle_based_and_contrasts_with_black(self):
         palette = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AccentPalette.java")
+        row = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AccentPaletteRow.java")
         ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
-        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
-        self.assertIn('"Accent hue"', settings)
         self.assertIn("AccentPalette.color(context, false)", ui)
         self.assertIn("AccentPalette.color(context, true)", ui)
+        self.assertIn("setShape(GradientDrawable.OVAL)", row)
+        self.assertIn("AccentPalette.baseColor(value)", row)
+        self.assertIn("48dp touch target", row)
         base_block = palette.split("private static final int[] BASE = {", 1)[1].split("};", 1)[0]
         base = re.findall(r'0xFF([0-9A-Fa-f]{6})', base_block)
         self.assertEqual(10, len(base))
@@ -178,11 +203,12 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("recenter.setImageTintList(AutomotiveUi.followTint(activity))", panel)
         self.assertIn('"Map controls"', settings)
 
-    def test_configuration_whitelists_icon_hue_and_warmup_preferences(self):
+    def test_configuration_whitelists_icon_hue_warmup_and_home_shortcut_visibility(self):
         codec = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ConfigurationCodec.java")
         self.assertIn("Type.ICON", codec)
         self.assertIn("Type.HUE", codec)
         self.assertIn("KEY_MEDIA_STARTUP_WARMUP", codec)
+        self.assertIn("KEY_HOME_SHORTCUTS_ENABLED", codec)
         self.assertIn("KEY_ACCENT_HUE", codec)
         self.assertIn("QUICK_ICON_KEYS", codec)
         self.assertIn("DRAWER_ICON_KEYS", codec)
@@ -224,6 +250,14 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("linkVertical", ui)
         self.assertIn("linkHorizontal", ui)
         self.assertIn("ui_focus_stroke", ui)
+
+    def test_local_offline_private_defaults_are_explicit(self):
+        readme = self.read("README.md")
+        rules = self.read("AGENTS.md")
+        self.assertIn("Local, offline and private by default", readme)
+        self.assertIn("no remote analytics", readme.lower())
+        self.assertIn("local/offline/private by default", rules.lower())
+        self.assertIn("no analytics", rules.lower())
 
     def test_quantitative_acceptance_and_emulator_physical_protocol_are_explicit(self):
         acceptance = self.read("docs/MONO_DRIVE_UX_ACCEPTANCE.md")

@@ -111,6 +111,41 @@ final class AutomotiveUi {
         return ripple(context, states);
     }
 
+    /** Inactive source remains obvious but subordinate to the filled active Play/Pause action. */
+    static RippleDrawable subtleTransportBackground(Context context) {
+        int target = dimen(context, R.dimen.driver_target_primary);
+        int visual = dimen(context, R.dimen.ui_play_visual);
+        int inset = Math.max(0, (target - visual) / 2);
+        int surface = color(context, R.color.ui_surface_elevated);
+        int accent = color(context, R.color.ui_accent);
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] {android.R.attr.state_focused},
+                new InsetDrawable(circleColors(context, blend(surface, accent, 0.13f), accent, 3), inset));
+        states.addState(new int[] {android.R.attr.state_pressed},
+                new InsetDrawable(circleColors(context, blend(surface, accent, 0.11f), accent, 2), inset));
+        states.addState(new int[] {}, new InsetDrawable(
+                circleColors(context, blend(surface, accent, 0.06f), accent, 2), inset));
+        return ripple(context, states);
+    }
+
+    /**
+     * Restrained tonal gradient for source groups. Accent intensity indicates selected source,
+     * and the accent edge points toward the shared metadata surface.
+     */
+    static GradientDrawable mediaGroupBackground(Context context, boolean active, boolean accentAtRight) {
+        int base = color(context, R.color.ui_surface);
+        int elevated = color(context, R.color.ui_surface_elevated);
+        int accent = color(context, R.color.ui_accent);
+        int middle = blend(base, elevated, 0.65f);
+        int edge = blend(elevated, accent, active ? 0.15f : 0.055f);
+        GradientDrawable.Orientation orientation = accentAtRight
+                ? GradientDrawable.Orientation.LEFT_RIGHT : GradientDrawable.Orientation.RIGHT_LEFT;
+        GradientDrawable drawable = new GradientDrawable(orientation, new int[] {base, middle, edge});
+        drawable.setCornerRadius(dimen(context, R.dimen.ui_corner_radius));
+        if (active) drawable.setStroke(1, blend(elevated, accent, 0.55f));
+        return drawable;
+    }
+
     static GradientDrawable cardBackground(Context context) {
         return rounded(context, R.color.ui_surface, R.color.ui_surface, 0);
     }
@@ -132,6 +167,16 @@ final class AutomotiveUi {
     static void styleTransportButton(Context context, ImageButton button, boolean primary) {
         button.setBackground(primary ? primaryTransportBackground(context) : transparentActionBackground(context));
         button.setImageTintList(ColorStateList.valueOf(primary ? Color.BLACK : color(context, R.color.ui_icon)));
+        int pad = dimen(context, R.dimen.ui_icon_button_padding);
+        button.setPadding(pad, pad, pad, pad);
+        button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        button.setFocusable(true);
+        attachFeedback(button);
+    }
+
+    static void styleSourcePrimaryButton(Context context, ImageButton button, boolean active) {
+        button.setBackground(active ? primaryTransportBackground(context) : subtleTransportBackground(context));
+        button.setImageTintList(ColorStateList.valueOf(active ? Color.BLACK : color(context, R.color.ui_accent)));
         int pad = dimen(context, R.dimen.ui_icon_button_padding);
         button.setPadding(pad, pad, pad, pad);
         button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
@@ -228,11 +273,28 @@ final class AutomotiveUi {
         return drawable;
     }
 
+    private static GradientDrawable circleColors(Context context, int fillColor, int strokeColor, int strokeDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.OVAL);
+        drawable.setColor(fillColor);
+        if (strokeDp > 0) drawable.setStroke(Math.max(1, dimen(context, R.dimen.ui_focus_stroke) * strokeDp / 3), strokeColor);
+        return drawable;
+    }
+
     private static GradientDrawable rounded(Context context, int fillId, int strokeId, int strokeDp) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color(context, fillId));
         drawable.setCornerRadius(dimen(context, R.dimen.ui_corner_radius));
         if (strokeDp > 0) drawable.setStroke(Math.max(1, dimen(context, R.dimen.ui_focus_stroke)), color(context, strokeId));
         return drawable;
+    }
+
+    private static int blend(int from, int to, float ratio) {
+        float keep = 1f - ratio;
+        return Color.argb(
+                Math.round(Color.alpha(from) * keep + Color.alpha(to) * ratio),
+                Math.round(Color.red(from) * keep + Color.red(to) * ratio),
+                Math.round(Color.green(from) * keep + Color.green(to) * ratio),
+                Math.round(Color.blue(from) * keep + Color.blue(to) * ratio));
     }
 }

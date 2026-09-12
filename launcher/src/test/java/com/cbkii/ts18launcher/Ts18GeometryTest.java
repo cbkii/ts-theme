@@ -21,8 +21,8 @@ public class Ts18GeometryTest {
         assertEquals(88, g.stripHeight);
         assertEquals(Ts18Geometry.CONTROL_WIDTH, g.radioWidth);
         assertEquals(Ts18Geometry.CONTROL_WIDTH, g.musicWidth);
-        assertEquals(144, g.dateWidth());
-        assertTrue(g.metadataWidth() > 300);
+        assertEquals(128, g.dateWidth());
+        assertTrue(g.metadataWidth() > 320);
     }
 
     @Test
@@ -36,8 +36,8 @@ public class Ts18GeometryTest {
         assertEquals(559, g.mapHeight());
         assertEquals(Ts18Geometry.CONTROL_WIDTH, g.radioWidth);
         assertEquals(Ts18Geometry.CONTROL_WIDTH, g.musicWidth);
-        assertEquals(144, g.dateWidth());
-        assertTrue(g.metadataWidth() > 300);
+        assertEquals(128, g.dateWidth());
+        assertTrue(g.metadataWidth() > 320);
     }
 
     @Test
@@ -49,6 +49,7 @@ public class Ts18GeometryTest {
         assertEquals(88, g.mapY());
         assertEquals(1129, g.mapWidth());
         assertEquals(559, g.mapHeight());
+        assertTrue(g.metadataWidth() > 320);
     }
 
     @Test
@@ -56,7 +57,7 @@ public class Ts18GeometryTest {
         Ts18Geometry.Layout g = Ts18Geometry.resolveForSidebar(1280, 720, false, false, false);
         assertEquals(1280, g.contentRight);
         assertEquals(1184, g.mapWidth());
-        assertTrue(g.metadataWidth() > 300);
+        assertTrue(g.metadataWidth() > 360);
     }
 
     @Test
@@ -64,10 +65,11 @@ public class Ts18GeometryTest {
         Ts18Geometry.Layout g = Ts18Geometry.resolveForSidebar(1280, 720, false, false, true);
         assertEquals(1225, g.contentRight);
         assertEquals(1129, g.mapWidth());
+        assertTrue(g.metadataWidth() > 320);
     }
 
     @Test
-    public void smallerWindowRemainsBounded() {
+    public void smallerWindowRemainsBoundedWithoutBecomingAGenericResponsiveContract() {
         Ts18Geometry.Layout g = Ts18Geometry.resolve(1000, 600, false);
         assertTrue(g.railWidth() > 0);
         assertTrue(g.dateWidth() > 0);

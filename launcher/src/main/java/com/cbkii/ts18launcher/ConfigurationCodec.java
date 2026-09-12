@@ -30,6 +30,7 @@ final class ConfigurationCodec {
         for (String key : UiPersonalizationPrefs.DRAWER_ICON_KEYS) keys.put(key, Type.ICON);
         keys.put(UiPersonalizationPrefs.KEY_ACCENT_HUE, Type.HUE);
         keys.put(UiPersonalizationPrefs.KEY_MEDIA_STARTUP_WARMUP, Type.BOOLEAN);
+        keys.put(UiPersonalizationPrefs.KEY_HOME_SHORTCUTS_ENABLED, Type.BOOLEAN);
         keys.put(LauncherPrefs.KEY_QUICK_COUNT, Type.COUNT);
         keys.put(LauncherPrefs.KEY_RAIL_POSITION, Type.RAIL);
         keys.put(LauncherPrefs.KEY_RADIO_SIDE, Type.SIDE);

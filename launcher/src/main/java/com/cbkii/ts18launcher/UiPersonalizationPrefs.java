@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 final class UiPersonalizationPrefs {
     static final String KEY_MEDIA_STARTUP_WARMUP = "media.startup.warmup";
     static final String KEY_ACCENT_HUE = "ui.accent.hue";
+    static final String KEY_HOME_SHORTCUTS_ENABLED = "ui.home.shortcuts.enabled";
     static final String KEY_QUICK_ICON_1 = "ui.quick.icon.1";
     static final String KEY_QUICK_ICON_2 = "ui.quick.icon.2";
     static final String KEY_QUICK_ICON_3 = "ui.quick.icon.3";
@@ -35,6 +36,13 @@ final class UiPersonalizationPrefs {
     }
     static void setMediaStartupWarmup(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(KEY_MEDIA_STARTUP_WARMUP, enabled).apply();
+    }
+
+    static boolean homeShortcutsEnabled(Context context) {
+        return prefs(context).getBoolean(KEY_HOME_SHORTCUTS_ENABLED, true);
+    }
+    static void setHomeShortcutsEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_HOME_SHORTCUTS_ENABLED, enabled).apply();
     }
 
     static String accentHue(Context context) {
