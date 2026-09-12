@@ -72,6 +72,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('"assets/map/vendor/leaflet.js"', checker)
         self.assertIn('"assets/map/vendor/leaflet.css"', checker)
         self.assertIn('"assets/map/vendor/LEAFLET-LICENSE.txt"', checker)
+        self.assertIn('"assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt"', checker)
 
     def test_leaflet_map_is_local_feature_rich_and_tile_networking_is_native(self):
         gradle = self.read("launcher/build.gradle.kts")
@@ -162,6 +163,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
 
     def test_automotive_ui_uses_local_vectors_semantic_dimensions_and_feedback(self):
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        metadata = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MediaMetadataView.java")
         ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
         geometry = self.read("launcher/src/main/java/com/cbkii/ts18launcher/Ts18Geometry.java")
         dimens = self.read("launcher/src/main/res/values/dimens.xml")
@@ -182,23 +184,25 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("MUSIC_COLUMNS = 6", geometry)
         self.assertIn("resolve(int viewWidth, int viewHeight, boolean railRight)", geometry)
         for token in (
-            "ui_metadata_text", "ui_drawer_icon", "ui_settings_row_height",
+            "ui_metadata_text", "ui_metadata_secondary_text", "ui_drawer_icon", "ui_settings_row_height",
             "driver_target_min", "driver_target_primary", "driver_gap",
             "driver_gap_large", "ui_play_visual", "ui_icon_button_padding", "ui_corner_radius",
         ):
             self.assertIn(token, dimens)
         self.assertIn("#FF7043", colors)
         self.assertIn("ui_high_text", colors)
+        self.assertIn("STATE_CROSSFADE_MS = 120L", ui)
         self.assertIn("FEEDBACK_MS = 140L", ui)
+        self.assertIn("PANEL_REVEAL_MS = 160L", ui)
         self.assertIn("DRAWER_MS = 180L", ui)
         self.assertIn("state_focused", ui)
         self.assertIn("state_pressed", ui)
         self.assertIn("linkVertical", ui)
         self.assertIn("linkHorizontal", ui)
         self.assertIn("primaryTransportBackground", ui)
-        self.assertIn("SlowMarqueeTextView", launcher)
-        self.assertIn("setImageResource(radioSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play)", launcher)
-        self.assertIn("setImageResource(genericSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play)", launcher)
+        self.assertIn("MediaMetadataView", launcher)
+        self.assertIn("SlowMarqueeTextView", metadata)
+        self.assertIn("setIconWithCrossfade", launcher)
         self.assertIn("dateView.setOnClickListener(v -> openSettings())", launcher)
 
     def test_settings_cover_appearance_schedule_roles_switches_and_advanced_home(self):
@@ -212,6 +216,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('"Auto appearance source"', settings)
         self.assertIn('"Middle quick slots"', settings)
         self.assertIn('"Rail position"', settings)
+        self.assertIn('"Media controls side"', settings)
         self.assertIn("TimePickerDialog", settings)
         self.assertIn("RoleIconCatalog.LABELS", settings)
         self.assertIn("setSingleChoiceItems", settings)
