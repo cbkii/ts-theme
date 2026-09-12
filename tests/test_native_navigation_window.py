@@ -17,11 +17,13 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("navigationWindowController.onHomeVisible()", source)
         self.assertIn("mapPanel.resumeWebView()", source)
 
-    def test_controller_uses_public_launch_bounds_then_exact_package_task_backend(self):
+    def test_controller_uses_public_launch_bounds_then_exact_task_backend(self):
         source = (JAVA / "NavigationWindowController.java").read_text()
         self.assertIn("ActivityOptions.makeBasic()", source)
         self.assertIn("options.setLaunchBounds(target.asRect())", source)
-        self.assertIn("backend.showWindowed(pkg, target", source)
+        self.assertIn("backend.showWindowed(pkg, target, taskHint", source)
+        self.assertIn("activeTaskId = result.taskId", source)
+        self.assertIn("backend.verify(pkg, target, activeTaskId", source)
         self.assertIn("pkg.equals(activePackage)", source)
         self.assertNotIn("FLAG_ACTIVITY_MULTIPLE_TASK", source)
 
@@ -29,7 +31,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         helper = HELPER.read_text()
         self.assertIn("am task resizeable", helper)
         self.assertIn("am task resize", helper)
-        self.assertIn("am stack resize-animated", helper)
+        self.assertIn("--windowingMode 1 --task", helper)
         self.assertIn("getprop persist.tw.forcepip", helper)
         self.assertIn("getprop sys.tw.forcepip", helper)
         self.assertNotIn("setprop", helper)
@@ -37,11 +39,13 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertNotIn("chmod 777", helper)
         self.assertNotIn("setenforce", helper)
 
-    def test_helper_binds_task_selection_to_configured_package(self):
+    def test_helper_binds_task_selection_to_configured_package_and_task(self):
         helper = HELPER.read_text()
         self.assertIn('index($0, " A=" pkg " ")', helper)
+        self.assertIn('task_hint != "0" && task != task_hint', helper)
         self.assertIn("TASK_REPLACED", helper)
         self.assertIn("BOUNDS_MISMATCH", helper)
+        self.assertIn("top_component_for_task", helper)
         self.assertNotIn("mResumedActivity", helper)
         self.assertNotIn("mFocusedActivity", helper)
 
