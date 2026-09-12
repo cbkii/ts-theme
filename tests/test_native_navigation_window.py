@@ -27,6 +27,13 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("pkg.equals(activePackage)", source)
         self.assertNotIn("FLAG_ACTIVITY_MULTIPLE_TASK", source)
 
+    def test_switching_navigator_foregrounds_home_before_new_task_acquisition(self):
+        source = (JAVA / "NavigationWindowController.java").read_text()
+        self.assertIn("switchPackage(pkg, target)", source)
+        self.assertIn("backend.focus(activity.getPackageName(), -1", source)
+        self.assertIn("activeTaskId = -1", source)
+        self.assertIn("adoptPackageAndLaunch", source)
+
     def test_root_helper_is_narrow_and_does_not_write_topway_properties(self):
         helper = HELPER.read_text()
         self.assertIn("am task resizeable", helper)
@@ -56,6 +63,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("chmod 0700", source)
         self.assertIn("COMMAND_TIMEOUT_MS", source)
         self.assertIn('new ProcessBuilder("su", "-c", command)', source)
+        self.assertIn('return new ProcessResult(-1, "", true)', source)
 
 
 if __name__ == "__main__":
