@@ -54,8 +54,6 @@ final class NavigationWindowController {
 
     void onLauncherOverlayOpened() {
         if (state == State.DESTROYED) return;
-        String pkg = selectedPackage();
-        if (pkg.isEmpty()) return;
         state = State.SUSPENDED;
         // Bring the HOME task/stack back to the foreground without destroying navigation state.
         backend.focus(activity.getPackageName(), ignored -> { });
@@ -72,10 +70,10 @@ final class NavigationWindowController {
         backend.focus(activity.getPackageName(), ignored -> { });
     }
 
-    void openFullscreen(Location location) {
-        if (state == State.DESTROYED) return;
+    boolean openFullscreen(Location location) {
+        if (state == State.DESTROYED) return false;
         String pkg = selectedPackage();
-        if (pkg.isEmpty()) return;
+        if (pkg.isEmpty()) return false;
         final int request = ++generation;
         state = State.FULLSCREEN_HANDOFF;
         backend.fullscreen(pkg, result -> {
@@ -83,6 +81,7 @@ final class NavigationWindowController {
             // The normal navigation launch remains the universal fallback and also brings the task forward.
             NavigationProvider.open(activity, pkg, location);
         });
+        return true;
     }
 
     void retry() {
