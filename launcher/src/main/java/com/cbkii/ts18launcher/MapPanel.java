@@ -150,7 +150,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
     private void createWebView() {
         if (destroyed || webView != null || recovery.blocked()) return;
         try {
-        webView = new WebView(activity);
+        webView = new TrackingWebView(activity);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(false);
@@ -481,5 +481,11 @@ final class MapPanel extends FrameLayout implements LocationListener {
             return new WebResourceResponse("text/plain", "utf-8", 403, "Blocked",
                     Collections.emptyMap(), new ByteArrayInputStream(blocked));
         }
+    }
+
+    /** Keeps accessibility click semantics explicit while Leaflet owns map gestures. */
+    private static final class TrackingWebView extends WebView {
+        TrackingWebView(Context context) { super(context); }
+        @Override public boolean performClick() { return super.performClick(); }
     }
 }
