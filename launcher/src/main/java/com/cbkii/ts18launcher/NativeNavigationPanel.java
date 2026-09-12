@@ -1,5 +1,6 @@
 package com.cbkii.ts18launcher;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Color;
 import android.view.Gravity;
@@ -13,6 +14,7 @@ import android.widget.TextView;
  * Launcher-owned placeholder and geometry authority for the real external navigation task.
  * The map itself is never rendered in this View.
  */
+@SuppressLint({"SetTextI18n", "ViewConstructor"})
 final class NativeNavigationPanel extends FrameLayout {
     interface BoundsListener { void onBoundsChanged(NavigationWindowBounds bounds); }
 
