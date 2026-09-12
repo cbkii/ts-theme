@@ -28,34 +28,38 @@ final class TopwayFreeformBackend {
 
     void probe(Callback callback) { submit(() -> helper.run("probe"), callback); }
 
-    void showWindowed(String packageName, NavigationWindowBounds bounds, Callback callback) {
+    void showWindowed(String packageName, NavigationWindowBounds bounds, int taskId, Callback callback) {
         submit(() -> helper.run("window", packageName,
                 Integer.toString(bounds.left), Integer.toString(bounds.top),
-                Integer.toString(bounds.right), Integer.toString(bounds.bottom)), callback);
+                Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId)), callback);
     }
 
-    void verify(String packageName, NavigationWindowBounds bounds, Callback callback) {
+    void verify(String packageName, NavigationWindowBounds bounds, int taskId, Callback callback) {
         submit(() -> helper.run("verify", packageName,
                 Integer.toString(bounds.left), Integer.toString(bounds.top),
-                Integer.toString(bounds.right), Integer.toString(bounds.bottom)), callback);
+                Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId)), callback);
     }
 
-    void focus(String packageName, Callback callback) {
-        submit(() -> helper.run("focus", packageName), callback);
+    void focus(String packageName, int taskId, Callback callback) {
+        submit(() -> helper.run("focus", packageName, taskHint(taskId)), callback);
     }
 
-    void fullscreen(String packageName, Callback callback) {
-        submit(() -> helper.run("fullscreen", packageName), callback);
+    void fullscreen(String packageName, int taskId, Callback callback) {
+        submit(() -> helper.run("fullscreen", packageName, taskHint(taskId)), callback);
     }
 
-    void status(String packageName, Callback callback) {
-        submit(() -> helper.run("status", packageName), callback);
+    void status(String packageName, int taskId, Callback callback) {
+        submit(() -> helper.run("status", packageName, taskHint(taskId)), callback);
     }
 
     void destroy() {
         destroyed = true;
         executor.shutdownNow();
         main.removeCallbacksAndMessages(null);
+    }
+
+    private static String taskHint(int taskId) {
+        return Integer.toString(taskId > 0 ? taskId : 0);
     }
 
     private void submit(Operation operation, Callback callback) {
