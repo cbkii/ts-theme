@@ -7,6 +7,7 @@ import android.app.AlertDialog;
 import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
@@ -33,7 +34,6 @@ public final class SettingsActivity extends Activity {
     private final java.util.concurrent.ExecutorService configurationIo = java.util.concurrent.Executors.newSingleThreadExecutor();
     private LinearLayout content;
     private boolean configurationBusy;
-
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -87,6 +87,13 @@ public final class SettingsActivity extends Activity {
                         LauncherPrefs.appearanceMode(this), value -> {
                             LauncherPrefs.setAppearanceMode(this, value); recreate();
                         }));
+        addChoiceRow(R.drawable.ic_palette, "Accent hue",
+                AccentPalette.label(UiPersonalizationPrefs.accentHue(this)),
+                v -> choose("Accent hue · selected/primary elements only",
+                        AccentPalette.LABELS, AccentPalette.VALUES,
+                        UiPersonalizationPrefs.accentHue(this), value -> {
+                            UiPersonalizationPrefs.setAccentHue(this, value); recreate();
+                        }));
         addChoiceRow(R.drawable.ic_utility, "Auto appearance source", autoSourceLabel(),
                 v -> choose("Auto appearance source",
                         new String[] {"Ambient light sensor", "Schedule"},
@@ -94,52 +101,39 @@ public final class SettingsActivity extends Activity {
                         LauncherPrefs.appearanceAutoSource(this), value -> {
                             LauncherPrefs.setAppearanceAutoSource(this, value); render();
                         }));
-        addChoiceRow(R.drawable.ic_utility, "Day starts", scheduleValue(true),
-                v -> chooseTime(true));
-        addChoiceRow(R.drawable.ic_utility, "Night starts", scheduleValue(false),
-                v -> chooseTime(false));
+        addChoiceRow(R.drawable.ic_utility, "Day starts", scheduleValue(true), v -> chooseTime(true));
+        addChoiceRow(R.drawable.ic_utility, "Night starts", scheduleValue(false), v -> chooseTime(false));
         addActionRow(R.drawable.ic_close, "Use generic day/night schedule",
                 "07:00 day · 19:00 night · dim around transitions",
                 v -> { LauncherPrefs.clearAppearanceSchedule(this); render(); });
 
-        addSwitchRow(R.drawable.ic_navigation, "Dashboard map", "Show Leaflet map on HOME",
-                LauncherPrefs.mapEnabled(this), checked -> LauncherPrefs.setMapEnabled(this, checked));
-        addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom, follow and navigation buttons",
+        addSwitchRow(R.drawable.ic_map, "Experimental Leaflet map",
+                "Off by default · retained only as a physical-test comparator",
+                ExperimentalMapPolicy.enabled(this), checked -> ExperimentalMapPolicy.setEnabled(this, checked));
+        addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom and follow controls",
                 LauncherPrefs.mapControlsEnabled(this), checked -> LauncherPrefs.setMapControlsEnabled(this, checked));
 
         addSection("HOME middle quick launch");
-        for (int i = 0; i < LauncherPrefs.QUICK_KEYS.length; i++) {
-            final int index = i;
-            addPickerRow(RoleIconCatalog.icon(LauncherPrefs.quickRole(this, i)),
-                    "Quick " + (i + 1) + " app shortcut", LauncherPrefs.QUICK_KEYS[i]);
-            addChoiceRow(RoleIconCatalog.icon(LauncherPrefs.quickRole(this, i)),
-                    "Quick " + (i + 1) + " role shortcut", RoleIconCatalog.label(LauncherPrefs.quickRole(this, i)),
-                    v -> chooseRole(false, index));
-        }
+        content.addView(text("Each slot has an independent launch target and visual icon. Auto keeps the app/role identity.",
+                R.dimen.ui_settings_value, R.color.ui_text_secondary));
+        for (int i = 0; i < LauncherPrefs.QUICK_KEYS.length; i++) addShortcutEditor(false, i);
 
         addSection("Drawer quick access");
-        for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++) {
-            final int index = i;
-            addPickerRow(RoleIconCatalog.icon(LauncherPrefs.drawerQuickRole(this, i)),
-                    "Drawer quick " + (i + 1) + " app shortcut", LauncherPrefs.DRAWER_QUICK_KEYS[i]);
-            addChoiceRow(RoleIconCatalog.icon(LauncherPrefs.drawerQuickRole(this, i)),
-                    "Drawer quick " + (i + 1) + " role shortcut",
-                    RoleIconCatalog.label(LauncherPrefs.drawerQuickRole(this, i)),
-                    v -> chooseRole(true, index));
-        }
+        for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++) addShortcutEditor(true, i);
 
         addSection("Media");
-        // Legacy label retained only in source migration notes; this setting no longer
-        // controls the independent Radio / Music side preference.
-        // "Media controls side" is intentionally not exposed as a second authority.
         addChoiceRow(R.drawable.ic_radio, "Radio / Music sides", LauncherPrefs.radioOnRight(this) ? "Radio right" : "Radio left",
                 v -> choose("Radio / Music sides · independent of rail",
                         new String[] {"Radio left", "Radio right"},
                         new String[] {LauncherPrefs.RAIL_LEFT, LauncherPrefs.RAIL_RIGHT},
                         LauncherPrefs.radioOnRight(this) ? LauncherPrefs.RAIL_RIGHT : LauncherPrefs.RAIL_LEFT,
                         value -> { LauncherPrefs.setRadioSide(this, value); render(); }));
+        addSwitchRow(R.drawable.ic_power, "Warm media sources on HOME start",
+                "Pre-connect exported media services; never opens app UI",
+                UiPersonalizationPrefs.mediaStartupWarmup(this),
+                checked -> UiPersonalizationPrefs.setMediaStartupWarmup(this, checked));
         addActionRow(R.drawable.ic_music, "Notification access",
-                MediaListenerService.hasNotificationAccess(this) ? "Granted" : "Required for media sessions",
+                MediaListenerService.hasNotificationAccess(this) ? "Granted" : "Required for active media-session discovery",
                 v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         addChoiceRow(R.drawable.ic_music, "Generic media selection", mediaModeLabel(),
                 v -> choose("Generic media selection",
@@ -160,7 +154,7 @@ public final class SettingsActivity extends Activity {
 
         addSection("Permissions");
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            addActionRow(R.drawable.ic_my_location, "Location permission", "Required for HOME map",
+            addActionRow(R.drawable.ic_my_location, "Location permission", "Required only for the experimental HOME map",
                     v -> requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION,
                             Manifest.permission.ACCESS_COARSE_LOCATION}, 9201));
         } else addInfoRow(R.drawable.ic_my_location, "Location permission", "Granted");
@@ -176,7 +170,7 @@ public final class SettingsActivity extends Activity {
                 v -> chooseConfigurationDocument(false));
         addActionRow(R.drawable.ic_close, "Reset launcher settings to defaults", "Reset configuration; HOME selection stays separate",
                 v -> new AlertDialog.Builder(this).setTitle("Reset launcher settings?")
-                        .setMessage("App assignments, layout and appearance return to defaults.")
+                        .setMessage("App assignments, layout, icons and appearance return to defaults.")
                         .setNegativeButton("Cancel", null).setPositiveButton("Reset", (dialog, which) ->
                                 commitConfiguration(java.util.Collections.emptyMap(), true)).show());
 
@@ -188,6 +182,112 @@ public final class SettingsActivity extends Activity {
                 "Bounded one-time root command; DoFun remains installed", v -> confirmRootHome());
         addActionRow(R.drawable.ic_close, "Disable HOME candidate",
                 "Keep app installed and retain DoFun recovery", v -> confirmDisableHome());
+    }
+
+    private void addShortcutEditor(boolean drawer, int index) {
+        String title = (drawer ? "Drawer " : "Quick ") + (index + 1);
+        String packageKey = drawer ? LauncherPrefs.DRAWER_QUICK_KEYS[index] : LauncherPrefs.QUICK_KEYS[index];
+        String role = drawer ? LauncherPrefs.drawerQuickRole(this, index) : LauncherPrefs.quickRole(this, index);
+        String iconAppearance = drawer ? UiPersonalizationPrefs.drawerQuickIcon(this, index)
+                : UiPersonalizationPrefs.quickIcon(this, index);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(AutomotiveUi.cardBackground(this));
+        int gap = AutomotiveUi.dimen(this, R.dimen.driver_gap);
+        card.setPadding(gap, gap / 2, gap, gap);
+        TextView heading = text(title, R.dimen.ui_settings_section, R.color.ui_text);
+        card.addView(heading, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 36));
+
+        LinearLayout columns = new LinearLayout(this);
+        columns.setOrientation(LinearLayout.HORIZONTAL);
+        columns.setGravity(Gravity.CENTER_VERTICAL);
+        View app = shortcutEditorCell("APP", shortcutTargetLabel(packageKey, role), shortcutTargetIcon(packageKey, role),
+                v -> chooseShortcutTarget(drawer, index));
+        View icon = shortcutEditorCell("ICON", SlotIconCatalog.label(iconAppearance),
+                SlotIconCatalog.AUTO.equals(iconAppearance) ? autoIconFor(packageKey, role) : SlotIconCatalog.icon(iconAppearance),
+                v -> chooseShortcutIcon(drawer, index));
+        LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        half.rightMargin = gap / 2;
+        columns.addView(app, half);
+        LinearLayout.LayoutParams second = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+        second.leftMargin = gap / 2;
+        columns.addView(icon, second);
+        card.addView(columns, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                AutomotiveUi.dimen(this, R.dimen.ui_settings_shortcut_editor_height));
+        lp.topMargin = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
+        lp.bottomMargin = AutomotiveUi.dimen(this, R.dimen.ui_card_inset);
+        content.addView(card, lp);
+    }
+
+    private View shortcutEditorCell(String heading, String value, int iconRes, View.OnClickListener listener) {
+        LinearLayout cell = new LinearLayout(this);
+        cell.setGravity(Gravity.CENTER_VERTICAL);
+        cell.setPadding(AutomotiveUi.dimen(this, R.dimen.driver_gap), 0,
+                AutomotiveUi.dimen(this, R.dimen.driver_gap), 0);
+        cell.setBackground(AutomotiveUi.interactiveBackground(this, false));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
+        int pad = AutomotiveUi.dimen(this, R.dimen.driver_gap);
+        icon.setPadding(pad, pad, pad, pad);
+        cell.addView(icon, new LinearLayout.LayoutParams(56, 56));
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        labels.setGravity(Gravity.CENTER_VERTICAL);
+        TextView caption = text(heading, R.dimen.ui_settings_value, R.color.ui_accent);
+        TextView detail = text(value, R.dimen.ui_settings_value, R.color.ui_text);
+        detail.setSingleLine(true);
+        detail.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        labels.addView(caption);
+        labels.addView(detail);
+        cell.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        cell.setFocusable(true);
+        cell.setOnClickListener(listener);
+        AutomotiveUi.attachFeedback(cell);
+        return cell;
+    }
+
+    private String shortcutTargetLabel(String packageKey, String role) {
+        String pkg = LauncherPrefs.packageFor(this, packageKey);
+        return pkg.isEmpty() ? "Role · " + RoleIconCatalog.label(role) : AppResolver.labelFor(this, pkg, pkg);
+    }
+
+    private int shortcutTargetIcon(String packageKey, String role) {
+        return LauncherPrefs.packageFor(this, packageKey).isEmpty()
+                ? RoleIconCatalog.icon(role) : R.drawable.ic_apps;
+    }
+
+    private int autoIconFor(String packageKey, String role) {
+        return LauncherPrefs.packageFor(this, packageKey).isEmpty() ? RoleIconCatalog.icon(role) : R.drawable.ic_apps;
+    }
+
+    private void chooseShortcutTarget(boolean drawer, int index) {
+        String packageKey = drawer ? LauncherPrefs.DRAWER_QUICK_KEYS[index] : LauncherPrefs.QUICK_KEYS[index];
+        new AlertDialog.Builder(this).setTitle((drawer ? "Drawer " : "Quick ") + (index + 1) + " app")
+                .setItems(new String[] {"Choose app", "Use role default", "Change role"}, (dialog, which) -> {
+                    if (which == 0) {
+                        Intent intent = new Intent(this, AppDrawerActivity.class);
+                        intent.putExtra(AppDrawerActivity.EXTRA_PICK_KEY, packageKey);
+                        startActivity(intent);
+                    } else if (which == 1) {
+                        LauncherPrefs.setPackage(this, packageKey, null);
+                        MediaListenerService.refreshActiveSessions();
+                        render();
+                    } else chooseRole(drawer, index);
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void chooseShortcutIcon(boolean drawer, int index) {
+        String current = drawer ? UiPersonalizationPrefs.drawerQuickIcon(this, index)
+                : UiPersonalizationPrefs.quickIcon(this, index);
+        choose("Icon appearance · visual only", SlotIconCatalog.LABELS, SlotIconCatalog.VALUES, current, value -> {
+            if (drawer) UiPersonalizationPrefs.setDrawerQuickIcon(this, index, value);
+            else UiPersonalizationPrefs.setQuickIcon(this, index, value);
+            render();
+        });
     }
 
     private void chooseConfigurationDocument(boolean export) {

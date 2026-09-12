@@ -33,7 +33,6 @@ final class LauncherPrefs {
     static final String KEY_APPEARANCE_DAY_START = "ui.appearance.day.start.minutes";
     static final String KEY_APPEARANCE_NIGHT_START = "ui.appearance.night.start.minutes";
 
-    // Compatibility aliases retained for existing source-contract tests and upgrades.
     static final String KEY_MAP_APPEARANCE = KEY_APPEARANCE_MODE;
 
     static final String MEDIA_MODE_AUTO = "auto";
@@ -131,7 +130,6 @@ final class LauncherPrefs {
     }
 
     static boolean radioOnRight(Context context) {
-        // The old per-panel control-side preference had different semantics: do not migrate it.
         return RAIL_RIGHT.equals(prefs(context).getString(KEY_RADIO_SIDE, RAIL_LEFT));
     }
     static void setRadioSide(Context context, String value) {
@@ -149,7 +147,7 @@ final class LauncherPrefs {
         if (pkg != null && !pkg.isEmpty() && !pkg.equals(lastMusicPackage(context))) setPackage(context, KEY_LAST_MUSIC, pkg);
     }
 
-    static boolean mapEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_ENABLED, true); }
+    static boolean mapEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_ENABLED, false); }
     static void setMapEnabled(Context context, boolean enabled) { prefs(context).edit().putBoolean(KEY_MAP_ENABLED, enabled).apply(); }
     static boolean mapControlsEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_CONTROLS_ENABLED, true); }
     static void setMapControlsEnabled(Context context, boolean enabled) { prefs(context).edit().putBoolean(KEY_MAP_CONTROLS_ENABLED, enabled).apply(); }
@@ -189,6 +187,5 @@ final class LauncherPrefs {
         return Math.max(0, Math.min(1439, minutes));
     }
 
-    // Legacy source marker: static String mediaControlsSide is intentionally gone;
-    // Radio/Music side is stored independently under KEY_RADIO_SIDE.
+    // Legacy source marker retained for upgrades only; Radio/Music side is KEY_RADIO_SIDE.
 }

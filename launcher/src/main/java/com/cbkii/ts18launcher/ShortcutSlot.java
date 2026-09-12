@@ -32,7 +32,23 @@ final class ShortcutSlot {
         return isApp(pkg) ? AppResolver.labelFor(context, pkg, pkg) : RoleIconCatalog.label(role(context, key));
     }
 
+    static String iconAppearance(Context context, String key) {
+        for (int i = 0; i < LauncherPrefs.QUICK_KEYS.length; i++)
+            if (LauncherPrefs.QUICK_KEYS[i].equals(key)) return UiPersonalizationPrefs.quickIcon(context, i);
+        for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++)
+            if (LauncherPrefs.DRAWER_QUICK_KEYS[i].equals(key)) return UiPersonalizationPrefs.drawerQuickIcon(context, i);
+        return SlotIconCatalog.AUTO;
+    }
+
     static void bind(Context context, ImageButton button, String key) {
+        String override = iconAppearance(context, key);
+        if (!SlotIconCatalog.AUTO.equals(override)) {
+            button.setImageResource(SlotIconCatalog.icon(override));
+            button.setImageTintList(android.content.res.ColorStateList.valueOf(AutomotiveUi.color(context, R.color.ui_icon)));
+            button.setContentDescription(label(context, key) + " · " + SlotIconCatalog.label(override) + " icon");
+            return;
+        }
+
         String pkg = LauncherPrefs.packageFor(context, key);
         if (isApp(pkg)) {
             button.setImageTintList(null);

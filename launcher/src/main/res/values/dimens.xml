@@ -20,6 +20,7 @@
     <dimen name="ui_drawer_quick_height">116dp</dimen>
     <dimen name="ui_search_height">80dp</dimen>
     <dimen name="ui_settings_row_height">80dp</dimen>
+    <dimen name="ui_settings_shortcut_editor_height">136dp</dimen>
 
     <dimen name="driver_target_min">80dp</dimen>
     <dimen name="driver_target_primary">88dp</dimen>

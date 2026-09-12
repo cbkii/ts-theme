@@ -38,11 +38,11 @@ final class RoleIconCatalog {
 
     static String defaultQuickRole(int index) {
         switch (index) {
-            case 0: return RADIO;
-            case 1: return MUSIC;
-            case 2: return BLUETOOTH;
-            case 3: return FAVORITE;
-            case 4: return UTILITY;
+            case 0: return SETTINGS;
+            case 1: return RADIO;
+            case 2: return MUSIC;
+            case 3: return BLUETOOTH;
+            case 4: return FAVORITE;
             default: return GENERIC;
         }
     }
@@ -108,9 +108,7 @@ final class RoleIconCatalog {
             String pkg = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_MUSIC);
             return pkg.isEmpty() ? TopwayAdapter.defaultMusicPackage(context) : pkg;
         }
-        if (BLUETOOTH.equals(role)) {
-            return LauncherPrefs.packageFor(context, LauncherPrefs.KEY_BLUETOOTH);
-        }
+        if (BLUETOOTH.equals(role)) return LauncherPrefs.packageFor(context, LauncherPrefs.KEY_BLUETOOTH);
         return "";
     }
 }

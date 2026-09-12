@@ -30,6 +30,9 @@ final class AutomotiveUi {
     }
 
     static int color(Context context, int id) {
+        if (id == R.color.ui_accent || id == R.color.ui_high_accent || id == R.color.ui_night_accent)
+            return AccentPalette.color(context, false);
+        if (id == R.color.ui_accent_dark) return AccentPalette.color(context, true);
         return context.getColor(mappedColor(AppearanceController.resolvedMode(context), id));
     }
 
@@ -136,9 +139,11 @@ final class AutomotiveUi {
         attachFeedback(button);
     }
 
-    static void styleRailButton(Context context, ImageButton button) {
+    static void styleRailButton(Context context, ImageButton button) { styleRailButton(context, button, false); }
+
+    static void styleRailButton(Context context, ImageButton button, boolean accent) {
         button.setBackground(transparentActionBackground(context));
-        button.setImageTintList(ColorStateList.valueOf(color(context, R.color.ui_icon)));
+        button.setImageTintList(ColorStateList.valueOf(color(context, accent ? R.color.ui_accent : R.color.ui_icon)));
         int pad = dimen(context, R.dimen.driver_gap_large);
         button.setPadding(pad, pad, pad, pad);
         button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
@@ -227,8 +232,7 @@ final class AutomotiveUi {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color(context, fillId));
         drawable.setCornerRadius(dimen(context, R.dimen.ui_corner_radius));
-        if (strokeDp > 0) drawable.setStroke(Math.max(1, dimen(context, R.dimen.ui_focus_stroke)),
-                color(context, strokeId));
+        if (strokeDp > 0) drawable.setStroke(Math.max(1, dimen(context, R.dimen.ui_focus_stroke)), color(context, strokeId));
         return drawable;
     }
 }

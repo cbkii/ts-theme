@@ -16,7 +16,7 @@ final class ConfigurationCodec {
     static final int VERSION = 1;
     static final int MAX_BYTES = 64 * 1024;
     interface Packages { boolean available(String name); }
-    enum Type { PACKAGE, ROLE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE }
+    enum Type { PACKAGE, ROLE, ICON, HUE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE }
     static final Map<String, Type> KEYS;
     static {
         Map<String, Type> keys = new LinkedHashMap<>();
@@ -26,6 +26,10 @@ final class ConfigurationCodec {
         for (String key : LauncherPrefs.DRAWER_QUICK_KEYS) keys.put(key, Type.PACKAGE);
         for (String key : LauncherPrefs.QUICK_ROLE_KEYS) keys.put(key, Type.ROLE);
         for (String key : LauncherPrefs.DRAWER_ROLE_KEYS) keys.put(key, Type.ROLE);
+        for (String key : UiPersonalizationPrefs.QUICK_ICON_KEYS) keys.put(key, Type.ICON);
+        for (String key : UiPersonalizationPrefs.DRAWER_ICON_KEYS) keys.put(key, Type.ICON);
+        keys.put(UiPersonalizationPrefs.KEY_ACCENT_HUE, Type.HUE);
+        keys.put(UiPersonalizationPrefs.KEY_MEDIA_STARTUP_WARMUP, Type.BOOLEAN);
         keys.put(LauncherPrefs.KEY_QUICK_COUNT, Type.COUNT);
         keys.put(LauncherPrefs.KEY_RAIL_POSITION, Type.RAIL);
         keys.put(LauncherPrefs.KEY_RADIO_SIDE, Type.SIDE);
@@ -86,7 +90,7 @@ final class ConfigurationCodec {
             validate(key, value);
             if (KEYS.get(key) == Type.PACKAGE) {
                 String name = (String) value;
-                if (name.isEmpty()) continue; // Clear means no stored override.
+                if (name.isEmpty()) continue;
                 if (!packages.available(name)) { unavailable.add(key + ": " + name); continue; }
             }
             values.put(key, value);
@@ -109,6 +113,8 @@ final class ConfigurationCodec {
             if (text.length() > 255) throw new JSONException("Setting too long: " + key);
             if (type == Type.PACKAGE && (text.isEmpty() || text.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) return;
             if (type == Type.ROLE && RoleIconCatalog.isKnown(text)) return;
+            if (type == Type.ICON && SlotIconCatalog.isKnown(text)) return;
+            if (type == Type.HUE && AccentPalette.isKnown(text)) return;
             if (type == Type.SIDE && oneOf(text, "left", "right")) return;
             if (type == Type.RAIL && oneOf(text, "left", "right", "driver")) return;
             if (type == Type.MEDIA && oneOf(text, "auto", "prefer_music")) return;
@@ -117,6 +123,7 @@ final class ConfigurationCodec {
         }
         throw new JSONException("Invalid value for " + key);
     }
+
     private static boolean oneOf(String value, String... options) {
         for (String option : options) if (option.equals(value)) return true;
         return false;

@@ -9,30 +9,31 @@ import android.graphics.Color;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
-import android.net.Uri;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.webkit.RenderProcessGoneDetail;
-import android.view.MotionEvent;
 import android.widget.Button;
-import org.json.JSONObject;
-import org.json.JSONException;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -41,19 +42,14 @@ import java.util.Locale;
 
 @SuppressLint({"SetJavaScriptEnabled", "SetTextI18n", "MissingPermission", "ViewConstructor"})
 final class MapPanel extends FrameLayout implements LocationListener {
-    interface NavigationLauncher { void openNavigation(Location location); }
-
     private static final String MAP_URL = "file:///android_asset/map/map.html";
     private static final long HEALTH_CHECK_DELAY_MS = 900L;
     private static final int MAP_ACTION_PX = 84;
     private static final int MAP_ACTION_GAP_PX = 8;
 
     private final Activity activity;
-    private final NavigationLauncher navigationLauncher;
     private WebView webView;
     private static final MapState MAP_STATE = new MapState();
-    // Recovery is bounded for this map lifecycle. A clean Activity recreation starts
-    // with a fresh guard; a renderer failure in this instance can never loop forever.
     private final RendererRecovery recovery = new RendererRecovery();
     private static Location processLastLocation;
     private final Button retry;
@@ -68,7 +64,6 @@ final class MapPanel extends FrameLayout implements LocationListener {
     private final ImageButton zoomIn;
     private final ImageButton zoomOut;
     private final ImageButton recenter;
-    private final ImageButton openNav;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable mapHealthCheck = this::checkMapHealth;
     private boolean started;
@@ -76,10 +71,9 @@ final class MapPanel extends FrameLayout implements LocationListener {
     private boolean destroyed;
     private Location lastLocation = processLastLocation == null ? null : new Location(processLastLocation);
 
-    MapPanel(Activity activity, NavigationLauncher navigationLauncher) {
+    MapPanel(Activity activity) {
         super(activity);
         this.activity = activity;
-        this.navigationLauncher = navigationLauncher;
         setBackgroundColor(Color.BLACK);
 
         tileBroker = new TileBroker(activity.getCacheDir(), mapUserAgent(), this::definitelyOffline);
@@ -96,26 +90,22 @@ final class MapPanel extends FrameLayout implements LocationListener {
         status.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
         status.setTextSize(14f);
         status.setPadding(statusPad / 2, 0, 0, 0);
-        statusChip.addView(status, new LinearLayout.LayoutParams(
-                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        statusChip.addView(status, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
         LayoutParams statusLp = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
         statusLp.leftMargin = MAP_ACTION_GAP_PX;
         statusLp.topMargin = MAP_ACTION_GAP_PX;
         addView(statusChip, statusLp);
         showStatus("Locating…", R.drawable.ic_my_location);
 
-        zoomIn = mapButton(R.drawable.ic_zoom_in, "Zoom in", false);
-        zoomOut = mapButton(R.drawable.ic_zoom_out, "Zoom out", false);
-        recenter = mapButton(R.drawable.ic_my_location, "Follow location", false);
+        zoomIn = mapButton(R.drawable.ic_zoom_in, "Zoom in");
+        zoomOut = mapButton(R.drawable.ic_zoom_out, "Zoom out");
+        recenter = mapButton(R.drawable.ic_my_location, "Follow location");
         recenter.setBackground(AutomotiveUi.followModeBackground(activity));
         recenter.setImageTintList(AutomotiveUi.followTint(activity));
-        openNav = mapButton(R.drawable.ic_navigation, "Open navigation", true);
         zoomIn.setOnClickListener(v -> adjustZoom(1));
         zoomOut.setOnClickListener(v -> adjustZoom(-1));
         recenter.setOnClickListener(v -> recenterMap());
-        openNav.setOnClickListener(v -> navigationLauncher.openNavigation(
-                lastLocation == null ? null : new Location(lastLocation)));
-        addView(zoomIn); addView(zoomOut); addView(recenter); addView(openNav);
+        addView(zoomIn); addView(zoomOut); addView(recenter);
         AutomotiveUi.linkVertical(java.util.Arrays.asList(zoomIn, zoomOut, recenter));
         applyPreferences();
 
@@ -138,11 +128,10 @@ final class MapPanel extends FrameLayout implements LocationListener {
     private boolean definitelyOffline() {
         try {
             ConnectivityManager manager = (ConnectivityManager) activity.getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (manager == null) return false; // Unknown, not proof of disconnection.
+            if (manager == null) return false;
             Network network = manager.getActiveNetwork();
             if (network == null) return true;
             NetworkCapabilities capabilities = manager.getNetworkCapabilities(network);
-            // No VALIDATED requirement: captive portals/unvalidated networks still use normal HTTPS.
             return capabilities != null && !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
         } catch (RuntimeException ignored) { return false; }
     }
@@ -150,24 +139,24 @@ final class MapPanel extends FrameLayout implements LocationListener {
     private void createWebView() {
         if (destroyed || webView != null || recovery.blocked()) return;
         try {
-        webView = new TrackingWebView(activity);
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(false);
-        settings.setDatabaseEnabled(false);
-        settings.setAllowContentAccess(false);
-        settings.setAllowFileAccess(true);
-        settings.setGeolocationEnabled(false);
-        settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setLoadsImagesAutomatically(true);
-        settings.setBlockNetworkLoads(false);
-        settings.setSupportZoom(false);
-        settings.setUserAgentString(mapUserAgent());
-        webView.setBackgroundColor(Color.BLACK);
-        webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, false);
-        webView.setWebViewClient(new RestrictedMapClient());
-        addView(webView, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+            webView = new TrackingWebView(activity);
+            WebSettings settings = webView.getSettings();
+            settings.setJavaScriptEnabled(true);
+            settings.setDomStorageEnabled(false);
+            settings.setDatabaseEnabled(false);
+            settings.setAllowContentAccess(false);
+            settings.setAllowFileAccess(true);
+            settings.setGeolocationEnabled(false);
+            settings.setMediaPlaybackRequiresUserGesture(true);
+            settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+            settings.setLoadsImagesAutomatically(true);
+            settings.setBlockNetworkLoads(false);
+            settings.setSupportZoom(false);
+            settings.setUserAgentString(mapUserAgent());
+            webView.setBackgroundColor(Color.BLACK);
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND, false);
+            webView.setWebViewClient(new RestrictedMapClient());
+            addView(webView, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
             retry.setVisibility(View.GONE);
             pageReady = false;
@@ -210,7 +199,6 @@ final class MapPanel extends FrameLayout implements LocationListener {
         status.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
         AutomotiveUi.styleMapButton(activity, zoomIn, false);
         AutomotiveUi.styleMapButton(activity, zoomOut, false);
-        AutomotiveUi.styleMapButton(activity, openNav, true);
         recenter.setBackground(AutomotiveUi.followModeBackground(activity));
         recenter.setImageTintList(AutomotiveUi.followTint(activity));
         applyMapAppearance();
@@ -225,46 +213,48 @@ final class MapPanel extends FrameLayout implements LocationListener {
         return "TS18Launcher/" + version + " (+https://github.com/cbkii/ts-theme)";
     }
 
-    private ImageButton mapButton(int icon, String description, boolean primary) {
+    private ImageButton mapButton(int icon, String description) {
         ImageButton button = new ImageButton(activity);
         button.setImageResource(icon);
         button.setContentDescription(description);
-        AutomotiveUi.styleMapButton(activity, button, primary);
+        AutomotiveUi.styleMapButton(activity, button, false);
         return button;
     }
 
     void applyPreferences() {
         boolean controls = LauncherPrefs.mapControlsEnabled(activity);
         int visibility = controls ? View.VISIBLE : View.GONE;
-        zoomIn.setVisibility(visibility); zoomOut.setVisibility(visibility);
-        recenter.setVisibility(visibility); openNav.setVisibility(visibility);
-        boolean right = LauncherPrefs.railOnRight(activity);
-        placeAction(zoomIn, 0, right, true);
-        placeAction(zoomOut, 1, right, true);
-        placeAction(recenter, 2, right, true);
-        placeAction(openNav, 0, right, false);
+        zoomIn.setVisibility(visibility); zoomOut.setVisibility(visibility); recenter.setVisibility(visibility);
+
+        // Remaining map controls stay opposite the permanent side rail to avoid adjacent glyph columns.
+        boolean railRight = LauncherPrefs.railOnRight(activity);
+        boolean controlsRight = !railRight;
+        placeAction(zoomIn, 0, controlsRight);
+        placeAction(zoomOut, 1, controlsRight);
+        placeAction(recenter, 2, controlsRight);
+
         LayoutParams statusLp = (LayoutParams) statusChip.getLayoutParams();
-        statusLp.gravity = (right ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP;
-        statusLp.leftMargin = right ? MAP_ACTION_GAP_PX : 0;
-        statusLp.rightMargin = right ? 0 : MAP_ACTION_GAP_PX;
+        statusLp.gravity = (railRight ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP;
+        statusLp.leftMargin = railRight ? 0 : MAP_ACTION_GAP_PX;
+        statusLp.rightMargin = railRight ? MAP_ACTION_GAP_PX : 0;
         statusLp.topMargin = MAP_ACTION_GAP_PX;
         statusChip.setLayoutParams(statusLp);
         applyMapAppearance();
     }
 
-    private void placeAction(View view, int row, boolean right, boolean top) {
+    private void placeAction(View view, int row, boolean right) {
         LayoutParams lp = new LayoutParams(MAP_ACTION_PX, MAP_ACTION_PX);
-        lp.gravity = (right ? Gravity.RIGHT : Gravity.LEFT) | (top ? Gravity.TOP : Gravity.BOTTOM);
+        lp.gravity = (right ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP;
         if (right) lp.rightMargin = MAP_ACTION_GAP_PX; else lp.leftMargin = MAP_ACTION_GAP_PX;
-        if (top) lp.topMargin = MAP_ACTION_GAP_PX + row * (MAP_ACTION_PX + MAP_ACTION_GAP_PX);
-        else lp.bottomMargin = MAP_ACTION_GAP_PX;
+        lp.topMargin = MAP_ACTION_GAP_PX + row * (MAP_ACTION_PX + MAP_ACTION_GAP_PX);
         view.setLayoutParams(lp);
     }
 
     private void applyMapAppearance() {
         if (!pageReady || webView == null) return;
         String mode = AppearanceController.resolvedMode(activity);
-        webView.evaluateJavascript("setMapAppearance('" + mode + "')", null);
+        String accent = AccentPalette.css(activity);
+        webView.evaluateJavascript("setMapAppearance('" + mode + "','" + accent + "')", null);
     }
 
     void start() {
@@ -279,8 +269,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
             Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             if (gps != null) onLocationChanged(gps);
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 5f, this,
-                        Looper.getMainLooper());
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 5f, this, Looper.getMainLooper());
             } else showStatus("GPS unavailable", R.drawable.ic_my_location);
         } catch (SecurityException ignored) {
             showStatus("Location denied", R.drawable.ic_my_location);
@@ -306,7 +295,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
         if (recoveryPending) { recoveryPending = false; createWebView(); }
         if (webView != null) webView.onResume();
         applyPreferences();
-        if (LauncherPrefs.mapEnabled(activity)) start();
+        if (ExperimentalMapPolicy.enabled(activity)) start();
     }
 
     void destroy() {
@@ -364,7 +353,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
                 recenter.setSelected(MAP_STATE.follow);
                 TileState.Snapshot tiles = tileBroker.recentState();
                 long now = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
-                if (health.startsWith("ok:")) hideStatus(); // Fresh/stale cached tiles are useful and quiet.
+                if (health.startsWith("ok:")) hideStatus();
                 else if (health.startsWith("error:") && tiles != null && tiles.recentFailure(now))
                     showStatus("Map offline", R.drawable.ic_my_location);
                 else if (lastLocation == null) showStatus("Locating…", R.drawable.ic_my_location);
@@ -379,7 +368,8 @@ final class MapPanel extends FrameLayout implements LocationListener {
         WebView current = webView;
         current.evaluateJavascript("mapSnapshot()", value -> {
             if (destroyed || current != webView || value == null) return;
-            try { updateMapState(decodeSnapshot(value)); } catch (JSONException ignored) { /* Retain last valid viewport. */ }
+            try { updateMapState(decodeSnapshot(value)); }
+            catch (JSONException ignored) { /* Retain last valid viewport. */ }
         });
     }
 
@@ -388,7 +378,6 @@ final class MapPanel extends FrameLayout implements LocationListener {
                 snapshot.getBoolean("follow"), snapshot.getDouble("latitude"), snapshot.getDouble("longitude"));
     }
 
-    /** evaluateJavascript returns JSON-encoded values; accept both object and quoted JSON. */
     private static JSONObject decodeSnapshot(String value) throws JSONException {
         if (value == null) throw new JSONException("missing map snapshot");
         String json = value.trim();
@@ -407,9 +396,7 @@ final class MapPanel extends FrameLayout implements LocationListener {
             statusChip.setAlpha(0f);
             statusChip.setVisibility(View.VISIBLE);
             statusChip.animate().alpha(1f).setDuration(AutomotiveUi.PANEL_REVEAL_MS).start();
-        } else {
-            statusChip.setAlpha(1f);
-        }
+        } else statusChip.setAlpha(1f);
     }
 
     private void hideStatus() {
@@ -476,14 +463,11 @@ final class MapPanel extends FrameLayout implements LocationListener {
         }
     }
 
-    /** Keeps accessibility click semantics explicit while Leaflet owns map gestures. */
     private final class TrackingWebView extends WebView {
         TrackingWebView(Context context) { super(context); }
-        @Override public boolean performClick() {
-            return super.performClick();
-        }
+        @Override public boolean performClick() { return super.performClick(); }
         @Override public boolean onTouchEvent(MotionEvent event) {
-            boolean handled = super.onTouchEvent(event); // Leaflet owns gesture handling.
+            boolean handled = super.onTouchEvent(event);
             if (event.getActionMasked() == MotionEvent.ACTION_UP) {
                 performClick();
                 scheduleMapHealthCheck();
