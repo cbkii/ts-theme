@@ -184,6 +184,7 @@ case "$action" in
         fail RESIZE_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg"
       record="$(find_task_record "$pkg" "$TASK_ID")"
       [ -n "$record" ] || fail TASK_REPLACED "task=$TASK_ID" "package=$pkg"
+      STACK_ID="${record#* }"
     fi
 
     actual="$(wait_for_bounds "$TASK_ID" "$expected")" || \
@@ -218,6 +219,7 @@ case "$action" in
       fail FULLSCREEN_FAILED "task=$TASK_ID" "stack=$STACK_ID" "package=$pkg" "component=$component"
     record="$(find_task_record "$pkg" "$TASK_ID")"
     [ -n "$record" ] || fail TASK_REPLACED "task=$TASK_ID" "package=$pkg"
+    STACK_ID="${record#* }"
     # Fullscreen TaskRecord bounds are empty (0,0,0,0) on this Android 10 family. Bounded polling
     # tolerates normal WindowManager/configuration propagation without accepting a stale freeform task.
     actual="$(wait_for_bounds "$TASK_ID" "0,0,0,0")" || \
