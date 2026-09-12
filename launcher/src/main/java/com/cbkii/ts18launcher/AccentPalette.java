@@ -25,7 +25,10 @@ final class AccentPalette {
     };
     private static final int[] DARK = {
             0xFFF4511E, 0xFFFFB300, 0xFFAFB42B, 0xFF43A047, 0xFF00897B,
-            0xFF00ACC1, 0xFF1E88E5, 0xFF8E24AA, 0xFFD81B60, 0xFFE53935
+            0xFF00ACC1, 0xFF1E88E5,
+            // Purple/Pink 600 fall below 4.5:1 against the black primary glyph; keep their
+            // Material base tones for pressed/focused fills rather than sacrificing contrast.
+            0xFFBA68C8, 0xFFF06292, 0xFFE53935
     };
 
     private AccentPalette() {}

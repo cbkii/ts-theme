@@ -118,16 +118,15 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("handler.postDelayed(restart, HOLD_MS)", marquee)
         self.assertIn("scrollTo(0, 0)", marquee)
 
-    def test_accent_palette_is_limited_and_all_choices_contrast_with_black(self):
+    def test_accent_palette_is_limited_and_all_base_choices_contrast_with_black(self):
         palette = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AccentPalette.java")
         ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
         self.assertIn('"Accent hue"', settings)
         self.assertIn("AccentPalette.color(context, false)", ui)
         self.assertIn("AccentPalette.color(context, true)", ui)
-        hexes = re.findall(r'0xFF([0-9A-Fa-f]{6})', palette)
-        self.assertGreaterEqual(len(hexes), 10)
-        base = hexes[::2][:10]
+        base_block = palette.split("private static final int[] BASE = {", 1)[1].split("};", 1)[0]
+        base = re.findall(r'0xFF([0-9A-Fa-f]{6})', base_block)
         self.assertEqual(10, len(base))
         for value in base:
             r, g, b = int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
@@ -164,7 +163,8 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertNotIn("openNavigation", panel)
         self.assertNotIn("ic_navigation", panel)
         self.assertIn('"Experimental Leaflet map"', settings)
-        self.assertIn("return prefs.contains(LauncherPrefs.KEY_MAP_ENABLED)", policy)
+        self.assertIn("if (!LauncherPrefs.prefs(context).contains(LauncherPrefs.KEY_MAP_ENABLED)) return false", policy)
+        self.assertIn("return LauncherPrefs.mapEnabled(context)", policy)
         self.assertIn("styleRailButton(this, navigationButton, true)", launcher)
 
     def test_map_follow_state_has_redundant_non_colour_cue_and_controls_can_hide(self):

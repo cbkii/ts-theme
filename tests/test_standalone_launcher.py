@@ -123,7 +123,8 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertNotIn("addJavascriptInterface", panel)
         self.assertNotIn("setAllowUniversalAccessFromFileURLs(true)", panel)
         self.assertNotIn("http://", panel + broker + html)
-        self.assertIn("return prefs.contains(LauncherPrefs.KEY_MAP_ENABLED)", policy)
+        self.assertIn("if (!LauncherPrefs.prefs(context).contains(LauncherPrefs.KEY_MAP_ENABLED)) return false", policy)
+        self.assertIn("return LauncherPrefs.mapEnabled(context)", policy)
 
     def test_home_has_fixed_endpoints_configurable_middle_and_navigation_handoff(self):
         prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
