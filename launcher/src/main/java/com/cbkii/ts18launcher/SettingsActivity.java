@@ -265,7 +265,7 @@ public final class SettingsActivity extends Activity {
                 success = ConfigurationStore.replace(this, values);
                 if (success && reset) LauncherPrefs.prefs(this).edit()
                         .remove(LauncherPrefs.KEY_LAST_MUSIC).remove(LauncherPrefs.KEY_LAST_SOURCE)
-                        .remove(LauncherPrefs.KEY_MEDIA_CONTROLS_SIDE).commit();
+                        .remove(LauncherPrefs.KEY_MEDIA_CONTROLS_SIDE).apply();
             } catch (RuntimeException ignored) { /* No partial import. */ }
             final boolean applied = success;
             runOnUiThread(() -> {

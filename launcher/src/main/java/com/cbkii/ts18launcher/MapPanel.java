@@ -170,7 +170,10 @@ final class MapPanel extends FrameLayout implements LocationListener {
         addView(webView, 0, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
             webView.setOnTouchListener((view, event) -> {
-                if (event.getActionMasked() == MotionEvent.ACTION_UP) scheduleMapHealthCheck();
+                if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                    view.performClick();
+                    scheduleMapHealthCheck();
+                }
                 return false; // Leaflet owns touch handling.
             });
             retry.setVisibility(View.GONE);
