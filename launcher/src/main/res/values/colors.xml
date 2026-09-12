@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ui_black">#050505</color>
+    <color name="ui_surface">#141414</color>
+    <color name="ui_surface_elevated">#202020</color>
+    <color name="ui_surface_pressed">#303030</color>
+    <color name="ui_surface_focus">#303030</color>
+    <color name="ui_text">#F5F5F5</color>
+    <color name="ui_text_secondary">#B8B8B8</color>
+    <color name="ui_icon">#F5F5F5</color>
+    <color name="ui_accent">#FF7043</color>
+    <color name="ui_accent_dark">#E65F38</color>
+    <color name="ui_ripple">#55FFFFFF</color>
+
+    <color name="ui_night_black">#000000</color>
+    <color name="ui_night_surface">#0D0D0D</color>
+    <color name="ui_night_surface_elevated">#181818</color>
+    <color name="ui_night_text">#E7E7E7</color>
+    <color name="ui_night_secondary">#A0A0A0</color>
+    <color name="ui_night_accent">#E65F38</color>
+
+    <color name="ui_high_black">#000000</color>
+    <color name="ui_high_surface">#080808</color>
+    <color name="ui_high_surface_elevated">#1B1B1B</color>
+    <color name="ui_high_text">#FFFFFF</color>
+    <color name="ui_high_secondary">#E6E6E6</color>
+    <color name="ui_high_accent">#FF7043</color>
+</resources>

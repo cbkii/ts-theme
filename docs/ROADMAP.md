@@ -63,3 +63,18 @@ Use native host behaviour when physical evidence proves it. Otherwise develop th
 - Thirty-minute map plus playback stability run.
 - Internet reconnect/persistence tested where initial import was offline.
 - No vendor APK, decrypted code, private key, device log or proprietary asset committed.
+
+## Phase 6 - post-implementation physical decision gate
+
+After the hardened WebView build is physically tested, record one explicit outcome: **KEEP WEBVIEW**, **REPLACE WEBVIEW**, or **REDUCE HOME MAP**. Compare visual quality, touch familiarity, GPS/follow behaviour, offline/cache behaviour, CPU, RAM/PSS, frame smoothness, renderer stability/recovery and duplication with Organic Maps. If replacement is justified, investigate a deliberate `cbkii/organicmaps` interface, an exact evidenced Topway window service, or another lightweight native map in a separate task. Do not embed an arbitrary third-party Activity through root task manipulation or guessed private APIs.
+
+## Phase 7 - exact-device evidence backlog
+
+- Capture TS18 `wm size`, `wm density`, `densityDpi`, display metrics, and both proven Topway sidebar geometries before changing any driver-facing dimensions.
+- Capture ambient-light readings in sun, daylight, shade, dusk, night and (where practical) tunnel darkness. Add separate enter/exit thresholds and bounded dwell only if the readings oscillate around a boundary.
+- After the current sensor/schedule system is validated, investigate whether a public Topway illumination/headlight state exists. It remains a roadmap input and is not a brightness authority today.
+- Measure first/subsequent Apps opening and package install/uninstall refresh. Add one bounded drawer executor and immutable main-thread results only if physical evidence shows lag or stale lists.
+- Preserve the visible-only one-second media reconciliation fallback unless exact-device measurements show CPU, wake, frame or stale-metadata harm and a reliable callback replacement is proven.
+- Separately exercise native Topway Radio, Music and Bluetooth source sessions; capture package/process, MediaSession, metadata, PlaybackState/actions, exported public components and bounded logcat before adding any source-specific adapter.
+- Run ordinary Activity, HOME, app return, process recreation, reboot, cold boot, ACC sleep and ACC wake qualification with the existing tooling before considering any extra lifecycle instrumentation. Do not add boot/ACC receivers proactively.
+- Steering-wheel controls remain owned by the native system authority; no launcher interception or LSPosed hook is planned. Vehicle telemetry/OBD/MCU/CAN widgets remain very-low-priority future work, beginning with already available Android/GPS data if revisited.

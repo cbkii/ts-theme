@@ -203,7 +203,12 @@ public final class MediaListenerService extends NotificationListenerService {
         String preferredPackage = preferredMusicPackage();
         boolean preferConfigured = LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(
                 LauncherPrefs.mediaMode(this));
-        return pickPrimary(controllers, radioPackage, preferredPackage, preferConfigured);
+        if (preferConfigured) {
+            MediaController configured = pickExactPackage(controllers, preferredPackage);
+            if (configured != null && !excludedFromGenericMedia(configured, radioPackage)) return configured;
+        }
+        return pickPrimary(controllers, radioPackage, preferredPackage, preferConfigured,
+                LauncherPrefs.lastMusicPackage(this));
     }
 
     private String preferredMusicPackage() {
@@ -215,31 +220,18 @@ public final class MediaListenerService extends NotificationListenerService {
             List<MediaController> controllers,
             String excludedPackage,
             String preferredPackage,
-            boolean preferConfigured) {
-        if (preferConfigured && preferredPackage != null && !preferredPackage.isEmpty()
-                && !preferredPackage.equals(excludedPackage)) {
-            MediaController preferred = pickExactPackage(controllers, preferredPackage);
-            if (preferred != null) return preferred;
-        }
-
-        MediaController fallback = null;
+            boolean preferConfigured, String rememberedPackage) {
+        List<MediaSelection.Candidate> candidates = new ArrayList<>();
         for (MediaController controller : controllers) {
-            if (controller == null || excludedFromGenericMedia(controller, excludedPackage)) continue;
-            PlaybackState state = controller.getPlaybackState();
+            PlaybackState state = controller == null ? null : controller.getPlaybackState();
             int value = state == null ? PlaybackState.STATE_NONE : state.getState();
-            if (usesPauseAction(value)) return controller;
-            if (fallback == null && (value == PlaybackState.STATE_PAUSED
-                    || value == PlaybackState.STATE_STOPPED)) {
-                fallback = controller;
-            }
+            candidates.add(new MediaSelection.Candidate(controller == null ? "" : controller.getPackageName(),
+                    controller != null && !excludedFromGenericMedia(controller, excludedPackage),
+                    state != null && value != PlaybackState.STATE_NONE && value != PlaybackState.STATE_ERROR,
+                    usesPauseAction(value), value == PlaybackState.STATE_PAUSED || value == PlaybackState.STATE_STOPPED));
         }
-        if (fallback != null) return fallback;
-        for (MediaController controller : controllers) {
-            if (controller != null && !excludedFromGenericMedia(controller, excludedPackage)) {
-                return controller;
-            }
-        }
-        return null;
+        int selected = MediaSelection.pick(candidates, preferredPackage, preferConfigured, rememberedPackage);
+        return selected < 0 ? null : controllers.get(selected);
     }
 
     private static boolean excludedFromGenericMedia(
@@ -351,15 +343,40 @@ public final class MediaListenerService extends NotificationListenerService {
         if (service != null) service.refresh();
     }
 
+    static void noteExplicitLaunch(Context context, String pkg) {
+        if (pkg == null || pkg.isEmpty()) return;
+        if (pkg.equals(RadioProvider.resolvePackage(context))) {
+            LauncherPrefs.selectSource(context, MediaSelection.RADIO);
+            return;
+        }
+        MediaListenerService service = instance;
+        boolean music = pkg.equals(LauncherPrefs.packageFor(context, LauncherPrefs.KEY_MUSIC))
+                || pkg.equals(TopwayAdapter.defaultMusicPackage(context));
+        if (service != null) {
+            for (MediaController controller : service.watched.values()) {
+                if (pkg.equals(controller.getPackageName())
+                        && !excludedFromGenericMedia(controller, RadioProvider.resolvePackage(context))) music = true;
+            }
+        }
+        if (music) {
+            LauncherPrefs.rememberMusic(context, pkg);
+            LauncherPrefs.selectSource(context, MediaSelection.MUSIC);
+        }
+    }
+
     public static boolean sendGeneric(Command command) {
         MediaListenerService service = instance;
         if (service == null) return false;
-        return service.sendToController(service.findGenericController(), command);
+        MediaController selected = service.findGenericController();
+        if (selected != null) LauncherPrefs.rememberMusic(service, selected.getPackageName());
+        LauncherPrefs.selectSource(service, MediaSelection.MUSIC);
+        return service.sendToController(selected, command);
     }
 
     public static boolean sendRadio(Command command) {
         MediaListenerService service = instance;
         if (service == null) return false;
+        LauncherPrefs.selectSource(service, MediaSelection.RADIO);
         return service.sendToController(service.findRadioController(), command);
     }
 
