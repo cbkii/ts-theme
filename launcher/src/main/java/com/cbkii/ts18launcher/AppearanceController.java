@@ -113,6 +113,7 @@ final class AppearanceController implements SensorEventListener {
     }
 
     private void reevaluate() {
+        if (!started) return;
         String mode = resolvedMode(context);
         if (!mode.equals(deliveredMode)) {
             deliveredMode = mode;
