@@ -16,16 +16,9 @@ on:
   issue_comment:
     types:
       - created
-  pull_request_review_comment:
-    types:
-      - created
 
 permissions:
   contents: read
-
-concurrency:
-  group: testing-only-draft-release
-  cancel-in-progress: false
 
 jobs:
   resolve-request:
@@ -61,6 +54,7 @@ jobs:
           EVENT_LABEL: ${{ github.event.label.name || '' }}
           COMMENT_BODY: ${{ github.event.comment.body || '' }}
           AUTHOR_ASSOCIATION: ${{ github.event.comment.author_association || '' }}
+          TRIGGER_ACTOR: ${{ github.actor }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
@@ -154,6 +148,10 @@ jobs:
               load_pr "$pr_number" "$pr_json"
               if [[ "$EVENT_ACTION" == 'labeled' ]]; then
                 [[ "$EVENT_LABEL" == 'testing-apk' ]] || exit 0
+                # A command-triggered request adds this label for visible state.
+                # Ignore the resulting github-actions[bot] label event so one
+                # request cannot recursively queue a second full build.
+                [[ "$TRIGGER_ACTOR" != 'github-actions[bot]' ]] || exit 0
                 trigger_type='label'
                 requested_source="PR #$pr_number"
               elif [[ "$EVENT_ACTION" == 'synchronize' || "$EVENT_ACTION" == 'opened' ]]; then
@@ -179,19 +177,6 @@ jobs:
               pr_number="$EVENT_PR_NUMBER"
               load_pr "$pr_number" "$pr_json"
               trigger_type='pr-comment-command'
-              requested_source="PR #$pr_number"
-              apply_label=true
-              ;;
-
-            pull_request_review_comment)
-              has_testing_command "$COMMENT_BODY" || exit 0
-              trusted_commenter "$AUTHOR_ASSOCIATION" || {
-                echo "Ignoring /testing-apk from non-collaborator association '$AUTHOR_ASSOCIATION'."
-                exit 0
-              }
-              pr_number="$EVENT_PR_NUMBER"
-              load_pr "$pr_number" "$pr_json"
-              trigger_type='review-comment-command'
               requested_source="PR #$pr_number"
               apply_label=true
               ;;
