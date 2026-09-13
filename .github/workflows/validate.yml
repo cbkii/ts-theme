@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - "codex/**"
   pull_request:
 
 permissions:
@@ -17,7 +16,7 @@ concurrency:
 jobs:
   validate:
     name: Source, workflow and Android builds
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -51,10 +50,10 @@ jobs:
           set -euo pipefail
           python3 tools/ts18_theme.py validate
           python3 -m unittest discover -s tests -v
-          bash -n tools/*.sh scripts/termux/*.sh scripts/termux/lib/*.sh
+          bash -n tools/*.sh scripts/ci/*.sh scripts/termux/*.sh scripts/termux/lib/*.sh
           sh -n scripts/magisk/*.sh
           python3 -m py_compile tools/launcher_apk_check.py
-          shellcheck tools/*.sh
+          shellcheck tools/*.sh scripts/ci/*.sh
           shellcheck -x -P scripts/termux scripts/termux/*.sh scripts/termux/lib/*.sh
           shellcheck -s sh scripts/magisk/*.sh
           git diff --check
@@ -74,23 +73,18 @@ jobs:
             exit 1
           fi
 
-      - name: Build debug APKs, tests and Android lint
+      - name: Build legacy-theme debug APK and Android lint
         shell: bash
         run: |
           set -euo pipefail
-          if ! gradle --no-daemon --stacktrace \
-              :theme:lintDebug :theme:assembleDebug \
-              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug; then
+          if ! gradle --no-daemon --stacktrace :theme:lintDebug :theme:assembleDebug; then
             theme_report="theme/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
-            launcher_report="launcher/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
-            for report in "$theme_report" "$launcher_report"; do
-              if [[ -f "$report" ]]; then cat "$report"; fi
-            done
-            find theme/build launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
+            if [[ -f "$theme_report" ]]; then cat "$theme_report"; fi
+            find theme/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
             exit 1
           fi
 
-      - name: Exercise signed release build with configuration cache
+      - name: Exercise signed canonical release build
         shell: bash
         env:
           TS_THEME_KEYSTORE_FILE: ${{ runner.temp }}/ci-release-validation.jks
@@ -106,7 +100,6 @@ jobs:
             -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
             -dname "CN=CI release validation"
 
-          # Keep the canonical release-state exercise unchanged.
           gradle --no-daemon --stacktrace \
             -PVERSION_NAME=9.9.9 -PVERSION_CODE=9009009 \
             :theme:assembleRelease :launcher:assembleRelease
@@ -118,49 +111,24 @@ jobs:
           "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
             launcher/build/outputs/apk/release/launcher-release.apk
 
-          # Rebuild only the launcher handoff APK at a stable testing version below 1.0.0.
-          # The privileged publisher strips this temporary signer and applies the repository key.
-          gradle --no-daemon --stacktrace \
-            -PVERSION_NAME=0.0.0-testing -PVERSION_CODE=999999 \
-            :launcher:assembleRelease
-          python3 tools/launcher_apk_check.py \
-            launcher/build/outputs/apk/release/launcher-release.apk
-          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
-            launcher/build/outputs/apk/release/launcher-release.apk
-
-      # This artifact is the only automatic input accepted by the default-branch
-      # testing-draft publisher; the PR validation job itself remains read-only.
-      - name: Prepare standalone launcher testing input
+      - name: Exercise shared fixed-version TESTING launcher build
         shell: bash
         env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          TESTING_SOURCE_KIND: validate
+          TESTING_REQUESTED_SOURCE: ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+          TESTING_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TESTING_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          TESTING_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          TESTING_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          TESTING_PR_BASE_REF: ${{ github.event.pull_request.base.ref || '' }}
+          TESTING_PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          TESTING_TRIGGER_TYPE: validate
+          TESTING_TRIGGER_ACTOR: ${{ github.actor }}
+          TESTING_BUILD_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          debug_apk="launcher/build/outputs/apk/debug/launcher-debug.apk"
-          release_apk="launcher/build/outputs/apk/release/launcher-release.apk"
-          test -s "$debug_apk"
-          test -s "$release_apk"
-          mkdir -p testing-input
-          cp "$debug_apk" testing-input/launcher-debug.apk
-          cp "$release_apk" testing-input/launcher-release.apk
-          cat > testing-input/BUILD_INFO.txt <<EOF
-          source_kind=validate
-          source_sha=$SOURCE_SHA
-          built_sha=$GITHUB_SHA
-          source_ref=$SOURCE_REF
-          pr_number=$PR_NUMBER
-          testing_version_name=0.0.0-testing
-          testing_version_code=999999
-          validate_run_id=$GITHUB_RUN_ID
-          validate_run_number=$GITHUB_RUN_NUMBER
-          EOF
-
-      - name: Upload standalone launcher testing input
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: standalone-launcher-testing-input
-          path: testing-input/
-          retention-days: 2
-          if-no-files-found: error
+          bash scripts/ci/build-launcher-testing-input.sh . "$RUNNER_TEMP/testing-input"
+          test -s "$RUNNER_TEMP/testing-input/launcher-debug.apk"
+          test -s "$RUNNER_TEMP/testing-input/launcher-release.apk"
+          grep -Fxq 'testing_version_name=0.0.0-testing' "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
+          grep -Fxq 'testing_version_code=999999' "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"

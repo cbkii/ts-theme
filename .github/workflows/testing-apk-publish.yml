@@ -9,6 +9,15 @@ on:
       artifact_name:
         required: true
         type: string
+    secrets:
+      KEYSTORE_BASE64:
+        required: true
+      KEYSTORE_PASSWORD:
+        required: true
+      KEY_ALIAS:
+        required: true
+      KEY_PASSWORD:
+        required: true
 
 permissions:
   actions: read
@@ -17,16 +26,14 @@ permissions:
 env:
   TEST_RELEASE_TITLE: 000 Testing Only Version
   TEST_RELEASE_TAG: 000-testing-only
-  TEST_DEBUG_APK_NAME: TS18-Standalone-Launcher-DEBUG.apk
-  TEST_INSTALL_APK_NAME: TS18-Standalone-Launcher-TESTING.apk
+  MANAGED_MARKER: "<!-- testing-apk-draft-managed -->"
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Confirm source artifact exists
-        id: artifact
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,18 +43,12 @@ jobs:
           set -euo pipefail
           count="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" \
             --jq "[.artifacts[] | select(.name == \"$SOURCE_ARTIFACT\" and .expired == false)] | length")"
-          if [[ "$count" == "1" ]]; then
-            echo 'available=true' >> "$GITHUB_OUTPUT"
-          elif [[ "$count" == "0" ]]; then
-            echo 'available=false' >> "$GITHUB_OUTPUT"
-            echo "No $SOURCE_ARTIFACT artifact on run $SOURCE_RUN_ID; nothing to refresh."
-          else
-            echo "::error::Expected exactly one $SOURCE_ARTIFACT artifact on run $SOURCE_RUN_ID; found $count."
+          [[ "$count" == "1" ]] || {
+            echo "::error::Expected exactly one unexpired '$SOURCE_ARTIFACT' artifact on run $SOURCE_RUN_ID; found $count."
             exit 1
-          fi
+          }
 
-      - name: Download validated build input
-        if: steps.artifact.outputs.available == 'true'
+      - name: Download build input
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ${{ inputs.artifact_name }}
@@ -56,9 +57,10 @@ jobs:
           run-id: ${{ inputs.artifact_run_id }}
           github-token: ${{ github.token }}
 
-      - name: Validate input envelope
-        if: steps.artifact.outputs.available == 'true'
+      - name: Validate minimal hand-off envelope
         shell: bash
+        env:
+          SOURCE_RUN_ID: ${{ inputs.artifact_run_id }}
         run: |
           set -euo pipefail
           expected=(BUILD_INFO.txt launcher-debug.apk launcher-release.apk)
@@ -72,9 +74,16 @@ jobs:
           test -s incoming/launcher-debug.apk
           test -s incoming/launcher-release.apk
           grep -Eq '^source_sha=[0-9a-f]{40}$' incoming/BUILD_INFO.txt
+          grep -Eq '^built_sha=[0-9a-f]{40}$' incoming/BUILD_INFO.txt
+          grep -Fxq 'testing_version_name=0.0.0-testing' incoming/BUILD_INFO.txt
+          grep -Fxq 'testing_version_code=999999' incoming/BUILD_INFO.txt
+          recorded_run="$(sed -n 's/^build_run_id=//p' incoming/BUILD_INFO.txt | head -n 1)"
+          [[ "$recorded_run" == "$SOURCE_RUN_ID" ]] || {
+            echo "::error::BUILD_INFO build_run_id '$recorded_run' does not match source artifact run '$SOURCE_RUN_ID'."
+            exit 1
+          }
 
       - name: Install Android signing tools
-        if: steps.artifact.outputs.available == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -83,7 +92,6 @@ jobs:
           "$sdkmanager" "build-tools;36.0.0" >/dev/null
 
       - name: Materialise repository launcher key
-        if: steps.artifact.outputs.available == 'true'
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -94,8 +102,8 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ts-launcher-testing.jks"
           test -s "$RUNNER_TEMP/ts-launcher-testing.jks"
 
-      - name: Prepare fixed testing assets
-        if: steps.artifact.outputs.available == 'true'
+      - name: Prepare uniquely identified TESTING asset group
+        id: assets
         shell: bash
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -107,8 +115,28 @@ jobs:
           test -n "$KEYSTORE_PASSWORD"
           test -n "$KEY_ALIAS"
           test -n "$KEY_PASSWORD"
+
+          value() {
+            sed -n "s/^$1=//p" incoming/BUILD_INFO.txt | head -n 1
+          }
+
+          source_sha="$(value source_sha)"
+          built_sha="$(value built_sha)"
+          pr_number="$(value pr_number)"
+          if [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+            group_id="PR${pr_number}-${source_sha:0:7}"
+          else
+            group_id="SHA-${built_sha:0:7}"
+          fi
+
+          install_name="TS18-Standalone-Launcher-TESTING-${group_id}.apk"
+          debug_name="TS18-Standalone-Launcher-DEBUG-${group_id}.apk"
+          info_name="BUILD_INFO-${group_id}.txt"
+          signer_name="SIGNER-${group_id}.txt"
+          sums_name="SHA256SUMS-${group_id}.txt"
+
           mkdir -p outgoing
-          cp incoming/launcher-debug.apk "outgoing/$TEST_DEBUG_APK_NAME"
+          cp incoming/launcher-debug.apk "outgoing/$debug_name"
 
           apksigner="${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
           "$apksigner" sign \
@@ -119,140 +147,428 @@ jobs:
             --v1-signing-enabled true \
             --v2-signing-enabled true \
             --v3-signing-enabled false \
-            --out "outgoing/$TEST_INSTALL_APK_NAME" \
+            --out "outgoing/$install_name" \
             incoming/launcher-release.apk
 
-          "$apksigner" verify --verbose "outgoing/$TEST_DEBUG_APK_NAME"
-          "$apksigner" verify --verbose --print-certs "outgoing/$TEST_INSTALL_APK_NAME" \
-            | tee outgoing/SIGNER.txt
-          signer_sha256="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' outgoing/SIGNER.txt)"
+          "$apksigner" verify --verbose "outgoing/$debug_name"
+          "$apksigner" verify --verbose --print-certs "outgoing/$install_name" \
+            | tee "outgoing/$signer_name"
+          signer_sha256="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' "outgoing/$signer_name")"
           test -n "$signer_sha256"
 
-          cp incoming/BUILD_INFO.txt outgoing/BUILD_INFO.txt
-          cat >> outgoing/BUILD_INFO.txt <<EOF
+          cp incoming/BUILD_INFO.txt "outgoing/$info_name"
+          cat >> "outgoing/$info_name" <<INFO
           published_by_run_id=$GITHUB_RUN_ID
+          published_by_run_number=$GITHUB_RUN_NUMBER
+          publish_run_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          published_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
           source_artifact_run_id=$SOURCE_RUN_ID
-          install_asset=$TEST_INSTALL_APK_NAME
+          group_id=$group_id
+          install_asset=$install_name
           install_asset_signer_sha256=$signer_sha256
-          debug_asset=$TEST_DEBUG_APK_NAME
-          debug_asset_note=CI debug signer; use TESTING.apk for upgrade-compatible installs
-          EOF
+          debug_asset=$debug_name
+          debug_asset_note=CI debug signer; use the TESTING APK for normal reinstall/update testing
+          metadata_asset=$info_name
+          signer_asset=$signer_name
+          checksums_asset=$sums_name
+          INFO
+
           (
             cd outgoing
-            sha256sum "$TEST_INSTALL_APK_NAME" "$TEST_DEBUG_APK_NAME" BUILD_INFO.txt SIGNER.txt \
-              > SHA256SUMS.txt
-            sha256sum -c SHA256SUMS.txt
+            sha256sum "$install_name" "$debug_name" "$info_name" "$signer_name" > "$sums_name"
+            sha256sum -c "$sums_name"
           )
 
-      - name: Refresh fixed draft release
-        if: steps.artifact.outputs.available == 'true'
+          printf 'group_id=%s\n' "$group_id" >> "$GITHUB_OUTPUT"
+          printf 'install_name=%s\n' "$install_name" >> "$GITHUB_OUTPUT"
+          printf 'debug_name=%s\n' "$debug_name" >> "$GITHUB_OUTPUT"
+          printf 'info_name=%s\n' "$info_name" >> "$GITHUB_OUTPUT"
+          printf 'signer_name=%s\n' "$signer_name" >> "$GITHUB_OUTPUT"
+          printf 'sums_name=%s\n' "$sums_name" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh fixed draft and retain two snapshots
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          GROUP_ID: ${{ steps.assets.outputs.group_id }}
+          INSTALL_NAME: ${{ steps.assets.outputs.install_name }}
+          DEBUG_NAME: ${{ steps.assets.outputs.debug_name }}
+          INFO_NAME: ${{ steps.assets.outputs.info_name }}
+          SIGNER_NAME: ${{ steps.assets.outputs.signer_name }}
+          SUMS_NAME: ${{ steps.assets.outputs.sums_name }}
         run: |
           set -euo pipefail
 
-          # GitHub deliberately exposes unpublished releases with generated
-          # untagged-* tag identities. The stable testing identity is therefore
-          # the exact title plus draft=true, never the draft tag_name.
-          mapfile -t matching_drafts < <(
-            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-              --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\") | [.updated_at, .id] | @tsv" \
-              | sort -r
-          )
-          release_id=""
-          if ((${#matching_drafts[@]})); then
-            release_id="${matching_drafts[0]#*$'\t'}"
-          fi
-
-          source_sha="$(sed -n 's/^source_sha=//p' outgoing/BUILD_INFO.txt | head -n 1)"
-          body="Testing-only rolling launcher build. This release is intentionally kept as a draft and must not be published.\n\nCurrent source: $source_sha\nSource artifact run: ${{ inputs.artifact_run_id }}\n\nUse $TEST_INSTALL_APK_NAME for normal installation/update. $TEST_DEBUG_APK_NAME is the exact CI debug build and may use a different debug signer between runs."
-
-          if [[ -z "$release_id" ]]; then
-            release_id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
-              -f tag_name="$TEST_RELEASE_TAG" \
-              -f target_commitish="${{ github.event.repository.default_branch || 'main' }}" \
-              -f name="$TEST_RELEASE_TITLE" \
-              -f body="$body" \
-              -F draft=true \
-              -F prerelease=false \
-              -f make_latest=false \
-              --jq .id)"
-          else
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-              -f name="$TEST_RELEASE_TITLE" \
-              -f body="$body" \
-              -F draft=true \
-              -F prerelease=false \
-              -f make_latest=false >/dev/null
-
-            # Repair duplicates created by earlier tag-based draft lookup. The
-            # scope is deliberately exact-title + draft only; published or
-            # differently named releases are never touched.
-            for duplicate in "${matching_drafts[@]:1}"; do
-              duplicate_id="${duplicate#*$'\t'}"
-              [[ -n "$duplicate_id" && "$duplicate_id" != "$release_id" ]] || continue
-              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$duplicate_id" >/dev/null
+          api_read() {
+            local attempt
+            for attempt in 1 2 3; do
+              if gh api "$@"; then
+                return 0
+              fi
+              (( attempt < 3 )) || return 1
+              sleep $((attempt * 2))
             done
-          fi
-
-          state="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            --jq '[.draft, .name] | @tsv')"
-          [[ "$state" == $'true\t'"$TEST_RELEASE_TITLE" ]] || {
-            echo "::error::Testing release is not the required draft/title before asset replacement: $state"
-            exit 1
           }
 
-          mapfile -t old_assets < <(gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" --jq '.[].id')
-          for asset_id in "${old_assets[@]}"; do
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" >/dev/null
-          done
+          release_assets_json() {
+            api_read "repos/$GITHUB_REPOSITORY/releases/$1/assets?per_page=100"
+          }
+
+          delete_asset_by_name() {
+            local release_id="$1" name="$2" asset_id
+            asset_id="$(release_assets_json "$release_id" | jq -r --arg name "$name" '.[] | select(.name == $name) | .id' | head -n 1)"
+            [[ -n "$asset_id" ]] || return 0
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" >/dev/null || {
+              if release_assets_json "$release_id" | jq -e --arg name "$name" '.[] | select(.name == $name)' >/dev/null; then
+                echo "::error::Could not remove existing asset '$name'."
+                return 1
+              fi
+            }
+          }
 
           upload_asset() {
-            local path="$1" name content_type response
+            local release_id="$1" path="$2" name content_type attempt response existing
             name="$(basename "$path")"
             case "$name" in
               *.apk) content_type="application/vnd.android.package-archive" ;;
               *) content_type="text/plain" ;;
             esac
             response="$RUNNER_TEMP/upload-$name.json"
-            curl --fail-with-body --silent --show-error --location \
-              --request POST \
-              --header "Accept: application/vnd.github+json" \
+
+            for attempt in 1 2; do
+              existing="$(release_assets_json "$release_id" | jq -r --arg name "$name" '.[] | select(.name == $name and .state == "uploaded" and .size > 0) | .id' | head -n 1)"
+              [[ -z "$existing" ]] || return 0
+
+              if curl --fail-with-body --silent --show-error --location \
+                  --request POST \
+                  --header "Accept: application/vnd.github+json" \
+                  --header "Authorization: Bearer $GH_TOKEN" \
+                  --header "X-GitHub-Api-Version: 2022-11-28" \
+                  --header "Content-Type: $content_type" \
+                  --data-binary "@$path" \
+                  "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" \
+                  > "$response"; then
+                jq -e --arg name "$name" '.name == $name and .state == "uploaded" and .size > 0' "$response" >/dev/null
+                return 0
+              fi
+
+              sleep $((attempt * 2))
+              existing="$(release_assets_json "$release_id" | jq -r --arg name "$name" '.[] | select(.name == $name and .state == "uploaded" and .size > 0) | .id' | head -n 1)"
+              [[ -z "$existing" ]] || return 0
+            done
+            echo "::error::Failed to upload '$name' after bounded retry."
+            return 1
+          }
+
+          download_text_asset() {
+            local asset_id="$1" output="$2"
+            curl --fail --silent --show-error --location \
+              --header "Accept: application/octet-stream" \
               --header "Authorization: Bearer $GH_TOKEN" \
               --header "X-GitHub-Api-Version: 2022-11-28" \
-              --header "Content-Type: $content_type" \
-              --data-binary "@$path" \
-              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" \
-              > "$response"
-            jq -e --arg name "$name" \
-              '.name == $name and .state == "uploaded" and .size > 0' "$response" >/dev/null
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+              --output "$output"
           }
 
-          upload_asset "outgoing/$TEST_INSTALL_APK_NAME"
-          upload_asset "outgoing/$TEST_DEBUG_APK_NAME"
-          upload_asset outgoing/BUILD_INFO.txt
-          upload_asset outgoing/SIGNER.txt
-          upload_asset outgoing/SHA256SUMS.txt
+          field() {
+            local file="$1" key="$2"
+            sed -n "s/^$key=//p" "$file" | head -n 1
+          }
 
-          final="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")"
+          markdown_escape() {
+            local text="${1:-}"
+            text="${text//$'\n'/ }"
+            text="${text//$'\r'/ }"
+            text="${text//|/\\|}"
+            printf '%s' "$text"
+          }
+
+          commit_link() {
+            local sha="$1" url
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 0
+            url="$(api_read "repos/$GITHUB_REPOSITORY/commits/$sha" --jq .html_url 2>/dev/null || true)"
+            [[ -n "$url" ]] || url="https://github.com/$GITHUB_REPOSITORY/commit/$sha"
+            printf '[`%s`](%s)' "${sha:0:7}" "$url"
+          }
+
+          # Prefer the exact title + marker. For the first run after migration,
+          # adopt the newest legacy exact-title draft and mark it as managed.
+          release_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\" and (.body // \"\" | contains(\"$MANAGED_MARKER\"))) | [.updated_at, .id] | @tsv" \
+            | sort -r | head -n 1 | cut -f2)"
+
+          if [[ -z "$release_id" ]]; then
+            release_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\") | [.updated_at, .id] | @tsv" \
+              | sort -r | head -n 1 | cut -f2)"
+          fi
+
+          bootstrap_body="$RUNNER_TEMP/testing-draft-bootstrap.md"
+          cat > "$bootstrap_body" <<BODY
+          $MANAGED_MARKER
+          **TESTING ONLY.** Development snapshots for exact-device validation. Do not publish this draft as a production release.
+          BODY
+
+          if [[ -z "$release_id" ]]; then
+            release_id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TEST_RELEASE_TAG" \
+              -f target_commitish="${{ github.event.repository.default_branch || 'main' }}" \
+              -f name="$TEST_RELEASE_TITLE" \
+              --raw-field body="$(cat "$bootstrap_body")" \
+              -F draft=true \
+              -F prerelease=false \
+              -f make_latest=false \
+              --jq .id)"
+          fi
+
+          # Existing drafts keep their current human-readable notes until the
+          # new asset group has uploaded successfully. The final PATCH below
+          # adopts an unmarked legacy exact-title draft and refreshes its body.
+
+          state="$(api_read "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq '[.draft, .name] | @tsv')"
+          [[ "$state" == $'true\t'"$TEST_RELEASE_TITLE" ]] || {
+            echo "::error::Testing release is not the required draft/title before asset refresh: $state"
+            exit 1
+          }
+
+          # Re-running the same snapshot replaces that one group only. Other
+          # retained snapshots remain available throughout the refresh.
+          for name in "$INSTALL_NAME" "$DEBUG_NAME" "$INFO_NAME" "$SIGNER_NAME" "$SUMS_NAME"; do
+            delete_asset_by_name "$release_id" "$name"
+          done
+
+          upload_asset "$release_id" "outgoing/$INSTALL_NAME"
+          upload_asset "$release_id" "outgoing/$DEBUG_NAME"
+          upload_asset "$release_id" "outgoing/$INFO_NAME"
+          upload_asset "$release_id" "outgoing/$SIGNER_NAME"
+          upload_asset "$release_id" "outgoing/$SUMS_NAME"
+
+          assets_json="$RUNNER_TEMP/testing-assets.json"
+          release_assets_json "$release_id" > "$assets_json"
+
+          # BUILD_INFO assets define snapshot groups. The previous fixed-name
+          # format is treated as one LEGACY group so the first refresh can keep
+          # the prior APK as the second testing snapshot instead of deleting it.
+          mapfile -t groups < <(
+            jq -r '.[]
+              | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[0-9]+-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))
+              | [.created_at, .name] | @tsv' "$assets_json" | sort -r
+          )
+
+          for entry in "${groups[@]:2}"; do
+            metadata_name="${entry#*$'\t'}"
+            if [[ "$metadata_name" == 'BUILD_INFO.txt' ]]; then
+              stale_names=(
+                TS18-Standalone-Launcher-TESTING.apk
+                TS18-Standalone-Launcher-DEBUG.apk
+                BUILD_INFO.txt
+                SIGNER.txt
+                SHA256SUMS.txt
+              )
+            else
+              stale_group="${metadata_name#BUILD_INFO-}"
+              stale_group="${stale_group%.txt}"
+              stale_names=(
+                "TS18-Standalone-Launcher-TESTING-${stale_group}.apk"
+                "TS18-Standalone-Launcher-DEBUG-${stale_group}.apk"
+                "BUILD_INFO-${stale_group}.txt"
+                "SIGNER-${stale_group}.txt"
+                "SHA256SUMS-${stale_group}.txt"
+              )
+            fi
+            for name in "${stale_names[@]}"; do
+              delete_asset_by_name "$release_id" "$name"
+            done
+          done
+
+          release_assets_json "$release_id" > "$assets_json"
+          mapfile -t retained < <(
+            jq -r '.[]
+              | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[0-9]+-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))
+              | [.created_at, .name, .id] | @tsv' "$assets_json" | sort -r | head -n 2
+          )
+          ((${#retained[@]} >= 1 && ${#retained[@]} <= 2)) || {
+            echo "::error::Expected one or two retained TESTING snapshot groups; found ${#retained[@]}."
+            exit 1
+          }
+
+          body="$RUNNER_TEMP/testing-release-body.md"
+          details="$RUNNER_TEMP/testing-release-details.md"
+          : > "$details"
+          cat > "$body" <<BODY
+          $MANAGED_MARKER
+          **TESTING ONLY.** These are development snapshots for physical/engineering validation. They are not production releases and the newest snapshot is not necessarily the safest one.
+
+          Both retained snapshots intentionally use Android `versionName=0.0.0-testing` and `versionCode=999999`, so TESTING builds remain in the same reinstall/update lane.
+
+          ## Current TESTING builds
+
+          | Snapshot | Install | Debug | Source | Built |
+          | --- | --- | --- | --- | --- |
+          BODY
+
+          index=0
+          for entry in "${retained[@]}"; do
+            ((index += 1))
+            created_at="${entry%%$'\t'*}"
+            rest="${entry#*$'\t'}"
+            metadata_name="${rest%%$'\t'*}"
+            metadata_id="${rest##*$'\t'}"
+            info="$RUNNER_TEMP/retained-$index.txt"
+            download_text_asset "$metadata_id" "$info"
+
+            group_id="$(field "$info" group_id)"
+            [[ -n "$group_id" ]] || group_id='LEGACY'
+            install_name="$(field "$info" install_asset)"
+            debug_name="$(field "$info" debug_asset)"
+            [[ -n "$install_name" ]] || install_name='TS18-Standalone-Launcher-TESTING.apk'
+            [[ -n "$debug_name" ]] || debug_name='TS18-Standalone-Launcher-DEBUG.apk'
+
+            install_url="$(jq -r --arg name "$install_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
+            debug_url="$(jq -r --arg name "$debug_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
+            metadata_url="$(jq -r --arg name "$metadata_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
+            signer_name="$(field "$info" signer_asset)"
+            sums_name="$(field "$info" checksums_asset)"
+            [[ -n "$signer_name" ]] || signer_name='SIGNER.txt'
+            [[ -n "$sums_name" ]] || sums_name='SHA256SUMS.txt'
+            signer_url="$(jq -r --arg name "$signer_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
+            sums_url="$(jq -r --arg name "$sums_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
+
+            source_kind="$(field "$info" source_kind)"
+            requested_source="$(field "$info" requested_source)"
+            [[ -n "$requested_source" ]] || requested_source="$(field "$info" requested_ref)"
+            source_sha="$(field "$info" source_sha)"
+            built_sha="$(field "$info" built_sha)"
+            source_ref="$(field "$info" source_ref)"
+            pr_number="$(field "$info" pr_number)"
+            pr_head_sha="$(field "$info" pr_head_sha)"
+            pr_base_ref="$(field "$info" pr_base_ref)"
+            pr_base_sha="$(field "$info" pr_base_sha)"
+            trigger_type="$(field "$info" trigger_type)"
+            trigger_actor="$(field "$info" trigger_actor)"
+            build_run_id="$(field "$info" build_run_id)"
+            [[ -n "$build_run_id" ]] || build_run_id="$(field "$info" validate_run_id)"
+            build_run_number="$(field "$info" build_run_number)"
+            [[ -n "$build_run_number" ]] || build_run_number="$(field "$info" validate_run_number)"
+            build_run_url="$(field "$info" build_run_url)"
+            [[ -n "$build_run_url" || -z "$build_run_id" ]] || build_run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$build_run_id"
+            published_at="$(field "$info" published_at)"
+            [[ -n "$published_at" ]] || published_at="$created_at"
+
+            source_summary=''
+            detail_title="$group_id"
+            if [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+              pr_json="$RUNNER_TEMP/pr-$pr_number.json"
+              if api_read "repos/$GITHUB_REPOSITORY/pulls/$pr_number" > "$pr_json" 2>/dev/null; then
+                pr_title="$(markdown_escape "$(jq -r .title "$pr_json")")"
+                pr_url="$(jq -r .html_url "$pr_json")"
+                pr_state="$(jq -r .state "$pr_json")"
+                current_head_sha="$(jq -r .head.sha "$pr_json")"
+                current_head_ref="$(jq -r .head.ref "$pr_json")"
+                current_base_sha="$(jq -r .base.sha "$pr_json")"
+                current_base_ref="$(jq -r .base.ref "$pr_json")"
+                [[ -n "$pr_head_sha" ]] || pr_head_sha="$source_sha"
+                [[ -n "$pr_base_ref" ]] || pr_base_ref="$current_base_ref"
+                [[ -n "$pr_base_sha" ]] || pr_base_sha="$current_base_sha"
+                detail_title="PR #$pr_number - $pr_title"
+                source_summary="[PR #$pr_number]($pr_url) $pr_title"
+                if [[ "$current_head_sha" != "$pr_head_sha" ]]; then
+                  source_summary+="<br>snapshot head $(commit_link "$pr_head_sha"); current head $(commit_link "$current_head_sha")"
+                else
+                  source_summary+="<br>head $(commit_link "$pr_head_sha")"
+                fi
+              else
+                source_summary="PR #$pr_number snapshot head $(commit_link "${pr_head_sha:-$source_sha}")"
+                pr_state='unavailable'
+                current_head_ref=''
+              fi
+            else
+              source_label="$(markdown_escape "${requested_source:-${source_ref:-$source_kind}}")"
+              source_summary="${source_label:-manual source}<br>source $(commit_link "$source_sha")"
+              pr_state=''
+              current_head_ref=''
+            fi
+
+            built_summary="$(commit_link "$built_sha")"
+            if [[ -n "$source_sha" && "$source_sha" != "$built_sha" ]]; then
+              built_summary="source $(commit_link "$source_sha")<br>built tree $(commit_link "$built_sha")"
+            fi
+
+            printf '| `%s` | [TESTING APK](%s) | [DEBUG APK](%s) | %s | %s |\n' \
+              "$group_id" "$install_url" "$debug_url" "$source_summary" "$built_summary" >> "$body"
+
+            {
+              printf '\n### %d. %s\n\n' "$index" "$detail_title"
+              printf -- '- **Install:** [%s](%s)\n' "$install_name" "$install_url"
+              printf -- '- **Debug:** [%s](%s)\n' "$debug_name" "$debug_url"
+              if [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+                printf -- '- **PR snapshot:** #%s, state `%s`, head `%s` at %s\n' \
+                  "$pr_number" "$pr_state" "${source_ref:-$current_head_ref}" "$(commit_link "${pr_head_sha:-$source_sha}")"
+                [[ -z "$pr_base_ref" ]] || printf -- '- **Base at request:** `%s` at %s\n' "$pr_base_ref" "$(commit_link "$pr_base_sha")"
+                if [[ -n "${current_head_sha:-}" && "$current_head_sha" != "${pr_head_sha:-$source_sha}" ]]; then
+                  printf -- '- **Current PR head:** `%s` at %s (the PR moved after this snapshot)\n' "$current_head_ref" "$(commit_link "$current_head_sha")"
+                fi
+              else
+                printf -- '- **Requested source:** `%s`\n' "$(markdown_escape "$requested_source")"
+                printf -- '- **Resolved source:** %s\n' "$(commit_link "$source_sha")"
+              fi
+              if [[ "$source_sha" != "$built_sha" ]]; then
+                printf -- '- **Built SHA:** %s. This differs from the recorded source/head SHA above; the two identities are intentionally reported separately.\n' "$(commit_link "$built_sha")"
+              else
+                printf -- '- **Built SHA:** %s\n' "$(commit_link "$built_sha")"
+              fi
+              printf -- '- **Trigger:** `%s`' "${trigger_type:-legacy-validate}"
+              [[ -z "$trigger_actor" ]] || printf ' by `@%s`' "$(markdown_escape "$trigger_actor")"
+              printf '\n'
+              if [[ -n "$build_run_url" ]]; then
+                printf -- '- **Build workflow:** [run %s](%s)\n' "${build_run_number:-$build_run_id}" "$build_run_url"
+              fi
+              printf -- '- **Published:** `%s`\n' "$published_at"
+              printf -- '- **Metadata:** [BUILD_INFO](%s)' "$metadata_url"
+              [[ -z "$sums_url" ]] || printf ' · [SHA256SUMS](%s)' "$sums_url"
+              [[ -z "$signer_url" ]] || printf ' · [SIGNER](%s)' "$signer_url"
+              printf '\n'
+            } >> "$details"
+          done
+
+          cat >> "$body" <<'BODY'
+
+          The rows above are separate points in development and may come from different PRs or commits. Use the PR/head/built SHA details to match an APK to the physical test you are performing.
+          BODY
+          cat "$details" >> "$body"
+          cat >> "$body" <<BODY
+
+          ---
+          Managed by **Refresh Testing APK Draft**. Publisher run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          BODY
+
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -f name="$TEST_RELEASE_TITLE" \
+            --raw-field body="$(cat "$body")" \
+            -F draft=true \
+            -F prerelease=false \
+            -f make_latest=false >/dev/null
+
+          final="$(api_read "repos/$GITHUB_REPOSITORY/releases/$release_id")"
           [[ "$(jq -r .draft <<<"$final")" == true ]]
           [[ "$(jq -r .name <<<"$final")" == "$TEST_RELEASE_TITLE" ]]
-          mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"$final" | sort)
-          mapfile -t wanted_assets < <(printf '%s\n' \
-            "$TEST_INSTALL_APK_NAME" "$TEST_DEBUG_APK_NAME" BUILD_INFO.txt SIGNER.txt SHA256SUMS.txt | sort)
-          [[ "${actual_assets[*]}" == "${wanted_assets[*]}" ]] || {
-            printf 'Draft assets mismatch.\nExpected: %s\nActual: %s\n' \
-              "${wanted_assets[*]}" "${actual_assets[*]}" >&2
+          jq -e --arg marker "$MANAGED_MARKER" '(.body // "") | contains($marker)' <<<"$final" >/dev/null
+          jq -e --arg name "$INFO_NAME" '.assets[] | select(.name == $name and .state == "uploaded" and .size > 0)' <<<"$final" >/dev/null
+
+          retained_count="$(jq -r '[.assets[] | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[0-9]+-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))] | length' <<<"$final")"
+          (( retained_count >= 1 && retained_count <= 2 )) || {
+            echo "::error::Final draft does not contain one or two TESTING snapshot groups."
             exit 1
           }
 
-          exact_draft_count="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\") | .id" | wc -l | tr -d ' ')"
-          [[ "$exact_draft_count" == "1" ]] || {
-            echo "::error::Expected one canonical testing draft; found $exact_draft_count."
-            exit 1
-          }
-          echo "Testing draft refreshed and remains the single canonical draft: $TEST_RELEASE_TITLE"
+          # Remove only duplicate drafts already marked as workflow-owned. Do
+          # not delete similarly titled manual drafts that lack the marker.
+          mapfile -t managed_duplicates < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\" and (.body // \"\" | contains(\"$MANAGED_MARKER\")) and .id != $release_id) | .id"
+          )
+          for duplicate_id in "${managed_duplicates[@]}"; do
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$duplicate_id" >/dev/null
+          done
+
+          echo "TESTING draft refreshed with snapshot $GROUP_ID; newest two snapshot groups are retained."
