@@ -27,7 +27,7 @@ key_password="${KEY_PASSWORD:-temporary-testing-validation}"
 gradle_cmd="${GRADLE_CMD:-gradle}"
 
 umask 077
-rm -rf "$out_dir"/*
+rm -rf "${out_dir:?}"/*
 
 if [[ ! -s "$keystore_file" ]]; then
   keytool -genkeypair -noprompt \
