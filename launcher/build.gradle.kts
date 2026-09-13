@@ -62,6 +62,7 @@ android {
 
     buildFeatures {
         buildConfig = false
+        resValues = true
     }
 
     compileOptions {
