@@ -20,7 +20,7 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertNotIn("workflow_run:", DRAFT)
         self.assertIn("pull_request_target:", DRAFT)
         self.assertIn("issue_comment:", DRAFT)
-        self.assertIn("pull_request_review_comment:", DRAFT)
+        self.assertNotIn("pull_request_review_comment:", DRAFT)
         self.assertIn("opened", DRAFT)
         self.assertIn("labeled", DRAFT)
         self.assertIn("synchronize", DRAFT)
@@ -35,13 +35,14 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertIn("PR #$pr_number was not found", DRAFT)
         self.assertIn("could not be resolved", DRAFT)
 
-    def test_marker_requests_apply_visible_testing_label(self):
+    def test_marker_requests_apply_visible_testing_label_without_recursive_build(self):
         self.assertIn("ensure_testing_label", DRAFT)
         self.assertIn("commit-command", DRAFT)
         self.assertIn("pr-comment-command", DRAFT)
-        self.assertIn("review-comment-command", DRAFT)
         self.assertIn("OWNER|MEMBER|COLLABORATOR", DRAFT)
         self.assertIn("EVENT_IS_PR_ISSUE", DRAFT)
+        self.assertIn("TRIGGER_ACTOR", DRAFT)
+        self.assertIn("github-actions[bot]", DRAFT)
 
     def test_requested_source_build_is_read_only_and_handoff_is_seven_days(self):
         self.assertIn("cache-read-only: true", DRAFT)
@@ -67,12 +68,32 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertIn("build_run_id", PUBLISH)
         self.assertIn("does not match source artifact run", PUBLISH)
 
-    def test_publisher_retains_two_identified_snapshot_groups(self):
+    def test_only_real_publication_is_serialized(self):
+        self.assertNotIn("concurrency:\n  group: testing-only-draft-release", DRAFT)
+        self.assertIn("group: testing-only-draft-release-${{ github.repository }}", PUBLISH)
+        self.assertIn("cancel-in-progress: false", PUBLISH)
+
+    def test_publisher_retains_two_identified_complete_snapshot_groups(self):
         self.assertIn('group_id="PR${pr_number}-${source_sha:0:7}"', PUBLISH)
         self.assertIn('group_id="SHA-${built_sha:0:7}"', PUBLISH)
         self.assertIn('for entry in "${groups[@]:2}"', PUBLISH)
-        self.assertIn("newest two snapshot groups are retained", PUBLISH)
+        self.assertIn("newest two complete snapshot groups are retained", PUBLISH)
         self.assertIn("BUILD_INFO.txt", PUBLISH)  # legacy migration is intentionally supported
+        self.assertIn("group_complete", PUBLISH)
+        self.assertIn("Removing incomplete TESTING asset group", PUBLISH)
+        self.assertIn("Removing incomplete legacy TESTING asset group", PUBLISH)
+
+    def test_metadata_is_uploaded_last_as_group_commit_marker(self):
+        install = PUBLISH.index('upload_asset "$release_id" "outgoing/$INSTALL_NAME"')
+        debug = PUBLISH.index('upload_asset "$release_id" "outgoing/$DEBUG_NAME"')
+        signer = PUBLISH.index('upload_asset "$release_id" "outgoing/$SIGNER_NAME"')
+        sums = PUBLISH.index('upload_asset "$release_id" "outgoing/$SUMS_NAME"')
+        info = PUBLISH.index('upload_asset "$release_id" "outgoing/$INFO_NAME"')
+        self.assertLess(install, info)
+        self.assertLess(debug, info)
+        self.assertLess(signer, info)
+        self.assertLess(sums, info)
+        self.assertIn("BUILD_INFO last", PUBLISH)
 
     def test_release_notes_are_real_markdown_with_links_and_provenance(self):
         self.assertIn("testing-release-body.md", PUBLISH)
@@ -82,6 +103,7 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertIn("Built SHA", PUBLISH)
         self.assertIn("Managed by **Refresh Testing APK Draft**", PUBLISH)
         self.assertIn("testing-apk-draft-managed", PUBLISH)
+        self.assertIn("](null)", PUBLISH)
         self.assertNotIn('body="Testing-only rolling launcher build.', PUBLISH)
 
     def test_validate_no_longer_duplicates_codex_branch_pushes(self):
