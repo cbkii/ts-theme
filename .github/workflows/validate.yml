@@ -84,7 +84,7 @@ jobs:
             exit 1
           fi
 
-      - name: Exercise signed canonical release build
+      - name: Exercise signed release build with configuration cache
         shell: bash
         env:
           TS_THEME_KEYSTORE_FILE: ${{ runner.temp }}/ci-release-validation.jks
