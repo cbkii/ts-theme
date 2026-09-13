@@ -1,13 +1,20 @@
 name: Validate
+
 on:
   push:
-    branches: [main, "codex/**", "feat/**"]
+    branches:
+      - main
+      - "codex/**"
+      - "feat/**"
   pull_request:
+
 permissions:
   contents: read
+
 concurrency:
   group: validate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   validate:
     name: Source, workflow and Android builds
@@ -19,19 +26,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: {fetch-depth: 0, persist-credentials: false}
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Set up Java 17
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
-        with: {distribution: temurin, java-version: "17"}
+        with:
+          distribution: temurin
+          java-version: "17"
+
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
-        with: {gradle-version: "9.5.0"}
+        with:
+          gradle-version: "9.5.0"
+
       - name: Install exact Android SDK inputs
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"; test -x "$sdkmanager"
+          sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
           "$sdkmanager" "platforms;android-29" "build-tools;36.0.0" >/dev/null
+
       - name: Validate source and release state machine
         shell: bash
         run: |
@@ -45,23 +62,38 @@ jobs:
           shellcheck -x -P scripts/termux scripts/termux/*.sh scripts/termux/lib/*.sh
           shellcheck -s sh scripts/magisk/*.sh launcher/src/main/assets/nav/nav-window.sh
           git diff --check
+
       - name: Fetch pinned RePlugin compatibility library
         run: python3 tools/fetch_replugin.py
+
       - name: Verify launcher release runtime dependency graph
         shell: bash
         run: |
           set -euo pipefail
           report="$RUNNER_TEMP/launcher-release-runtime-dependencies.txt"
-          gradle --no-daemon -q :launcher:dependencies --configuration releaseRuntimeClasspath | tee "$report"
-          grep -Eq '^[[:space:]]*No dependencies[[:space:]]*$' "$report" || { echo "::error::Standalone launcher releaseRuntimeClasspath gained a runtime dependency."; exit 1; }
+          gradle --no-daemon -q :launcher:dependencies \
+            --configuration releaseRuntimeClasspath | tee "$report"
+          if ! grep -Eq '^[[:space:]]*No dependencies[[:space:]]*$' "$report"; then
+            echo "::error::Standalone launcher releaseRuntimeClasspath gained a runtime dependency."
+            exit 1
+          fi
+
       - name: Build debug APKs, tests and Android lint
         shell: bash
         run: |
           set -euo pipefail
-          if ! gradle --no-daemon --stacktrace :theme:lintDebug :theme:assembleDebug :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug; then
+          if ! gradle --no-daemon --stacktrace \
+              :theme:lintDebug :theme:assembleDebug \
+              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug; then
+            theme_report="theme/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+            launcher_report="launcher/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+            for report in "$theme_report" "$launcher_report"; do
+              if [[ -f "$report" ]]; then cat "$report"; fi
+            done
             find theme/build launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
             exit 1
           fi
+
       - name: Exercise signed release build with configuration cache
         shell: bash
         env:
@@ -70,15 +102,33 @@ jobs:
           KEY_ALIAS: ci-release-validation
           KEY_PASSWORD: ci-release-validation
         run: |
-          set -euo pipefail; umask 077
-          keytool -genkeypair -noprompt -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 1 -keystore "$TS_THEME_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" -dname "CN=CI release validation"
-          gradle --no-daemon --stacktrace -PVERSION_NAME=9.9.9 -PVERSION_CODE=9009009 :theme:assembleRelease :launcher:assembleRelease
-          python3 scripts/release/runtime_envelope.py --apk theme/build/outputs/apk/release/theme-release.apk --config release-config.json
-          python3 tools/launcher_apk_check.py launcher/build/outputs/apk/release/launcher-release.apk
-          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose launcher/build/outputs/apk/release/launcher-release.apk
-          gradle --no-daemon --stacktrace -PVERSION_NAME=0.0.0-testing -PVERSION_CODE=999999 :launcher:assembleRelease
-          python3 tools/launcher_apk_check.py launcher/build/outputs/apk/release/launcher-release.apk
-          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose launcher/build/outputs/apk/release/launcher-release.apk
+          set -euo pipefail
+          umask 077
+          keytool -genkeypair -noprompt \
+            -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 1 \
+            -keystore "$TS_THEME_KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+            -dname "CN=CI release validation"
+
+          gradle --no-daemon --stacktrace \
+            -PVERSION_NAME=9.9.9 -PVERSION_CODE=9009009 \
+            :theme:assembleRelease :launcher:assembleRelease
+          python3 scripts/release/runtime_envelope.py \
+            --apk theme/build/outputs/apk/release/theme-release.apk \
+            --config release-config.json
+          python3 tools/launcher_apk_check.py \
+            launcher/build/outputs/apk/release/launcher-release.apk
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
+            launcher/build/outputs/apk/release/launcher-release.apk
+
+          gradle --no-daemon --stacktrace \
+            -PVERSION_NAME=0.0.0-testing -PVERSION_CODE=999999 \
+            :launcher:assembleRelease
+          python3 tools/launcher_apk_check.py \
+            launcher/build/outputs/apk/release/launcher-release.apk
+          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
+            launcher/build/outputs/apk/release/launcher-release.apk
+
       - name: Prepare standalone launcher testing input
         shell: bash
         env:
@@ -87,10 +137,14 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
         run: |
           set -euo pipefail
-          debug_apk=launcher/build/outputs/apk/debug/launcher-debug.apk; release_apk=launcher/build/outputs/apk/release/launcher-release.apk
-          test -s "$debug_apk"; test -s "$release_apk"; mkdir -p testing-input
-          cp "$debug_apk" testing-input/launcher-debug.apk; cp "$release_apk" testing-input/launcher-release.apk
-          cat > testing-input/BUILD_INFO.txt <<INFO
+          debug_apk="launcher/build/outputs/apk/debug/launcher-debug.apk"
+          release_apk="launcher/build/outputs/apk/release/launcher-release.apk"
+          test -s "$debug_apk"
+          test -s "$release_apk"
+          mkdir -p testing-input
+          cp "$debug_apk" testing-input/launcher-debug.apk
+          cp "$release_apk" testing-input/launcher-release.apk
+          cat > testing-input/BUILD_INFO.txt <<EOF
           source_kind=validate
           source_sha=$SOURCE_SHA
           built_sha=$GITHUB_SHA
@@ -100,7 +154,12 @@ jobs:
           testing_version_code=999999
           validate_run_id=$GITHUB_RUN_ID
           validate_run_number=$GITHUB_RUN_NUMBER
-          INFO
+          EOF
+
       - name: Upload standalone launcher testing input
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with: {name: standalone-launcher-testing-input, path: testing-input/, retention-days: 2, if-no-files-found: error}
+        with:
+          name: standalone-launcher-testing-input
+          path: testing-input/
+          retention-days: 2
+          if-no-files-found: error
