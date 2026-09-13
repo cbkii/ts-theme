@@ -1,5 +1,6 @@
 package com.cbkii.ts18launcher;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -13,6 +14,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /** One shortcut card: launch authority (App) and visual appearance (Icon) stay independent. */
+@SuppressLint("ViewConstructor")
 final class ShortcutEditorView extends LinearLayout {
     private static final class PreviewIcon {
         final Drawable drawable;
