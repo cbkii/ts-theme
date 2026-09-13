@@ -1,0 +1,62 @@
+#!/system/bin/sh
+# TS18 HOME navigation experiment controller. Root-only, bounded, fail-closed and Topway-read-only.
+PATH=/system/bin:/system/xbin:/vendor/bin
+export PATH
+umask 077
+ROOT_DIR=/data/adb/ts18-launcher
+SNAPSHOT="$ROOT_DIR/.activity.$$"
+trap 'rm -f "$SNAPSHOT"' EXIT HUP INT TERM
+log_event(){ command -v log >/dev/null 2>&1 && log -t TS18Nav "$*" 2>/dev/null || true; }
+fail(){ code="$1";shift;log_event "FAIL $code $*";printf 'FAIL code=%s' "$code";for item in "$@";do printf ' %s' "$item";done;printf '\n';exit 1; }
+valid_package(){ case "$1" in ''|*[!A-Za-z0-9._]*) return 1;; *.*) return 0;; *) return 1;; esac; }
+valid_uint(){ case "$1" in ''|*[!0-9]*) return 1;; *) return 0;; esac; }
+validate_bounds(){ left="$1";top="$2";right="$3";bottom="$4";valid_uint "$left"&&valid_uint "$top"&&valid_uint "$right"&&valid_uint "$bottom"||return 1;[ "$right" -gt "$left" ]&&[ "$bottom" -gt "$top" ]||return 1;[ "$right" -le 10000 ]&&[ "$bottom" -le 10000 ]; }
+capture_activity(){ dumpsys activity activities >"$SNAPSHOT" 2>/dev/null||return 1;[ -s "$SNAPSHOT" ]; }
+parse_task_snapshot(){ pkg="$1";hint="$2";awk -v pkg="$pkg" -v hint="$hint" '
+function digits_after_hash(line,v){v=line;sub(/^.*#/,"",v);sub(/[^0-9].*$/, "",v);return v}
+function mode_of(line,v){v=line;if(v~/(mWindowingMode|windowingMode)[[:space:]]*=[[:space:]]*[0-9]+/){sub(/^.*(mWindowingMode|windowingMode)[[:space:]]*=[[:space:]]*/,"",v);sub(/[^0-9].*$/,"",v);return v}if(line~/mode=freeform([[:space:]]|$)/)return"5";if(line~/mode=fullscreen([[:space:]]|$)/)return"1";if(line~/mode=pinned([[:space:]]|$)/)return"2";return""}
+function bounds_of(line,v){v=line;sub(/^.*mBounds=Rect\(/,"",v);sub(/\).*$/,"",v);gsub(/, /,",",v);gsub(/ - /,",",v);return v}
+function finish(){if(!matched)return;count++;if(count==1){out_task=task;out_stack=task_stack;out_display=task_display;out_mode=task_mode;out_bounds=task_bounds;out_component=task_component;out_pip=task_pip}matched=0;hist0=0}
+/^[[:space:]]*Display #[0-9]+/{finish();current_display=digits_after_hash($0);current_stack="";current_mode="";next}
+/^[[:space:]]*(Stack|RootTask) #[0-9]+/{finish();current_stack=digits_after_hash($0);current_mode=mode_of($0);next}
+/^[[:space:]]*Task id #[0-9]+/{finish();task=digits_after_hash($0);hist0=0;next}
+{m=mode_of($0);if(m!="")current_mode=m}
+/TaskRecord\{/&&index($0," A=" pkg " "){if(hint!="0"&&task!=hint)next;matched=1;hist0=0;task_stack=current_stack;task_display=current_display;task_mode=current_mode;task_bounds="unknown";task_component="unknown";task_pip="unknown";line=$0;if(line~/StackId=[0-9]+/){sub(/^.*StackId=/,"",line);sub(/[^0-9].*$/,"",line);task_stack=line}next}
+matched&&/mBounds=Rect\(/{task_bounds=bounds_of($0);next}
+matched&&/\* Hist #0:/{hist0=1;next}
+matched&&hist0&&/mActivityComponent=/{line=$0;sub(/^.*mActivityComponent=/,"",line);sub(/[[:space:]].*$/,"",line);task_component=line;next}
+matched&&/(mSupportsPictureInPicture|supportsPictureInPicture)=/{line=$0;if(line~/(mSupportsPictureInPicture|supportsPictureInPicture)=true/)task_pip="1";else if(line~/(mSupportsPictureInPicture|supportsPictureInPicture)=false/)task_pip="0";next}
+matched{m=mode_of($0);if(m!="")task_mode=m}
+END{finish();if(count==0){print"NONE";exit}if(count>1&&hint=="0"){print"AMBIGUOUS " count;exit}if(out_stack=="")out_stack="unknown";if(out_display=="")out_display="unknown";if(out_mode=="")out_mode="unknown";print"FOUND " out_task " " out_stack " " out_display " " out_mode " " out_bounds " " out_component " " out_pip}
+' "$SNAPSHOT"; }
+read_task_once(){ pkg="$1";hint="$2";capture_activity||return 3;record="$(parse_task_snapshot "$pkg" "$hint")";set -- $record;case "${1:-}" in NONE)return 1;;AMBIGUOUS)TASK_COUNT="${2:-unknown}";return 2;;FOUND)TASK_ID="${2:-}";STACK_ID="${3:-unknown}";DISPLAY_ID="${4:-unknown}";WINDOWING_MODE="${5:-unknown}";TASK_BOUNDS="${6:-unknown}";TASK_COMPONENT="${7:-unknown}";SUPPORTS_PIP="${8:-unknown}";valid_uint "$TASK_ID"||return 3;return 0;;*)return 3;;esac; }
+read_task(){ pkg="$1";hint="$2";tries="${3:-1}";n=0;while [ "$n" -lt "$tries" ];do read_task_once "$pkg" "$hint";rc=$?;case "$rc" in 0|2)return "$rc";;esac;n=$((n+1));[ "$n" -lt "$tries" ]&&sleep 0.1;done;return "$rc"; }
+require_task(){ pkg="$1";hint="$2";tries="${3:-1}";read_task "$pkg" "$hint" "$tries";rc=$?;case "$rc" in 0);;1)fail TASK_NOT_FOUND "task=$hint" "package=$pkg";;2)fail TASK_AMBIGUOUS "package=$pkg" "count=$TASK_COUNT";;*)fail TASK_STATE_UNREADABLE "task=$hint" "package=$pkg";;esac;case "$TASK_COMPONENT" in "$pkg"/*);;*)fail COMPONENT_MISMATCH "task=$TASK_ID" "package=$pkg" "component=$TASK_COMPONENT";;esac; }
+parse_pinned_snapshot(){ awk '
+function digits_after_hash(line,v){v=line;sub(/^.*#/,"",v);sub(/[^0-9].*$/,"",v);return v}
+function mode_of(line,v){v=line;if(v~/(mWindowingMode|windowingMode)[[:space:]]*=[[:space:]]*[0-9]+/){sub(/^.*(mWindowingMode|windowingMode)[[:space:]]*=[[:space:]]*/,"",v);sub(/[^0-9].*$/,"",v);return v}if(line~/mode=pinned([[:space:]]|$)/)return"2";return""}
+/^[[:space:]]*(Stack|RootTask) #[0-9]+/{stack=digits_after_hash($0);mode=mode_of($0);next}{m=mode_of($0);if(m!="")mode=m}/TaskRecord\{/&&mode=="2"{line=$0;pkg=line;sub(/^.* A=/,"",pkg);sub(/[[:space:]].*$/,"",pkg);task=line;sub(/^.*#/,"",task);sub(/[^0-9].*$/,"",task);print pkg " " task " " stack;exit}
+' "$SNAPSHOT"; }
+pinned_owner(){ capture_activity||{ PINNED_PACKAGE=unknown;PINNED_TASK=unknown;PINNED_STACK=unknown;return 1;};record="$(parse_pinned_snapshot)";if [ -z "$record" ];then PINNED_PACKAGE=none;PINNED_TASK=none;PINNED_STACK=none;return 0;fi;read -r PINNED_PACKAGE PINNED_TASK PINNED_STACK <<EOF_PIN
+$record
+EOF_PIN
+}
+sanitize_value(){ printf '%s' "$1"|tr -d '\r\n\t '|cut -c1-160; }
+read_file_value(){ path="$1";if [ -r "$path" ];then sanitize_value "$(cat "$path" 2>/dev/null)";else printf unreadable;fi; }
+vendor_state_fields(){ printf 'forcepip=%s runtime_forcepip=%s forcepip_x=%s forcepip_y=%s forcepip_w=%s forcepip_h=%s df_desktop=%s df_theme_window=%s customPipApp=%s naviName=%s' "$(sanitize_value "$(getprop persist.tw.forcepip 2>/dev/null)")" "$(sanitize_value "$(getprop sys.tw.forcepip 2>/dev/null)")" "$(sanitize_value "$(getprop sys.tw.forcepip.x 2>/dev/null)")" "$(sanitize_value "$(getprop sys.tw.forcepip.y 2>/dev/null)")" "$(sanitize_value "$(getprop sys.tw.forcepip.w 2>/dev/null)")" "$(sanitize_value "$(getprop sys.tw.forcepip.h 2>/dev/null)")" "$(sanitize_value "$(getprop sys.df.desktop 2>/dev/null)")" "$(sanitize_value "$(getprop sys.df.variety.theme.window 2>/dev/null)")" "$(read_file_value /data/tw/custom_pip_app_name)" "$(read_file_value /data/tw/navi_name)"; }
+emit_ok(){ code="$1";printf 'OK code=%s task=%s stack=%s package=%s component=%s display=%s windowingMode=%s bounds=%s supportsPip=%s ' "$code" "$TASK_ID" "$STACK_ID" "$PKG" "$TASK_COMPONENT" "$DISPLAY_ID" "$WINDOWING_MODE" "$TASK_BOUNDS" "$SUPPORTS_PIP";pinned_owner >/dev/null 2>&1||true;printf 'pinnedPackage=%s ' "$PINNED_PACKAGE";vendor_state_fields;printf '\n';log_event "OK $code package=$PKG task=$TASK_ID stack=$STACK_ID display=$DISPLAY_ID mode=$WINDOWING_MODE bounds=$TASK_BOUNDS component=$TASK_COMPONENT"; }
+wait_state(){ pkg="$1";task="$2";mode="$3";bounds="$4";tries=0;while [ "$tries" -lt 20 ];do read_task_once "$pkg" "$task";if [ "$?" -eq 0 ]&&[ "$DISPLAY_ID" = 0 ]&&[ "$WINDOWING_MODE" = "$mode" ];then if [ "$bounds" = any ]||[ "$TASK_BOUNDS" = "$bounds" ];then return 0;fi;fi;tries=$((tries+1));sleep 0.1;done;return 1; }
+[ "$(id -u 2>/dev/null)" = 0 ]||fail ROOT_REQUIRED
+for cmd in am dumpsys awk getprop pm settings;do command -v "$cmd" >/dev/null 2>&1||fail "${cmd}_MISSING";done
+action="${1:-}"
+case "$action" in
+probe) if pm list features 2>/dev/null|grep -q android.software.picture_in_picture;then pip_feature=1;else pip_feature=0;fi;force_resizable="$(settings get global force_resizable_activities 2>/dev/null)";printf 'OK code=READY uid=0 pipFeature=%s forceResizable=%s ' "$pip_feature" "$(sanitize_value "$force_resizable")";vendor_state_fields;printf '\n';;
+status) PKG="${2:-}";hint="${3:-0}";valid_package "$PKG"||fail BAD_PACKAGE;valid_uint "$hint"||fail BAD_TASK;require_task "$PKG" "$hint" 1;emit_ok STATUS;;
+freeform|verify-freeform|pip|verify-pip)
+ PKG="${2:-}";left="${3:-}";top="${4:-}";right="${5:-}";bottom="${6:-}";hint="${7:-0}";valid_package "$PKG"||fail BAD_PACKAGE;valid_uint "$hint"||fail BAD_TASK;validate_bounds "$left" "$top" "$right" "$bottom"||fail BAD_BOUNDS;require_task "$PKG" "$hint" 24;wanted_task="$TASK_ID";expected="$left,$top,$right,$bottom"
+ if [ "$action" = freeform ];then am task resizeable "$wanted_task" 2 >/dev/null 2>&1||fail RESIZEABLE_FAILED "task=$wanted_task" "package=$PKG";am task resize "$wanted_task" "$left" "$top" "$right" "$bottom" >/dev/null 2>&1||fail RESIZE_FAILED "task=$wanted_task" "package=$PKG";
+ elif [ "$action" = pip ];then pm list features 2>/dev/null|grep -q android.software.picture_in_picture||fail PIP_FEATURE_MISSING "package=$PKG";[ "$SUPPORTS_PIP" = 1 ]||{ [ "$SUPPORTS_PIP" = 0 ]&&fail PIP_UNSUPPORTED "task=$wanted_task" "package=$PKG";fail PIP_SUPPORT_UNKNOWN "task=$wanted_task" "package=$PKG";};pinned_owner||fail PIP_STATE_UNREADABLE "package=$PKG";if [ "$PINNED_PACKAGE" != none ]&&[ "$PINNED_PACKAGE" != "$PKG" ];then fail PIP_OCCUPIED_BY_OTHER_APP "package=$PKG" "pinnedPackage=$PINNED_PACKAGE";fi;if [ "$WINDOWING_MODE" != 2 ];then [ "$STACK_ID" != unknown ]||fail STACK_UNKNOWN "task=$wanted_task" "package=$PKG";am task focus "$wanted_task" >/dev/null 2>&1||fail FOCUS_FAILED "task=$wanted_task" "package=$PKG";sleep 0.1;require_task "$PKG" "$wanted_task" 1;am stack move-top-activity-to-pinned-stack "$STACK_ID" "$expected" >/dev/null 2>&1||fail PIP_ENTER_FAILED "task=$wanted_task" "stack=$STACK_ID" "package=$PKG";fi;wait_state "$PKG" "$wanted_task" 2 any||fail PIP_MODE_REJECTED "task=$wanted_task" "package=$PKG";[ "$STACK_ID" != unknown ]||fail PIP_STACK_UNKNOWN "task=$wanted_task" "package=$PKG";am stack resize "$STACK_ID" "$expected" >/dev/null 2>&1||fail PIP_RESIZE_FAILED "task=$wanted_task" "stack=$STACK_ID" "package=$PKG";fi
+ expected_mode=5;result_code=FREEFORM;case "$action" in verify-freeform)result_code=VERIFY_FREEFORM;;pip)expected_mode=2;result_code=PIP;;verify-pip)expected_mode=2;result_code=VERIFY_PIP;;esac
+ wait_state "$PKG" "$wanted_task" "$expected_mode" "$expected"||{ require_task "$PKG" "$wanted_task" 1;[ "$DISPLAY_ID" = 0 ]||fail DISPLAY_MISMATCH "task=$TASK_ID" "package=$PKG" "display=$DISPLAY_ID" "expectedDisplay=0";[ "$WINDOWING_MODE" = "$expected_mode" ]||fail WINDOWING_MODE_MISMATCH "task=$TASK_ID" "package=$PKG" "windowingMode=$WINDOWING_MODE" "expectedWindowingMode=$expected_mode";fail BOUNDS_MISMATCH "task=$TASK_ID" "package=$PKG" "bounds=$TASK_BOUNDS" "expected=$expected";};require_task "$PKG" "$wanted_task" 1;emit_ok "$result_code";;
+fullscreen) PKG="${2:-}";hint="${3:-}";valid_package "$PKG"||fail BAD_PACKAGE;valid_uint "$hint"||fail BAD_TASK;[ "$hint" -gt 0 ]||fail TASK_AUTHORITY_REQUIRED "package=$PKG";require_task "$PKG" "$hint" 1;wanted_task="$TASK_ID";component="$TASK_COMPONENT";am start --user 0 --windowingMode 1 --task "$wanted_task" -f 0x20000000 -n "$component" >/dev/null 2>&1||fail FULLSCREEN_FAILED "task=$wanted_task" "package=$PKG" "component=$component";wait_state "$PKG" "$wanted_task" 1 any||fail FULLSCREEN_REJECTED "task=$wanted_task" "package=$PKG";require_task "$PKG" "$wanted_task" 1;emit_ok FULLSCREEN;;
+*)fail BAD_ACTION;;esac
