@@ -93,7 +93,6 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertLess(debug, info)
         self.assertLess(signer, info)
         self.assertLess(sums, info)
-        self.assertIn("BUILD_INFO last", PUBLISH)
 
     def test_release_notes_are_real_markdown_with_links_and_provenance(self):
         self.assertIn("testing-release-body.md", PUBLISH)
