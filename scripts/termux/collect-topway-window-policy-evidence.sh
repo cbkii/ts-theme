@@ -29,21 +29,31 @@ ZIP="$OUT.zip"
 mkdir -p "$OUT"/{framework,topway,logs,window} || exit 1
 
 cap() {
-  rel="$1"; shift
-  timeout -k 2 "$CAP_TIMEOUT" "$@" >"$OUT/$rel" 2>&1 || printf '\nexit=%s\n' "$?" >>"$OUT/$rel"
+  rel="$1"
+  shift
+  if ! timeout -k 2 "$CAP_TIMEOUT" "$@" >"$OUT/$rel" 2>&1; then
+    printf '\nexit=%s\n' "$?" >>"$OUT/$rel"
+  fi
 }
 
 rootcap() {
-  rel="$1"; shift
-  command -v su >/dev/null 2>&1 || { echo BLOCKED >"$OUT/$rel"; return; }
-  timeout -k 2 "$CAP_TIMEOUT" su -c "$*" >"$OUT/$rel" 2>&1 || printf '\nexit=%s\n' "$?" >>"$OUT/$rel"
+  rel="$1"
+  shift
+  if ! command -v su >/dev/null 2>&1; then
+    echo BLOCKED >"$OUT/$rel"
+    return
+  fi
+  if ! timeout -k 2 "$CAP_TIMEOUT" su -c "$*" >"$OUT/$rel" 2>&1; then
+    printf '\nexit=%s\n' "$?" >>"$OUT/$rel"
+  fi
 }
 
 stop_log() {
-  [ -n "$LIVE_PID" ] || return 0
-  kill "$LIVE_PID" 2>/dev/null || true
-  wait "$LIVE_PID" 2>/dev/null || true
-  LIVE_PID=""
+  if [ -n "$LIVE_PID" ]; then
+    kill "$LIVE_PID" 2>/dev/null || true
+    wait "$LIVE_PID" 2>/dev/null || true
+    LIVE_PID=""
+  fi
 }
 
 finalize() {
@@ -63,6 +73,8 @@ finalize() {
 }
 trap finalize EXIT INT TERM HUP
 
+# These command strings intentionally expand their variables in the child/root shell.
+# shellcheck disable=SC2016
 rootcap framework/classpaths.txt '
 printf "BOOTCLASSPATH=%s\n" "$BOOTCLASSPATH"
 printf "SYSTEMSERVERCLASSPATH=%s\n" "$SYSTEMSERVERCLASSPATH"
@@ -79,6 +91,7 @@ for list in "$BOOTCLASSPATH" "$SYSTEMSERVERCLASSPATH"; do
   IFS=$oldifs
 done'
 
+# shellcheck disable=SC2016
 rootcap topway/properties-files.txt '
 for p in persist.tw.forcepip sys.tw.forcepip sys.tw.forcepip.x sys.tw.forcepip.y sys.tw.forcepip.w sys.tw.forcepip.h sys.df.desktop sys.df.variety.theme.window; do
   printf "%s=" "$p"; getprop "$p"
@@ -87,6 +100,7 @@ for f in /data/tw/custom_pip_app_name /data/tw/navi_name; do
   printf "%s=" "$f"; cat "$f" 2>/dev/null || printf unreadable; printf "\n"
 done'
 
+# shellcheck disable=SC2016
 cap topway/packages.txt sh -c '
 for p in com.dofun.variety com.tw.service.xt com.cbkii.ts18launcher app.organicmaps.incar; do
   echo "===== $p ====="
@@ -96,6 +110,7 @@ done'
 cap window/before-activity.txt dumpsys activity activities
 cap window/before-window.txt dumpsys window windows
 
+# shellcheck disable=SC2016
 rootcap framework/anchor-strings.txt '
 for list in "$BOOTCLASSPATH" "$SYSTEMSERVERCLASSPATH"; do
   oldifs=$IFS; IFS=:
