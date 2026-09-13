@@ -14,7 +14,7 @@ This proves a working DoFun navigation surface ultimately involves a mode-5 task
 
 `HomeNavigationSurfacePolicy` is the sole selector. Modes are mutually exclusive: `fullscreen` safe fallback; `leaflet` launcher-owned comparator; `raw_freeform` experimental mode-5 foreign task; `android_pip` experimental standard mode-2 pinned task.
 
-Migration is fail-safe: an existing explicit `map.enabled=true` becomes Leaflet; otherwise an installation defaults to fullscreen-only. No upgrade silently begins root task manipulation. PR #10's legacy Leaflet switch is retained as a compatibility entry point and opens the four-way chooser. The configured Navigation app remains a separate preference and is the only foreign-package authority.
+Migration is fail-safe: when the new mode preference is absent, a previously explicit `map.enabled=true` is interpreted as Leaflet; otherwise an installation defaults to fullscreen-only. Once `navigation.surface.mode` exists, that value is authoritative. The Settings UI exposes a single four-way **HOME navigation surface** selector; it no longer presents Leaflet as a standalone on/off surface authority. The configured Navigation app remains a separate preference and is the only foreign-package authority.
 
 ## Raw freeform
 
@@ -28,7 +28,7 @@ Android standard PiP is distinct from Topway's OEM use of the word PIP. Android 
 
 `AndroidPipBackend` acquires exactly one configured task; positively requires the Activity dump to report PiP support; refuses to displace another package already in the pinned stack; focuses only the exact selected task before the stack-level pin; verifies the resulting mode-2 identity; and experimentally asks the pinned stack to settle at the HOME rectangle. It never enables Android's global force-resizable setting and never reserves PiP system-wide. If normal map gestures/search/zoom cannot work while HOME stays usable, classify PiP **glance-only** and do not promote it.
 
-Current Organic Maps evidence does not establish standard PiP support. A separate Organic Maps experiment is required before PiP can be a Tier-1 end-to-end test.
+Current exact-unit Organic Maps evidence reports `mSupportsPictureInPicture=false`; therefore this PR does not claim a Tier-1 Organic Maps PiP result. A separate InCar-only Organic Maps PiP qualification is required before that end-to-end path can be judged.
 
 ## Leaflet and fullscreen
 
@@ -40,10 +40,12 @@ The exact current `com.tw.video` client establishes separate current-HOME marker
 
 ## OEM-policy investigation
 
-The high-value unknown is the Topway/DoFun policy accompanying a known-good mode-5 task. Read-only investigation targets exact current framework/services and privileged Topway code around `isPipLauncher`, `:navi`/`tw_navi`, `forcepip`, `/data/tw/custom_pip_app_name`, `/data/tw/navi_name`, `sendNaviType` and ActivityTaskManager windowing transitions. Observed properties/files remain diagnostics until a writer/consumer contract is proven. There is no `setprop`, protected `/data/tw` writer, SELinux relaxation, UID/signature spoofing or persistent root daemon in PR #11.
+The high-value unknown is the Topway/DoFun policy accompanying a known-good mode-5 task. Read-only investigation targets the exact current boot/system-server classpaths and privileged Topway code around `isPipLauncher`, `:navi`/`tw_navi`, `forcepip`, the observed Topway navigation/PIP state files, `sendNaviType` and ActivityTaskManager windowing transitions. Framework/service jar paths are discovered from the device's runtime classpaths rather than hard-coded. Observed properties/files remain diagnostics until a writer/consumer contract is proven. There is no `setprop`, protected Topway-state writer, SELinux relaxation, UID/signature spoofing or persistent root daemon in PR #11.
 
-If static exact-framework inspection cannot expose the actuator, the next escalation is a DoFun-only log-only LSPosed trace of SystemProperties, Settings, ActivityOptions, ActivityTaskManager, WindowManager and startActivity calls without argument mutation.
+If static exact-framework inspection cannot expose the actuator, the next escalation is a DoFun-only log-only LSPosed trace of SystemProperties, Settings, ActivityOptions, ActivityTaskManager, WindowManager and `startActivity` calls without argument mutation.
 
 ## Provenance and qualification
 
-CI injects the exact PR head SHA/ref as generated resources and the HOME placeholder displays a shortened source identity. Run `scripts/termux/qualify-navigation-surfaces.sh` separately for each selected mode. Shell mode/bounds identity is necessary, not sufficient. Manually qualify visible composition, touch inside/outside, fullscreen/HOME, unrelated-app/app-drawer round trips, navigator switching, process recreation, reverse return, reboot, cold boot and ACC sleep/wake. BLOCKED is not negative evidence.
+CI injects the exact PR head SHA/ref as generated resources and the HOME placeholder displays a shortened source identity. `scripts/termux/qualify-navigation-surfaces.sh` records the selected package/mode, helper state, Activity/WindowManager state, screenshots, bounded relevant logs and read-only Topway correlation data. The separate `collect-topway-window-policy-evidence.sh` collector discovers framework/service jars from runtime classpaths and preserves command exit status so failed captures remain distinguishable from successful negative evidence.
+
+Run qualification separately for each selected mode. Shell mode/bounds identity is necessary, not sufficient. Manually qualify visible composition, touch inside/outside, fullscreen/HOME, unrelated-app/app-drawer round trips, navigator switching, process recreation, reverse return, reboot, cold boot and ACC sleep/wake. `BLOCKED` is not negative evidence.
