@@ -32,19 +32,20 @@ final class SlotIconCatalog {
     static final String DASHBOARD = "dashboard";
     static final String LIGHT = "light";
     static final String NOTIFICATIONS = "notifications";
+    static final String PALETTE = "palette";
 
     static final String[] VALUES = {
             AUTO, NAVIGATION, RADIO, MUSIC, BLUETOOTH, PHONE, FAVORITE, HOME, WORK,
             SEARCH, CAMERA, SETTINGS, UTILITY, VIDEO, WEATHER, GENERIC, CAR, MAP,
             ROUTE, EQUALIZER, PODCAST, USB, FILES, WIFI, DOWNLOAD, VOLUME, POWER,
-            DASHBOARD, LIGHT, NOTIFICATIONS
+            DASHBOARD, LIGHT, NOTIFICATIONS, PALETTE
     };
     static final String[] LABELS = {
             "Auto", "Navigation", "Radio", "Music", "Bluetooth", "Phone", "Favourite",
             "Home", "Work", "Search", "Camera", "Settings", "Tools", "Media/video",
             "Weather", "App", "Car", "Map", "Route", "Equaliser", "Podcast", "USB",
             "Files", "Wi-Fi", "Download", "Volume", "Power", "Dashboard", "Light",
-            "Notifications"
+            "Notifications", "Palette"
     };
 
     private SlotIconCatalog() {}
@@ -93,6 +94,7 @@ final class SlotIconCatalog {
         if (DASHBOARD.equals(safe)) return R.drawable.ic_dashboard;
         if (LIGHT.equals(safe)) return R.drawable.ic_lightbulb;
         if (NOTIFICATIONS.equals(safe)) return R.drawable.ic_notifications;
+        if (PALETTE.equals(safe)) return R.drawable.ic_palette;
         return R.drawable.ic_shortcut;
     }
 }
