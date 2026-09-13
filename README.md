@@ -75,7 +75,7 @@ The fixed draft **000 Testing Only Version** is an explicit development/physical
 
 - add the `testing-apk` label to a PR;
 - put `/testing-apk` in the newest PR commit message;
-- comment `/testing-apk` in the PR conversation or an inline review thread;
+- comment `/testing-apk` in the PR conversation;
 - run **Refresh Testing APK Draft** manually from the default branch and set `source_to_build` to a PR number, branch, tag or commit SHA.
 
 Commit/comment commands also ensure the PR carries the `testing-apk` label. The draft retains the two newest successfully published snapshot groups, each with distinct TESTING/DEBUG APKs and metadata. Its human-readable release notes identify the PR, snapshot head, actual built SHA, trigger and workflow run for each APK. All TESTING APKs deliberately keep `versionName=0.0.0-testing` and `versionCode=999999`.
