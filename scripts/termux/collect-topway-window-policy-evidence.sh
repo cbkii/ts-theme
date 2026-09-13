@@ -31,9 +31,12 @@ mkdir -p "$OUT"/{framework,topway,logs,window} || exit 1
 cap() {
   rel="$1"
   shift
-  if ! timeout -k 2 "$CAP_TIMEOUT" "$@" >"$OUT/$rel" 2>&1; then
-    printf '\nexit=%s\n' "$?" >>"$OUT/$rel"
+  timeout -k 2 "$CAP_TIMEOUT" "$@" >"$OUT/$rel" 2>&1
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\nexit=%s\n' "$rc" >>"$OUT/$rel"
   fi
+  return 0
 }
 
 rootcap() {
@@ -41,11 +44,14 @@ rootcap() {
   shift
   if ! command -v su >/dev/null 2>&1; then
     echo BLOCKED >"$OUT/$rel"
-    return
+    return 0
   fi
-  if ! timeout -k 2 "$CAP_TIMEOUT" su -c "$*" >"$OUT/$rel" 2>&1; then
-    printf '\nexit=%s\n' "$?" >>"$OUT/$rel"
+  timeout -k 2 "$CAP_TIMEOUT" su -c "$*" >"$OUT/$rel" 2>&1
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf '\nexit=%s\n' "$rc" >>"$OUT/$rel"
   fi
+  return 0
 }
 
 stop_log() {
