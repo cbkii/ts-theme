@@ -15,14 +15,13 @@ FORBIDDEN_DEX_MARKERS = (
     b"Landroidx/",
     b"Lcom/qihoo360/",
 )
+# Only externally named Android components belong here. R8 is expected to rename
+# ordinary implementation classes such as navigation policies/backends.
 REQUIRED_DEX_MARKERS = (
     b"Lcom/cbkii/ts18launcher/LauncherActivity;",
     b"Lcom/cbkii/ts18launcher/AppDrawerActivity;",
     b"Lcom/cbkii/ts18launcher/SettingsActivity;",
     b"Lcom/cbkii/ts18launcher/MediaListenerService;",
-    b"Lcom/cbkii/ts18launcher/HomeNavigationSurfacePolicy;",
-    b"Lcom/cbkii/ts18launcher/RawFreeformTaskBackend;",
-    b"Lcom/cbkii/ts18launcher/AndroidPipBackend;",
     b"Lcom/cbkii/ts18launcher/platform/TopwayDesktopWindowMarkerService;",
     b"Lcom/cbkii/ts18launcher/platform/TopwayDesktopWindowProvider;",
 )
@@ -36,6 +35,17 @@ REQUIRED_FILES = {
     "assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt",
     "assets/nav/nav-window.sh",
 }
+REQUIRED_HELPER_MARKERS = (
+    b"TASK_AMBIGUOUS",
+    b"PIP_UNSUPPORTED",
+    b"PIP_OCCUPIED_BY_OTHER_APP",
+    b"move-top-activity-to-pinned-stack",
+    b"windowingMode",
+)
+FORBIDDEN_HELPER_MARKERS = (
+    b"setprop ",
+    b"settings put global force_resizable_activities",
+)
 
 
 def fail(message: str) -> None:
@@ -78,7 +88,15 @@ def inspect(apk: Path) -> None:
                 fail(f"forbidden runtime marker present in DEX: {marker!r}")
         for marker in REQUIRED_DEX_MARKERS:
             if marker not in dex:
-                fail(f"required runtime marker missing: {marker!r}")
+                fail(f"required Android component marker missing: {marker!r}")
+
+        helper = archive.read("assets/nav/nav-window.sh")
+        for marker in REQUIRED_HELPER_MARKERS:
+            if marker not in helper:
+                fail(f"navigation helper protocol marker missing: {marker!r}")
+        for marker in FORBIDDEN_HELPER_MARKERS:
+            if marker in helper:
+                fail(f"forbidden navigation helper mutation present: {marker!r}")
 
     print(
         "launcher envelope: PASS "
