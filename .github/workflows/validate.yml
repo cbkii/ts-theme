@@ -115,7 +115,7 @@ jobs:
         shell: bash
         env:
           TESTING_SOURCE_KIND: validate
-          TESTING_REQUESTED_SOURCE: ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+          TESTING_REQUESTED_SOURCE: ${{ github.event.pull_request.head.ref || github.ref_name }}
           TESTING_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           TESTING_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
           TESTING_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
