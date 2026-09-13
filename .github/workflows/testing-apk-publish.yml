@@ -32,6 +32,9 @@ jobs:
   publish:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    concurrency:
+      group: testing-only-draft-release-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - name: Confirm source artifact exists
         shell: bash
@@ -214,6 +217,11 @@ jobs:
             api_read "repos/$GITHUB_REPOSITORY/releases/$1/assets?per_page=100"
           }
 
+          asset_is_uploaded() {
+            local json="$1" name="$2"
+            jq -e --arg name "$name" '.[] | select(.name == $name and .state == "uploaded" and .size > 0)' "$json" >/dev/null
+          }
+
           delete_asset_by_name() {
             local release_id="$1" name="$2" asset_id
             asset_id="$(release_assets_json "$release_id" | jq -r --arg name "$name" '.[] | select(.name == $name) | .id' | head -n 1)"
@@ -224,6 +232,39 @@ jobs:
                 return 1
               fi
             }
+          }
+
+          group_names() {
+            local group_id="$1"
+            if [[ "$group_id" == LEGACY ]]; then
+              printf '%s\n' \
+                TS18-Standalone-Launcher-TESTING.apk \
+                TS18-Standalone-Launcher-DEBUG.apk \
+                BUILD_INFO.txt \
+                SIGNER.txt \
+                SHA256SUMS.txt
+            else
+              printf '%s\n' \
+                "TS18-Standalone-Launcher-TESTING-${group_id}.apk" \
+                "TS18-Standalone-Launcher-DEBUG-${group_id}.apk" \
+                "BUILD_INFO-${group_id}.txt" \
+                "SIGNER-${group_id}.txt" \
+                "SHA256SUMS-${group_id}.txt"
+            fi
+          }
+
+          delete_group() {
+            local release_id="$1" group_id="$2" name
+            while IFS= read -r name; do
+              delete_asset_by_name "$release_id" "$name"
+            done < <(group_names "$group_id")
+          }
+
+          group_complete() {
+            local json="$1" group_id="$2" name
+            while IFS= read -r name; do
+              asset_is_uploaded "$json" "$name" || return 1
+            done < <(group_names "$group_id")
           }
 
           upload_asset() {
@@ -291,8 +332,6 @@ jobs:
             printf '[`%s`](%s)' "${sha:0:7}" "$url"
           }
 
-          # Prefer the exact title + marker. For the first run after migration,
-          # adopt the newest legacy exact-title draft and mark it as managed.
           release_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\" and (.body // \"\" | contains(\"$MANAGED_MARKER\"))) | [.updated_at, .id] | @tsv" \
             | sort -r | head -n 1 | cut -f2)"
@@ -321,70 +360,105 @@ jobs:
               --jq .id)"
           fi
 
-          # Existing drafts keep their current human-readable notes until the
-          # new asset group has uploaded successfully. The final PATCH below
-          # adopts an unmarked legacy exact-title draft and refreshes its body.
-
           state="$(api_read "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq '[.draft, .name] | @tsv')"
           [[ "$state" == $'true\t'"$TEST_RELEASE_TITLE" ]] || {
             echo "::error::Testing release is not the required draft/title before asset refresh: $state"
             exit 1
           }
 
-          # Re-running the same snapshot replaces that one group only. Other
-          # retained snapshots remain available throughout the refresh.
-          for name in "$INSTALL_NAME" "$DEBUG_NAME" "$INFO_NAME" "$SIGNER_NAME" "$SUMS_NAME"; do
-            delete_asset_by_name "$release_id" "$name"
-          done
-
-          upload_asset "$release_id" "outgoing/$INSTALL_NAME"
-          upload_asset "$release_id" "outgoing/$DEBUG_NAME"
-          upload_asset "$release_id" "outgoing/$INFO_NAME"
-          upload_asset "$release_id" "outgoing/$SIGNER_NAME"
-          upload_asset "$release_id" "outgoing/$SUMS_NAME"
-
           assets_json="$RUNNER_TEMP/testing-assets.json"
           release_assets_json "$release_id" > "$assets_json"
 
-          # BUILD_INFO assets define snapshot groups. The previous fixed-name
-          # format is treated as one LEGACY group so the first refresh can keep
-          # the prior APK as the second testing snapshot instead of deleting it.
+          # Recover from interrupted prior publications before selecting retained
+          # snapshots. BUILD_INFO is the commit marker for a snapshot group;
+          # incomplete groups and orphaned pre-marker assets are deleted.
+          declare -A candidate_groups=()
+          mapfile -t existing_names < <(jq -r '.[].name' "$assets_json")
+          legacy_seen=false
+          for name in "${existing_names[@]}"; do
+            group=''
+            case "$name" in
+              TS18-Standalone-Launcher-TESTING.apk|TS18-Standalone-Launcher-DEBUG.apk|BUILD_INFO.txt|SIGNER.txt|SHA256SUMS.txt)
+                legacy_seen=true
+                ;;
+              TS18-Standalone-Launcher-TESTING-*.apk)
+                group="${name#TS18-Standalone-Launcher-TESTING-}"
+                group="${group%.apk}"
+                ;;
+              TS18-Standalone-Launcher-DEBUG-*.apk)
+                group="${name#TS18-Standalone-Launcher-DEBUG-}"
+                group="${group%.apk}"
+                ;;
+              BUILD_INFO-*.txt)
+                group="${name#BUILD_INFO-}"
+                group="${group%.txt}"
+                ;;
+              SIGNER-*.txt)
+                group="${name#SIGNER-}"
+                group="${group%.txt}"
+                ;;
+              SHA256SUMS-*.txt)
+                group="${name#SHA256SUMS-}"
+                group="${group%.txt}"
+                ;;
+            esac
+            if [[ "$group" =~ ^(PR[1-9][0-9]*-[0-9a-f]{7}|SHA-[0-9a-f]{7})$ ]]; then
+              candidate_groups["$group"]=1
+            fi
+          done
+
+          if [[ "$legacy_seen" == true ]] && ! group_complete "$assets_json" LEGACY; then
+            echo "Removing incomplete legacy TESTING asset group from an interrupted publication."
+            delete_group "$release_id" LEGACY
+          fi
+          for group in "${!candidate_groups[@]}"; do
+            if ! group_complete "$assets_json" "$group"; then
+              echo "Removing incomplete TESTING asset group '$group' from an interrupted publication."
+              delete_group "$release_id" "$group"
+            fi
+          done
+
+          release_assets_json "$release_id" > "$assets_json"
+
+          # Re-running one snapshot replaces only that group. Upload BUILD_INFO
+          # last so it acts as the visible commit marker after the other four
+          # assets have arrived successfully.
+          delete_group "$release_id" "$GROUP_ID"
+          upload_asset "$release_id" "outgoing/$INSTALL_NAME"
+          upload_asset "$release_id" "outgoing/$DEBUG_NAME"
+          upload_asset "$release_id" "outgoing/$SIGNER_NAME"
+          upload_asset "$release_id" "outgoing/$SUMS_NAME"
+          upload_asset "$release_id" "outgoing/$INFO_NAME"
+
+          release_assets_json "$release_id" > "$assets_json"
+          group_complete "$assets_json" "$GROUP_ID" || {
+            echo "::error::New TESTING snapshot '$GROUP_ID' is incomplete after upload."
+            exit 1
+          }
+
+          # BUILD_INFO assets now represent only complete groups. Keep the two
+          # newest groups and prune only older workflow-managed snapshots.
           mapfile -t groups < <(
             jq -r '.[]
-              | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[0-9]+-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))
+              | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[1-9][0-9]*-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))
               | [.created_at, .name] | @tsv' "$assets_json" | sort -r
           )
 
           for entry in "${groups[@]:2}"; do
             metadata_name="${entry#*$'\t'}"
             if [[ "$metadata_name" == 'BUILD_INFO.txt' ]]; then
-              stale_names=(
-                TS18-Standalone-Launcher-TESTING.apk
-                TS18-Standalone-Launcher-DEBUG.apk
-                BUILD_INFO.txt
-                SIGNER.txt
-                SHA256SUMS.txt
-              )
+              delete_group "$release_id" LEGACY
             else
               stale_group="${metadata_name#BUILD_INFO-}"
               stale_group="${stale_group%.txt}"
-              stale_names=(
-                "TS18-Standalone-Launcher-TESTING-${stale_group}.apk"
-                "TS18-Standalone-Launcher-DEBUG-${stale_group}.apk"
-                "BUILD_INFO-${stale_group}.txt"
-                "SIGNER-${stale_group}.txt"
-                "SHA256SUMS-${stale_group}.txt"
-              )
+              delete_group "$release_id" "$stale_group"
             fi
-            for name in "${stale_names[@]}"; do
-              delete_asset_by_name "$release_id" "$name"
-            done
           done
 
           release_assets_json "$release_id" > "$assets_json"
           mapfile -t retained < <(
             jq -r '.[]
-              | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[0-9]+-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))
+              | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[1-9][0-9]*-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))
               | [.created_at, .name, .id] | @tsv' "$assets_json" | sort -r | head -n 2
           )
           ((${#retained[@]} >= 1 && ${#retained[@]} <= 2)) || {
@@ -423,16 +497,27 @@ jobs:
             debug_name="$(field "$info" debug_asset)"
             [[ -n "$install_name" ]] || install_name='TS18-Standalone-Launcher-TESTING.apk'
             [[ -n "$debug_name" ]] || debug_name='TS18-Standalone-Launcher-DEBUG.apk'
-
-            install_url="$(jq -r --arg name "$install_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
-            debug_url="$(jq -r --arg name "$debug_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
-            metadata_url="$(jq -r --arg name "$metadata_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
             signer_name="$(field "$info" signer_asset)"
             sums_name="$(field "$info" checksums_asset)"
             [[ -n "$signer_name" ]] || signer_name='SIGNER.txt'
             [[ -n "$sums_name" ]] || sums_name='SHA256SUMS.txt'
+
+            if ! group_complete "$assets_json" "$group_id"; then
+              echo "::error::Retained TESTING group '$group_id' became incomplete before release-note generation."
+              exit 1
+            fi
+
+            install_url="$(jq -r --arg name "$install_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
+            debug_url="$(jq -r --arg name "$debug_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
+            metadata_url="$(jq -r --arg name "$metadata_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
             signer_url="$(jq -r --arg name "$signer_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
             sums_url="$(jq -r --arg name "$sums_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
+            for url in "$install_url" "$debug_url" "$metadata_url" "$signer_url" "$sums_url"; do
+              [[ -n "$url" && "$url" != null ]] || {
+                echo "::error::Retained TESTING group '$group_id' has a missing release asset URL."
+                exit 1
+              }
+            done
 
             source_kind="$(field "$info" source_kind)"
             requested_source="$(field "$info" requested_source)"
@@ -524,10 +609,8 @@ jobs:
                 printf -- '- **Build workflow:** [run %s](%s)\n' "${build_run_number:-$build_run_id}" "$build_run_url"
               fi
               printf -- '- **Published:** `%s`\n' "$published_at"
-              printf -- '- **Metadata:** [BUILD_INFO](%s)' "$metadata_url"
-              [[ -z "$sums_url" ]] || printf ' · [SHA256SUMS](%s)' "$sums_url"
-              [[ -z "$signer_url" ]] || printf ' · [SIGNER](%s)' "$signer_url"
-              printf '\n'
+              printf -- '- **Metadata:** [BUILD_INFO](%s) · [SHA256SUMS](%s) · [SIGNER](%s)\n' \
+                "$metadata_url" "$sums_url" "$signer_url"
             } >> "$details"
           done
 
@@ -554,15 +637,14 @@ jobs:
           [[ "$(jq -r .name <<<"$final")" == "$TEST_RELEASE_TITLE" ]]
           jq -e --arg marker "$MANAGED_MARKER" '(.body // "") | contains($marker)' <<<"$final" >/dev/null
           jq -e --arg name "$INFO_NAME" '.assets[] | select(.name == $name and .state == "uploaded" and .size > 0)' <<<"$final" >/dev/null
+          ! grep -Fq '](null)' <<<"$(jq -r .body <<<"$final")"
 
-          retained_count="$(jq -r '[.assets[] | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[0-9]+-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))] | length' <<<"$final")"
+          retained_count="$(jq -r '[.assets[] | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[1-9][0-9]*-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))] | length' <<<"$final")"
           (( retained_count >= 1 && retained_count <= 2 )) || {
             echo "::error::Final draft does not contain one or two TESTING snapshot groups."
             exit 1
           }
 
-          # Remove only duplicate drafts already marked as workflow-owned. Do
-          # not delete similarly titled manual drafts that lack the marker.
           mapfile -t managed_duplicates < <(
             gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
               --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\" and (.body // \"\" | contains(\"$MANAGED_MARKER\")) and .id != $release_id) | .id"
@@ -571,4 +653,4 @@ jobs:
             gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$duplicate_id" >/dev/null
           done
 
-          echo "TESTING draft refreshed with snapshot $GROUP_ID; newest two snapshot groups are retained."
+          echo "TESTING draft refreshed with snapshot $GROUP_ID; newest two complete snapshot groups are retained."
