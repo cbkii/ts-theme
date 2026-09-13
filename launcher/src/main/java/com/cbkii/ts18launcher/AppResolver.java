@@ -15,6 +15,7 @@ final class AppResolver {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             context.startActivity(intent);
+            MediaListenerService.noteExplicitLaunch(context, packageName);
             return true;
         } catch (RuntimeException ignored) {
             return false;
@@ -30,6 +31,7 @@ final class AppResolver {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             context.startActivity(intent);
+            MediaListenerService.noteExplicitLaunch(context, packageName);
             return true;
         } catch (RuntimeException ignored) {
             return false;
