@@ -41,12 +41,12 @@ The fixed draft release **000 Testing Only Version** is an explicit engineering/
 
 1. adding the `testing-apk` label to a PR;
 2. putting `/testing-apk` in the newest PR commit message;
-3. commenting `/testing-apk` in the PR conversation or an inline review thread;
+3. commenting `/testing-apk` in the PR conversation;
 4. manually running **Refresh Testing APK Draft** from the default branch and setting `source_to_build` to a PR number, branch, tag or commit SHA.
 
 Commit/comment requests idempotently ensure the PR carries the `testing-apk` label. The label is visible state, not permission for every later commit to overwrite the draft; later snapshots still require another explicit request.
 
-The workflow builds the exact requested repository source with read-only permissions, then hands only the APK/metadata artifact to the signing publisher. The release-envelope checker remains release-only; the debug APK is not required to satisfy the one-DEX release contract. Manual arbitrary-source Gradle caching is read-only.
+The workflow builds the exact requested repository source with read-only permissions, then hands only the APK/metadata artifact to the signing publisher. The release-envelope checker remains release-only; the debug APK is not required to satisfy the one-DEX release contract. Manual arbitrary-source Gradle caching is read-only. PR conversation comments are handled from the default-branch workflow definition; inline review-thread comments are intentionally not a signing trigger.
 
 The draft retains the **two newest successfully published snapshot groups**. Each group has uniquely named TESTING and DEBUG APKs plus BUILD_INFO, signer and checksum metadata. The release notes are authoritative for the snapshot PR, PR head, base at request, actual built SHA, trigger, actor and workflow run. If a PR has moved since an older snapshot, the notes show both the snapshot head and the current PR head without invalidating the older APK.
 
