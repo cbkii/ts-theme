@@ -41,6 +41,7 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertIn("pr-comment-command", DRAFT)
         self.assertIn("review-comment-command", DRAFT)
         self.assertIn("OWNER|MEMBER|COLLABORATOR", DRAFT)
+        self.assertIn("EVENT_IS_PR_ISSUE", DRAFT)
 
     def test_requested_source_build_is_read_only_and_handoff_is_seven_days(self):
         self.assertIn("cache-read-only: true", DRAFT)

@@ -57,6 +57,7 @@ jobs:
           EVENT_ACTION: ${{ github.event.action || '' }}
           SOURCE_INPUT: ${{ inputs.source_to_build || '' }}
           EVENT_PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || '' }}
+          EVENT_IS_PR_ISSUE: ${{ github.event.issue.pull_request && 'true' || 'false' }}
           EVENT_LABEL: ${{ github.event.label.name || '' }}
           COMMENT_BODY: ${{ github.event.comment.body || '' }}
           AUTHOR_ASSOCIATION: ${{ github.event.comment.author_association || '' }}
@@ -168,6 +169,7 @@ jobs:
               ;;
 
             issue_comment)
+              [[ "$EVENT_IS_PR_ISSUE" == true ]] || exit 0
               [[ -n "$EVENT_PR_NUMBER" ]] || exit 0
               has_testing_command "$COMMENT_BODY" || exit 0
               trusted_commenter "$AUTHOR_ASSOCIATION" || {
