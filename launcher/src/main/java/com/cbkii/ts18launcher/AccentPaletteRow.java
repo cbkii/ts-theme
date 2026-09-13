@@ -1,5 +1,6 @@
 package com.cbkii.ts18launcher;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
@@ -10,6 +11,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /** Compact colour-circle selector for the semantic accent role. */
+@SuppressLint("ViewConstructor")
 final class AccentPaletteRow extends LinearLayout {
     AccentPaletteRow(Context context, Runnable onChanged) {
         super(context);
