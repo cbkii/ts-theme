@@ -16,3 +16,5 @@ Display #0 (activities from top to bottom):
           packageName=app.organicmaps.incar processName=app.organicmaps.incar
           mActivityComponent=app.organicmaps.incar/app.organicmaps.MwmActivity
           mGlobalConfig={winConfig={ mBounds=Rect(0, 0 - 1280, 720) mWindowingMode=1 }}
+  mResumedActivity: ActivityRecord{fixture u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9258}
+  topResumedActivity=ActivityRecord{fixture u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9258}

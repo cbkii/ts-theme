@@ -157,6 +157,22 @@ END {
   print "FOUND " out_task " " out_stack " " out_display " " out_mode " " out_bounds " " out_component " " out_pip
 }'
 
+FOREGROUND_TASK_AWK='
+function task_from_record(line, value) {
+  value=line
+  if (index(value, "ActivityRecord{") < 1 || index(value, " t") < 1) return ""
+  sub(/^.* t/, "", value)
+  sub(/[^0-9].*$/, "", value)
+  return value
+}
+/mResumedActivity: ActivityRecord\{|topResumedActivity=ActivityRecord\{/ {
+  task=task_from_record($0)
+  if (task != "") {
+    print task
+    exit
+  }
+}'
+
 PKG=unknown
 TASK_ID=unknown
 STACK_ID=unknown
@@ -266,6 +282,10 @@ parse_task_snapshot() {
   awk -v pkg="$pkg" -v hint="$hint" "$TASK_SNAPSHOT_AWK" "$SNAPSHOT"
 }
 
+parse_foreground_task_snapshot() {
+  awk "$FOREGROUND_TASK_AWK" "$SNAPSHOT"
+}
+
 read_task_once() {
   pkg="$1"
   hint="$2"
@@ -365,6 +385,27 @@ wait_state() {
   return 1
 }
 
+wait_foreground_task() {
+  expected_task="$1"
+  tries=0
+  while [ "$tries" -lt 30 ]; do
+    capture_activity || return 1
+    focused_task="$(parse_foreground_task_snapshot)"
+    if [ "$focused_task" = "$expected_task" ]; then
+      return 0
+    fi
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+  return 1
+}
+
+require_foreground_task() {
+  expected_task="$1"
+  code="$2"
+  wait_foreground_task "$expected_task" || fail "$code"
+}
+
 verify_state() {
   expected_mode="$1"
   expected_bounds="$2"
@@ -418,6 +459,7 @@ move_task_fullscreen() {
     am task focus "$wanted_task" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
   fi
   wait_state "$pkg" "$wanted_task" 1 any || fail FULLSCREEN_REJECTED
+  require_foreground_task "$wanted_task" FULLSCREEN_NOT_FOREGROUND
   require_task "$pkg" "$wanted_task" 1
 }
 
@@ -534,6 +576,7 @@ case "$action" in
     wanted_task="$TASK_ID"
     require_task "$HOME_PKG" "$home_task" 1
     am task focus "$home_task" >"$LAUNCH_OUTPUT" 2>&1 || fail HOME_FOCUS_FAILED
+    require_foreground_task "$home_task" HOME_NOT_FOREGROUND
     PKG="${2:-}"
     require_task "$PKG" "$wanted_task" 1
     [ "$WINDOWING_MODE" = 1 ] || fail SUSPEND_MODE_MISMATCH

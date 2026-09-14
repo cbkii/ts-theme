@@ -41,18 +41,35 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         cls.playbook = PLAYBOOK.read_text(encoding="utf-8")
         cls.roadmap = ROADMAP.read_text(encoding="utf-8")
         match = re.search(
-            r"TASK_SNAPSHOT_AWK='(.*?)'\n\nPKG=unknown",
+            r"TASK_SNAPSHOT_AWK='(.*?)'\n\nFOREGROUND_TASK_AWK=",
             cls.helper,
             re.DOTALL,
         )
         if match is None:
             raise AssertionError("Production task parser must remain directly fixture-testable")
         cls.task_awk = match.group(1)
+        focus_match = re.search(
+            r"FOREGROUND_TASK_AWK='(.*?)'\n\nPKG=unknown",
+            cls.helper,
+            re.DOTALL,
+        )
+        if focus_match is None:
+            raise AssertionError("Foreground task parser must remain directly fixture-testable")
+        cls.focus_awk = focus_match.group(1)
 
     def parse_fixture(self, name, package="app.organicmaps.incar", hint="0"):
         completed = subprocess.run(
             ["awk", "-v", f"pkg={package}", "-v", f"hint={hint}",
              self.task_awk, str(FIXTURES / name)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout.strip()
+
+    def parse_foreground_fixture(self, name):
+        completed = subprocess.run(
+            ["awk", self.focus_awk, str(FIXTURES / name)],
             check=True,
             capture_output=True,
             text=True,
@@ -72,6 +89,9 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             "app.organicmaps.incar/app.organicmaps.MwmActivity unknown",
             self.parse_fixture("nav-activity-physical-hist.txt"),
         )
+
+    def test_foreground_parser_reads_resumed_task_identity(self):
+        self.assertEqual("9258", self.parse_foreground_fixture("nav-activity-fullscreen.txt"))
 
     def test_task_parser_preserves_component_unknown_as_observation(self):
         self.assertEqual(
@@ -174,6 +194,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("if (state == State.FULLSCREEN_HANDOFF)", self.controller)
         self.assertIn("needsValidation = true", self.controller)
         self.assertIn("navigationWindowController.openFullscreen(location)) return;", self.launcher)
+        self.assertIn('require_foreground_task "$wanted_task" FULLSCREEN_NOT_FOREGROUND', self.helper)
+        self.assertIn('require_foreground_task "$home_task" HOME_NOT_FOREGROUND', self.helper)
 
     def test_native_surface_is_primary_and_leaflet_is_explicit_legacy_fallback(self):
         self.assertIn('static final String NATIVE_WINDOW = "native_window"', self.policy)
