@@ -37,9 +37,12 @@ REQUIRED_FILES = {
 }
 REQUIRED_HELPER_MARKERS = (
     b"TASK_AMBIGUOUS",
-    b"PIP_UNSUPPORTED",
-    b"PIP_OCCUPIED_BY_OTHER_APP",
-    b"move-top-activity-to-pinned-stack",
+    b"present-native",
+    b"verify-native",
+    b"--windowingMode 5",
+    b"am task resizeable",
+    b"am task resize",
+    b"COMPONENT_UNKNOWN",
     b"windowingMode",
 )
 FORBIDDEN_HELPER_MARKERS = (
@@ -102,7 +105,7 @@ def inspect(apk: Path) -> None:
         "launcher envelope: PASS "
         f"apk_bytes={size} dex=1 native=0 "
         "kotlin=0 androidx=0 replugin=0 leaflet_map_assets=present "
-        "navigation_task_helper=present navigation_surface_experiments=present "
+        "navigation_task_helper=present navigation_native_mode5=present "
         "topway_home_compat=present material_symbols_notice=present"
     )
 

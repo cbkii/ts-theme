@@ -7,13 +7,16 @@ import java.util.Map;
 final class NavigationHelperResult {
     final boolean success; final String code; final int taskId; final int stackId;
     final int displayId; final int windowingMode; final int supportsPip;
+    final int launched; final int transactionId;
     final String packageName; final String component; final String bounds; final String pinnedPackage; final String raw;
 
     private NavigationHelperResult(boolean success, String code, int taskId, int stackId,
-            int displayId, int windowingMode, int supportsPip, String packageName,
+            int displayId, int windowingMode, int supportsPip, int launched, int transactionId,
+            String packageName,
             String component, String bounds, String pinnedPackage, String raw) {
         this.success=success; this.code=code; this.taskId=taskId; this.stackId=stackId;
         this.displayId=displayId; this.windowingMode=windowingMode; this.supportsPip=supportsPip;
+        this.launched=launched; this.transactionId=transactionId;
         this.packageName=packageName; this.component=component; this.bounds=bounds;
         this.pinnedPackage=pinnedPackage; this.raw=raw;
     }
@@ -27,9 +30,10 @@ final class NavigationHelperResult {
         String code=values.containsKey("code")?values.get("code"):(ok?"OK":"UNKNOWN");
         return new NavigationHelperResult(ok,code,parseNonNegative(values.get("task")),parseNonNegative(values.get("stack")),
                 parseNonNegative(values.get("display")),parseNonNegative(values.get("windowingMode")),parseTriState(values.get("supportsPip")),
+                parseTriState(values.get("launched")),parseNonNegative(values.get("transaction")),
                 safe(values.get("package")),safe(values.get("component")),safe(values.get("bounds")),safe(values.get("pinnedPackage")),raw);
     }
-    static NavigationHelperResult failure(String code,String raw){ return new NavigationHelperResult(false,code,-1,-1,-1,-1,-1,"","","","",raw==null?"":raw); }
+    static NavigationHelperResult failure(String code,String raw){ return new NavigationHelperResult(false,code,-1,-1,-1,-1,-1,-1,-1,"","","","",raw==null?"":raw); }
     private static String lastProtocolLine(String raw){
         if(raw==null||raw.isEmpty()) return ""; String[] lines=raw.split("\\r?\\n");
         for(int i=lines.length-1;i>=0;i--){ String line=lines[i].trim(); if(line.startsWith("OK ")||line.equals("OK")||line.startsWith("FAIL ")||line.equals("FAIL")) return line; }

@@ -1,21 +1,20 @@
 package com.cbkii.ts18launcher;
 
 import android.app.Activity;
-import android.app.ActivityOptions;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.location.Location;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 
-/** Coordinates launcher-owned geometry with an explicitly selected external navigation task. */
+/** Coordinates launcher-owned geometry with one authoritative external navigation task. */
 final class NavigationWindowController {
     private static final String TAG = "TS18Nav";
-    private static final long POST_LAUNCH_RECONCILE_MS = 350L;
 
     private enum State {
         IDLE,
-        STARTING,
+        ACQUIRING,
         PRESENTING,
         WINDOWED,
         SUSPENDING,
@@ -27,16 +26,33 @@ final class NavigationWindowController {
 
     private final Activity activity;
     private final NativeNavigationPanel panel;
-    private final Handler main = new Handler(Looper.getMainLooper());
 
     private NavigationSurfaceBackend backend;
     private String backendMode = "";
     private State state = State.IDLE;
     private boolean homeVisible;
-    private int generation;
+    private boolean launcherOverlayOpen;
+    private boolean needsValidation = true;
+    private boolean pendingReconcile;
+    private String pendingSuspendReason = "";
+    private boolean fullscreenRequested;
+    private Location pendingFullscreenLocation;
+
+    private int authorityGeneration;
+    private int nextTransactionId;
+    private int activeOperationId;
+    private int acquisitionAttemptGeneration = -1;
+    private int failureGeneration = -1;
+    private String failurePackage = "";
+    private String failureMode = "";
+    private String failureDetail = "";
+
+    private String configuredPackage = "";
+    private String configuredMode = "";
     private String activePackage = "";
     private int activeTaskId = -1;
     private NavigationWindowBounds bounds;
+    private NavigationWindowBounds appliedBounds;
 
     NavigationWindowController(Activity activity, NativeNavigationPanel panel) {
         this.activity = activity;
@@ -48,7 +64,10 @@ final class NavigationWindowController {
     void onHomeVisible() {
         if (state == State.DESTROYED) return;
         homeVisible = true;
-        if (state == State.FULLSCREEN_HANDOFF) state = State.IDLE;
+        if (state == State.FULLSCREEN_HANDOFF) {
+            state = State.IDLE;
+            needsValidation = true;
+        }
         NavigationWindowBounds measured = panel.currentBounds();
         if (measured != null) bounds = measured;
         reconcile(false);
@@ -57,33 +76,33 @@ final class NavigationWindowController {
     void onHomeStopped() {
         if (state == State.DESTROYED) return;
         homeVisible = false;
-        if (state == State.FULLSCREEN_HANDOFF) {
-            Log.i(TAG, "HOME stopped during intentional fullscreen handoff");
-            return;
+        needsValidation = true;
+        if (activeOperationId != 0) {
+            Log.i(TAG, "HOME stopped during bounded transaction; transaction retained id="
+                    + activeOperationId);
+        } else {
+            Log.i(TAG, "HOME stopped; task authority retained without relaunch");
         }
-        generation++;
-        state = State.SUSPENDED;
-        // Stop queued/running helper work without mutating the external task. Retain task/package
-        // authority so HOME return can validate the same task before any reacquisition.
-        destroyBackendInstance();
-        Log.i(TAG, "HOME stopped; helper work cancelled, task authority retained");
     }
 
     void onLauncherOverlayOpened() {
+        launcherOverlayOpen = true;
         suspendForLauncherSurface("launcher overlay");
     }
 
     void onLauncherOverlayClosed() {
         if (state == State.DESTROYED) return;
+        launcherOverlayOpen = false;
         homeVisible = true;
+        needsValidation = true;
         reconcile(true);
     }
 
     void suspendForExperimentalMap() {
-        suspendForLauncherSurface("Leaflet comparator active");
+        suspendForLauncherSurface("legacy online map fallback active");
     }
 
-    /** Returns true when the controller accepted or completed the navigation handoff. */
+    /** Returns true when the controller accepted or completed the user-authorised handoff. */
     boolean openFullscreen(Location location) {
         if (state == State.DESTROYED) return false;
         String pkg = selectedPackage();
@@ -91,278 +110,423 @@ final class NavigationWindowController {
             panel.showUnavailable("Choose a Navigation app in Settings", null);
             return false;
         }
-
-        if (backend == null || activeTaskId <= 0 || !pkg.equals(activePackage)) {
-            return NavigationProvider.open(activity, pkg, location);
+        if (activeOperationId != 0) {
+            fullscreenRequested = true;
+            pendingFullscreenLocation = location;
+            panel.showStarting(label(pkg), "Finishing the current navigation transaction");
+            return true;
         }
-
-        final int request = ++generation;
-        final int task = activeTaskId;
-        state = State.FULLSCREEN_HANDOFF;
-        panel.showStarting(label(pkg), "Opening fullscreen · same task " + task);
-        backend.fullscreen(pkg, task, result -> {
-            if (!isRequestCurrent(request, pkg, false)) return;
-            if (acceptIdentity(result, pkg, task) && result.windowingMode == 1) {
-                activeTaskId = result.taskId;
-                Log.i(TAG, "fullscreen task=" + task + " package=" + pkg);
-                // The helper already foregrounded the exact authorised task. Do not launch the
-                // package again unless a semantic location handoff still needs to be delivered.
-                if (location != null && !NavigationProvider.open(activity, pkg, location)) {
-                    Log.w(TAG, "location handoff failed after fullscreen transition package=" + pkg);
-                }
-                return;
-            }
-            Log.w(TAG, "fullscreen helper failed code=" + result.code + " raw=" + result.raw);
-            NavigationProvider.open(activity, pkg, location);
-        });
-        return true;
+        return openFullscreenNow(pkg, location);
     }
 
     void destroy() {
-        generation++;
+        authorityGeneration++;
+        activeOperationId = 0;
         state = State.DESTROYED;
-        main.removeCallbacksAndMessages(null);
         destroyBackendInstance();
     }
 
     private void onBoundsChanged(NavigationWindowBounds next) {
-        if (state == State.DESTROYED) return;
-        if (next.equals(bounds)) return;
+        if (state == State.DESTROYED || next.equals(bounds)) return;
         bounds = next;
-        if (homeVisible) reconcile(false);
+        needsValidation = true;
+        if (activeOperationId != 0) {
+            pendingReconcile = true;
+        } else if (homeVisible && !launcherOverlayOpen) {
+            reconcile(false);
+        }
     }
 
     private void reconcile(boolean force) {
-        if (!homeVisible || state == State.DESTROYED || bounds == null) return;
-
-        String mode = HomeNavigationSurfacePolicy.mode(activity);
-        if (HomeNavigationSurfacePolicy.LEAFLET.equals(mode)) {
-            suspendForExperimentalMap();
+        if (!homeVisible || launcherOverlayOpen || state == State.DESTROYED || bounds == null) return;
+        if (activeOperationId != 0) {
+            pendingReconcile = true;
             return;
         }
 
-        String pkg = selectedPackage();
-        if (needsManagedTaskTransition(mode, pkg)) {
-            transitionManagedTask(mode, pkg, force);
-            return;
-        }
-
-        if (HomeNavigationSurfacePolicy.FULLSCREEN.equals(mode)) {
-            destroyBackendInstance();
-            backendMode = HomeNavigationSurfacePolicy.FULLSCREEN;
-            state = State.IDLE;
-            panel.showFullscreenOnly(label(pkg), () -> openFullscreen(null));
-            return;
-        }
-
-        if (pkg.isEmpty()) {
-            activePackage = "";
-            activeTaskId = -1;
-            panel.showUnavailable("Choose a Navigation app in Settings", null);
-            state = State.FAILED;
-            return;
-        }
-
-        if (!pkg.equals(activePackage)) {
-            activePackage = pkg;
-            activeTaskId = -1;
-            generation++;
-        }
-
-        ensureBackend(mode);
-        if (backend == null) {
-            panel.showUnavailable("Unsupported navigation surface mode", () -> openFullscreen(null));
-            state = State.FAILED;
-            return;
-        }
-
-        final NavigationWindowBounds target = bounds;
-        final int request = ++generation;
-        if (activeTaskId > 0) {
-            state = State.PRESENTING;
-            panel.showStarting(label(pkg), backend.label() + " · verifying task " + activeTaskId);
-            final int knownTask = activeTaskId;
-            backend.verify(pkg, target, knownTask,
-                    result -> verifyOrRepair(request, pkg, target, knownTask, result));
-            return;
-        }
-
-        state = State.STARTING;
-        panel.showStarting(label(pkg), backend.label() + " · acquiring configured task");
-        launchSelectedPackage(pkg, target);
-        main.postDelayed(() -> {
-            if (!isRequestCurrent(request, pkg, true)) return;
-            present(request, pkg, target, -1);
-        }, POST_LAUNCH_RECONCILE_MS);
-    }
-
-    private boolean needsManagedTaskTransition(String nextMode, String nextPackage) {
-        return activeTaskId > 0 && isExperimentalMode(backendMode) && !activePackage.isEmpty()
-                && (!backendMode.equals(nextMode) || !activePackage.equals(nextPackage));
-    }
-
-    private void transitionManagedTask(String nextMode, String nextPackage, boolean force) {
-        String managedPackage = activePackage;
-        int managedTask = activeTaskId;
-        ensureBackend(backendMode);
-        if (backend == null) {
-            panel.showUnavailable("Previous navigation backend unavailable", () -> openFullscreen(null));
-            state = State.FAILED;
-            return;
-        }
-
-        final int request = ++generation;
-        state = State.SUSPENDING;
-        panel.showStarting(label(managedPackage), "Leaving " + backend.label());
-        backend.suspend(managedPackage, managedTask, activity.getPackageName(), activity.getTaskId(), result -> {
-            if (!isRequestCurrent(request, managedPackage, true)) return;
-            if (!result.success && "TASK_NOT_FOUND".equals(result.code)) {
-                destroyBackendInstance();
-                backendMode = "";
-                activeTaskId = -1;
-                activePackage = nextPackage;
-                state = State.SUSPENDED;
-                reconcile(force);
+        String desiredMode = HomeNavigationSurfacePolicy.mode(activity);
+        String desiredPackage = selectedPackage();
+        if (!desiredMode.equals(configuredMode) || !desiredPackage.equals(configuredPackage)) {
+            if (hasManagedNativeTask()
+                    && (!HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(desiredMode)
+                    || !desiredPackage.equals(activePackage))) {
+                transitionManagedTask(desiredMode, desiredPackage);
                 return;
             }
-            if (!acceptIdentity(result, managedPackage, managedTask) || result.windowingMode != 1) {
-                state = State.FAILED;
-                panel.showUnavailable("Could not leave previous navigation surface · " + result.code,
-                        () -> NavigationProvider.open(activity, managedPackage, null));
-                Log.w(TAG, "surface transition failed code=" + result.code + " raw=" + result.raw);
-                return;
-            }
+            adoptAuthority(desiredMode, desiredPackage);
+        }
 
-            destroyBackendInstance();
-            backendMode = "";
-            if (!managedPackage.equals(nextPackage)) {
-                activePackage = nextPackage;
-                activeTaskId = -1;
-            } else {
-                activeTaskId = result.taskId;
-            }
+        if (HomeNavigationSurfacePolicy.LEAFLET.equals(configuredMode)) {
             state = State.SUSPENDED;
-            reconcile(force);
+            return;
+        }
+        if (HomeNavigationSurfacePolicy.FULLSCREEN.equals(configuredMode)) {
+            state = State.IDLE;
+            panel.showFullscreenOnly(label(configuredPackage), () -> openFullscreen(null));
+            return;
+        }
+        if (!HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(configuredMode)) {
+            latchFailure(configuredPackage, configuredMode, "Unsupported navigation surface mode");
+            return;
+        }
+        if (configuredPackage.isEmpty()) {
+            latchFailure("", configuredMode, "Choose a Navigation app in Settings");
+            return;
+        }
+        if (isFailureLatched()) {
+            showLatchedFailure();
+            return;
+        }
+
+        ensureNativeBackend();
+        if (backend == null) {
+            latchFailure(configuredPackage, configuredMode, "Native backend unavailable");
+            return;
+        }
+        String component = resolveLaunchComponent(configuredPackage);
+        if (component.isEmpty()) {
+            latchFailure(configuredPackage, configuredMode, "No exported launcher Activity");
+            return;
+        }
+
+        NavigationWindowBounds target = bounds;
+        if (activeTaskId > 0) {
+            if (!force && !needsValidation && State.WINDOWED == state
+                    && target.equals(appliedBounds)) {
+                showWindowedStatus(configuredPackage, activeTaskId, target);
+                return;
+            }
+            startVerify(configuredPackage, component, target, activeTaskId);
+        } else {
+            startPresent(configuredPackage, component, target, -1);
+        }
+    }
+
+    private void adoptAuthority(String mode, String packageName) {
+        boolean packageChanged = !packageName.equals(configuredPackage);
+        configuredMode = mode;
+        configuredPackage = packageName;
+        authorityGeneration++;
+        acquisitionAttemptGeneration = -1;
+        clearFailureLatch();
+        needsValidation = true;
+        appliedBounds = null;
+        if (packageChanged) {
+            activePackage = packageName;
+            activeTaskId = -1;
+        }
+        if (!HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(mode) && activeTaskId <= 0) {
+            backendMode = "";
+            destroyBackendInstance();
+        }
+    }
+
+    private void startVerify(String pkg, String component, NavigationWindowBounds target,
+            int taskId) {
+        int operation = beginOperation();
+        if (operation == 0) return;
+        state = State.PRESENTING;
+        panel.showStarting(label(pkg), "Verifying task " + taskId + " at HOME bounds");
+        backend.verify(pkg, target, taskId, result -> {
+            if (!finishOperation(operation)) return;
+            retainObservedTask(result, pkg);
+            if (acceptWindowedResult(result, pkg, target, taskId)) {
+                markWindowed(result, pkg, target);
+                drainPendingWork();
+                return;
+            }
+            if ("TASK_NOT_FOUND".equals(result.code)) {
+                activeTaskId = -1;
+                beginReacquisitionGeneration();
+                startPresent(pkg, component, currentTarget(target), -1);
+                return;
+            }
+            if ("TASK_AMBIGUOUS".equals(result.code)
+                    || "COMPONENT_MISMATCH".equals(result.code)) {
+                latchFailure(pkg, configuredMode, result.code);
+                drainPendingWork();
+                return;
+            }
+            startPresent(pkg, component, currentTarget(target), taskId);
         });
+    }
+
+    private void startPresent(String pkg, String component, NavigationWindowBounds target,
+            int taskHint) {
+        boolean acquisition = taskHint <= 0;
+        if (acquisition && acquisitionAttemptGeneration == authorityGeneration) {
+            latchFailure(pkg, configuredMode, "Acquisition already attempted; use Retry");
+            drainPendingWork();
+            return;
+        }
+        int operation = beginOperation();
+        if (operation == 0) return;
+        if (acquisition) acquisitionAttemptGeneration = authorityGeneration;
+        state = acquisition ? State.ACQUIRING : State.PRESENTING;
+        panel.showStarting(label(pkg), acquisition
+                ? "Acquiring one configured task · transaction " + operation
+                : "Repairing task " + taskHint + " · transaction " + operation);
+        backend.present(pkg, component, target, taskHint, operation, result -> {
+            if (!finishOperation(operation)) return;
+            retainObservedTask(result, pkg);
+            if (acceptWindowedResult(result, pkg, target, taskHint)) {
+                markWindowed(result, pkg, target);
+            } else if (taskHint > 0 && "TASK_NOT_FOUND".equals(result.code)) {
+                activeTaskId = -1;
+                beginReacquisitionGeneration();
+                startPresent(pkg, component, currentTarget(target), -1);
+                return;
+            } else {
+                latchFailure(pkg, configuredMode, result.code);
+            }
+            drainPendingWork();
+        });
+    }
+
+    private void beginReacquisitionGeneration() {
+        authorityGeneration++;
+        acquisitionAttemptGeneration = -1;
+        clearFailureLatch();
+        needsValidation = true;
+    }
+
+    private void transitionManagedTask(String nextMode, String nextPackage) {
+        if (activeOperationId != 0) {
+            pendingReconcile = true;
+            return;
+        }
+        ensureNativeBackend();
+        if (backend == null) {
+            adoptAuthority(nextMode, nextPackage);
+            latchFailure(nextPackage, nextMode, "Previous navigation backend unavailable");
+            return;
+        }
+        final String managedPackage = activePackage;
+        final int managedTask = activeTaskId;
+        int operation = beginOperation();
+        if (operation == 0) return;
+        state = State.SUSPENDING;
+        panel.showStarting(label(managedPackage), "Leaving native navigation window");
+        backend.suspend(managedPackage, managedTask, activity.getPackageName(), activity.getTaskId(),
+                result -> {
+                    if (!finishOperation(operation)) return;
+                    boolean missing = "TASK_NOT_FOUND".equals(result.code);
+                    if (!missing && !(acceptIdentity(result, managedPackage, managedTask)
+                            && result.windowingMode == 1)) {
+                        adoptAuthority(nextMode, nextPackage);
+                        latchFailure(nextPackage, nextMode,
+                                "Could not leave previous navigation task · " + result.code);
+                        drainPendingWork();
+                        return;
+                    }
+                    if (missing || !managedPackage.equals(nextPackage)) {
+                        activeTaskId = -1;
+                        activePackage = nextPackage;
+                    } else {
+                        activeTaskId = result.taskId;
+                    }
+                    adoptAuthority(nextMode, nextPackage);
+                    state = State.SUSPENDED;
+                    reconcile(true);
+                });
     }
 
     private void suspendForLauncherSurface(String reason) {
         if (state == State.DESTROYED) return;
-        generation++;
-        state = State.SUSPENDED;
-        if (activeTaskId <= 0 || activePackage.isEmpty() || !isExperimentalMode(backendMode)) {
+        if (activeOperationId != 0) {
+            pendingSuspendReason = reason;
+            return;
+        }
+        if (!hasManagedNativeTask()) {
+            state = State.SUSPENDED;
             Log.i(TAG, "suspend " + reason + " without managed task");
             return;
         }
-
-        ensureBackend(backendMode);
+        ensureNativeBackend();
         if (backend == null) return;
-        final int request = generation;
         final String pkg = activePackage;
         final int task = activeTaskId;
+        int operation = beginOperation();
+        if (operation == 0) return;
         state = State.SUSPENDING;
         backend.suspend(pkg, task, activity.getPackageName(), activity.getTaskId(), result -> {
-            if (!isRequestCurrent(request, pkg, true)) return;
-            state = State.SUSPENDED;
-            if (!result.success && "TASK_NOT_FOUND".equals(result.code)) {
+            if (!finishOperation(operation)) return;
+            if ("TASK_NOT_FOUND".equals(result.code)) {
                 activeTaskId = -1;
-                Log.i(TAG, "suspend found task already gone reason=" + reason);
             } else if (acceptIdentity(result, pkg, task) && result.windowingMode == 1) {
                 activeTaskId = result.taskId;
-                Log.i(TAG, "suspended task=" + task + " reason=" + reason);
             } else {
-                Log.w(TAG, "suspend failed code=" + result.code + " reason=" + reason
-                        + " raw=" + result.raw);
+                latchFailure(pkg, configuredMode, "Could not suspend navigation · " + result.code);
             }
+            state = State.SUSPENDED;
+            needsValidation = true;
+            Log.i(TAG, "suspended navigation reason=" + reason + " task=" + task);
+            drainPendingWork();
         });
     }
 
-    private void verifyOrRepair(int request, String pkg, NavigationWindowBounds target,
-            int knownTask, NavigationHelperResult result) {
-        if (!isRequestCurrent(request, pkg, true)) return;
-        if (acceptWindowedResult(result, pkg, target, knownTask)) {
-            markWindowed(result, pkg, target);
-            return;
+    private boolean openFullscreenNow(String pkg, Location location) {
+        if (backend == null || activeTaskId <= 0 || !pkg.equals(activePackage)) {
+            return NavigationProvider.open(activity, pkg, location);
         }
-        if (!result.success && "TASK_NOT_FOUND".equals(result.code)) {
-            activeTaskId = -1;
-            state = State.STARTING;
-            panel.showStarting(label(pkg), backend.label() + " · task gone, launching selected app");
-            launchSelectedPackage(pkg, target);
-            main.postDelayed(() -> {
-                if (!isRequestCurrent(request, pkg, true)) return;
-                present(request, pkg, target, -1);
-            }, POST_LAUNCH_RECONCILE_MS);
-            return;
-        }
-
-        // Preserve package+task authority: repair the same task before considering a relaunch.
-        panel.showStarting(label(pkg), backend.label() + " · repairing task " + knownTask);
-        backend.present(pkg, target, knownTask, repaired -> {
-            if (!isRequestCurrent(request, pkg, true)) return;
-            if (acceptWindowedResult(repaired, pkg, target, knownTask)) {
-                markWindowed(repaired, pkg, target);
+        final int task = activeTaskId;
+        int operation = beginOperation();
+        if (operation == 0) return true;
+        state = State.FULLSCREEN_HANDOFF;
+        panel.showStarting(label(pkg), "Opening fullscreen · same task " + task);
+        backend.fullscreen(pkg, task, result -> {
+            if (!finishOperation(operation)) return;
+            retainObservedTask(result, pkg);
+            if (acceptIdentity(result, pkg, task) && result.windowingMode == 1) {
+                activeTaskId = result.taskId;
+                needsValidation = true;
+                Log.i(TAG, "fullscreen task=" + task + " package=" + pkg);
+                if (location != null && !NavigationProvider.open(activity, pkg, location)) {
+                    Log.w(TAG, "location handoff failed after fullscreen transition package=" + pkg);
+                }
             } else {
-                fail(pkg, "Task " + knownTask + " rejected · " + repaired.code);
+                Log.w(TAG, "fullscreen helper failed code=" + result.code + " raw=" + result.raw);
+                NavigationProvider.open(activity, pkg, location);
             }
+            drainPendingWork();
         });
+        return true;
     }
 
-    private void present(int request, String pkg, NavigationWindowBounds target, int taskHint) {
-        if (!isRequestCurrent(request, pkg, true)) return;
-        state = State.PRESENTING;
-        backend.present(pkg, target, taskHint, result -> {
-            if (!isRequestCurrent(request, pkg, true)) return;
-            if (acceptWindowedResult(result, pkg, target, taskHint)) {
-                markWindowed(result, pkg, target);
-            } else {
-                fail(pkg, result.code);
-            }
-        });
+    private int beginOperation() {
+        if (activeOperationId != 0 || state == State.DESTROYED) {
+            pendingReconcile = true;
+            return 0;
+        }
+        activeOperationId = ++nextTransactionId;
+        return activeOperationId;
+    }
+
+    private boolean finishOperation(int operation) {
+        if (state == State.DESTROYED || operation != activeOperationId) return false;
+        activeOperationId = 0;
+        return true;
+    }
+
+    private void drainPendingWork() {
+        if (state == State.DESTROYED || activeOperationId != 0) return;
+        if (fullscreenRequested) {
+            Location location = pendingFullscreenLocation;
+            fullscreenRequested = false;
+            pendingFullscreenLocation = null;
+            openFullscreen(location);
+            return;
+        }
+        if (!pendingSuspendReason.isEmpty()) {
+            String reason = pendingSuspendReason;
+            pendingSuspendReason = "";
+            suspendForLauncherSurface(reason);
+            return;
+        }
+        if (pendingReconcile) {
+            pendingReconcile = false;
+            reconcile(false);
+        }
+    }
+
+    private NavigationWindowBounds currentTarget(NavigationWindowBounds fallback) {
+        return bounds == null ? fallback : bounds;
     }
 
     private boolean acceptWindowedResult(NavigationHelperResult result, String pkg,
             NavigationWindowBounds target, int expectedTask) {
-        int expectedMode = HomeNavigationSurfacePolicy.ANDROID_PIP.equals(backendMode) ? 2 : 5;
         return acceptIdentity(result, pkg, expectedTask)
                 && result.displayId == 0
-                && result.windowingMode == expectedMode
+                && result.windowingMode == 5
                 && target.toString().equals(result.bounds);
     }
 
-    private static boolean acceptIdentity(NavigationHelperResult result, String pkg, int expectedTask) {
+    private static boolean acceptIdentity(NavigationHelperResult result, String pkg,
+            int expectedTask) {
         if (!result.success || result.taskId <= 0 || !pkg.equals(result.packageName)) return false;
         if (expectedTask > 0 && result.taskId != expectedTask) return false;
-        return result.component.startsWith(pkg + "/");
+        return componentMatchesOrUnknown(result.component, pkg);
     }
 
-    private void markWindowed(NavigationHelperResult result, String pkg, NavigationWindowBounds target) {
-        activeTaskId = result.taskId;
-        state = State.WINDOWED;
-        panel.showReady(label(pkg) + " · " + backend.label() + "\nTask " + result.taskId
-                + " · display " + result.displayId + " · mode " + result.windowingMode
-                + " · " + target.width() + "×" + target.height());
-        panel.setAction("Open fullscreen", () -> openFullscreen(null));
-        Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack="
-                + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds);
+    private static boolean componentMatchesOrUnknown(String component, String pkg) {
+        return component == null || component.isEmpty() || "unknown".equals(component)
+                || component.startsWith(pkg + "/");
     }
 
-    private void fail(String pkg, String detail) {
-        state = State.FAILED;
-        panel.showUnavailable(backend.label() + " unavailable · " + detail,
-                () -> NavigationProvider.open(activity, pkg, null));
-        Log.w(TAG, "navigation experiment failed package=" + pkg + " detail=" + detail);
-    }
-
-    private void ensureBackend(String mode) {
-        if (backend != null && mode.equals(backendMode)) return;
-        destroyBackendInstance();
-        backendMode = mode;
-        if (HomeNavigationSurfacePolicy.RAW_FREEFORM.equals(mode)) {
-            backend = new RawFreeformTaskBackend(activity);
-        } else if (HomeNavigationSurfacePolicy.ANDROID_PIP.equals(mode)) {
-            backend = new AndroidPipBackend(activity);
+    private void retainObservedTask(NavigationHelperResult result, String pkg) {
+        if (result.taskId > 0 && pkg.equals(result.packageName)
+                && componentMatchesOrUnknown(result.component, pkg)) {
+            activePackage = pkg;
+            activeTaskId = result.taskId;
         }
+    }
+
+    private void markWindowed(NavigationHelperResult result, String pkg,
+            NavigationWindowBounds target) {
+        activePackage = pkg;
+        activeTaskId = result.taskId;
+        backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW;
+        state = State.WINDOWED;
+        appliedBounds = target;
+        needsValidation = false;
+        clearFailureLatch();
+        if (homeVisible && !launcherOverlayOpen) showWindowedStatus(pkg, result.taskId, target);
+        Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack="
+                + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds
+                + " launched=" + result.launched + " transaction=" + result.transactionId);
+    }
+
+    private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) {
+        panel.showReady(label(pkg) + " · native task " + taskId
+                + "\nDisplay 0 · mode 5 · " + target.width() + "×" + target.height(),
+                () -> openFullscreen(null));
+    }
+
+    private void latchFailure(String pkg, String mode, String detail) {
+        failureGeneration = authorityGeneration;
+        failurePackage = pkg == null ? "" : pkg;
+        failureMode = mode == null ? "" : mode;
+        failureDetail = detail == null || detail.isEmpty() ? "UNKNOWN" : detail;
+        state = State.FAILED;
+        showLatchedFailure();
+        Log.w(TAG, "native navigation failed package=" + failurePackage + " detail="
+                + failureDetail + " generation=" + failureGeneration);
+    }
+
+    private boolean isFailureLatched() {
+        return failureGeneration == authorityGeneration
+                && failurePackage.equals(configuredPackage)
+                && failureMode.equals(configuredMode);
+    }
+
+    private void showLatchedFailure() {
+        if (!homeVisible || launcherOverlayOpen) return;
+        panel.showFailure("Native navigation unavailable · " + failureDetail,
+                this::retry, () -> openFullscreen(null));
+    }
+
+    private void clearFailureLatch() {
+        failureGeneration = -1;
+        failurePackage = "";
+        failureMode = "";
+        failureDetail = "";
+    }
+
+    private void retry() {
+        if (state == State.DESTROYED || activeOperationId != 0) return;
+        authorityGeneration++;
+        acquisitionAttemptGeneration = -1;
+        clearFailureLatch();
+        needsValidation = true;
+        state = State.IDLE;
+        reconcile(true);
+    }
+
+    private void ensureNativeBackend() {
+        if (backend != null && HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(backendMode)) return;
+        destroyBackendInstance();
+        backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW;
+        backend = new RawFreeformTaskBackend(activity);
     }
 
     private void destroyBackendInstance() {
@@ -370,24 +534,28 @@ final class NavigationWindowController {
         backend = null;
     }
 
-    private void launchSelectedPackage(String pkg, NavigationWindowBounds target) {
+    private boolean hasManagedNativeTask() {
+        return activeTaskId > 0 && !activePackage.isEmpty()
+                && HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(backendMode);
+    }
+
+    private String resolveLaunchComponent(String pkg) {
         Intent launch = activity.getPackageManager().getLaunchIntentForPackage(pkg);
-        if (launch == null) {
-            fail(pkg, "No exported launcher Activity");
-            return;
-        }
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            ActivityOptions options = ActivityOptions.makeBasic();
-            options.setLaunchBounds(target.asRect());
-            activity.startActivity(launch, options.toBundle());
-        } catch (RuntimeException first) {
+        if (launch == null) return "";
+        PackageManager packages = activity.getPackageManager();
+        ComponentName component = launch.getComponent();
+        ActivityInfo info = launch.resolveActivityInfo(packages, PackageManager.MATCH_DEFAULT_ONLY);
+        if (info == null && component != null) {
             try {
-                activity.startActivity(launch);
-            } catch (RuntimeException second) {
-                fail(pkg, "Launch failed");
+                info = packages.getActivityInfo(component, 0);
+            } catch (PackageManager.NameNotFoundException ignored) {
+                return "";
             }
         }
+        if (info == null || !info.exported || !pkg.equals(info.packageName)) return "";
+        if (component == null) component = new ComponentName(info.packageName, info.name);
+        if (!pkg.equals(component.getPackageName())) return "";
+        return component.flattenToString();
     }
 
     private String selectedPackage() {
@@ -400,17 +568,5 @@ final class NavigationWindowController {
     private String label(String pkg) {
         return pkg == null || pkg.isEmpty() ? "Navigation"
                 : AppResolver.labelFor(activity, pkg, "Navigation");
-    }
-
-    private boolean isRequestCurrent(int request, String pkg, boolean requireHome) {
-        return state != State.DESTROYED
-                && request == generation
-                && pkg.equals(activePackage)
-                && (!requireHome || homeVisible);
-    }
-
-    private static boolean isExperimentalMode(String mode) {
-        return HomeNavigationSurfacePolicy.RAW_FREEFORM.equals(mode)
-                || HomeNavigationSurfacePolicy.ANDROID_PIP.equals(mode);
     }
 }

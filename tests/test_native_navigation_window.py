@@ -6,34 +6,42 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "launcher/src/main/assets/nav/nav-window.sh"
 CONTROLLER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowController.java"
+ROOT_HELPER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationRootHelper.java"
 LAUNCHER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java"
 NAV_PROVIDER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationProvider.java"
 POLICY = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/HomeNavigationSurfacePolicy.java"
 SETTINGS = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java"
+PANEL = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NativeNavigationPanel.java"
 MANIFEST = ROOT / "launcher/src/main/AndroidManifest.xml"
 PROVIDER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/platform/TopwayDesktopWindowProvider.java"
 MARKER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/platform/TopwayDesktopWindowMarkerService.java"
-QUALIFIER = ROOT / "scripts/termux/qualify-navigation-surfaces.sh"
+COLLECTOR = ROOT / "scripts/termux/collect-navigation-window-evidence.sh"
 POLICY_COLLECTOR = ROOT / "scripts/termux/collect-topway-window-policy-evidence.sh"
+PLAYBOOK = ROOT / "docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md"
+ROADMAP = ROOT / "docs/NAVIGATION_SURFACE_ROADMAP.md"
 FIXTURES = ROOT / "tests/fixtures"
 
 
-class NavigationSurfaceExperimentContractTest(unittest.TestCase):
+class NativeNavigationWindowContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.helper = HELPER.read_text(encoding="utf-8")
         cls.controller = CONTROLLER.read_text(encoding="utf-8")
+        cls.root_helper = ROOT_HELPER.read_text(encoding="utf-8")
         cls.launcher = LAUNCHER.read_text(encoding="utf-8")
         cls.nav_provider = NAV_PROVIDER.read_text(encoding="utf-8")
         cls.policy = POLICY.read_text(encoding="utf-8")
         cls.settings = SETTINGS.read_text(encoding="utf-8")
+        cls.panel = PANEL.read_text(encoding="utf-8")
         cls.manifest = MANIFEST.read_text(encoding="utf-8")
         cls.provider = PROVIDER.read_text(encoding="utf-8")
         cls.marker = MARKER.read_text(encoding="utf-8")
-        cls.qualifier = QUALIFIER.read_text(encoding="utf-8")
+        cls.collector = COLLECTOR.read_text(encoding="utf-8")
         cls.policy_collector = POLICY_COLLECTOR.read_text(encoding="utf-8")
+        cls.playbook = PLAYBOOK.read_text(encoding="utf-8")
+        cls.roadmap = ROADMAP.read_text(encoding="utf-8")
         match = re.search(
-            r"TASK_SNAPSHOT_AWK='(.*?)'\n\nPINNED_SNAPSHOT_AWK=",
+            r"TASK_SNAPSHOT_AWK='(.*?)'\n\nPKG=unknown",
             cls.helper,
             re.DOTALL,
         )
@@ -58,11 +66,28 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
             self.parse_fixture("nav-activity-freeform.txt"),
         )
 
-    def test_task_parser_matches_exact_ts18_fullscreen_hierarchy(self):
+    def test_task_parser_reads_component_from_physical_hist_line(self):
         self.assertEqual(
-            "FOUND 9258 4 0 1 0,0,0,0 "
-            "app.organicmaps.incar/app.organicmaps.MwmActivity 0",
-            self.parse_fixture("nav-activity-fullscreen.txt"),
+            "FOUND 9071 12 0 1 0,0,0,0 "
+            "app.organicmaps.incar/app.organicmaps.MwmActivity unknown",
+            self.parse_fixture("nav-activity-physical-hist.txt"),
+        )
+
+    def test_task_parser_preserves_component_unknown_as_observation(self):
+        self.assertEqual(
+            "FOUND 9078 14 0 5 475,72,1211,459 unknown unknown",
+            self.parse_fixture("nav-activity-component-unknown.txt"),
+        )
+        component_check = self.helper.split("validate_observed_component()", 1)[1].split(
+            "require_task()", 1)[0]
+        self.assertIn("unknown|'') return 0", component_check)
+        self.assertIn("*) fail COMPONENT_MISMATCH", component_check)
+
+    def test_task_parser_normalises_same_package_shorthand(self):
+        self.assertEqual(
+            "FOUND 9079 15 0 5 475,72,1211,459 "
+            "app.organicmaps.incar/app.organicmaps.incar.MwmActivity unknown",
+            self.parse_fixture("nav-activity-shorthand.txt"),
         )
 
     def test_package_only_acquisition_fails_ambiguous_tasks_closed(self):
@@ -75,40 +100,92 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
         self.assertIn(" 5 475,72,1211,459 ", result)
         self.assertNotIn("1280,720", result)
 
-    def test_freeform_and_pip_are_separate_backends(self):
-        self.assertIn('presentAction() { return "freeform"; }',
-                      (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/RawFreeformTaskBackend.java").read_text())
-        self.assertIn('presentAction() { return "pip"; }',
-                      (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/AndroidPipBackend.java").read_text())
-
-    def test_pip_uses_android10_four_coordinate_shell_contract(self):
-        self.assertIn('am stack move-top-activity-to-pinned-stack "$STACK_ID" \\\n          "$left" "$top" "$right" "$bottom"', self.helper)
-        self.assertIn('am stack resize "$STACK_ID" "$left" "$top" "$right" "$bottom"', self.helper)
-        self.assertNotIn('move-top-activity-to-pinned-stack "$STACK_ID" "$expected"', self.helper)
-        self.assertNotIn('am stack resize "$STACK_ID" "$expected"', self.helper)
-
-    def test_pip_never_enables_global_force_resizable_or_steals_foreign_pip(self):
-        self.assertIn("PIP_OCCUPIED_BY_OTHER_APP", self.helper)
-        self.assertIn("force_resizable_activities", self.helper)
-        self.assertNotRegex(self.helper, r"settings\s+put\s+global\s+force_resizable_activities")
-
-    def test_controller_repairs_known_task_before_relaunch(self):
-        self.assertIn("repair the same task", self.controller)
-        self.assertIn("TASK_NOT_FOUND", self.controller)
-        self.assertIn("backend.present(pkg, target, knownTask", self.controller)
-
-    def test_fullscreen_handoff_preserves_boolean_handled_contract(self):
-        self.assertIn("boolean openFullscreen(Location location)", self.controller)
-        self.assertIn("return NavigationProvider.open(activity, pkg, location);", self.controller)
-        self.assertIn("return true;", self.controller)
-        self.assertIn("navigationWindowController.openFullscreen(location)) return;", self.launcher)
-        self.assertIn("The helper already foregrounded the exact authorised task", self.controller)
-        self.assertRegex(
-            self.controller,
-            r"if \(location != null && !NavigationProvider\.open\(activity, pkg, location\)\)",
+    def test_helper_owns_one_mode5_acquire_launch_resize_verify_transaction(self):
+        self.assertIn("present-native)", self.helper)
+        self.assertIn('read_task_once "$PKG" 0', self.helper)
+        self.assertIn('2) fail TASK_AMBIGUOUS', self.helper)
+        self.assertEqual(
+            1,
+            self.helper.count("am start --user 0 --display 0 --windowingMode 5"),
         )
-        self.assertIn("HOME stopped during intentional fullscreen handoff", self.controller)
-        self.assertIn("if (state == State.FULLSCREEN_HANDOFF) state = State.IDLE;", self.controller)
+        self.assertIn("-a android.intent.action.MAIN -c android.intent.category.LAUNCHER", self.helper)
+        self.assertIn('am task resizeable "$wanted_task" 2', self.helper)
+        self.assertIn('am task resize "$wanted_task" "$left" "$top" "$right" "$bottom"', self.helper)
+        self.assertIn('verify_state 5 "$expected"', self.helper)
+        self.assertIn("launched=%s transaction=%s", self.helper)
+
+    def test_standard_android_pip_is_absent_from_production_path(self):
+        self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/AndroidPipBackend.java").exists())
+        for token in ("verify-pip", "move-top-activity-to-pinned-stack", "PIP_OCCUPIED_BY_OTHER_APP"):
+            self.assertNotIn(token, self.helper)
+        self.assertNotIn("ANDROID_PIP", self.controller + self.policy + self.settings)
+
+    def test_java_resolves_exported_launcher_component_before_root_transaction(self):
+        self.assertIn("resolveLaunchComponent(configuredPackage)", self.controller)
+        self.assertIn("getLaunchIntentForPackage(pkg)", self.controller)
+        self.assertIn("!info.exported", self.controller)
+        self.assertIn("component.flattenToString()", self.controller)
+        self.assertIn("backend.present(pkg, component, target, taskHint, operation", self.controller)
+        self.assertIn("COMPONENT", self.root_helper)
+        self.assertIn("singleQuote(arg)", self.root_helper)
+
+    def test_controller_never_performs_fullscreen_first_java_launch(self):
+        self.assertNotIn("ActivityOptions", self.controller)
+        self.assertNotIn("startActivity(", self.controller)
+        self.assertNotIn("POST_LAUNCH_RECONCILE", self.controller)
+        self.assertNotIn("postDelayed", self.controller)
+
+    def test_home_stop_preserves_inflight_transaction_and_backend(self):
+        stop_body = self.controller.split("void onHomeStopped()", 1)[1].split(
+            "void onLauncherOverlayOpened()", 1)[0]
+        self.assertIn("transaction retained", stop_body)
+        self.assertIn("task authority retained without relaunch", stop_body)
+        self.assertNotIn("destroyBackendInstance", stop_body)
+        self.assertNotIn("authorityGeneration++", stop_body)
+        self.assertNotIn("activeTaskId = -1", stop_body)
+
+    def test_inflight_callbacks_coalesce_and_cannot_launch_again(self):
+        self.assertIn("if (activeOperationId != 0)", self.controller)
+        self.assertIn("pendingReconcile = true", self.controller)
+        self.assertIn("acquisitionAttemptGeneration == authorityGeneration", self.controller)
+        self.assertIn("Acquisition already attempted; use Retry", self.controller)
+        self.assertIn("beginReacquisitionGeneration()", self.controller)
+
+    def test_failure_latch_is_explicit_retry_and_fullscreen_only(self):
+        self.assertIn("failureGeneration == authorityGeneration", self.controller)
+        self.assertIn("panel.showFailure", self.controller)
+        self.assertIn('setActions("Retry",retry,"Open fullscreen",openFullscreen)', self.panel)
+        self.assertIn("private void retry()", self.controller)
+        self.assertNotIn("NavigationProvider.open(activity, pkg, null));\n        Log.w(TAG, \"native navigation failed", self.controller)
+
+    def test_success_accepts_unknown_component_but_checks_task_display_mode_bounds(self):
+        for token in (
+            "result.taskId != expectedTask",
+            '"unknown".equals(component)',
+            "result.displayId == 0",
+            "result.windowingMode == 5",
+            "target.toString().equals(result.bounds)",
+        ):
+            self.assertIn(token, self.controller)
+
+    def test_fullscreen_handoff_and_home_return_preserve_task_authority(self):
+        self.assertIn("backend.fullscreen(pkg, task", self.controller)
+        self.assertIn("activeTaskId = result.taskId", self.controller)
+        self.assertIn("if (state == State.FULLSCREEN_HANDOFF)", self.controller)
+        self.assertIn("needsValidation = true", self.controller)
+        self.assertIn("navigationWindowController.openFullscreen(location)) return;", self.launcher)
+
+    def test_native_surface_is_primary_and_leaflet_is_explicit_legacy_fallback(self):
+        self.assertIn('static final String NATIVE_WINDOW = "native_window"', self.policy)
+        self.assertIn('private static final String LEGACY_RAW_FREEFORM = "raw_freeform"', self.policy)
+        self.assertIn("return NATIVE_WINDOW;", self.policy)
+        for value in (
+            "Native navigation window · TESTING",
+            "Fullscreen only · safe fallback",
+            "Legacy online map fallback · Internet required",
+        ):
+            self.assertIn(value, self.settings)
+        self.assertNotIn("Android PiP · experimental", self.settings)
 
     def test_navigation_owned_incar_fallback_uses_real_launcher_availability(self):
         self.assertIn('ORGANIC_MAPS_INCAR = "app.organicmaps.incar"', self.nav_provider)
@@ -118,61 +195,40 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
             "NavigationProvider.hasLauncherActivity(activity, NavigationProvider.ORGANIC_MAPS_INCAR)",
             self.controller,
         )
-        self.assertNotIn("AppResolver.ORGANIC_MAPS_INCAR", self.controller)
-        self.assertNotIn("AppResolver.isInstalled", self.controller)
 
-    def test_explicit_launcher_overlay_suspends_exact_task_without_force_stop(self):
-        self.assertIn("backend.suspend(pkg, task, activity.getPackageName(), activity.getTaskId()", self.controller)
-        self.assertIn("suspend)", self.helper)
-        self.assertIn('am task focus "$home_task"', self.helper)
-        self.assertNotIn("force-stop", self.helper)
-
-    def test_home_stop_cancels_helper_work_but_keeps_task_authority(self):
-        self.assertIn("helper work cancelled, task authority retained", self.controller)
-        stop_body = self.controller.split("void onHomeStopped()", 1)[1].split("void onLauncherOverlayOpened()", 1)[0]
-        self.assertIn("destroyBackendInstance();", stop_body)
-        self.assertNotIn("activeTaskId = -1", stop_body)
-
-    def test_single_surface_policy_has_safe_default_and_true_one_time_legacy_migration(self):
-        self.assertIn('static final String FULLSCREEN = "fullscreen"', self.policy)
-        self.assertIn("if (prefs.contains(KEY))", self.policy)
-        self.assertIn("return isKnown(stored) ? stored : FULLSCREEN;", self.policy)
-        new_key_branch = self.policy.split("if (prefs.contains(KEY))", 1)[1].split("// Legacy", 1)[0]
-        self.assertNotIn("KEY_MAP_ENABLED", new_key_branch)
-        self.assertIn('"HOME navigation surface"', self.settings)
-
-    def test_success_checks_real_mode_display_bounds_component(self):
-        for token in ["result.displayId == 0", "result.windowingMode == expectedMode",
-                      "target.toString().equals(result.bounds)", "result.component.startsWith(pkg + \"/\")"]:
-            self.assertIn(token, self.controller)
-
-    def test_qualification_uses_live_home_authority_and_verified_task_bounds(self):
-        self.assertIn('case "$home_component" in', self.qualifier)
-        self.assertIn('result BLOCKED home-authority', self.qualifier)
-        self.assertIn("TARGET_SOURCE=configured", self.qualifier)
-        self.assertIn("TARGET_SOURCE=implicit-organicmaps-fallback", self.qualifier)
-        self.assertIn("TARGET_SOURCE=argument-only", self.qualifier)
-        self.assertIn("result BLOCKED configuration-authority", self.qualifier)
-        self.assertIn('GESTURE_BOUNDS="$bounds"', self.qualifier)
-        self.assertIn('input swipe $x $y $x2 $y 250', self.qualifier)
-        self.assertNotIn("input swipe 650 360 700 360 250", self.qualifier)
-        self.assertIn("launcher-apk-sha256.txt", self.qualifier)
+    def test_event_driven_collector_is_read_only_and_seals_on_ctrl_c(self):
+        self.assertIn("OBSERVATION READY", self.collector)
+        self.assertIn("state-change", self.collector)
+        self.assertIn("trap request_stop INT TERM HUP", self.collector)
+        self.assertNotIn("--observe-seconds", self.collector)
+        for token in (
+            "am force-stop", "am task resize", "am task focus", "input keyevent",
+            "input swipe", "settings put", "setprop ", "pm disable", "pm clear",
+        ):
+            self.assertNotIn(token, self.collector)
+        for token in (
+            "launcher-apk-sha256", "resolved-launch-component", "am-help.txt",
+            "classpaths.txt", "system-server-maps.txt", "anchor-strings.txt",
+            "magisk-lsposed-metadata", "state-initial.txt", "state-final.txt",
+            "final-activity.txt", "final-window.txt", "status-final.txt",
+        ):
+            self.assertIn(token, self.collector)
 
     def test_evidence_archives_verify_immutable_manifest_and_archive_hash(self):
-        for script in (self.qualifier, self.policy_collector):
+        for script in (self.collector, self.policy_collector):
             self.assertIn("! -name SHA256SUMS.txt ! -name MANIFEST_VERIFY.txt", script)
             self.assertIn("sha256sum -c SHA256SUMS.txt", script)
             self.assertIn('sha256sum "$ZIP" >"$ZIP.sha256"', script)
             manifest_start = script.index("sha256sum -c SHA256SUMS.txt")
             self.assertNotIn('>>"$OUT/summary.txt"', script[manifest_start:])
-            self.assertNotIn('>>"$OUT/status.tsv"', script[manifest_start:])
 
-    def test_topway_policy_collector_keeps_live_log_narrow_and_read_only(self):
-        self.assertIn("live-relevant.txt", self.policy_collector)
-        self.assertIn("grep -Ei 'isPipLauncher|sendNaviType|forcepip|windowingMode", self.policy_collector)
-        self.assertNotIn('>"$OUT/logs/live.txt"', self.policy_collector)
-        for token in ("setprop", "settings put", "am force-stop", "pm disable", "setenforce 0"):
-            self.assertNotIn(token, self.policy_collector)
+    def test_playbook_and_roadmap_keep_oem_policy_behind_physical_gate(self):
+        self.assertIn("at your own pace", self.playbook)
+        self.assertIn("Press Ctrl-C once", self.playbook)
+        self.assertIn("Mode 5 and exact bounds", self.playbook)
+        self.assertIn("Phase 3 - conditional Topway policy recovery", self.roadmap)
+        self.assertIn("log-only, exact-build-hash-gated LSPosed trace", self.roadmap)
+        self.assertIn("Do not fabricate", self.roadmap)
 
     def test_video_binder_is_not_navigation_transport(self):
         combined = self.controller + self.helper
@@ -183,14 +239,8 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
         self.assertIn("UnsupportedOperationException", self.provider)
 
     def test_helper_has_no_topway_state_writer(self):
-        forbidden = ["setprop persist.tw", "setprop sys.tw", ">/data/tw/", "> /data/tw/"]
-        for token in forbidden:
+        for token in ("setprop persist.tw", "setprop sys.tw", ">/data/tw/", "> /data/tw/"):
             self.assertNotIn(token, self.helper)
-
-    def test_settings_exposes_one_explicit_four_way_surface_selector(self):
-        for value in ["Fullscreen only · safe fallback", "Leaflet comparator",
-                      "Raw freeform task · experimental", "Android PiP · experimental"]:
-            self.assertIn(value, self.settings)
 
     def test_testing_build_has_exact_source_provenance(self):
         gradle = (ROOT / "launcher/build.gradle.kts").read_text()

@@ -1,9 +1,58 @@
 package com.cbkii.ts18launcher;
+
 import org.junit.Test;
-import static org.junit.Assert.*;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 public class NavigationHelperResultTest {
- @Test public void parsesFreeformResultWithIdentity(){NavigationHelperResult r=NavigationHelperResult.parse("OK code=FREEFORM task=9681 stack=13 package=app.organicmaps.incar component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 windowingMode=5 bounds=524,77,1174,453 supportsPip=0 pinnedPackage=none");assertTrue(r.success);assertEquals(9681,r.taskId);assertEquals(13,r.stackId);assertEquals(0,r.displayId);assertEquals(5,r.windowingMode);assertEquals(0,r.supportsPip);assertEquals("app.organicmaps.incar",r.packageName);}
- @Test public void parsesPipOccupancyFailure(){NavigationHelperResult r=NavigationHelperResult.parse("FAIL code=PIP_OCCUPIED_BY_OTHER_APP package=app.organicmaps.incar pinnedPackage=com.example.video");assertFalse(r.success);assertEquals("PIP_OCCUPIED_BY_OTHER_APP",r.code);assertEquals("com.example.video",r.pinnedPackage);}
- @Test public void preservesUnknownMetadata(){NavigationHelperResult r=NavigationHelperResult.parse("OK code=STATUS task=42 stack=unknown package=com.example.nav component=com.example.nav/.Main display=unknown windowingMode=unknown bounds=unknown supportsPip=unknown pinnedPackage=none");assertTrue(r.success);assertEquals(-1,r.stackId);assertEquals(-1,r.displayId);assertEquals(-1,r.windowingMode);assertEquals(-1,r.supportsPip);}
- @Test public void rejectsNoise(){NavigationHelperResult r=NavigationHelperResult.parse("permission denied\nrandom output");assertFalse(r.success);assertEquals("BAD_RESPONSE",r.code);}
+    @Test public void parsesNativePresentationWithTransactionIdentity() {
+        NavigationHelperResult result = NavigationHelperResult.parse(
+                "OK code=PRESENTED_NATIVE task=9681 stack=13 package=app.organicmaps.incar "
+                        + "component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 "
+                        + "windowingMode=5 bounds=524,77,1174,453 supportsPip=0 "
+                        + "launched=1 transaction=7");
+        assertTrue(result.success);
+        assertEquals(9681, result.taskId);
+        assertEquals(13, result.stackId);
+        assertEquals(0, result.displayId);
+        assertEquals(5, result.windowingMode);
+        assertEquals(0, result.supportsPip);
+        assertEquals(1, result.launched);
+        assertEquals(7, result.transactionId);
+        assertEquals("app.organicmaps.incar", result.packageName);
+    }
+
+    @Test public void parsesFailureWithObservedTaskAndUnknownComponent() {
+        NavigationHelperResult result = NavigationHelperResult.parse(
+                "FAIL code=BOUNDS_MISMATCH task=42 stack=3 package=com.example.nav "
+                        + "component=unknown display=0 windowingMode=5 bounds=1,2,3,4 "
+                        + "supportsPip=unknown launched=0 transaction=9");
+        assertFalse(result.success);
+        assertEquals("BOUNDS_MISMATCH", result.code);
+        assertEquals(42, result.taskId);
+        assertEquals("unknown", result.component);
+        assertEquals(9, result.transactionId);
+    }
+
+    @Test public void preservesUnknownMetadata() {
+        NavigationHelperResult result = NavigationHelperResult.parse(
+                "OK code=STATUS task=42 stack=unknown package=com.example.nav "
+                        + "component=com.example.nav/.Main display=unknown windowingMode=unknown "
+                        + "bounds=unknown supportsPip=unknown launched=unknown transaction=unknown");
+        assertTrue(result.success);
+        assertEquals(-1, result.stackId);
+        assertEquals(-1, result.displayId);
+        assertEquals(-1, result.windowingMode);
+        assertEquals(-1, result.supportsPip);
+        assertEquals(-1, result.launched);
+        assertEquals(-1, result.transactionId);
+    }
+
+    @Test public void rejectsNoise() {
+        NavigationHelperResult result = NavigationHelperResult.parse("permission denied\nrandom output");
+        assertFalse(result.success);
+        assertEquals("BAD_RESPONSE", result.code);
+    }
 }

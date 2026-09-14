@@ -1,118 +1,69 @@
-# Native HOME navigation surface qualification
+# Native HOME navigation window
 
-## Purpose
+## Product contract
 
-The standalone HOME does not pretend to embed another application's View hierarchy. It qualifies controlled ways of presenting the configured external navigation application over the launcher's map rectangle while preserving deterministic package/task authority and DoFun as recovery HOME.
+The standalone launcher does not copy or mirror another application's map. It presents the configured navigation application's real Android task over the launcher-owned map rectangle.
 
-The navigation-surface preference has four mutually exclusive modes:
+The normal HOME choices are:
 
-- `fullscreen` - safe default and ordinary application fallback;
-- `leaflet` - launcher-rendered comparator only;
-- `raw_freeform` - Android freeform task experiment;
-- `android_pip` - standard Android pinned-task experiment, intentionally separate from Topway's OEM use of the word PIP.
+- `native_window` - primary TESTING path: display 0, Android freeform `windowingMode=5`, exact live `NativeNavigationPanel` bounds;
+- `fullscreen` - explicit safe fallback;
+- `leaflet` - legacy online-only last-resort fallback, never automatic.
 
-Once `navigation.surface.mode` exists it is the sole navigation-surface authority. The old `map.enabled` boolean is consulted only when migrating an install on which the new key does not yet exist.
+Historical `raw_freeform` preferences migrate to `native_window`. Standard Android PiP is no longer a selectable or automatic navigation path.
 
-## Established exact-device result
+## Exact-device authority
 
-Historical physical TS18 evidence already establishes the DoFun navigation shape. A normal Organic Maps Activity task ran on display 0 in Android freeform `windowingMode=5`; the framework concurrently reported the Topway `isPipLauncher :navi` classification. Organic Maps received real compact DecorView/Surface/native geometry and handled its own rendering inside that task.
+A known-good DoFun/Organic Maps capture on CB's TS18 established a normal Organic Maps task on display 0 in mode 5 at compact bounds. Topway concurrently reported `isPipLauncher ... :navi`, and Organic Maps received real compact Activity/Decor/Surface dimensions. Standard Android PiP was false.
 
-A separate capture showed Topway force-PIP geometry `524,77,650,376` and an Organic Maps `mLastNonFullscreenBounds=Rect(524,77-1174,453)` with standard Android PiP false.
+This proves the required task/window shape. It does not prove that raw Android mode 5 alone reproduces every private Topway policy decision. The current TESTING build must first reproduce the Android machine state before any OEM compatibility layer is considered.
 
-This proves the working DoFun path ends in an ordinary bounded mode-5 navigation task. It does not prove that a root `am task resize` command alone reproduces every private Topway/DoFun policy decision. The vendor properties/files remain read-only correlation surfaces until an exact writer/consumer contract establishes otherwise.
+## Deterministic transaction
 
-## Authority model
+`NativeNavigationPanel` owns the target rectangle in physical screen coordinates. Java resolves the configured package's ordinary exported launcher Activity and passes package, component, display 0, bounds and transaction ID to the narrow root helper.
 
-`NativeNavigationPanel` owns only the intended HOME rectangle and visible status.
+The helper owns one bounded `present-native` transaction:
 
-`NavigationWindowController` owns:
+1. inspect same-package tasks;
+2. adopt exactly one existing task without launching;
+3. fail closed if multiple pre-existing tasks are ambiguous;
+4. only when no task exists, start the resolved ordinary launcher component once with explicit display 0 and `windowingMode=5`;
+5. acquire the resulting exact task;
+6. mark that task resizeable, resize it to the panel rectangle and read state back;
+7. report success only for the configured package, exact task, display 0, mode 5 and exact bounds.
 
-configured navigation package -> explicitly launched package -> validated task ID -> current same-package top component.
+The launcher never selects a task because it is focused, recent or frontmost. Organic Maps bootstrap transitions such as `DownloadResourcesActivity -> MwmActivity` are valid while the same package/task remains authoritative.
 
-It never adopts the current/focused/recent task merely because that task occupies a suitable stack.
+## Exact Android-10 parsing
 
-Package-only task acquisition fails closed if more than one matching task exists. A previously validated task can be reused only while the same task ID still belongs to the configured package. Legitimate within-package Activity transitions such as Organic Maps bootstrap/Splash -> `MwmActivity` remain valid because the package is authoritative while the current top component is observed separately.
+The helper follows the real hierarchy:
 
-## Exact Android-10 task parsing
+`Display -> Stack/RootTask -> Task id -> task mBounds -> TaskRecord -> Hist #0 ActivityRecord`
 
-The helper parses the actual TS18 Android-10 hierarchy rather than treating arbitrary nested `mBounds`/`windowingMode` text as task state:
+It reads the top component directly from the exact physical `* Hist #0: ActivityRecord{... package/component ...}` line, with `mActivityComponent=` only as a fallback. Shorthand same-package components are normalised. Nested Activity configuration bounds never override task/root-task bounds.
 
-`Display #N -> Stack/RootTask #N -> Task id #N -> task mBounds -> TaskRecord -> Hist #0 top Activity`.
+An unobservable component is `unknown`, not `COMPONENT_MISMATCH`. Package plus exact task ID is sufficient for task-only resize and verification. A positively observed foreign top component fails closed.
 
-This matters because the exact TS18 dump places the authoritative task `mBounds` before `TaskRecord`; nested Activity configuration can contain different bounds/modes and must not overwrite the task result.
+## Lifecycle and failure rules
 
-Repository fixtures exercise the production AWK parser against representative exact-format freeform, fullscreen and ambiguous-task snapshots. Successful status/window operations expose `task`, `stack`, `package`, `component`, `display`, `windowingMode`, `bounds` and PiP support where observable. Missing fields remain unknown rather than being invented.
+Only one helper operation may be in flight. Bounds and lifecycle callbacks coalesce behind it; one authority generation can make at most one package-only acquisition attempt. A transient HOME stop during freeform launch/convergence does not invalidate the transaction or destroy the backend.
 
-## Raw freeform experiment
+HOME return validates the same authorised task first. Genuine task disappearance starts a new bounded reacquisition generation. App drawer, Settings and unrelated tasks never become navigation authority.
 
-The selected package is first launched through its normal exported launcher Activity, with public `ActivityOptions.setLaunchBounds()` as a best-effort initial hint. The helper then reconciles the exact selected task using Android's task resize interface.
+Failure is latched for the current package/mode/generation. HOME remains usable and does not automatically launch navigation again. The user receives separate **Retry** and **Open fullscreen** actions. Retry starts one new generation; fullscreen is always explicit.
 
-Machine-state success requires:
+Fullscreen handoff uses the same task and its observed same-package top component where available. HOME return reapplies mode 5 and current bounds to that task. The helper never force-stops the navigator and no persistent root daemon is installed.
 
-- configured package still owns the expected task ID;
-- current top component belongs to that package;
-- display is 0;
-- `windowingMode=5`;
-- actual task bounds equal the current `NativeNavigationPanel` screen rectangle.
+## Separate Topway contracts
 
-A zero exit status from `am task resize` is never sufficient by itself.
+Keep these independent:
 
-If an already-known task exists but mode/bounds drifted, the same task is repaired before any relaunch is considered. Only a genuine `TASK_NOT_FOUND` permits a new selected-package launch. Multiple package tasks produce `TASK_AMBIGUOUS` and fail closed.
+1. ordinary navigation task on display 0 in mode 5 plus any Topway `:navi` policy;
+2. current-HOME `DESKTOP_WINDOW_SERVICE` marker/read-only provider compatibility;
+3. Video-like cooperative `FLOATING_WINDOW_SERVER` app-owned windows.
 
-## Standard Android PiP experiment
+The launcher observes but does not write force-PIP properties, `sys.df.*`, `/data/tw/navi_name` or `/data/tw/custom_pip_app_name`. It does not fabricate Video/DoFun `WindowInfo` state.
 
-Standard Android PiP is a deliberately separate experiment using real pinned `windowingMode=2`; it is not described as the recovered Topway navigation mechanism.
+## Qualification
 
-The backend requires positive PiP support from the selected Activity, refuses to displace a pinned stack owned by another package, and retains exact configured-package/task authority. Android-10 shell stack commands receive the required four integer bounds arguments; the resulting task is then re-read and verified rather than trusting shell success.
-
-If standard PiP can render navigation but cannot provide normal map interaction, classify it as glance-only. Do not broaden privileges or change global force-resizable policy to make PiP behave like freeform.
-
-## Launcher lifecycle and mode switching
-
-Focus is not visibility. A freeform navigation Activity may receive focus while HOME remains visible, so launcher `onPause()` is not a teardown signal.
-
-When HOME actually stops, the controller invalidates/cancels pending helper work but deliberately retains the known package/task identity. HOME return re-reads the real panel rectangle and validates that same task before reacquisition.
-
-Explicit launcher-owned overlays such as the in-HOME app drawer, and an explicit switch away from a task-backed experiment, use a bounded `suspend` operation: validate the exact navigation task, return that task to fullscreen state, validate the exact launcher task, then focus the launcher task. This prevents an old freeform/pinned surface from remaining above Leaflet, fullscreen-only HOME or an in-HOME overlay. It does not force-stop the navigation application.
-
-Switching navigator packages first neutralises the previously authorised task and then revokes its task authority. Switching raw-freeform <-> Android-PiP similarly normalises the same known task before the new backend is allowed to manage it.
-
-Fullscreen handoff uses the same validated task. The helper transitions that task to mode 1 and foregrounds its current same-package top component. The controller does not immediately launch the package a second time; an additional public navigation intent is sent only when a location semantic still needs to be delivered. HOME return resets the handoff state and reconciles the known task again.
-
-## Topway compatibility surfaces remain separate
-
-Three contracts remain distinct:
-
-1. Generic navigation: ordinary third-party navigation Activity/task -> display 0 -> mode 5 -> Topway `isPipLauncher :navi` policy.
-2. Current-HOME compatibility: Topway clients can resolve `cn.cardoor.desktop.window.DESKTOP_WINDOW_SERVICE` and read the current HOME's exported provider state.
-3. Cooperative floating-window apps: apps such as current `com.tw.video` may themselves export `FLOATING_WINDOW_SERVER` with app-owned window content.
-
-The Video cooperative Binder is not a prerequisite for Organic Maps, Google Maps, OsmAnd/OsmAnd+ or Sygic navigation qualification.
-
-The standalone HOME marker service remains a resolution/capability marker and its exported provider remains read-only. It does not fabricate a DoFun `WindowInfo` while no cooperative Topway window is actually hosted.
-
-## Safety boundary
-
-Normal operation and qualification do not write the observed Topway force-PIP properties/files, assume protected platform identity, alter protected packages/partitions, or install a persistent task-management daemon.
-
-DoFun remains installed and enabled as recovery HOME.
-
-## Physical qualification still required
-
-CI proves source/build/protocol contracts, not physical composition. Exact-device testing must still establish separately for each supported navigator:
-
-- correct configured package and task ID;
-- display 0 and expected mode;
-- exact real panel bounds;
-- map visibly rendered in the HOME rectangle;
-- touch works inside the map;
-- launcher controls work outside it;
-- app-drawer round trip;
-- unrelated-app round trip;
-- fullscreen -> HOME restoration;
-- navigator switching;
-- navigation/launcher process recreation;
-- reverse-camera takeover/return;
-- reboot, cold boot and ACC sleep/wake.
-
-Read-only vendor state may be captured for correlation, but a visibly correct and stable mode-5 result must not be rejected merely because an unproven vendor property differs from historical DoFun state.
+CI validates source, parsing, lifecycle contracts and the APK envelope only. Use `NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md` with `scripts/termux/collect-navigation-window-evidence.sh` for the exact TS18 result. The OEM-policy branch in `NAVIGATION_SURFACE_ROADMAP.md` is gated on that physical evidence.

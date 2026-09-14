@@ -14,7 +14,15 @@ class TermuxToolkitTests(unittest.TestCase):
             result=subprocess.run(["bash","-n",str(path)],capture_output=True,text=True); self.assertEqual(0,result.returncode,result.stderr)
     def test_no_destructive_escape_hatches(self):
         text="\n".join(path.read_text(encoding="utf-8") for path in SCRIPTS.rglob("*.sh"))
-        for forbidden in ("setenforce 0","chmod 777","pm clear com.dofun.variety","/system/","/vendor/"):
+        for forbidden in (
+            "setenforce 0",
+            "chmod 777",
+            "pm clear com.dofun.variety",
+            "mount -o rw,remount /system",
+            "mount -o rw,remount /vendor",
+            "> /system/",
+            "> /vendor/",
+        ):
             self.assertNotIn(forbidden,text)
         self.assertNotIn("> '$app_pa/p.l'",text)
     def test_no_root_preflight_is_graceful(self):

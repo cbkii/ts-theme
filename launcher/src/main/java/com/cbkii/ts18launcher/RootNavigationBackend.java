@@ -23,19 +23,17 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
         });
     }
 
-    abstract String presentAction();
-    abstract String verifyAction();
-
-    @Override public void present(String packageName, NavigationWindowBounds bounds,
-            int taskId, Callback callback) {
-        submit(() -> helper.run(presentAction(), packageName,
+    @Override public void present(String packageName, String launchComponent,
+            NavigationWindowBounds bounds, int taskId, int transactionId, Callback callback) {
+        submit(() -> helper.run("present-native", packageName, launchComponent,
                 Integer.toString(bounds.left), Integer.toString(bounds.top),
-                Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId)), callback);
+                Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId),
+                Integer.toString(transactionId)), callback);
     }
 
     @Override public void verify(String packageName, NavigationWindowBounds bounds,
             int taskId, Callback callback) {
-        submit(() -> helper.run(verifyAction(), packageName,
+        submit(() -> helper.run("verify-native", packageName,
                 Integer.toString(bounds.left), Integer.toString(bounds.top),
                 Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId)), callback);
     }

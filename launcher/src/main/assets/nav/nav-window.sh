@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# TS18 HOME navigation experiment controller.
+# Deterministic TS18 HOME native-navigation task controller.
 # Root-only, bounded, fail-closed and read-only with respect to Topway state.
 
 PATH=/system/bin:/system/xbin:/vendor/bin
@@ -8,7 +8,9 @@ umask 077
 
 ROOT_DIR=/data/adb/ts18-launcher
 SNAPSHOT="$ROOT_DIR/.activity.$$"
-trap 'rm -f "$SNAPSHOT"' EXIT HUP INT TERM
+START_HELP="$ROOT_DIR/.am-help.$$"
+LAUNCH_OUTPUT="$ROOT_DIR/.am-start.$$"
+trap 'rm -f "$SNAPSHOT" "$START_HELP" "$LAUNCH_OUTPUT"' EXIT HUP INT TERM
 
 TASK_SNAPSHOT_AWK='
 function digits_after_hash(line, value) {
@@ -36,6 +38,21 @@ function bounds_of(line, value) {
   gsub(/, /, ",", value)
   gsub(/ - /, ",", value)
   return value
+}
+function normalize_component(value, slash, owner, class_name) {
+  slash=index(value, "/")
+  if (slash < 2) return value
+  owner=substr(value, 1, slash - 1)
+  class_name=substr(value, slash + 1)
+  if (substr(class_name, 1, 1) == ".") return owner "/" owner class_name
+  return value
+}
+function activity_record_component(line, value) {
+  value=line
+  sub(/^.*ActivityRecord\{[^[:space:]]*[[:space:]]+u[0-9][0-9]*[[:space:]]+/, "", value)
+  sub(/[[:space:]}].*$/, "", value)
+  if (index(value, "/") < 2) return ""
+  return normalize_component(value)
 }
 function finish() {
   if (!matched) return
@@ -85,7 +102,7 @@ in_task && !matched && /mBounds=Rect\(/ {
   pending_bounds=bounds_of($0)
   next
 }
-in_task && /TaskRecord\{/ && index($0, " A=" pkg " ") {
+in_task && /TaskRecord\{/ && (index($0, " A=" pkg " ") || index($0, " A=" pkg "}")) {
   if (hint != "0" && task != hint) next
   matched=1
   hist0=0
@@ -107,13 +124,15 @@ in_task && /TaskRecord\{/ && index($0, " A=" pkg " ") {
 }
 matched && /\* Hist #0:/ {
   hist0=1
+  component=activity_record_component($0)
+  if (component != "") task_component=component
   next
 }
-matched && hist0 && /mActivityComponent=/ {
+matched && hist0 && /mActivityComponent=/ && task_component == "unknown" {
   line=$0
   sub(/^.*mActivityComponent=/, "", line)
   sub(/[[:space:]].*$/, "", line)
-  task_component=line
+  task_component=normalize_component(line)
   next
 }
 matched && /(mSupportsPictureInPicture|supportsPictureInPicture)=/ {
@@ -138,44 +157,16 @@ END {
   print "FOUND " out_task " " out_stack " " out_display " " out_mode " " out_bounds " " out_component " " out_pip
 }'
 
-PINNED_SNAPSHOT_AWK='
-function digits_after_hash(line, value) {
-  value=line
-  sub(/^.*#/, "", value)
-  sub(/[^0-9].*$/, "", value)
-  return value
-}
-function mode_of(line, value) {
-  value=line
-  if (value ~ /(mWindowingMode|windowingMode)[[:space:]]*=[[:space:]]*[0-9]+/) {
-    sub(/^.*(mWindowingMode|windowingMode)[[:space:]]*=[[:space:]]*/, "", value)
-    sub(/[^0-9].*$/, "", value)
-    return value
-  }
-  if (line ~ /mode=pinned([[:space:]]|$)/) return "2"
-  if (line ~ /mode=freeform([[:space:]]|$)/) return "5"
-  if (line ~ /mode=fullscreen([[:space:]]|$)/) return "1"
-  return ""
-}
-/^[[:space:]]*(Stack|RootTask) #[0-9]+/ {
-  stack=digits_after_hash($0)
-  mode=mode_of($0)
-  task=""
-  next
-}
-/^[[:space:]]*Task id #[0-9]+/ {
-  task=digits_after_hash($0)
-  next
-}
-/TaskRecord\{/ && mode == "2" {
-  line=$0
-  pkg=line
-  sub(/^.* A=/, "", pkg)
-  sub(/[[:space:]].*$/, "", pkg)
-  if (task == "") task=digits_after_hash($0)
-  print pkg " " task " " stack
-  exit
-}'
+PKG=unknown
+TASK_ID=unknown
+STACK_ID=unknown
+DISPLAY_ID=unknown
+WINDOWING_MODE=unknown
+TASK_BOUNDS=unknown
+TASK_COMPONENT=unknown
+SUPPORTS_PIP=unknown
+LAUNCHED=0
+TRANSACTION=0
 
 log_event() {
   if command -v log >/dev/null 2>&1; then
@@ -183,23 +174,22 @@ log_event() {
   fi
 }
 
-fail() {
-  code="$1"
-  shift
-  log_event "FAIL $code $*"
-  printf 'FAIL code=%s' "$code"
-  for item in "$@"; do
-    printf ' %s' "$item"
-  done
-  printf '\n'
-  exit 1
-}
-
 valid_package() {
   case "$1" in
     ''|*[!A-Za-z0-9._]*) return 1 ;;
     *.*) return 0 ;;
     *) return 1 ;;
+  esac
+}
+
+valid_component() {
+  owner="${1%%/*}"
+  class_name="${1#*/}"
+  [ "$owner" != "$1" ] || return 1
+  valid_package "$owner" || return 1
+  case "$class_name" in
+    ''|*[!A-Za-z0-9_.$]*) return 1 ;;
+    *) return 0 ;;
   esac
 }
 
@@ -218,6 +208,51 @@ validate_bounds() {
   valid_uint "$left" && valid_uint "$top" && valid_uint "$right" && valid_uint "$bottom" || return 1
   [ "$right" -gt "$left" ] && [ "$bottom" -gt "$top" ] || return 1
   [ "$right" -le 10000 ] && [ "$bottom" -le 10000 ]
+}
+
+sanitize_value() {
+  printf '%s' "$1" | tr -d '\r\n\t ' | cut -c1-160
+}
+
+read_file_value() {
+  path="$1"
+  if [ -r "$path" ]; then
+    sanitize_value "$(cat "$path" 2>/dev/null)"
+  else
+    printf unreadable
+  fi
+}
+
+vendor_state_fields() {
+  printf 'forcepip=%s runtime_forcepip=%s forcepip_x=%s forcepip_y=%s forcepip_w=%s forcepip_h=%s df_desktop=%s df_theme_window=%s customPipApp=%s naviName=%s' \
+    "$(sanitize_value "$(getprop persist.tw.forcepip 2>/dev/null)")" \
+    "$(sanitize_value "$(getprop sys.tw.forcepip 2>/dev/null)")" \
+    "$(sanitize_value "$(getprop sys.tw.forcepip.x 2>/dev/null)")" \
+    "$(sanitize_value "$(getprop sys.tw.forcepip.y 2>/dev/null)")" \
+    "$(sanitize_value "$(getprop sys.tw.forcepip.w 2>/dev/null)")" \
+    "$(sanitize_value "$(getprop sys.tw.forcepip.h 2>/dev/null)")" \
+    "$(sanitize_value "$(getprop sys.df.desktop 2>/dev/null)")" \
+    "$(sanitize_value "$(getprop sys.df.variety.theme.window 2>/dev/null)")" \
+    "$(read_file_value /data/tw/custom_pip_app_name)" \
+    "$(read_file_value /data/tw/navi_name)"
+}
+
+emit_protocol() {
+  outcome="$1"
+  code="$2"
+  printf '%s code=%s task=%s stack=%s package=%s component=%s display=%s windowingMode=%s bounds=%s supportsPip=%s launched=%s transaction=%s ' \
+    "$outcome" "$code" "$TASK_ID" "$STACK_ID" "$PKG" "$TASK_COMPONENT" "$DISPLAY_ID" \
+    "$WINDOWING_MODE" "$TASK_BOUNDS" "$SUPPORTS_PIP" "$LAUNCHED" "$TRANSACTION"
+  vendor_state_fields
+  printf '\n'
+}
+
+fail() {
+  code="$1"
+  shift
+  log_event "FAIL $code $*"
+  emit_protocol FAIL "$code"
+  exit 1
 }
 
 capture_activity() {
@@ -286,6 +321,14 @@ read_task() {
   return "$rc"
 }
 
+validate_observed_component() {
+  case "$TASK_COMPONENT" in
+    unknown|'') return 0 ;;
+    "$PKG"/*) return 0 ;;
+    *) fail COMPONENT_MISMATCH ;;
+  esac
+}
+
 require_task() {
   pkg="$1"
   hint="$2"
@@ -294,87 +337,24 @@ require_task() {
   rc=$?
   case "$rc" in
     0) ;;
-    1) fail TASK_NOT_FOUND "task=$hint" "package=$pkg" ;;
-    2) fail TASK_AMBIGUOUS "package=$pkg" "count=$TASK_COUNT" ;;
-    *) fail TASK_STATE_UNREADABLE "task=$hint" "package=$pkg" ;;
+    1) fail TASK_NOT_FOUND ;;
+    2) fail TASK_AMBIGUOUS "count=${TASK_COUNT:-unknown}" ;;
+    *) fail TASK_STATE_UNREADABLE ;;
   esac
-  case "$TASK_COMPONENT" in
-    "$pkg"/*) ;;
-    *) fail COMPONENT_MISMATCH "task=$TASK_ID" "package=$pkg" "component=$TASK_COMPONENT" ;;
-  esac
-}
-
-parse_pinned_snapshot() {
-  awk "$PINNED_SNAPSHOT_AWK" "$SNAPSHOT"
-}
-
-pinned_owner() {
-  if ! capture_activity; then
-    PINNED_PACKAGE=unknown
-    PINNED_TASK=unknown
-    PINNED_STACK=unknown
-    return 1
-  fi
-  record="$(parse_pinned_snapshot)"
-  if [ -z "$record" ]; then
-    PINNED_PACKAGE=none
-    PINNED_TASK=none
-    PINNED_STACK=none
-    return 0
-  fi
-  read -r PINNED_PACKAGE PINNED_TASK PINNED_STACK <<EOF_PINNED
-$record
-EOF_PINNED
-}
-
-sanitize_value() {
-  printf '%s' "$1" | tr -d '\r\n\t ' | cut -c1-160
-}
-
-read_file_value() {
-  path="$1"
-  if [ -r "$path" ]; then
-    sanitize_value "$(cat "$path" 2>/dev/null)"
-  else
-    printf unreadable
-  fi
-}
-
-vendor_state_fields() {
-  printf 'forcepip=%s runtime_forcepip=%s forcepip_x=%s forcepip_y=%s forcepip_w=%s forcepip_h=%s df_desktop=%s df_theme_window=%s customPipApp=%s naviName=%s' \
-    "$(sanitize_value "$(getprop persist.tw.forcepip 2>/dev/null)")" \
-    "$(sanitize_value "$(getprop sys.tw.forcepip 2>/dev/null)")" \
-    "$(sanitize_value "$(getprop sys.tw.forcepip.x 2>/dev/null)")" \
-    "$(sanitize_value "$(getprop sys.tw.forcepip.y 2>/dev/null)")" \
-    "$(sanitize_value "$(getprop sys.tw.forcepip.w 2>/dev/null)")" \
-    "$(sanitize_value "$(getprop sys.tw.forcepip.h 2>/dev/null)")" \
-    "$(sanitize_value "$(getprop sys.df.desktop 2>/dev/null)")" \
-    "$(sanitize_value "$(getprop sys.df.variety.theme.window 2>/dev/null)")" \
-    "$(read_file_value /data/tw/custom_pip_app_name)" \
-    "$(read_file_value /data/tw/navi_name)"
-}
-
-emit_ok() {
-  code="$1"
-  pinned_owner >/dev/null 2>&1 || true
-  printf 'OK code=%s task=%s stack=%s package=%s component=%s display=%s windowingMode=%s bounds=%s supportsPip=%s pinnedPackage=%s pinnedTask=%s pinnedStack=%s ' \
-    "$code" "$TASK_ID" "$STACK_ID" "$PKG" "$TASK_COMPONENT" "$DISPLAY_ID" "$WINDOWING_MODE" \
-    "$TASK_BOUNDS" "$SUPPORTS_PIP" "$PINNED_PACKAGE" "$PINNED_TASK" "$PINNED_STACK"
-  vendor_state_fields
-  printf '\n'
-  log_event "OK $code package=$PKG task=$TASK_ID stack=$STACK_ID display=$DISPLAY_ID mode=$WINDOWING_MODE bounds=$TASK_BOUNDS component=$TASK_COMPONENT"
+  validate_observed_component
 }
 
 wait_state() {
   pkg="$1"
   task="$2"
   mode="$3"
-  bounds="$4"
+  expected_bounds="$4"
   tries=0
-  while [ "$tries" -lt 20 ]; do
+  while [ "$tries" -lt 30 ]; do
     if read_task_once "$pkg" "$task"; then
+      validate_observed_component
       if [ "$DISPLAY_ID" = 0 ] && [ "$WINDOWING_MODE" = "$mode" ]; then
-        if [ "$bounds" = any ] || [ "$TASK_BOUNDS" = "$bounds" ]; then
+        if [ "$expected_bounds" = any ] || [ "$TASK_BOUNDS" = "$expected_bounds" ]; then
           return 0
         fi
       fi
@@ -385,6 +365,45 @@ wait_state() {
   return 1
 }
 
+verify_state() {
+  expected_mode="$1"
+  expected_bounds="$2"
+  [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+  [ "$WINDOWING_MODE" = "$expected_mode" ] || fail WINDOWING_MODE_MISMATCH
+  if [ "$expected_bounds" != any ]; then
+    [ "$TASK_BOUNDS" = "$expected_bounds" ] || fail BOUNDS_MISMATCH
+  fi
+}
+
+native_launch_supported() {
+  am help >"$START_HELP" 2>&1 || return 1
+  grep -q 'windowingMode' "$START_HELP" || return 1
+  grep -q -- '--display' "$START_HELP" || return 1
+  return 0
+}
+
+launch_freeform_once() {
+  component="$1"
+  valid_component "$component" || fail BAD_COMPONENT
+  case "$component" in
+    "$PKG"/*) ;;
+    *) fail COMPONENT_PACKAGE_MISMATCH ;;
+  esac
+  native_launch_supported || fail FREEFORM_LAUNCH_UNSUPPORTED
+  am start --user 0 --display 0 --windowingMode 5 \
+    -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+    -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if grep -q -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
+      fail FREEFORM_LAUNCH_UNSUPPORTED
+    fi
+    fail FREEFORM_LAUNCH_FAILED
+  fi
+  LAUNCHED=1
+  log_event "cold launch transaction=$TRANSACTION package=$PKG component=$component display=0 mode=5"
+}
+
 move_task_fullscreen() {
   pkg="$1"
   task="$2"
@@ -392,30 +411,27 @@ move_task_fullscreen() {
   wanted_task="$TASK_ID"
   component="$TASK_COMPONENT"
   if [ "$WINDOWING_MODE" != 1 ]; then
-    am start --user 0 --windowingMode 1 --task "$wanted_task" -f 0x20000000 -n "$component" >/dev/null 2>&1 || \
-      fail FULLSCREEN_FAILED "task=$wanted_task" "package=$pkg" "component=$component"
+    [ "$component" != unknown ] || fail COMPONENT_UNKNOWN
+    am start --user 0 --display 0 --windowingMode 1 --task "$wanted_task" \
+      -f 0x20000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_FAILED
+  else
+    am task focus "$wanted_task" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
   fi
-  wait_state "$pkg" "$wanted_task" 1 any || \
-    fail FULLSCREEN_REJECTED "task=$wanted_task" "package=$pkg"
+  wait_state "$pkg" "$wanted_task" 1 any || fail FULLSCREEN_REJECTED
   require_task "$pkg" "$wanted_task" 1
 }
 
 [ "$(id -u 2>/dev/null)" = 0 ] || fail ROOT_REQUIRED
-for required in am dumpsys awk getprop pm settings grep tr cut cat; do
+for required in am dumpsys awk getprop grep tr cut cat; do
   command -v "$required" >/dev/null 2>&1 || fail "${required}_MISSING"
 done
 
 action="${1:-}"
 case "$action" in
   probe)
-    if pm list features 2>/dev/null | grep -q android.software.picture_in_picture; then
-      pip_feature=1
-    else
-      pip_feature=0
-    fi
-    force_resizable="$(settings get global force_resizable_activities 2>/dev/null)"
-    printf 'OK code=READY uid=0 pipFeature=%s forceResizable=%s ' \
-      "$pip_feature" "$(sanitize_value "$force_resizable")"
+    native_launch=0
+    if native_launch_supported; then native_launch=1; fi
+    printf 'OK code=READY uid=0 nativeLaunch=%s ' "$native_launch"
     vendor_state_fields
     printf '\n'
     ;;
@@ -426,10 +442,57 @@ case "$action" in
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
     require_task "$PKG" "$hint" 1
-    emit_ok STATUS
+    emit_protocol OK STATUS
     ;;
 
-  freeform|verify-freeform|pip|verify-pip)
+  present-native)
+    PKG="${2:-}"
+    launch_component="${3:-}"
+    left="${4:-}"
+    top="${5:-}"
+    right="${6:-}"
+    bottom="${7:-}"
+    hint="${8:-0}"
+    TRANSACTION="${9:-0}"
+    valid_package "$PKG" || fail BAD_PACKAGE
+    valid_component "$launch_component" || fail BAD_COMPONENT
+    valid_uint "$hint" || fail BAD_TASK
+    valid_uint "$TRANSACTION" || fail BAD_TRANSACTION
+    validate_bounds "$left" "$top" "$right" "$bottom" || fail BAD_BOUNDS
+    expected="$left,$top,$right,$bottom"
+
+    if [ "$hint" -gt 0 ]; then
+      require_task "$PKG" "$hint" 1
+    else
+      read_task_once "$PKG" 0
+      rc=$?
+      case "$rc" in
+        0) validate_observed_component ;;
+        1)
+          launch_freeform_once "$launch_component"
+          require_task "$PKG" 0 30
+          ;;
+        2) fail TASK_AMBIGUOUS "count=${TASK_COUNT:-unknown}" ;;
+        *) fail TASK_STATE_UNREADABLE ;;
+      esac
+    fi
+
+    wanted_task="$TASK_ID"
+    [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+    am task resizeable "$wanted_task" 2 >"$LAUNCH_OUTPUT" 2>&1 || fail RESIZEABLE_FAILED
+    am task resize "$wanted_task" "$left" "$top" "$right" "$bottom" \
+      >"$LAUNCH_OUTPUT" 2>&1 || fail RESIZE_FAILED
+    if ! wait_state "$PKG" "$wanted_task" 5 "$expected"; then
+      require_task "$PKG" "$wanted_task" 1
+      verify_state 5 "$expected"
+    fi
+    require_task "$PKG" "$wanted_task" 1
+    verify_state 5 "$expected"
+    emit_protocol OK PRESENTED_NATIVE
+    log_event "OK native transaction=$TRANSACTION package=$PKG task=$TASK_ID display=$DISPLAY_ID mode=$WINDOWING_MODE bounds=$TASK_BOUNDS launched=$LAUNCHED component=$TASK_COMPONENT"
+    ;;
+
+  verify-native)
     PKG="${2:-}"
     left="${3:-}"
     top="${4:-}"
@@ -438,97 +501,43 @@ case "$action" in
     hint="${7:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
+    [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
     validate_bounds "$left" "$top" "$right" "$bottom" || fail BAD_BOUNDS
-    require_task "$PKG" "$hint" 24
-    wanted_task="$TASK_ID"
-    expected="$left,$top,$right,$bottom"
-
-    if [ "$action" = freeform ]; then
-      am task resizeable "$wanted_task" 2 >/dev/null 2>&1 || \
-        fail RESIZEABLE_FAILED "task=$wanted_task" "package=$PKG"
-      am task resize "$wanted_task" "$left" "$top" "$right" "$bottom" >/dev/null 2>&1 || \
-        fail RESIZE_FAILED "task=$wanted_task" "package=$PKG"
-    elif [ "$action" = pip ]; then
-      pm list features 2>/dev/null | grep -q android.software.picture_in_picture || \
-        fail PIP_FEATURE_MISSING "package=$PKG"
-      if [ "$SUPPORTS_PIP" = 0 ]; then
-        fail PIP_UNSUPPORTED "task=$wanted_task" "package=$PKG"
-      fi
-      [ "$SUPPORTS_PIP" = 1 ] || \
-        fail PIP_SUPPORT_UNKNOWN "task=$wanted_task" "package=$PKG"
-      pinned_owner || fail PIP_STATE_UNREADABLE "package=$PKG"
-      if [ "$PINNED_PACKAGE" != none ] && [ "$PINNED_PACKAGE" != "$PKG" ]; then
-        fail PIP_OCCUPIED_BY_OTHER_APP "package=$PKG" "pinnedPackage=$PINNED_PACKAGE"
-      fi
-      if [ "$WINDOWING_MODE" != 2 ]; then
-        [ "$STACK_ID" != unknown ] || fail STACK_UNKNOWN "task=$wanted_task" "package=$PKG"
-        am task focus "$wanted_task" >/dev/null 2>&1 || \
-          fail FOCUS_FAILED "task=$wanted_task" "package=$PKG"
-        sleep 0.1
-        require_task "$PKG" "$wanted_task" 1
-        am stack move-top-activity-to-pinned-stack "$STACK_ID" \
-          "$left" "$top" "$right" "$bottom" >/dev/null 2>&1 || \
-          fail PIP_ENTER_FAILED "task=$wanted_task" "stack=$STACK_ID" "package=$PKG"
-      fi
-      wait_state "$PKG" "$wanted_task" 2 any || \
-        fail PIP_MODE_REJECTED "task=$wanted_task" "package=$PKG"
-      [ "$STACK_ID" != unknown ] || fail PIP_STACK_UNKNOWN "task=$wanted_task" "package=$PKG"
-      am stack resize "$STACK_ID" "$left" "$top" "$right" "$bottom" >/dev/null 2>&1 || \
-        fail PIP_RESIZE_FAILED "task=$wanted_task" "stack=$STACK_ID" "package=$PKG"
-    fi
-
-    expected_mode=5
-    result_code=FREEFORM
-    case "$action" in
-      verify-freeform) result_code=VERIFY_FREEFORM ;;
-      pip) expected_mode=2; result_code=PIP ;;
-      verify-pip) expected_mode=2; result_code=VERIFY_PIP ;;
-    esac
-
-    if ! wait_state "$PKG" "$wanted_task" "$expected_mode" "$expected"; then
-      require_task "$PKG" "$wanted_task" 1
-      [ "$DISPLAY_ID" = 0 ] || \
-        fail DISPLAY_MISMATCH "task=$TASK_ID" "package=$PKG" "display=$DISPLAY_ID" "expectedDisplay=0"
-      [ "$WINDOWING_MODE" = "$expected_mode" ] || \
-        fail WINDOWING_MODE_MISMATCH "task=$TASK_ID" "package=$PKG" "windowingMode=$WINDOWING_MODE" "expectedWindowingMode=$expected_mode"
-      fail BOUNDS_MISMATCH "task=$TASK_ID" "package=$PKG" "bounds=$TASK_BOUNDS" "expected=$expected"
-    fi
-    require_task "$PKG" "$wanted_task" 1
-    emit_ok "$result_code"
+    require_task "$PKG" "$hint" 1
+    verify_state 5 "$left,$top,$right,$bottom"
+    emit_protocol OK VERIFIED_NATIVE
     ;;
 
   fullscreen)
     PKG="${2:-}"
-    hint="${3:-}"
+    hint="${3:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
-    [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED "package=$PKG"
+    [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
     move_task_fullscreen "$PKG" "$hint"
-    emit_ok FULLSCREEN
+    emit_protocol OK FULLSCREEN
     ;;
 
   suspend)
     PKG="${2:-}"
-    hint="${3:-}"
+    hint="${3:-0}"
     HOME_PKG="${4:-}"
-    home_task="${5:-}"
+    home_task="${5:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
     valid_package "$HOME_PKG" || fail BAD_HOME_PACKAGE
     valid_uint "$home_task" || fail BAD_HOME_TASK
-    [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED "package=$PKG"
-    [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED "package=$HOME_PKG"
+    [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
+    [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
 
     move_task_fullscreen "$PKG" "$hint"
     wanted_task="$TASK_ID"
     require_task "$HOME_PKG" "$home_task" 1
-    am task focus "$home_task" >/dev/null 2>&1 || \
-      fail HOME_FOCUS_FAILED "task=$home_task" "package=$HOME_PKG"
+    am task focus "$home_task" >"$LAUNCH_OUTPUT" 2>&1 || fail HOME_FOCUS_FAILED
     PKG="${2:-}"
     require_task "$PKG" "$wanted_task" 1
-    [ "$WINDOWING_MODE" = 1 ] || \
-      fail SUSPEND_MODE_MISMATCH "task=$wanted_task" "package=$PKG" "windowingMode=$WINDOWING_MODE"
-    emit_ok SUSPENDED
+    [ "$WINDOWING_MODE" = 1 ] || fail SUSPEND_MODE_MISMATCH
+    emit_protocol OK SUSPENDED
     ;;
 
   *) fail BAD_ACTION ;;

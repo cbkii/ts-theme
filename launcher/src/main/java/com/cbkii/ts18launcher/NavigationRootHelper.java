@@ -16,13 +16,15 @@ import java.util.regex.Pattern;
 /** Installs and invokes the narrow, systemless Magisk navigation experiment helper. */
 final class NavigationRootHelper {
     private static final Pattern PACKAGE = Pattern.compile("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+");
+    private static final Pattern COMPONENT = Pattern.compile(
+            "[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+/(?:\\.[A-Za-z0-9_.$]+|[A-Za-z0-9_.$]+(?:\\.[A-Za-z0-9_.$]+)*)");
     private static final Pattern ACTION = Pattern.compile(
-            "probe|status|freeform|verify-freeform|pip|verify-pip|fullscreen|suspend");
+            "probe|status|present-native|verify-native|fullscreen|suspend");
     private static final String ASSET = "nav/nav-window.sh";
     private static final String ROOT_DIR = "/data/adb/ts18-launcher";
     private static final String ROOT_HELPER = ROOT_DIR + "/nav-window.sh";
     private static final long INSTALL_TIMEOUT_MS = 4000L;
-    private static final long COMMAND_TIMEOUT_MS = 7000L;
+    private static final long COMMAND_TIMEOUT_MS = 12000L;
 
     private final Context context;
     private boolean installedThisProcess;
@@ -44,7 +46,7 @@ final class NavigationRootHelper {
         if (!install.success) return install;
 
         StringBuilder command = new StringBuilder(ROOT_HELPER).append(' ').append(action);
-        for (String arg : args) command.append(' ').append(arg);
+        for (String arg : args) command.append(' ').append(singleQuote(arg));
         ProcessResult result = executeRoot(command.toString(), COMMAND_TIMEOUT_MS);
         if (result.timedOut) return NavigationHelperResult.failure("TIMEOUT", result.output);
         NavigationHelperResult parsed = NavigationHelperResult.parse(result.output);
@@ -95,7 +97,7 @@ final class NavigationRootHelper {
     }
 
     private static boolean isSafeArgument(String arg) {
-        if (PACKAGE.matcher(arg).matches()) return true;
+        if (PACKAGE.matcher(arg).matches() || COMPONENT.matcher(arg).matches()) return true;
         if (arg.length() > 6) return false;
         for (int i = 0; i < arg.length(); i++) {
             if (!Character.isDigit(arg.charAt(i))) return false;

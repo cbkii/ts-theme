@@ -179,7 +179,7 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("setMapAppearance", html)
         self.assertIn("contrast(1.18)", html)
 
-    def test_map_controls_are_opposite_rail_no_duplicate_navigation_and_experimental_default_off(self):
+    def test_map_controls_are_opposite_rail_no_duplicate_navigation_and_legacy_leaflet_default_off(self):
         panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
         policy = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ExperimentalMapPolicy.java")
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
@@ -187,7 +187,7 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("boolean controlsRight = !railRight", panel)
         self.assertNotIn("openNavigation", panel)
         self.assertNotIn("ic_navigation", panel)
-        self.assertIn('"Experimental Leaflet map"', settings)
+        self.assertIn('"Legacy online map fallback', settings)
         self.assertIn("if (!LauncherPrefs.prefs(context).contains(LauncherPrefs.KEY_MAP_ENABLED)) return false", policy)
         self.assertIn("return LauncherPrefs.mapEnabled(context)", policy)
         self.assertIn("styleRailButton(this, navigationButton, true)", launcher)

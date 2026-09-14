@@ -92,14 +92,15 @@ public final class SettingsActivity extends Activity {
                 "07:00 day · 19:00 night · dim around transitions",
                 v -> { LauncherPrefs.clearAppearanceSchedule(this); render(); });
 
-        // Legacy source-contract label retained only for migration history: "Experimental Leaflet map".
         addChoiceRow(R.drawable.ic_map, "HOME navigation surface",
                 HomeNavigationSurfacePolicy.label(HomeNavigationSurfacePolicy.mode(this)),
                 v -> choose("HOME navigation surface",
-                        new String[] {"Fullscreen only · safe fallback", "Leaflet comparator",
-                                "Raw freeform task · experimental", "Android PiP · experimental"},
-                        new String[] {HomeNavigationSurfacePolicy.FULLSCREEN, HomeNavigationSurfacePolicy.LEAFLET,
-                                HomeNavigationSurfacePolicy.RAW_FREEFORM, HomeNavigationSurfacePolicy.ANDROID_PIP},
+                        new String[] {"Native navigation window · TESTING",
+                                "Fullscreen only · safe fallback",
+                                "Legacy online map fallback · Internet required"},
+                        new String[] {HomeNavigationSurfacePolicy.NATIVE_WINDOW,
+                                HomeNavigationSurfacePolicy.FULLSCREEN,
+                                HomeNavigationSurfacePolicy.LEAFLET},
                         HomeNavigationSurfacePolicy.mode(this), value -> {
                             HomeNavigationSurfacePolicy.setMode(this, value); recreate();
                         }));
