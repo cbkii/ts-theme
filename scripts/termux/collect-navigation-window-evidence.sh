@@ -182,6 +182,7 @@ seal_archive() {
   return 0
 }
 
+# shellcheck disable=SC2317 # Invoked indirectly by the EXIT trap.
 finalize() {
   rc=$?
   trap - EXIT INT TERM HUP
@@ -199,6 +200,7 @@ finalize() {
   exit "$rc"
 }
 
+# shellcheck disable=SC2317 # Invoked indirectly by signal traps.
 request_stop() {
   STOP_REQUESTED=1
   log "Stop requested; taking final checkpoint and sealing evidence"
@@ -241,6 +243,7 @@ done
 
 root_capture packages/launcher-prefs.xml \
   'cat /data/user/0/com.cbkii.ts18launcher/shared_prefs/ts18_launcher.xml 2>/dev/null || cat /data/data/com.cbkii.ts18launcher/shared_prefs/ts18_launcher.xml 2>/dev/null || true'
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture topway/state-initial.txt \
   'for p in persist.tw.forcepip sys.tw.forcepip sys.tw.forcepip.x sys.tw.forcepip.y sys.tw.forcepip.w sys.tw.forcepip.h sys.df.desktop sys.df.variety.theme.window; do printf "%s=" "$p"; getprop "$p"; done; for f in /data/tw/custom_pip_app_name /data/tw/navi_name; do printf "%s=" "$f"; cat "$f" 2>/dev/null || printf unreadable; printf "\n"; done'
 
@@ -293,17 +296,22 @@ if [ -n "$TARGET" ]; then root_capture helper/status-initial.txt "$HELPER status
 
 capture helper/am-help.txt /system/bin/am help
 capture helper/cmd-activity-help.txt /system/bin/cmd activity help
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture root/magisk-lsposed-metadata.txt \
   'magisk -v 2>&1 || true; printf "modules:\n"; for d in /data/adb/modules/*; do [ -d "$d" ] && basename "$d"; done; ls -ldZ /data/adb/lspd /data/adb/modules 2>&1 || true'
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture framework/classpaths.txt \
   'printf "BOOTCLASSPATH=%s\n" "$BOOTCLASSPATH"; printf "SYSTEMSERVERCLASSPATH=%s\n" "$SYSTEMSERVERCLASSPATH"; for list in "$BOOTCLASSPATH" "$SYSTEMSERVERCLASSPATH"; do oldifs=$IFS; IFS=:; for f in $list; do [ -f "$f" ] || continue; printf "%s\t" "$f"; wc -c <"$f"; sha256sum "$f"; done; IFS=$oldifs; done'
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture framework/system-server-maps.txt \
   'pid="$(pidof system_server 2>/dev/null)"; printf "pid=%s\n" "$pid"; [ -n "$pid" ] && cat "/proc/$pid/maps" 2>/dev/null || true'
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture framework/anchor-strings.txt \
   'for list in "$BOOTCLASSPATH" "$SYSTEMSERVERCLASSPATH"; do oldifs=$IFS; IFS=:; for f in $list; do case "$f" in */framework.jar|*/services.jar) ;; *) continue ;; esac; [ -f "$f" ] || continue; printf "===== %s =====\n" "$f"; if command -v strings >/dev/null 2>&1; then strings "$f" 2>/dev/null; else cat "$f" 2>/dev/null; fi | grep -Ei "isPipLauncher|forcepip|custom_pip_app_name|navi_name|sendNaviType|tw_navi|windowingMode" | head -n 600; done; IFS=$oldifs; done'
 
 export_limit=$((MAX_EXPORT_MIB * 1024 * 1024))
 export_total=0
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture framework/export-candidates.txt \
   'for list in "$BOOTCLASSPATH" "$SYSTEMSERVERCLASSPATH"; do oldifs=$IFS; IFS=:; for f in $list; do case "$f" in */framework.jar|*/services.jar|*/framework-minus-apex.jar) [ -f "$f" ] && printf "%s\n" "$f" ;; esac; done; IFS=$oldifs; done; for p in com.cbkii.ts18launcher com.dofun.variety com.tw.service com.tw.service.xt; do pm path "$p" 2>/dev/null | sed "s/^package://"; done'
 sort -u "$OUT/framework/export-candidates.txt" >"$WORK/export-candidates.txt"
@@ -407,6 +415,7 @@ root_capture window/final-window.txt 'dumpsys window windows'
 root_capture window/final-display.txt 'dumpsys window displays'
 if [ -n "$TARGET" ]; then root_capture helper/status-final.txt "$HELPER status '$TARGET' 0"; fi
 root_capture window/final-surfaceflinger.txt 'dumpsys SurfaceFlinger --list'
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture topway/state-final.txt \
   'for p in persist.tw.forcepip sys.tw.forcepip sys.tw.forcepip.x sys.tw.forcepip.y sys.tw.forcepip.w sys.tw.forcepip.h sys.df.desktop sys.df.variety.theme.window; do printf "%s=" "$p"; getprop "$p"; done; for f in /data/tw/custom_pip_app_name /data/tw/navi_name; do printf "%s=" "$f"; cat "$f" 2>/dev/null || printf unreadable; printf "\n"; done'
 stop_log
