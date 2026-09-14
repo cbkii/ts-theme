@@ -126,6 +126,7 @@ stop_log() {
 # shellcheck disable=SC2317
 finalize() {
   rc=$?
+  manifest_failed=0
   trap - EXIT INT TERM HUP
   stop_log
   printf 'fails=%s\nblocked=%s\nwarns=%s\nphase=%s\n' \
@@ -133,12 +134,16 @@ finalize() {
 
   if have sha256sum; then
     (cd "$OUT" && find . -type f ! -name SHA256SUMS.txt ! -name MANIFEST_VERIFY.txt -print0 \
-      | sort -z | xargs -0 -r sha256sum) >"$OUT/SHA256SUMS.txt" 2>/dev/null || true
-    if (cd "$OUT" && sha256sum -c SHA256SUMS.txt) >"$OUT/MANIFEST_VERIFY.txt" 2>&1; then
-      printf '\nmanifest=PASS\n' >>"$OUT/summary.txt"
+      | sort -z | xargs -0 -r sha256sum) >"$OUT/SHA256SUMS.txt" 2>/dev/null || manifest_failed=1
+    if [ "$manifest_failed" -eq 0 ]; then
+      if ! (cd "$OUT" && sha256sum -c SHA256SUMS.txt) >"$OUT/MANIFEST_VERIFY.txt" 2>&1; then
+        manifest_failed=1
+      fi
     else
-      printf '\nmanifest=FAIL\n' >>"$OUT/summary.txt"
+      printf 'SHA256SUMS generation failed\n' >"$OUT/MANIFEST_VERIFY.txt"
     fi
+  else
+    printf 'BLOCKED: sha256sum unavailable\n' >"$OUT/MANIFEST_VERIFY.txt"
   fi
 
   rm -f "$ZIP" "$ZIP.sha256"
@@ -154,6 +159,9 @@ finalize() {
   if [ -f "$ZIP" ]; then
     printf 'Archive: %s\n' "$ZIP"
     [ -f "$ZIP.sha256" ] && printf 'Archive hash: %s\n' "$ZIP.sha256"
+  fi
+  if [ "$manifest_failed" -ne 0 ] && [ "$rc" -eq 0 ]; then
+    rc=4
   fi
   exit "$rc"
 }
