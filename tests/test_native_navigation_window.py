@@ -6,6 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "launcher/src/main/assets/nav/nav-window.sh"
 CONTROLLER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowController.java"
+LAUNCHER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java"
+NAV_PROVIDER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationProvider.java"
 POLICY = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/HomeNavigationSurfacePolicy.java"
 SETTINGS = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java"
 MANIFEST = ROOT / "launcher/src/main/AndroidManifest.xml"
@@ -21,6 +23,8 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
     def setUpClass(cls):
         cls.helper = HELPER.read_text(encoding="utf-8")
         cls.controller = CONTROLLER.read_text(encoding="utf-8")
+        cls.launcher = LAUNCHER.read_text(encoding="utf-8")
+        cls.nav_provider = NAV_PROVIDER.read_text(encoding="utf-8")
         cls.policy = POLICY.read_text(encoding="utf-8")
         cls.settings = SETTINGS.read_text(encoding="utf-8")
         cls.manifest = MANIFEST.read_text(encoding="utf-8")
@@ -93,7 +97,11 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
         self.assertIn("TASK_NOT_FOUND", self.controller)
         self.assertIn("backend.present(pkg, target, knownTask", self.controller)
 
-    def test_fullscreen_handoff_does_not_relaunch_without_location_semantics(self):
+    def test_fullscreen_handoff_preserves_boolean_handled_contract(self):
+        self.assertIn("boolean openFullscreen(Location location)", self.controller)
+        self.assertIn("return NavigationProvider.open(activity, pkg, location);", self.controller)
+        self.assertIn("return true;", self.controller)
+        self.assertIn("navigationWindowController.openFullscreen(location)) return;", self.launcher)
         self.assertIn("The helper already foregrounded the exact authorised task", self.controller)
         self.assertRegex(
             self.controller,
@@ -101,6 +109,17 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
         )
         self.assertIn("HOME stopped during intentional fullscreen handoff", self.controller)
         self.assertIn("if (state == State.FULLSCREEN_HANDOFF) state = State.IDLE;", self.controller)
+
+    def test_navigation_owned_incar_fallback_uses_real_launcher_availability(self):
+        self.assertIn('ORGANIC_MAPS_INCAR = "app.organicmaps.incar"', self.nav_provider)
+        self.assertIn("static boolean hasLauncherActivity", self.nav_provider)
+        self.assertIn("getLaunchIntentForPackage(packageName) != null", self.nav_provider)
+        self.assertIn(
+            "NavigationProvider.hasLauncherActivity(activity, NavigationProvider.ORGANIC_MAPS_INCAR)",
+            self.controller,
+        )
+        self.assertNotIn("AppResolver.ORGANIC_MAPS_INCAR", self.controller)
+        self.assertNotIn("AppResolver.isInstalled", self.controller)
 
     def test_explicit_launcher_overlay_suspends_exact_task_without_force_stop(self):
         self.assertIn("backend.suspend(pkg, task, activity.getPackageName(), activity.getTaskId()", self.controller)
