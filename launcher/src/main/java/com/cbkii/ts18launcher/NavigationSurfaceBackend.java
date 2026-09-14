@@ -7,5 +7,6 @@ interface NavigationSurfaceBackend {
     void verify(String packageName, NavigationWindowBounds bounds, int taskId, Callback callback);
     void status(String packageName, int taskId, Callback callback);
     void fullscreen(String packageName, int taskId, Callback callback);
+    void suspend(String packageName, int taskId, String homePackage, int homeTaskId, Callback callback);
     void destroy();
 }

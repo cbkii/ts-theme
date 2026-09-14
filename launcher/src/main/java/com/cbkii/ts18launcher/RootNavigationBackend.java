@@ -3,6 +3,7 @@ package com.cbkii.ts18launcher;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -16,49 +17,84 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     RootNavigationBackend(Context context, String threadName) {
         helper = new NavigationRootHelper(context);
         executor = Executors.newSingleThreadExecutor(r -> {
-            Thread thread = new Thread(r, threadName); thread.setDaemon(true); return thread;
+            Thread thread = new Thread(r, threadName);
+            thread.setDaemon(true);
+            return thread;
         });
     }
+
     abstract String presentAction();
     abstract String verifyAction();
 
-    @Override public void present(String packageName, NavigationWindowBounds bounds, int taskId, Callback callback) {
+    @Override public void present(String packageName, NavigationWindowBounds bounds,
+            int taskId, Callback callback) {
         submit(() -> helper.run(presentAction(), packageName,
                 Integer.toString(bounds.left), Integer.toString(bounds.top),
                 Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId)), callback);
     }
-    @Override public void verify(String packageName, NavigationWindowBounds bounds, int taskId, Callback callback) {
+
+    @Override public void verify(String packageName, NavigationWindowBounds bounds,
+            int taskId, Callback callback) {
         submit(() -> helper.run(verifyAction(), packageName,
                 Integer.toString(bounds.left), Integer.toString(bounds.top),
                 Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId)), callback);
     }
+
     @Override public void status(String packageName, int taskId, Callback callback) {
         submit(() -> helper.run("status", packageName, taskHint(taskId)), callback);
     }
+
     @Override public void fullscreen(String packageName, int taskId, Callback callback) {
         if (taskId <= 0) {
-            if (callback != null) callback.onResult(NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
+            if (callback != null) callback.onResult(
+                    NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
             return;
         }
         submit(() -> helper.run("fullscreen", packageName, Integer.toString(taskId)), callback);
     }
-    @Override public void destroy() {
-        destroyed = true; executor.shutdownNow(); main.removeCallbacksAndMessages(null);
+
+    @Override public void suspend(String packageName, int taskId, String homePackage,
+            int homeTaskId, Callback callback) {
+        if (taskId <= 0 || homeTaskId <= 0) {
+            if (callback != null) callback.onResult(
+                    NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
+            return;
+        }
+        submit(() -> helper.run("suspend", packageName, Integer.toString(taskId),
+                homePackage, Integer.toString(homeTaskId)), callback);
     }
-    private static String taskHint(int taskId) { return Integer.toString(taskId > 0 ? taskId : 0); }
+
+    @Override public void destroy() {
+        destroyed = true;
+        executor.shutdownNow();
+        main.removeCallbacksAndMessages(null);
+    }
+
+    private static String taskHint(int taskId) {
+        return Integer.toString(taskId > 0 ? taskId : 0);
+    }
+
     private void submit(Operation operation, Callback callback) {
         if (destroyed) {
-            if (callback != null) callback.onResult(NavigationHelperResult.failure("DESTROYED", ""));
+            if (callback != null) callback.onResult(
+                    NavigationHelperResult.failure("DESTROYED", ""));
             return;
         }
         executor.execute(() -> {
             NavigationHelperResult result;
-            try { result = operation.run(); }
-            catch (RuntimeException e) { result = NavigationHelperResult.failure("BACKEND_EXCEPTION", e.getClass().getSimpleName()); }
+            try {
+                result = operation.run();
+            } catch (RuntimeException e) {
+                result = NavigationHelperResult.failure("BACKEND_EXCEPTION",
+                        e.getClass().getSimpleName());
+            }
             NavigationHelperResult delivered = result;
             if (destroyed) return;
-            main.post(() -> { if (!destroyed && callback != null) callback.onResult(delivered); });
+            main.post(() -> {
+                if (!destroyed && callback != null) callback.onResult(delivered);
+            });
         });
     }
+
     private interface Operation { NavigationHelperResult run(); }
 }

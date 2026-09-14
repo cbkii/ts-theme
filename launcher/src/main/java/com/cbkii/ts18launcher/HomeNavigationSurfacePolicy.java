@@ -15,16 +15,23 @@ final class HomeNavigationSurfacePolicy {
 
     static String mode(Context context) {
         SharedPreferences prefs = LauncherPrefs.prefs(context);
-        String stored = prefs.getString(KEY, "");
-        if (isKnown(stored)) return stored;
-        if (prefs.contains(LauncherPrefs.KEY_MAP_ENABLED) && LauncherPrefs.mapEnabled(context)) return LEAFLET;
+        if (prefs.contains(KEY)) {
+            String stored = prefs.getString(KEY, "");
+            return isKnown(stored) ? stored : FULLSCREEN;
+        }
+        // Legacy PR #10 state is migration input only while the new authority is absent.
+        if (prefs.contains(LauncherPrefs.KEY_MAP_ENABLED) && LauncherPrefs.mapEnabled(context)) {
+            return LEAFLET;
+        }
         return FULLSCREEN;
     }
 
     static void setMode(Context context, String mode) {
         String safe = isKnown(mode) ? mode : FULLSCREEN;
-        LauncherPrefs.prefs(context).edit().putString(KEY, safe)
-                .putBoolean(LauncherPrefs.KEY_MAP_ENABLED, LEAFLET.equals(safe)).apply();
+        LauncherPrefs.prefs(context).edit()
+                .putString(KEY, safe)
+                .putBoolean(LauncherPrefs.KEY_MAP_ENABLED, LEAFLET.equals(safe))
+                .apply();
     }
 
     static boolean isKnown(String value) {
