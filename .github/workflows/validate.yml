@@ -60,7 +60,10 @@ jobs:
           python3 -m py_compile tools/launcher_apk_check.py
           shellcheck tools/*.sh
           shellcheck -x -P scripts/termux scripts/termux/*.sh scripts/termux/lib/*.sh
-          shellcheck -s sh scripts/magisk/*.sh launcher/src/main/assets/nav/nav-window.sh
+          shellcheck -s sh scripts/magisk/*.sh
+          # nav-window.sh deliberately stores literal AWK programs in single-quoted shell strings;
+          # SC2016 is therefore disabled only for this one helper, not repository-wide.
+          shellcheck -s sh -e SC2016 launcher/src/main/assets/nav/nav-window.sh
           git diff --check
 
       - name: Fetch pinned RePlugin compatibility library
