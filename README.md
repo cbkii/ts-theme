@@ -71,7 +71,16 @@ gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 
 ## Testing and candidate releases
 
-Successful same-repository PR `Validate` runs refresh the fixed draft **000 Testing Only Version**. Use `TS18-Standalone-Launcher-TESTING.apk` for upgrade-compatible physical testing. **Refresh Testing APK Draft** can also build a PR number, branch, tag or commit SHA manually.
+The fixed draft **000 Testing Only Version** is an explicit development/physical-validation channel rather than an automatic output of every PR validation. Request a snapshot in any of four ways:
+
+- add the `testing-apk` label to a PR;
+- put `/testing-apk` in the newest PR commit message;
+- comment `/testing-apk` in the PR conversation;
+- run **Refresh Testing APK Draft** manually from the default branch and set `source_to_build` to a PR number, branch, tag or commit SHA.
+
+Commit/comment commands also ensure the PR carries the `testing-apk` label. The draft retains the two newest successfully published snapshot groups, each with distinct TESTING/DEBUG APKs and metadata. Its human-readable release notes identify the PR, snapshot head, actual built SHA, trigger and workflow run for each APK. All TESTING APKs deliberately keep `versionName=0.0.0-testing` and `versionCode=999999`.
+
+Request a TESTING snapshot when an installable build is needed for exact TS18 physical validation or another meaningful engineering checkpoint; ordinary CI remains the right path for incidental commits that do not need device installation.
 
 The separate **Standalone Launcher Candidate** workflow produces an explicitly versioned qualified bundle and may optionally publish a prerelease. The legacy **Manual Release** workflow remains separate.
 
