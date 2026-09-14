@@ -83,17 +83,17 @@ final class NavigationWindowController {
         suspendForLauncherSurface("Leaflet comparator active");
     }
 
-    void openFullscreen(Location location) {
-        if (state == State.DESTROYED) return;
+    /** Returns true when the controller accepted or completed the navigation handoff. */
+    boolean openFullscreen(Location location) {
+        if (state == State.DESTROYED) return false;
         String pkg = selectedPackage();
         if (pkg.isEmpty()) {
             panel.showUnavailable("Choose a Navigation app in Settings", null);
-            return;
+            return false;
         }
 
         if (backend == null || activeTaskId <= 0 || !pkg.equals(activePackage)) {
-            NavigationProvider.open(activity, pkg, location);
-            return;
+            return NavigationProvider.open(activity, pkg, location);
         }
 
         final int request = ++generation;
@@ -115,6 +115,7 @@ final class NavigationWindowController {
             Log.w(TAG, "fullscreen helper failed code=" + result.code + " raw=" + result.raw);
             NavigationProvider.open(activity, pkg, location);
         });
+        return true;
     }
 
     void destroy() {
@@ -392,8 +393,8 @@ final class NavigationWindowController {
     private String selectedPackage() {
         String configured = LauncherPrefs.packageFor(activity, LauncherPrefs.KEY_NAV);
         if (!configured.isEmpty()) return configured;
-        return AppResolver.isInstalled(activity, AppResolver.ORGANIC_MAPS_INCAR)
-                ? AppResolver.ORGANIC_MAPS_INCAR : "";
+        return NavigationProvider.hasLauncherActivity(activity, NavigationProvider.ORGANIC_MAPS_INCAR)
+                ? NavigationProvider.ORGANIC_MAPS_INCAR : "";
     }
 
     private String label(String pkg) {
