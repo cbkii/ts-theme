@@ -152,6 +152,7 @@ stop_log() {
   fi
 }
 
+# shellcheck disable=SC2317 # Invoked indirectly by the EXIT-trap finalizer.
 seal_archive() {
   manifest_failed=0
   if have sha256sum; then
