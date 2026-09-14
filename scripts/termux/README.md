@@ -36,6 +36,16 @@ bash scripts/termux/install-standalone-launcher.sh --rollback-home
 bash scripts/termux/measure-standalone-launcher.sh
 ```
 
+## Native navigation-window qualification
+
+Use the event-driven collector with `docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md`. It does not mutate task/window/input/settings/package/Topway state. Start it on HOME, perform the ordinary UI actions at your own pace, then press Ctrl-C once.
+
+```bash
+bash scripts/termux/collect-navigation-window-evidence.sh --expect-package app.organicmaps.incar
+```
+
+It records exact launcher/helper provenance, raw ActivityTaskManager/WindowManager grammar, resolved launch component, task/mode/bounds changes, screenshots, filtered logs, read-only Topway correlations and bounded exact framework/APK bytes for conditional offline analysis. Do not commit device exports, logs or proprietary binaries.
+
 ## Window/media evidence collector
 
 `collect-window-media-evidence.sh` is a **read-only** targeted evidence bundle for media bootstrap validation and the separate future DoFun/Organic Maps windowing investigation.
@@ -49,7 +59,7 @@ For the best windowing evidence, run it while **DoFun is visibly displaying Orga
 The collector uses bounded commands to capture:
 
 - `wm size`, `wm density` and display state;
-- freeform/PiP feature and global-setting reads;
+- freeform feature and global-setting reads;
 - launcher/DoFun/Organic Maps/NavRadio+/music package state;
 - task/window/SurfaceFlinger names and bounds where exposed;
 - exported `MediaBrowserService` discovery and active MediaSession/actions;

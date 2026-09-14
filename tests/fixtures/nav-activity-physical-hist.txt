@@ -1,0 +1,11 @@
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #0 (activities from top to bottom):
+  Stack #12: type=standard mode=fullscreen
+    mBounds=Rect(0, 0 - 0, 0)
+    Task id #9071
+    mBounds=Rect(0, 0 - 0, 0)
+    * TaskRecord{e6de8b3 #9071 A=app.organicmaps.incar U=0 StackId=12 sz=2}
+      intent={act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity}
+      * Hist #0: ActivityRecord{78c4ed4 u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9071}
+          packageName=app.organicmaps.incar processName=app.organicmaps.incar
+          state=RESUMED visible=true

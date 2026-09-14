@@ -92,9 +92,18 @@ public final class SettingsActivity extends Activity {
                 "07:00 day · 19:00 night · dim around transitions",
                 v -> { LauncherPrefs.clearAppearanceSchedule(this); render(); });
 
-        addSwitchRow(R.drawable.ic_map, "Experimental Leaflet map",
-                "Off by default · retained only as a physical-test comparator",
-                ExperimentalMapPolicy.enabled(this), checked -> ExperimentalMapPolicy.setEnabled(this, checked));
+        addChoiceRow(R.drawable.ic_map, "HOME navigation surface",
+                HomeNavigationSurfacePolicy.label(HomeNavigationSurfacePolicy.mode(this)),
+                v -> choose("HOME navigation surface",
+                        new String[] {"Native navigation window · TESTING",
+                                "Fullscreen only · safe fallback",
+                                "Legacy online map fallback · Internet required"},
+                        new String[] {HomeNavigationSurfacePolicy.NATIVE_WINDOW,
+                                HomeNavigationSurfacePolicy.FULLSCREEN,
+                                HomeNavigationSurfacePolicy.LEAFLET},
+                        HomeNavigationSurfacePolicy.mode(this), value -> {
+                            HomeNavigationSurfacePolicy.setMode(this, value); recreate();
+                        }));
         addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom and follow controls",
                 LauncherPrefs.mapControlsEnabled(this), checked -> LauncherPrefs.setMapControlsEnabled(this, checked));
 
