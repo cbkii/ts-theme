@@ -12,6 +12,7 @@ final class NavigationProvider {
     static final String GOOGLE_MAPS = "com.google.android.apps.maps";
     static final String WAZE = "com.waze";
     static final String ORGANIC_MAPS = "app.organicmaps";
+    static final String ORGANIC_MAPS_INCAR = "app.organicmaps.incar";
     static final String OSMAND = "net.osmand";
     static final String OSMAND_PLUS = "net.osmand.plus";
 
@@ -30,6 +31,11 @@ final class NavigationProvider {
             }
         }
         return AppResolver.launchPackage(context, packageName);
+    }
+
+    static boolean hasLauncherActivity(Context context, String packageName) {
+        return packageName != null && !packageName.isEmpty()
+                && context.getPackageManager().getLaunchIntentForPackage(packageName) != null;
     }
 
     private static Intent locationIntent(String packageName, Location location) {
