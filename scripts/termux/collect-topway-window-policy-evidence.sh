@@ -7,6 +7,7 @@ OUT_BASE=/storage/emulated/0/Download
 OBSERVE=25
 CAP_TIMEOUT=10
 LIVE_PID=""
+ROOT_OK=0
 
 usage() {
   echo "Usage: $0 [--observe-seconds 5..120] [--out-base DIR]"
@@ -27,6 +28,11 @@ STAMP="$(date +%Y%m%d-%H%M%S 2>/dev/null || printf unknown)"
 OUT="$OUT_BASE/TS18-topway-window-policy-$STAMP"
 ZIP="$OUT.zip"
 mkdir -p "$OUT"/{framework,topway,logs,window} || exit 1
+printf 'status\tdetail\n' >"$OUT/status.tsv"
+
+status() {
+  printf '%s\t%s\n' "$1" "$2" >>"$OUT/status.tsv"
+}
 
 cap() {
   rel="$1"
@@ -42,7 +48,7 @@ cap() {
 rootcap() {
   rel="$1"
   shift
-  if ! command -v su >/dev/null 2>&1; then
+  if [ "$ROOT_OK" -ne 1 ]; then
     echo BLOCKED >"$OUT/$rel"
     return 0
   fi
@@ -67,17 +73,43 @@ finalize() {
   trap - EXIT INT TERM HUP
   stop_log
   if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$OUT" && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum) \
-      >"$OUT/SHA256SUMS.txt" 2>/dev/null || true
+    (cd "$OUT" && find . -type f ! -name SHA256SUMS.txt ! -name MANIFEST_VERIFY.txt -print0 \
+      | sort -z | xargs -0 -r sha256sum) >"$OUT/SHA256SUMS.txt" 2>/dev/null || true
+    if (cd "$OUT" && sha256sum -c SHA256SUMS.txt) >"$OUT/MANIFEST_VERIFY.txt" 2>&1; then
+      status PASS manifest
+    else
+      status FAIL manifest
+    fi
   fi
-  rm -f "$ZIP"
+  rm -f "$ZIP" "$ZIP.sha256"
   if command -v zip >/dev/null 2>&1; then
-    (cd "$(dirname "$OUT")" && zip -qr "$ZIP" "$(basename "$OUT")") || true
+    parent="$(dirname "$OUT")"
+    base="$(basename "$OUT")"
+    (cd "$parent" && find "$base" -type f -print | LC_ALL=C sort | zip -q -X "$ZIP" -@) || true
+  fi
+  if [ -f "$ZIP" ] && command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$ZIP" >"$ZIP.sha256" 2>/dev/null || true
   fi
   printf '%s\n' "$ZIP"
   exit "$rc"
 }
 trap finalize EXIT INT TERM HUP
+
+if ! command -v timeout >/dev/null 2>&1; then
+  status FAIL timeout-missing
+  exit 2
+fi
+if command -v su >/dev/null 2>&1; then
+  root_uid="$(timeout -k 1 4 su -c 'id -u' 2>/dev/null | tail -n 1)"
+  if [ "$root_uid" = 0 ]; then
+    ROOT_OK=1
+    status PASS root-uid0
+  else
+    status BLOCKED root-unavailable
+  fi
+else
+  status BLOCKED root-unavailable
+fi
 
 # These command strings intentionally expand their variables in the child/root shell.
 # shellcheck disable=SC2016
@@ -135,7 +167,11 @@ for list in "$BOOTCLASSPATH" "$SYSTEMSERVERCLASSPATH"; do
   IFS=$oldifs
 done'
 
-logcat -v threadtime >"$OUT/logs/live.txt" 2>&1 &
+# Keep the live collector narrow: only system/window/navigation lines needed to discriminate the
+# Topway policy. Do not persist an unrestricted device log stream.
+logcat -v threadtime \
+  | grep -Ei 'isPipLauncher|sendNaviType|forcepip|windowingMode|ActivityTaskManager|WindowManager|dofun|organicmaps|tw.service.xt|TS18Nav' \
+  >"$OUT/logs/live-relevant.txt" 2>&1 &
 LIVE_PID=$!
 printf 'During the next %s seconds, exercise one known-good DoFun HOME navigation window normally.\n' "$OBSERVE" >"$OUT/INSTRUCTIONS.txt"
 sleep "$OBSERVE"
@@ -143,5 +179,5 @@ stop_log
 
 cap window/after-activity.txt dumpsys activity activities
 cap window/after-window.txt dumpsys window windows
-cap logs/relevant.txt sh -c "grep -Ei 'isPipLauncher|sendNaviType|forcepip|windowingMode|ActivityTaskManager|WindowManager|dofun|organicmaps|tw.service.xt' '$OUT/logs/live.txt' | tail -n 2500 || true"
-printf '%s\n' 'Read-only evidence. Missing optimized-framework strings are UNKNOWN, not proof of absence. Do not write force-PIP properties/files from these observations.' >"$OUT/README.txt"
+tail -n 2500 "$OUT/logs/live-relevant.txt" >"$OUT/logs/relevant.txt" 2>/dev/null || true
+printf '%s\n' 'Read-only evidence. Missing optimized-framework strings are UNKNOWN, not proof of absence. Do not infer an actuator from a correlated force-PIP property/file.' >"$OUT/README.txt"
