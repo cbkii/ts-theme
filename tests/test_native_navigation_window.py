@@ -11,6 +11,8 @@ SETTINGS = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivit
 MANIFEST = ROOT / "launcher/src/main/AndroidManifest.xml"
 PROVIDER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/platform/TopwayDesktopWindowProvider.java"
 MARKER = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/platform/TopwayDesktopWindowMarkerService.java"
+QUALIFIER = ROOT / "scripts/termux/qualify-navigation-surfaces.sh"
+POLICY_COLLECTOR = ROOT / "scripts/termux/collect-topway-window-policy-evidence.sh"
 FIXTURES = ROOT / "tests/fixtures"
 
 
@@ -24,6 +26,8 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
         cls.manifest = MANIFEST.read_text(encoding="utf-8")
         cls.provider = PROVIDER.read_text(encoding="utf-8")
         cls.marker = MARKER.read_text(encoding="utf-8")
+        cls.qualifier = QUALIFIER.read_text(encoding="utf-8")
+        cls.policy_collector = POLICY_COLLECTOR.read_text(encoding="utf-8")
         match = re.search(
             r"TASK_SNAPSHOT_AWK='(.*?)'\n\nPINNED_SNAPSHOT_AWK=",
             cls.helper,
@@ -122,6 +126,34 @@ class NavigationSurfaceExperimentContractTest(unittest.TestCase):
         for token in ["result.displayId == 0", "result.windowingMode == expectedMode",
                       "target.toString().equals(result.bounds)", "result.component.startsWith(pkg + \"/\")"]:
             self.assertIn(token, self.controller)
+
+    def test_qualification_uses_live_home_authority_and_verified_task_bounds(self):
+        self.assertIn('case "$home_component" in', self.qualifier)
+        self.assertIn('result BLOCKED home-authority', self.qualifier)
+        self.assertIn("TARGET_SOURCE=configured", self.qualifier)
+        self.assertIn("TARGET_SOURCE=implicit-organicmaps-fallback", self.qualifier)
+        self.assertIn("TARGET_SOURCE=argument-only", self.qualifier)
+        self.assertIn("result BLOCKED configuration-authority", self.qualifier)
+        self.assertIn('GESTURE_BOUNDS="$bounds"', self.qualifier)
+        self.assertIn('input swipe $x $y $x2 $y 250', self.qualifier)
+        self.assertNotIn("input swipe 650 360 700 360 250", self.qualifier)
+        self.assertIn("launcher-apk-sha256.txt", self.qualifier)
+
+    def test_evidence_archives_verify_immutable_manifest_and_archive_hash(self):
+        for script in (self.qualifier, self.policy_collector):
+            self.assertIn("! -name SHA256SUMS.txt ! -name MANIFEST_VERIFY.txt", script)
+            self.assertIn("sha256sum -c SHA256SUMS.txt", script)
+            self.assertIn('sha256sum "$ZIP" >"$ZIP.sha256"', script)
+            manifest_start = script.index("sha256sum -c SHA256SUMS.txt")
+            self.assertNotIn('>>"$OUT/summary.txt"', script[manifest_start:])
+            self.assertNotIn('>>"$OUT/status.tsv"', script[manifest_start:])
+
+    def test_topway_policy_collector_keeps_live_log_narrow_and_read_only(self):
+        self.assertIn("live-relevant.txt", self.policy_collector)
+        self.assertIn("grep -Ei 'isPipLauncher|sendNaviType|forcepip|windowingMode", self.policy_collector)
+        self.assertNotIn('>"$OUT/logs/live.txt"', self.policy_collector)
+        for token in ("setprop", "settings put", "am force-stop", "pm disable", "setenforce 0"):
+            self.assertNotIn(token, self.policy_collector)
 
     def test_video_binder_is_not_navigation_transport(self):
         combined = self.controller + self.helper
