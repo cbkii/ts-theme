@@ -70,16 +70,21 @@ stop_log() {
 
 finalize() {
   rc=$?
+  manifest_failed=0
   trap - EXIT INT TERM HUP
   stop_log
   if command -v sha256sum >/dev/null 2>&1; then
     (cd "$OUT" && find . -type f ! -name SHA256SUMS.txt ! -name MANIFEST_VERIFY.txt -print0 \
-      | sort -z | xargs -0 -r sha256sum) >"$OUT/SHA256SUMS.txt" 2>/dev/null || true
-    if (cd "$OUT" && sha256sum -c SHA256SUMS.txt) >"$OUT/MANIFEST_VERIFY.txt" 2>&1; then
-      status PASS manifest
+      | sort -z | xargs -0 -r sha256sum) >"$OUT/SHA256SUMS.txt" 2>/dev/null || manifest_failed=1
+    if [ "$manifest_failed" -eq 0 ]; then
+      if ! (cd "$OUT" && sha256sum -c SHA256SUMS.txt) >"$OUT/MANIFEST_VERIFY.txt" 2>&1; then
+        manifest_failed=1
+      fi
     else
-      status FAIL manifest
+      printf 'SHA256SUMS generation failed\n' >"$OUT/MANIFEST_VERIFY.txt"
     fi
+  else
+    printf 'BLOCKED: sha256sum unavailable\n' >"$OUT/MANIFEST_VERIFY.txt"
   fi
   rm -f "$ZIP" "$ZIP.sha256"
   if command -v zip >/dev/null 2>&1; then
@@ -91,6 +96,9 @@ finalize() {
     sha256sum "$ZIP" >"$ZIP.sha256" 2>/dev/null || true
   fi
   printf '%s\n' "$ZIP"
+  if [ "$manifest_failed" -ne 0 ] && [ "$rc" -eq 0 ]; then
+    rc=4
+  fi
   exit "$rc"
 }
 trap finalize EXIT INT TERM HUP
