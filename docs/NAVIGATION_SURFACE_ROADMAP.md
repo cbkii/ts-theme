@@ -29,7 +29,7 @@ Status: current PR #11 implementation phase.
 - [x] Latch failure so HOME remains usable; require explicit Retry or Open fullscreen.
 - [x] Preserve the same task for fullscreen handoff and HOME return where Android exposes enough component state.
 - [x] Add event-driven read-only evidence collection and this roadmap/playbook.
-- [ ] Obtain exact-head CI-green TESTING release and verify remote asset provenance.
+- [x] Obtain exact-head CI-green TESTING release and verify remote asset provenance.
 
 Repository acceptance: source checks, parser fixtures, controller contracts, Android lint/unit/debug, signed/minified release, APK envelope, signature and exact-head CI all pass.
 
