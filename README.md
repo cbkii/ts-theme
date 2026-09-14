@@ -81,24 +81,39 @@ Apps opens an in-HOME overlay. The drawer has Settings and Close actions, five c
 
 This launcher is not a generic resizable/split-screen HOME. Responsive work is limited to known TS18 landscape states: the physical 1280x720 panel, the decor-fitted surface, and exact right-sidebar shown/hidden geometry when runtime evidence supports it. The known 1225 px safe-right remains the default full-panel authority while the Topway right sidebar is present. Do not generalise to phone/tablet/split-screen breakpoints.
 
-### Experimental HOME map
+### HOME navigation surfaces
 
-The Leaflet/WebView implementation remains **only an experimental physical-test comparator and is OFF by default on a clean install**. Existing explicit map preference is preserved on upgrade. No further Leaflet visual expansion belongs in PR #10.
+Settings has one authoritative **HOME navigation surface** preference with four mutually exclusive modes:
 
-When enabled it retains pinned Leaflet 1.9.4, restricted OSM raster requests through the native TileBroker, bounded cache/revalidation, renderer recovery, process-local state, no arbitrary browsing and no JS bridge. The duplicate map Navigation action is removed; zoom/follow controls remain opposite the side rail and may be hidden together.
+- **Fullscreen only** - safe default and ordinary navigation-app fallback.
+- **Leaflet comparator** - launcher-owned WebView surface retained only as an experimental geometry/composition comparator.
+- **Raw freeform task** - experimental external navigation task on display 0 in Android freeform `windowingMode=5`, bounded to the launcher navigation rectangle.
+- **Android PiP** - separate experimental standard Android pinned `windowingMode=2` path; it is not equivalent to Topway's OEM use of the term PIP.
 
-The raster cache is not an Organic Maps/OsmAnd/Google/Yandex offline database. A polished `Map unavailable`/retry placeholder may be reconsidered later **only if physical testing proves the experimental WebView approach worth retaining**; otherwise replacement/windowing belongs to the separate navigation architecture work.
+For upgrades, a previously explicit `map.enabled=true` is consulted only when the new surface preference has never been written. Once `navigation.surface.mode` exists it is the sole surface authority; an invalid stored mode fails safe to fullscreen.
+
+Exact TS18 evidence from a known-good DoFun/Organic Maps launch establishes a real external navigation task on display 0 in freeform mode 5, alongside Topway `isPipLauncher ... :navi` policy. The launcher therefore treats package + task ID + current top component + display + windowing mode + task bounds as the machine-state authority. It does **not** claim that raw `am task resize` reproduces DoFun's full private Topway navigation policy.
+
+The freeform/PiP experiments are root-assisted but bounded. Initial package-only task acquisition fails closed if multiple matching tasks exist. Once a task is acquired, HOME re-entry verifies or repairs that same task rather than adopting whichever task is focused. Opening a launcher-owned overlay or changing surface mode restores the exact known foreign task to fullscreen and returns focus to the known launcher task; it does not force-stop the navigator. A real HOME stop cancels helper work but retains known task identity for later revalidation.
+
+The Leaflet/WebView implementation remains **OFF by default on a clean install**. When selected it retains pinned Leaflet 1.9.4, restricted OSM raster requests through the native TileBroker, bounded cache/revalidation, renderer recovery, process-local state, no arbitrary browsing and no JS bridge. The raster cache is not an Organic Maps/OsmAnd/Google/Yandex offline database.
+
+Machine-state success is not physical HOME success. Raw freeform/PiP still require exact-device qualification of visible composition, map touch inside the rectangle, launcher touch outside it, app-drawer round trips, fullscreen/HOME transitions, unrelated-task isolation, navigator switching, process recreation, reverse return, reboot, cold boot and ACC sleep/wake. Standard PiP may legitimately qualify only as glance-only.
+
+See [HOME navigation surface experiments](docs/NATIVE_NAVIGATION_WINDOW.md) and [Topway desktop-window contracts](docs/TOPWAY_DESKTOP_WINDOW_CONTRACT.md).
 
 ## Configuration and diagnostics
 
-Versioned SAF JSON export/import is whitelisted and transactional. It includes app/role assignments, HOME shortcut visibility/count, rail and Radio/Music sides, map settings, media mode, startup media warm-up, accent hue, icon overrides and appearance schedule. It does not export secrets, caches or location history.
+Versioned SAF JSON export/import is whitelisted and transactional. It includes app/role assignments, HOME shortcut visibility/count, rail and Radio/Music sides, navigation-surface/map settings, media mode, startup media warm-up, accent hue, icon overrides and appearance schedule. It does not export secrets, caches or location history.
 
-Read-only physical evidence helpers:
+Physical evidence helpers include:
 
 - `scripts/termux/measure-standalone-launcher.sh` - CPU/RAM/frame measurements;
-- `scripts/termux/collect-window-media-evidence.sh` - bounded task/window/freeform/PiP, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture.
+- `scripts/termux/collect-window-media-evidence.sh` - read-only bounded task/window, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture;
+- `scripts/termux/qualify-navigation-surfaces.sh` - controlled PR #11 physical qualification, including current-HOME authority, configured navigation source, exact helper task state, screenshots, verified-bounds gesture and lifecycle phase labelling;
+- `scripts/termux/collect-topway-window-policy-evidence.sh` - read-only bounded exact-device collection for the unresolved Topway/DoFun navigation policy, with runtime-classpath discovery and a filtered relevant log stream.
 
-These diagnostics do not mutate protected state. Permission/time-out/root gaps are BLOCKED/UNKNOWN rather than evidence of absence.
+The navigation evidence scripts write only their own Download evidence bundle plus systemless launcher helper state where explicitly required by the experiment; they do not write observed Topway force-PIP properties/state files. Captured evidence uses a verified internal SHA-256 manifest and a separate archive SHA-256. Permission/time-out/root gaps remain BLOCKED/UNKNOWN rather than evidence of absence.
 
 ## UX and physical qualification
 
