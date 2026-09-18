@@ -268,6 +268,7 @@ final class NavigationWindowController {
                 : "Repairing task " + taskHint + " · transaction " + operation);
         backend.present(pkg, component, target, taskHint, operation, result -> {
             if (!finishOperation(operation)) return;
+            logCapabilityEvidence(result);
             retainObservedTask(result, pkg);
             if (acceptWindowedResult(result, pkg, target, taskHint)) {
                 markWindowed(result, pkg, target);
@@ -474,6 +475,13 @@ final class NavigationWindowController {
         Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack="
                 + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds
                 + " launched=" + result.launched + " transaction=" + result.transactionId);
+    }
+
+    private static void logCapabilityEvidence(NavigationHelperResult result) {
+        if (result.helpExit < 0 && result.launchExit < 0) return;
+        Log.i(TAG, "native launch evidence code=" + result.code + " helpExit="
+                + result.helpExit + " helpWindowingMode=" + result.helpWindowingMode
+                + " helpDisplay=" + result.helpDisplay + " launchExit=" + result.launchExit);
     }
 
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) {

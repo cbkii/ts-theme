@@ -11,6 +11,8 @@ The primary architecture is one external task on physical display 0 in Android f
 - Exact-device DoFun/Organic Maps captures prove a normal third-party navigation task can run on display 0 in mode 5 at compact bounds.
 - Organic Maps receives real compact Activity/Decor/Surface geometry in that state; it is not standard Android PiP.
 - The first PR #11 TESTING build failed before a valid freeform transition: it launched fullscreen first, cancelled delayed repair when HOME stopped, misparsed the physical `Hist #0` component and repeatedly relaunched.
+- Physical TESTING attempt 2 also failed before mode 5. The corrected architecture was installed, but the OEM `am help` command printed both required launch flags and exited 255; the helper incorrectly converted that non-zero help exit into `FREEFORM_LAUNCH_UNSUPPORTED`. Both Retry presses repeated the same preflight abort, so freeform, Organic Maps compact rendering and standalone-HOME composition were not tested.
+- The same exact dump exposed a second parser defect: a nested Activity `task=TaskRecord{...}` reference reset the already recovered `MwmActivity` component and PiP state to unknown. **Open fullscreen** nevertheless proved one resizeable Organic Maps task on display 0 and retained the intended compact bounds.
 - The standalone HOME did not reproduce the historical DoFun `isPipLauncher ... :navi` classification in that failed run, but this remains a downstream policy question until a valid standalone mode-5 state is reached.
 
 ## Phase 1 - deterministic mode-5 TESTING candidate
@@ -30,12 +32,14 @@ Status: current PR #11 implementation phase.
 - [x] Preserve the same task for fullscreen handoff and HOME return where Android exposes enough component state.
 - [x] Add event-driven read-only evidence collection and this roadmap/playbook.
 - [x] Obtain exact-head CI-green TESTING release and verify remote asset provenance.
+- [x] Correct help-capability handling so advertised flags survive OEM exit 255 and actual launch/readback is authoritative.
+- [x] Restrict task parsing to a genuine top-level `TaskRecord` and preserve component/PiP across nested Activity task references.
 
-Repository acceptance: source checks, parser fixtures, controller contracts, Android lint/unit/debug, signed/minified release, APK envelope, signature and exact-head CI all pass.
+Repository acceptance for the physical-attempt-2 corrections is pending exact-head validation and a refreshed TESTING APK. Mode 5 remains physically unqualified.
 
 ## Phase 2 - Organic Maps physical core gate
 
-Status: blocked on the Phase 1 TESTING APK and exact TS18 run.
+Status: blocked on the corrected Phase 1 TESTING APK and exact TS18 run. Attempt 2 did not execute mode 5.
 
 Use `NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md` and require independent results for:
 

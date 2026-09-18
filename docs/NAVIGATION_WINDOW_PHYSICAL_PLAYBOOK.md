@@ -12,10 +12,13 @@ The required user result is:
 
 `map visible and interactive inside the panel + launcher visible and interactive outside it`
 
+Physical TESTING attempt 2 is not a failed mode-5 result. The installed helper stopped at a false capability preflight because this OEM's `am help` advertised both required flags but exited 255. Retry repeated that same abort; no mode-5 launch or resize occurred. Use this playbook only with the corrected TESTING APK whose helper reports the help exit and advertised flags separately.
+
 ## Prepare
 
 1. Park safely. Do not run this while driving.
 2. Install the current `TS18-Standalone-Launcher-TESTING.apk` and keep DoFun installed/enabled as recovery HOME.
+   Confirm its build information identifies a source newer than the attempt-2 source `e2018dc9a75725c53b06dfc6dd3608d69aa78197`.
 3. In launcher Settings, choose Organic Maps InCar as Navigation and select **Native navigation window - TESTING**.
 4. Return to the standalone HOME. Close other diagnostic scripts and do not manually run task/window commands.
 5. From Termux, run:

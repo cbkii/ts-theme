@@ -102,7 +102,7 @@ in_task && !matched && /mBounds=Rect\(/ {
   pending_bounds=bounds_of($0)
   next
 }
-in_task && /TaskRecord\{/ && (index($0, " A=" pkg " ") || index($0, " A=" pkg "}")) {
+in_task && !matched && /^[[:space:]]*\* TaskRecord\{/ && (index($0, " A=" pkg " ") || index($0, " A=" pkg "}")) {
   if (hint != "0" && task != hint) next
   matched=1
   hist0=0
@@ -122,7 +122,7 @@ in_task && /TaskRecord\{/ && (index($0, " A=" pkg " ") || index($0, " A=" pkg "}
   if (explicit_mode != "") task_mode=explicit_mode
   next
 }
-matched && /\* Hist #0:/ {
+matched && /^[[:space:]]*\*?[[:space:]]*Hist #0:/ {
   hist0=1
   component=activity_record_component($0)
   if (component != "") task_component=component
@@ -183,6 +183,10 @@ TASK_COMPONENT=unknown
 SUPPORTS_PIP=unknown
 LAUNCHED=0
 TRANSACTION=0
+HELP_EXIT=not-run
+HELP_WINDOWING_MODE=0
+HELP_DISPLAY=0
+LAUNCH_EXIT=not-run
 
 log_event() {
   if command -v log >/dev/null 2>&1; then
@@ -256,9 +260,10 @@ vendor_state_fields() {
 emit_protocol() {
   outcome="$1"
   code="$2"
-  printf '%s code=%s task=%s stack=%s package=%s component=%s display=%s windowingMode=%s bounds=%s supportsPip=%s launched=%s transaction=%s ' \
+  printf '%s code=%s task=%s stack=%s package=%s component=%s display=%s windowingMode=%s bounds=%s supportsPip=%s launched=%s transaction=%s helpExit=%s helpWindowingMode=%s helpDisplay=%s launchExit=%s ' \
     "$outcome" "$code" "$TASK_ID" "$STACK_ID" "$PKG" "$TASK_COMPONENT" "$DISPLAY_ID" \
-    "$WINDOWING_MODE" "$TASK_BOUNDS" "$SUPPORTS_PIP" "$LAUNCHED" "$TRANSACTION"
+    "$WINDOWING_MODE" "$TASK_BOUNDS" "$SUPPORTS_PIP" "$LAUNCHED" "$TRANSACTION" \
+    "$HELP_EXIT" "$HELP_WINDOWING_MODE" "$HELP_DISPLAY" "$LAUNCH_EXIT"
   vendor_state_fields
   printf '\n'
 }
@@ -417,10 +422,13 @@ verify_state() {
 }
 
 native_launch_supported() {
-  am help >"$START_HELP" 2>&1 || return 1
-  grep -q 'windowingMode' "$START_HELP" || return 1
-  grep -q -- '--display' "$START_HELP" || return 1
-  return 0
+  am help >"$START_HELP" 2>&1
+  HELP_EXIT=$?
+  HELP_WINDOWING_MODE=0
+  HELP_DISPLAY=0
+  if grep -q -- '--windowingMode' "$START_HELP"; then HELP_WINDOWING_MODE=1; fi
+  if grep -q -- '--display' "$START_HELP"; then HELP_DISPLAY=1; fi
+  [ "$HELP_WINDOWING_MODE" = 1 ] && [ "$HELP_DISPLAY" = 1 ]
 }
 
 launch_freeform_once() {
@@ -434,9 +442,9 @@ launch_freeform_once() {
   am start --user 0 --display 0 --windowingMode 5 \
     -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
     -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    if grep -q -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
+  LAUNCH_EXIT=$?
+  if [ "$LAUNCH_EXIT" -ne 0 ]; then
+    if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
       fail FREEFORM_LAUNCH_UNSUPPORTED
     fi
     fail FREEFORM_LAUNCH_FAILED
@@ -473,7 +481,8 @@ case "$action" in
   probe)
     native_launch=0
     if native_launch_supported; then native_launch=1; fi
-    printf 'OK code=READY uid=0 nativeLaunch=%s ' "$native_launch"
+    printf 'OK code=READY uid=0 nativeLaunch=%s helpExit=%s helpWindowingMode=%s helpDisplay=%s ' \
+      "$native_launch" "$HELP_EXIT" "$HELP_WINDOWING_MODE" "$HELP_DISPLAY"
     vendor_state_fields
     printf '\n'
     ;;

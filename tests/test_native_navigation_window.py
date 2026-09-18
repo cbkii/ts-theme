@@ -1,5 +1,8 @@
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -76,6 +79,66 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         )
         return completed.stdout.strip()
 
+    def run_helper(self, args, *, help_text, help_exit, start_output="", start_exit=0,
+                   activity_text="Display #0\n  Stack #0: type=home mode=fullscreen\n"):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            helper_root = root / "helper"
+            bin_dir.mkdir()
+            helper_root.mkdir()
+            for command in ("awk", "cat", "cut", "grep", "rm", "sleep", "tr"):
+                resolved = shutil.which(command)
+                if resolved is None:
+                    self.fail(f"required test command is unavailable: {command}")
+                os.symlink(resolved, bin_dir / command)
+            (bin_dir / "id").write_text("#!/bin/sh\nprintf '0\\n'\n", encoding="utf-8")
+            (bin_dir / "getprop").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            activity = root / "activity.txt"
+            activity.write_text(activity_text, encoding="utf-8")
+            (bin_dir / "dumpsys").write_text(
+                "#!/bin/sh\ncat \"$FAKE_ACTIVITY_FILE\"\n", encoding="utf-8"
+            )
+            (bin_dir / "am").write_text(
+                "#!/bin/sh\n"
+                "case \"${1:-}\" in\n"
+                "  help) printf '%s\\n' \"$FAKE_AM_HELP\"; exit \"$FAKE_AM_HELP_EXIT\" ;;\n"
+                "  start) printf '%s\\n' \"$FAKE_AM_START_OUTPUT\"; "
+                "exit \"$FAKE_AM_START_EXIT\" ;;\n"
+                "  *) exit 0 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            for fake in ("id", "getprop", "dumpsys", "am"):
+                (bin_dir / fake).chmod(0o700)
+
+            test_helper = root / "nav-window.sh"
+            source = self.helper.replace(
+                "PATH=/system/bin:/system/xbin:/vendor/bin",
+                f"PATH={bin_dir}",
+                1,
+            ).replace(
+                "ROOT_DIR=/data/adb/ts18-launcher",
+                f"ROOT_DIR={helper_root}",
+                1,
+            )
+            test_helper.write_text(source, encoding="utf-8")
+            environment = os.environ.copy()
+            environment.update({
+                "FAKE_ACTIVITY_FILE": str(activity),
+                "FAKE_AM_HELP": help_text,
+                "FAKE_AM_HELP_EXIT": str(help_exit),
+                "FAKE_AM_START_OUTPUT": start_output,
+                "FAKE_AM_START_EXIT": str(start_exit),
+            })
+            return subprocess.run(
+                ["/bin/sh", str(test_helper), *args],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+
     def test_task_parser_matches_exact_ts18_freeform_hierarchy(self):
         self.assertEqual(
             "FOUND 9257 3 0 5 475,72,1211,459 "
@@ -89,6 +152,18 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             "app.organicmaps.incar/app.organicmaps.MwmActivity unknown",
             self.parse_fixture("nav-activity-physical-hist.txt"),
         )
+
+    def test_task_parser_ignores_nested_task_record_references(self):
+        self.assertEqual(
+            "FOUND 9133 4 0 1 0,0,0,0 "
+            "app.organicmaps.incar/app.organicmaps.MwmActivity 0",
+            self.parse_fixture("nav-activity-physical-nested-task.txt"),
+        )
+        self.assertIn(
+            'in_task && !matched && /^[[:space:]]*\\* TaskRecord\\{/',
+            self.helper,
+        )
+        self.assertIn('matched && /^[[:space:]]*\\*?[[:space:]]*Hist #0:/', self.helper)
 
     def test_foreground_parser_reads_resumed_task_identity(self):
         self.assertEqual("9258", self.parse_foreground_fixture("nav-activity-fullscreen.txt"))
@@ -121,6 +196,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertNotIn("1280,720", result)
 
     def test_helper_owns_one_mode5_acquire_launch_resize_verify_transaction(self):
+        present = self.helper.split("  present-native)", 1)[1].split("  verify-native)", 1)[0]
         self.assertIn("present-native)", self.helper)
         self.assertIn('read_task_once "$PKG" 0', self.helper)
         self.assertIn('2) fail TASK_AMBIGUOUS', self.helper)
@@ -133,6 +209,65 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn('am task resize "$wanted_task" "$left" "$top" "$right" "$bottom"', self.helper)
         self.assertIn('verify_state 5 "$expected"', self.helper)
         self.assertIn("launched=%s transaction=%s", self.helper)
+        self.assertIn("helpExit=%s helpWindowingMode=%s helpDisplay=%s launchExit=%s", self.helper)
+        self.assertIn("logCapabilityEvidence(result)", self.controller)
+        self.assertRegex(
+            present,
+            r"0\) validate_observed_component ;;\s*1\)\s*launch_freeform_once",
+        )
+        self.assertEqual(1, present.count('launch_freeform_once "$launch_component"'))
+        self.assertRegex(present, r"2\) fail TASK_AMBIGUOUS.*;;")
+
+    def test_help_flags_are_authoritative_even_when_help_exits_255(self):
+        completed = self.run_helper(
+            ["probe"],
+            help_text="usage: am start [--display DISPLAY_ID] [--windowingMode WINDOWING_MODE]",
+            help_exit=255,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn("nativeLaunch=1", completed.stdout)
+        self.assertIn("helpExit=255", completed.stdout)
+        self.assertIn("helpWindowingMode=1", completed.stdout)
+        self.assertIn("helpDisplay=1", completed.stdout)
+
+    def test_help_missing_either_flag_is_unsupported(self):
+        for help_text in (
+            "usage: am start [--display DISPLAY_ID]",
+            "usage: am start [--windowingMode WINDOWING_MODE]",
+        ):
+            with self.subTest(help_text=help_text):
+                completed = self.run_helper(["probe"], help_text=help_text, help_exit=0)
+                self.assertEqual(0, completed.returncode, completed.stderr)
+                self.assertIn("nativeLaunch=0", completed.stdout)
+
+    def test_actual_unknown_option_launch_is_classified_unsupported(self):
+        completed = self.run_helper(
+            ["present-native", "app.organicmaps.incar",
+             "app.organicmaps.incar/app.organicmaps.MwmActivity",
+             "524", "77", "1174", "453", "0", "1"],
+            help_text="usage: am start [--display DISPLAY_ID] [--windowingMode WINDOWING_MODE]",
+            help_exit=255,
+            start_output="Error: Unknown option: --windowingMode",
+            start_exit=64,
+        )
+        self.assertEqual(1, completed.returncode)
+        self.assertIn("code=FREEFORM_LAUNCH_UNSUPPORTED", completed.stdout)
+        self.assertIn("helpExit=255", completed.stdout)
+        self.assertIn("launchExit=64", completed.stdout)
+
+    def test_other_actual_launch_failure_is_classified_failed(self):
+        completed = self.run_helper(
+            ["present-native", "app.organicmaps.incar",
+             "app.organicmaps.incar/app.organicmaps.MwmActivity",
+             "524", "77", "1174", "453", "0", "1"],
+            help_text="usage: am start [--display DISPLAY_ID] [--windowingMode WINDOWING_MODE]",
+            help_exit=255,
+            start_output="Error: Activity not started, unable to resolve Intent",
+            start_exit=1,
+        )
+        self.assertEqual(1, completed.returncode)
+        self.assertIn("code=FREEFORM_LAUNCH_FAILED", completed.stdout)
+        self.assertIn("launchExit=1", completed.stdout)
 
     def test_standard_android_pip_is_absent_from_production_path(self):
         self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/AndroidPipBackend.java").exists())
@@ -196,6 +331,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("navigationWindowController.openFullscreen(location)) return;", self.launcher)
         self.assertIn('require_foreground_task "$wanted_task" FULLSCREEN_NOT_FOREGROUND', self.helper)
         self.assertIn('require_foreground_task "$home_task" HOME_NOT_FOREGROUND', self.helper)
+        self.assertIn('[ "$component" != unknown ] || fail COMPONENT_UNKNOWN', self.helper)
 
     def test_native_surface_is_primary_and_leaflet_is_explicit_legacy_fallback(self):
         self.assertIn('static final String NATIVE_WINDOW = "native_window"', self.policy)
@@ -235,6 +371,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             "final-activity.txt", "final-window.txt", "status-final.txt",
         ):
             self.assertIn(token, self.collector)
+        self.assertIn("am_help_exit=%s", self.collector)
+        self.assertIn("cmd_activity_help_exit=%s", self.collector)
 
     def test_evidence_archives_verify_immutable_manifest_and_archive_hash(self):
         for script in (self.collector, self.policy_collector):
@@ -248,6 +386,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("at your own pace", self.playbook)
         self.assertIn("Press Ctrl-C once", self.playbook)
         self.assertIn("Mode 5 and exact bounds", self.playbook)
+        self.assertIn("Attempt 2 did not execute mode 5", self.roadmap)
+        self.assertIn("no mode-5 launch or resize occurred", self.playbook)
         self.assertIn("Phase 3 - conditional Topway policy recovery", self.roadmap)
         self.assertIn("log-only, exact-build-hash-gated LSPosed trace", self.roadmap)
         self.assertIn("Do not fabricate", self.roadmap)

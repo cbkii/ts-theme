@@ -18,6 +18,8 @@ A known-good DoFun/Organic Maps capture on CB's TS18 established a normal Organi
 
 This proves the required task/window shape. It does not prove that raw Android mode 5 alone reproduces every private Topway policy decision. The current TESTING build must first reproduce the Android machine state before any OEM compatibility layer is considered.
 
+Physical TESTING attempt 2 stopped before mode 5: the exact OEM `am help` output advertised `--display` and `--windowingMode` but returned exit 255, and the previous helper treated that exit as unsupported. **Open fullscreen** separately created one resizeable Organic Maps task on display 0 and retained the intended compact non-fullscreen bounds, but this does not qualify mode 5. The corrected helper records the help exit and exact advertised flags separately; the actual launch plus state readback remains authoritative.
+
 ## Deterministic transaction
 
 `NativeNavigationPanel` owns the target rectangle in physical screen coordinates. Java resolves the configured package's ordinary exported launcher Activity and passes package, component, display 0, bounds and transaction ID to the narrow root helper.
@@ -40,7 +42,7 @@ The helper follows the real hierarchy:
 
 `Display -> Stack/RootTask -> Task id -> task mBounds -> TaskRecord -> Hist #0 ActivityRecord`
 
-It reads the top component directly from the exact physical `* Hist #0: ActivityRecord{... package/component ...}` line, with `mActivityComponent=` only as a fallback. Shorthand same-package components are normalised. Nested Activity configuration bounds never override task/root-task bounds.
+It reads the top component directly from the exact physical `Hist #0: ActivityRecord{... package/component ...}` line, with or without the optional leading `*`, and uses its following `mActivityComponent=` only as a fallback. Only the genuine top-level `* TaskRecord{...}` after `Task id` establishes task identity. Nested Activity `task=TaskRecord{...}` references cannot reinitialise the selected task. Shorthand same-package components are normalised, and nested Activity configuration bounds never override task/root-task bounds.
 
 An unobservable component is `unknown`, not `COMPONENT_MISMATCH`. Package plus exact task ID is sufficient for task-only resize and verification. A positively observed foreign top component fails closed.
 

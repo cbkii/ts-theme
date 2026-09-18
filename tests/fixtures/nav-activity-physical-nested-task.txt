@@ -1,0 +1,22 @@
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #0 (activities from top to bottom):
+  Stack #4: type=standard mode=fullscreen
+  mBounds=Rect(0, 0 - 0, 0)
+
+    Task id #9133
+    mBounds=Rect(0, 0 - 0, 0)
+    mLastNonFullscreenBounds=Rect(524, 77 - 1174, 453)
+    * TaskRecord{taskhash #9133 A=app.organicmaps.incar U=0 StackId=4 sz=1}
+      intent={act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] pkg=app.organicmaps.incar cmp=app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity}
+      mActivityComponent=app.organicmaps.incar/app.organicmaps.SplashActivity
+      Activities=[ActivityRecord{activityhash u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9133}]
+      hasBeenVisible=true mResizeMode=RESIZE_MODE_RESIZEABLE mSupportsPictureInPicture=false isResizeable=true
+        Hist #0: ActivityRecord{activityhash u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9133}
+          Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] pkg=app.organicmaps.incar cmp=app.organicmaps.incar/app.organicmaps.MwmActivity }
+          frontOfTask=true task=TaskRecord{taskhash #9133 A=app.organicmaps.incar U=0 StackId=4 sz=1}
+          taskAffinity=app.organicmaps.incar
+          mActivityComponent=app.organicmaps.incar/app.organicmaps.MwmActivity
+
+    Running activities (most recent first):
+      TaskRecord{taskhash #9133 A=app.organicmaps.incar U=0 StackId=4 sz=1}
+        Run #0: ActivityRecord{activityhash u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9133}
