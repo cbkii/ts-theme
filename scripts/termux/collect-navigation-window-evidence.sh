@@ -295,8 +295,10 @@ root_capture helper/staged.txt \
 root_capture helper/probe.txt "$HELPER probe"
 if [ -n "$TARGET" ]; then root_capture helper/status-initial.txt "$HELPER status '$TARGET' 0"; fi
 
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture helper/am-help.txt \
   'am help 2>&1; rc=$?; printf "\nam_help_exit=%s\n" "$rc"'
+# shellcheck disable=SC2016 # Expanded by the target Android shell under su.
 root_capture helper/cmd-activity-help.txt \
   'cmd activity help 2>&1; rc=$?; printf "\ncmd_activity_help_exit=%s\n" "$rc"'
 # shellcheck disable=SC2016 # Expanded by the target Android shell under su.
