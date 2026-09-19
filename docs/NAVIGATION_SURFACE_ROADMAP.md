@@ -14,6 +14,8 @@ The primary architecture is one external task on physical display 0 in Android f
 - Physical TESTING attempt 2 also failed before mode 5. The corrected architecture was installed, but the OEM `am help` command printed both required launch flags and exited 255; the helper incorrectly converted that non-zero help exit into `FREEFORM_LAUNCH_UNSUPPORTED`. Both Retry presses repeated the same preflight abort, so freeform, Organic Maps compact rendering and standalone-HOME composition were not tested.
 - The same exact dump exposed a second parser defect: a nested Activity `task=TaskRecord{...}` reference reset the already recovered `MwmActivity` component and PiP state to unknown. **Open fullscreen** nevertheless proved one resizeable Organic Maps task on display 0 and retained the intended compact bounds.
 - The standalone HOME did not reproduce the historical DoFun `isPipLauncher ... :navi` classification in that failed run, but this remains a downstream policy question until a valid standalone mode-5 state is reached.
+- Static review of the corrected head found that drawer close returned through `onHomeVisible()` without clearing `launcherOverlayOpen`; after one drawer round-trip the controller could suppress all later reconciliation. The current head makes HOME-visible state explicitly clear overlay suppression and a stale queued drawer suspension, with a JVM lifecycle test.
+- A correct task ID/display/mode/bounds tuple cannot prove that the task's surface is above HOME or has the intended touch region. The launcher now reports that state as configured rather than physically verified, and the collector observes window, input and surface state at each transition.
 
 ## Phase 1 - deterministic mode-5 TESTING candidate
 
@@ -34,12 +36,16 @@ Status: current PR #11 implementation phase.
 - [x] Obtain exact-head CI-green TESTING release and verify remote asset provenance.
 - [x] Correct help-capability handling so advertised flags survive OEM exit 255 and actual launch/readback is authoritative.
 - [x] Restrict task parsing to a genuine top-level `TaskRecord` and preserve component/PiP across nested Activity task references.
+- [x] Clear drawer-overlay suppression and stale queued drawer suspension when the unobstructed HOME surface returns.
+- [x] Keep task-geometry success distinct from physical surface/input success in launcher wording.
+- [x] Capture ActivityManager, WindowManager, InputDispatcher, SurfaceFlinger and screenshots together at focused state changes.
+- [x] Add a separately namespaced broad discovery phase covering AOSP freeform, system task embedding/organising, virtual display, PiP, DoFun/RePlugin, Topway services and privilege feasibility.
 
-Repository acceptance for the physical-attempt-2 corrections is pending exact-head validation and a refreshed TESTING APK. Mode 5 remains physically unqualified.
+Repository acceptance remains subject to exact-head validation and a refreshed TESTING APK. Mode 5, composition and input remain physically unqualified.
 
 ## Phase 2 - Organic Maps physical core gate
 
-Status: blocked on the corrected Phase 1 TESTING APK and exact TS18 run. Attempt 2 did not execute mode 5.
+Status: blocked on the current Phase 1 TESTING APK and exact TS18 run. Attempt 2 did not execute mode 5.
 
 Use `NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md` and require independent results for:
 

@@ -111,7 +111,7 @@ Physical evidence helpers include:
 
 - `scripts/termux/measure-standalone-launcher.sh` - CPU/RAM/frame measurements;
 - `scripts/termux/collect-window-media-evidence.sh` - read-only bounded task/window, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture;
-- `scripts/termux/collect-navigation-window-evidence.sh` - read-only event-driven PR #11 qualification; it checkpoints exact task/window state and screenshots only when relevant state changes, then seals on one Ctrl-C;
+- `scripts/termux/collect-navigation-window-evidence.sh` - read-only two-layer PR #11 qualification: focused activity/window/input/surface checkpoints during physical actions, followed after one Ctrl-C by a separate broad platform/Topway/DoFun and alternative-route discovery capture;
 - `scripts/termux/collect-topway-window-policy-evidence.sh` - read-only bounded exact-device collection for the unresolved Topway/DoFun navigation policy, with runtime-classpath discovery and a filtered relevant log stream.
 
 The navigation collector writes only its own Download evidence bundle. It does not launch/resize/focus tasks, inject input, change settings/packages or write observed Topway state. The launcher itself stages its narrow systemless helper. Captured evidence uses a verified internal SHA-256 manifest and a separate archive SHA-256. Permission/time-out/root gaps remain BLOCKED/UNKNOWN rather than evidence of absence.

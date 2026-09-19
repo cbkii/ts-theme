@@ -299,6 +299,23 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertNotIn("authorityGeneration++", stop_body)
         self.assertNotIn("activeTaskId = -1", stop_body)
 
+    def test_home_return_clears_drawer_overlay_and_stale_suspend(self):
+        home_body = self.controller.split("void onHomeVisible()", 1)[1].split(
+            "void onHomeStopped()", 1
+        )[0]
+        overlay_body = self.controller.split("void onLauncherOverlayOpened()", 1)[1].split(
+            "void suspendForExperimentalMap()", 1
+        )[0]
+        ui_state = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowUiState.java").read_text()
+        ui_test = (ROOT / "launcher/src/test/java/com/cbkii/ts18launcher/NavigationWindowUiStateTest.java").read_text()
+
+        self.assertIn("uiState.onHomeVisible()", home_body)
+        self.assertIn('pendingSuspendReason = "";', home_body)
+        self.assertIn("!uiState.onLauncherOverlayOpened()", overlay_body)
+        self.assertIn("launcherOverlayOpen = false", ui_state)
+        self.assertIn("homeReturnClearsDrawerOverlaySuppression", ui_test)
+        self.assertNotIn("void onLauncherOverlayClosed()", self.controller)
+
     def test_inflight_callbacks_coalesce_and_cannot_launch_again(self):
         self.assertIn("if (activeOperationId != 0)", self.controller)
         self.assertIn("pendingReconcile = true", self.controller)
@@ -322,6 +339,9 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             "target.toString().equals(result.bounds)",
         ):
             self.assertIn(token, self.controller)
+        self.assertIn("panel.showConfigured", self.controller)
+        self.assertIn("Physical visibility and touch are not inferred", self.controller)
+        self.assertNotIn("showReady", self.controller + self.panel)
 
     def test_fullscreen_handoff_and_home_return_preserve_task_authority(self):
         self.assertIn("backend.fullscreen(pkg, task", self.controller)
@@ -368,7 +388,16 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             "launcher-apk-sha256", "resolved-launch-component", "am-help.txt",
             "classpaths.txt", "system-server-maps.txt", "anchor-strings.txt",
             "magisk-lsposed-metadata", "state-initial.txt", "state-final.txt",
-            "final-activity.txt", "final-window.txt", "status-final.txt",
+            "final-activity.txt", "final-window.txt", "final-input.txt",
+            "final-surfaceflinger.txt", "status-final.txt",
+        ):
+            self.assertIn(token, self.collector)
+        for token in (
+            "dumpsys input", "InputDispatcher", "surface/checkpoints",
+            "dumpsys SurfaceFlinger", "discovery/APPROACH_MATRIX.txt",
+            "ShellTaskOrganizer", "WindowContainerTransaction", "VirtualDisplay",
+            "DESKTOP_WINDOW_SERVICE", "DESKTOP_FLOATING_APP_SERVICE",
+            "FLOATING_WINDOW_SERVER", "broad-discovery",
         ):
             self.assertIn(token, self.collector)
         self.assertIn("am_help_exit=%s", self.collector)

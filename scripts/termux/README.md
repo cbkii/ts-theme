@@ -44,7 +44,11 @@ Use the event-driven collector with `docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md
 bash scripts/termux/collect-navigation-window-evidence.sh --expect-package app.organicmaps.incar
 ```
 
-It records exact launcher/helper provenance, raw ActivityTaskManager/WindowManager grammar, resolved launch component, task/mode/bounds changes, screenshots, filtered logs, read-only Topway correlations and bounded exact framework/APK bytes for conditional offline analysis. Do not commit device exports, logs or proprietary binaries.
+The rolling TESTING release publishes the same script as `TS18-Navigation-Window-Probe.sh` beside the APK, playbook and combined hashes so the tested APK and probe can be kept on one exact source revision.
+
+It has two deliberately separate layers. During the physical actions it checkpoints full ActivityTaskManager, WindowManager and InputDispatcher state plus relevant SurfaceFlinger state and screenshots whenever the combined signature changes. After Ctrl-C it performs a broader read-only discovery capture covering framework features/help/settings, service and Binder surfaces, package declarations, DoFun/RePlugin metadata, Topway correlations, process/SELinux context, alternative task-embedding/virtual-display/PiP anchors and bounded exact framework/APK bytes. Do not commit device exports, logs or proprietary binaries.
+
+The broad phase runs by default because the current implementation is not physically qualified and the exact TS18 may expose a different viable route. Use `--skip-discovery` only for a deliberate focused rerun after a complete broad archive already exists.
 
 ## Window/media evidence collector
 

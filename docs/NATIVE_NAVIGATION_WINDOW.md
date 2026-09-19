@@ -32,7 +32,8 @@ The helper owns one bounded `present-native` transaction:
 4. only when no task exists, start the resolved ordinary launcher component once with explicit display 0 and `windowingMode=5`;
 5. acquire the resulting exact task;
 6. mark that task resizeable, resize it to the panel rectangle and read state back;
-7. report success only for the configured package, exact task, display 0, mode 5 and exact bounds.
+7. accept task configuration only for the configured package, exact task, display 0, mode 5 and exact bounds;
+8. keep physical visibility, z-order and touch qualification separate rather than inferring them from task geometry.
 
 The launcher never selects a task because it is focused, recent or frontmost. Organic Maps bootstrap transitions such as `DownloadResourcesActivity -> MwmActivity` are valid while the same package/task remains authoritative.
 
@@ -69,3 +70,5 @@ The launcher observes but does not write force-PIP properties, `sys.df.*`, `/dat
 ## Qualification
 
 CI validates source, parsing, lifecycle contracts and the APK envelope only. Use `NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md` with `scripts/termux/collect-navigation-window-evidence.sh` for the exact TS18 result. The OEM-policy branch in `NAVIGATION_SURFACE_ROADMAP.md` is gated on that physical evidence.
+
+The collector first records focused task/window/input/surface transitions. After the user ends observation it runs a separate broad discovery phase for alternate implementation routes and unexpected OEM surfaces. This avoids both premature narrowing and the opposite mistake of treating a large undifferentiated dump as proof of the immediate physical result.

@@ -41,7 +41,7 @@ final class NativeNavigationPanel extends FrameLayout {
         secondaryAction.setVisibility(secondary==null?View.GONE:View.VISIBLE);
     }
     void showStarting(String label,String backend){String app=label==null||label.isEmpty()?"navigation":label;status.setText("Starting "+app+"…\n"+backend);setActions(null,null,null,null);}
-    void showReady(String detail,Runnable openFullscreen){status.setText(detail==null||detail.isEmpty()?"Navigation surface active":detail);setAction("Open fullscreen",openFullscreen);}
+    void showConfigured(String detail,Runnable openFullscreen){status.setText(detail==null||detail.isEmpty()?"Navigation task configured; physical surface unverified":detail);setAction("Open fullscreen",openFullscreen);}
     void showFailure(String detail,Runnable retry,Runnable openFullscreen){status.setText(detail==null||detail.isEmpty()?"Navigation surface unavailable":detail);setActions("Retry",retry,"Open fullscreen",openFullscreen);}
     void showUnavailable(String detail,Runnable openFullscreen){status.setText(detail==null||detail.isEmpty()?"Navigation surface unavailable":detail);setAction("Open fullscreen",openFullscreen);}
     void showFullscreenOnly(String label,Runnable openFullscreen){String app=label==null||label.isEmpty()?"Navigation":label;status.setText(app+"\nFullscreen-only mode");setAction("Open navigation",openFullscreen);}

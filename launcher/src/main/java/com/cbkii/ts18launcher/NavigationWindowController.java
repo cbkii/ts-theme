@@ -26,12 +26,11 @@ final class NavigationWindowController {
 
     private final Activity activity;
     private final NativeNavigationPanel panel;
+    private final NavigationWindowUiState uiState = new NavigationWindowUiState();
 
     private NavigationSurfaceBackend backend;
     private String backendMode = "";
     private State state = State.IDLE;
-    private boolean homeVisible;
-    private boolean launcherOverlayOpen;
     private boolean needsValidation = true;
     private boolean pendingReconcile;
     private String pendingSuspendReason = "";
@@ -63,7 +62,11 @@ final class NavigationWindowController {
 
     void onHomeVisible() {
         if (state == State.DESTROYED) return;
-        homeVisible = true;
+        uiState.onHomeVisible();
+        // HOME reaches this callback only after LauncherActivity has confirmed that its
+        // in-HOME overlay is closed. Cancel an obsolete queued suspension from a quick
+        // drawer open/close while another helper transaction was still in flight.
+        pendingSuspendReason = "";
         if (state == State.FULLSCREEN_HANDOFF) {
             state = State.IDLE;
             needsValidation = true;
@@ -75,7 +78,7 @@ final class NavigationWindowController {
 
     void onHomeStopped() {
         if (state == State.DESTROYED) return;
-        homeVisible = false;
+        uiState.onHomeStopped();
         needsValidation = true;
         if (activeOperationId != 0) {
             Log.i(TAG, "HOME stopped during bounded transaction; transaction retained id="
@@ -86,19 +89,13 @@ final class NavigationWindowController {
     }
 
     void onLauncherOverlayOpened() {
-        launcherOverlayOpen = true;
+        if (state == State.DESTROYED || !uiState.onLauncherOverlayOpened()) return;
         suspendForLauncherSurface("launcher overlay");
     }
 
-    void onLauncherOverlayClosed() {
-        if (state == State.DESTROYED) return;
-        launcherOverlayOpen = false;
-        homeVisible = true;
-        needsValidation = true;
-        reconcile(true);
-    }
-
     void suspendForExperimentalMap() {
+        if (state == State.DESTROYED) return;
+        uiState.onLauncherOverlayOpened();
         suspendForLauncherSurface("legacy online map fallback active");
     }
 
@@ -132,13 +129,13 @@ final class NavigationWindowController {
         needsValidation = true;
         if (activeOperationId != 0) {
             pendingReconcile = true;
-        } else if (homeVisible && !launcherOverlayOpen) {
+        } else if (uiState.canPresentNavigation()) {
             reconcile(false);
         }
     }
 
     private void reconcile(boolean force) {
-        if (!homeVisible || launcherOverlayOpen || state == State.DESTROYED || bounds == null) return;
+        if (!uiState.canPresentNavigation() || state == State.DESTROYED || bounds == null) return;
         if (activeOperationId != 0) {
             pendingReconcile = true;
             return;
@@ -471,7 +468,7 @@ final class NavigationWindowController {
         appliedBounds = target;
         needsValidation = false;
         clearFailureLatch();
-        if (homeVisible && !launcherOverlayOpen) showWindowedStatus(pkg, result.taskId, target);
+        if (uiState.canPresentNavigation()) showWindowedStatus(pkg, result.taskId, target);
         Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack="
                 + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds
                 + " launched=" + result.launched + " transaction=" + result.transactionId);
@@ -485,8 +482,10 @@ final class NavigationWindowController {
     }
 
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) {
-        panel.showReady(label(pkg) + " · native task " + taskId
-                + "\nDisplay 0 · mode 5 · " + target.width() + "×" + target.height(),
+        panel.showConfigured(label(pkg) + " · mode 5 configured"
+                + "\nTask " + taskId + " · Display 0 · "
+                + target.width() + "×" + target.height()
+                + "\nPhysical visibility and touch are not inferred",
                 () -> openFullscreen(null));
     }
 
@@ -508,7 +507,7 @@ final class NavigationWindowController {
     }
 
     private void showLatchedFailure() {
-        if (!homeVisible || launcherOverlayOpen) return;
+        if (!uiState.canPresentNavigation()) return;
         panel.showFailure("Native navigation unavailable · " + failureDetail,
                 this::retry, () -> openFullscreen(null));
     }

@@ -19,6 +19,8 @@ env:
   TEST_RELEASE_TAG: 000-testing-only
   TEST_DEBUG_APK_NAME: TS18-Standalone-Launcher-DEBUG.apk
   TEST_INSTALL_APK_NAME: TS18-Standalone-Launcher-TESTING.apk
+  TEST_PROBE_NAME: TS18-Navigation-Window-Probe.sh
+  TEST_PLAYBOOK_NAME: TS18-Navigation-Window-Playbook.md
 
 jobs:
   publish:
@@ -61,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected=(BUILD_INFO.txt launcher-debug.apk launcher-release.apk)
+          expected=(BUILD_INFO.txt launcher-debug.apk launcher-release.apk navigation-window-playbook.md navigation-window-probe.sh)
           mapfile -t actual < <(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
           mapfile -t wanted < <(printf '%s\n' "${expected[@]}" | sort)
           [[ "${actual[*]}" == "${wanted[*]}" ]] || {
@@ -109,6 +111,8 @@ jobs:
           test -n "$KEY_PASSWORD"
           mkdir -p outgoing
           cp incoming/launcher-debug.apk "outgoing/$TEST_DEBUG_APK_NAME"
+          cp incoming/navigation-window-probe.sh "outgoing/$TEST_PROBE_NAME"
+          cp incoming/navigation-window-playbook.md "outgoing/$TEST_PLAYBOOK_NAME"
 
           apksigner="${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
           "$apksigner" sign \
@@ -139,7 +143,8 @@ jobs:
           EOF
           (
             cd outgoing
-            sha256sum "$TEST_INSTALL_APK_NAME" "$TEST_DEBUG_APK_NAME" BUILD_INFO.txt SIGNER.txt \
+            sha256sum "$TEST_INSTALL_APK_NAME" "$TEST_DEBUG_APK_NAME" \
+              "$TEST_PROBE_NAME" "$TEST_PLAYBOOK_NAME" BUILD_INFO.txt SIGNER.txt \
               > SHA256SUMS.txt
             sha256sum -c SHA256SUMS.txt
           )
@@ -167,7 +172,7 @@ jobs:
           fi
 
           source_sha="$(sed -n 's/^source_sha=//p' outgoing/BUILD_INFO.txt | head -n 1)"
-          body="Testing-only rolling launcher build. This release is intentionally kept as a draft and must not be published.\n\nCurrent source: $source_sha\nSource artifact run: ${{ inputs.artifact_run_id }}\n\nUse $TEST_INSTALL_APK_NAME for normal installation/update. $TEST_DEBUG_APK_NAME is the exact CI debug build and may use a different debug signer between runs."
+          body="Testing-only rolling launcher build. This release is intentionally kept as a draft and must not be published.\n\nCurrent source: $source_sha\nSource artifact run: ${{ inputs.artifact_run_id }}\n\nUse $TEST_INSTALL_APK_NAME for normal installation/update. Run $TEST_PROBE_NAME from Termux and follow $TEST_PLAYBOOK_NAME. The probe records focused physical transitions, then a separate broad read-only discovery capture. $TEST_DEBUG_APK_NAME is the exact CI debug build and may use a different debug signer between runs."
 
           if [[ -z "$release_id" ]]; then
             release_id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
@@ -233,6 +238,8 @@ jobs:
 
           upload_asset "outgoing/$TEST_INSTALL_APK_NAME"
           upload_asset "outgoing/$TEST_DEBUG_APK_NAME"
+          upload_asset "outgoing/$TEST_PROBE_NAME"
+          upload_asset "outgoing/$TEST_PLAYBOOK_NAME"
           upload_asset outgoing/BUILD_INFO.txt
           upload_asset outgoing/SIGNER.txt
           upload_asset outgoing/SHA256SUMS.txt
@@ -242,7 +249,8 @@ jobs:
           [[ "$(jq -r .name <<<"$final")" == "$TEST_RELEASE_TITLE" ]]
           mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"$final" | sort)
           mapfile -t wanted_assets < <(printf '%s\n' \
-            "$TEST_INSTALL_APK_NAME" "$TEST_DEBUG_APK_NAME" BUILD_INFO.txt SIGNER.txt SHA256SUMS.txt | sort)
+            "$TEST_INSTALL_APK_NAME" "$TEST_DEBUG_APK_NAME" "$TEST_PROBE_NAME" \
+            "$TEST_PLAYBOOK_NAME" BUILD_INFO.txt SIGNER.txt SHA256SUMS.txt | sort)
           [[ "${actual_assets[*]}" == "${wanted_assets[*]}" ]] || {
             printf 'Draft assets mismatch.\nExpected: %s\nActual: %s\n' \
               "${wanted_assets[*]}" "${actual_assets[*]}" >&2
