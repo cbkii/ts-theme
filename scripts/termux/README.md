@@ -44,7 +44,7 @@ Use the event-driven collector with `docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md
 bash scripts/termux/collect-navigation-window-evidence.sh --expect-package app.organicmaps.incar
 ```
 
-The rolling TESTING release publishes the same script as `TS18-Navigation-Window-Probe.sh` beside the APK, playbook and combined hashes so the tested APK and probe can be kept on one exact source revision.
+Use the probe and playbook from the exact source SHA recorded in the rolling TESTING asset group's `BUILD_INFO` file. This keeps the APK and evidence protocol revision-matched even though the trusted draft publisher currently accepts only its established APK/provenance/signature/checksum envelope.
 
 It has two deliberately separate layers. During the physical actions it checkpoints full ActivityTaskManager, WindowManager and InputDispatcher state plus relevant SurfaceFlinger state and screenshots whenever the combined signature changes. After Ctrl-C it performs a broader read-only discovery capture covering framework features/help/settings, service and Binder surfaces, package declarations, DoFun/RePlugin metadata, Topway correlations, process/SELinux context, alternative task-embedding/virtual-display/PiP anchors and bounded exact framework/APK bytes. Do not commit device exports, logs or proprietary binaries.
 

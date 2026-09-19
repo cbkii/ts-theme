@@ -19,14 +19,14 @@ The current build also corrects the launcher-overlay lifecycle: returning from t
 ## Prepare
 
 1. Park safely. Do not run this while driving.
-2. From the same TESTING release, download `TS18-Standalone-Launcher-TESTING.apk`, `TS18-Navigation-Window-Probe.sh`, `TS18-Navigation-Window-Playbook.md` and `SHA256SUMS.txt`; verify their hashes. Install the TESTING APK and keep DoFun installed/enabled as recovery HOME.
+2. From the fixed TESTING draft, download the newest `TS18-Standalone-Launcher-TESTING-PR11-<sha>.apk`, matching `BUILD_INFO-PR11-<sha>.txt` and `SHA256SUMS-PR11-<sha>.txt`; verify the asset group and exact source SHA. From that immutable source SHA, download `scripts/termux/collect-navigation-window-evidence.sh` and this playbook. Install the TESTING APK and keep DoFun installed/enabled as recovery HOME.
    Confirm its build information identifies a source newer than the attempt-2 source `e2018dc9a75725c53b06dfc6dd3608d69aa78197`.
 3. In launcher Settings, choose Organic Maps InCar as Navigation and select **Native navigation window - TESTING**.
 4. Return to the standalone HOME. Close other diagnostic scripts and do not manually run task/window commands.
 5. From Termux, run:
 
    ```bash
-   bash TS18-Navigation-Window-Probe.sh --expect-package app.organicmaps.incar
+   bash collect-navigation-window-evidence.sh --expect-package app.organicmaps.incar
    ```
 
 6. Wait for `OBSERVATION READY`. Perform the actions below at your own pace. The focused collector creates a checkpoint when its combined activity/window/input signature changes. Each checkpoint also captures relevant SurfaceFlinger state and a screenshot.

@@ -5,7 +5,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DRAFT = (ROOT / ".github/workflows/testing-apk-draft.yml").read_text(encoding="utf-8")
 PUBLISH = (ROOT / ".github/workflows/testing-apk-publish.yml").read_text(encoding="utf-8")
-VALIDATE = (ROOT / ".github/workflows/validate.yml").read_text(encoding="utf-8")
 
 
 class TestingDraftWorkflowTests(unittest.TestCase):
@@ -33,12 +32,6 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertIn("-PVERSION_NAME=0.0.0-testing -PVERSION_CODE=999999", DRAFT)
         self.assertIn("TS18-Standalone-Launcher-TESTING.apk", PUBLISH)
         self.assertIn("TS18-Standalone-Launcher-DEBUG.apk", PUBLISH)
-        self.assertIn("TS18-Navigation-Window-Probe.sh", PUBLISH)
-        self.assertIn("TS18-Navigation-Window-Playbook.md", PUBLISH)
-        self.assertIn("navigation-window-probe.sh", DRAFT)
-        self.assertIn("navigation-window-playbook.md", DRAFT)
-        self.assertIn("navigation-window-probe.sh", VALIDATE)
-        self.assertIn("navigation-window-playbook.md", VALIDATE)
 
     def test_draft_assets_are_replaced_by_release_id(self):
         self.assertIn("releases/$release_id/assets?per_page=100", PUBLISH)

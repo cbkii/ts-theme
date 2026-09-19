@@ -147,10 +147,6 @@ jobs:
           mkdir -p testing-input
           cp "$debug_apk" testing-input/launcher-debug.apk
           cp "$release_apk" testing-input/launcher-release.apk
-          cp scripts/termux/collect-navigation-window-evidence.sh \
-            testing-input/navigation-window-probe.sh
-          cp docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md \
-            testing-input/navigation-window-playbook.md
           cat > testing-input/BUILD_INFO.txt <<EOF
           source_kind=validate
           source_sha=$SOURCE_SHA
