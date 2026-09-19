@@ -36,6 +36,20 @@ bash scripts/termux/install-standalone-launcher.sh --rollback-home
 bash scripts/termux/measure-standalone-launcher.sh
 ```
 
+## Native navigation-window qualification
+
+Use the event-driven collector with `docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md`. It does not mutate task/window/input/settings/package/Topway state. Start it on HOME, perform the ordinary UI actions at your own pace, then press Ctrl-C once.
+
+```bash
+bash scripts/termux/collect-navigation-window-evidence.sh --expect-package app.organicmaps.incar
+```
+
+Use the probe and playbook from the exact source SHA recorded in the rolling TESTING asset group's `BUILD_INFO` file. This keeps the APK and evidence protocol revision-matched even though the trusted draft publisher currently accepts only its established APK/provenance/signature/checksum envelope.
+
+It has two deliberately separate layers. During the physical actions it checkpoints full ActivityTaskManager, WindowManager and InputDispatcher state plus relevant SurfaceFlinger state and screenshots whenever the combined signature changes. After Ctrl-C it performs a broader read-only discovery capture covering framework features/help/settings, service and Binder surfaces, package declarations, DoFun/RePlugin metadata, Topway correlations, process/SELinux context, alternative task-embedding/virtual-display/PiP anchors and bounded exact framework/APK bytes. Do not commit device exports, logs or proprietary binaries.
+
+The broad phase runs by default because the current implementation is not physically qualified and the exact TS18 may expose a different viable route. Use `--skip-discovery` only for a deliberate focused rerun after a complete broad archive already exists.
+
 ## Window/media evidence collector
 
 `collect-window-media-evidence.sh` is a **read-only** targeted evidence bundle for media bootstrap validation and the separate future DoFun/Organic Maps windowing investigation.
@@ -49,7 +63,7 @@ For the best windowing evidence, run it while **DoFun is visibly displaying Orga
 The collector uses bounded commands to capture:
 
 - `wm size`, `wm density` and display state;
-- freeform/PiP feature and global-setting reads;
+- freeform feature and global-setting reads;
 - launcher/DoFun/Organic Maps/NavRadio+/music package state;
 - task/window/SurfaceFlinger names and bounds where exposed;
 - exported `MediaBrowserService` discovery and active MediaSession/actions;

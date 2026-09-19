@@ -15,11 +15,15 @@ FORBIDDEN_DEX_MARKERS = (
     b"Landroidx/",
     b"Lcom/qihoo360/",
 )
+# Only externally named Android components belong here. R8 is expected to rename
+# ordinary implementation classes such as navigation policies/backends.
 REQUIRED_DEX_MARKERS = (
     b"Lcom/cbkii/ts18launcher/LauncherActivity;",
     b"Lcom/cbkii/ts18launcher/AppDrawerActivity;",
     b"Lcom/cbkii/ts18launcher/SettingsActivity;",
     b"Lcom/cbkii/ts18launcher/MediaListenerService;",
+    b"Lcom/cbkii/ts18launcher/platform/TopwayDesktopWindowMarkerService;",
+    b"Lcom/cbkii/ts18launcher/platform/TopwayDesktopWindowProvider;",
 )
 REQUIRED_FILES = {
     "AndroidManifest.xml",
@@ -29,7 +33,22 @@ REQUIRED_FILES = {
     "assets/map/vendor/leaflet.css",
     "assets/map/vendor/LEAFLET-LICENSE.txt",
     "assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt",
+    "assets/nav/nav-window.sh",
 }
+REQUIRED_HELPER_MARKERS = (
+    b"TASK_AMBIGUOUS",
+    b"present-native",
+    b"verify-native",
+    b"--windowingMode 5",
+    b"am task resizeable",
+    b"am task resize",
+    b"COMPONENT_UNKNOWN",
+    b"windowingMode",
+)
+FORBIDDEN_HELPER_MARKERS = (
+    b"setprop ",
+    b"settings put global force_resizable_activities",
+)
 
 
 def fail(message: str) -> None:
@@ -72,12 +91,22 @@ def inspect(apk: Path) -> None:
                 fail(f"forbidden runtime marker present in DEX: {marker!r}")
         for marker in REQUIRED_DEX_MARKERS:
             if marker not in dex:
-                fail(f"required manifest component marker missing: {marker!r}")
+                fail(f"required Android component marker missing: {marker!r}")
+
+        helper = archive.read("assets/nav/nav-window.sh")
+        for marker in REQUIRED_HELPER_MARKERS:
+            if marker not in helper:
+                fail(f"navigation helper protocol marker missing: {marker!r}")
+        for marker in FORBIDDEN_HELPER_MARKERS:
+            if marker in helper:
+                fail(f"forbidden navigation helper mutation present: {marker!r}")
 
     print(
         "launcher envelope: PASS "
         f"apk_bytes={size} dex=1 native=0 "
-        "kotlin=0 androidx=0 replugin=0 leaflet_map_assets=present material_symbols_notice=present"
+        "kotlin=0 androidx=0 replugin=0 leaflet_map_assets=present "
+        "navigation_task_helper=present navigation_native_mode5=present "
+        "topway_home_compat=present material_symbols_notice=present"
     )
 
 

@@ -16,7 +16,7 @@ final class ConfigurationCodec {
     static final int VERSION = 1;
     static final int MAX_BYTES = 64 * 1024;
     interface Packages { boolean available(String name); }
-    enum Type { PACKAGE, ROLE, ICON, HUE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE }
+    enum Type { PACKAGE, ROLE, ICON, HUE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE, NAV_SURFACE }
     static final Map<String, Type> KEYS;
     static {
         Map<String, Type> keys = new LinkedHashMap<>();
@@ -35,6 +35,7 @@ final class ConfigurationCodec {
         keys.put(LauncherPrefs.KEY_RAIL_POSITION, Type.RAIL);
         keys.put(LauncherPrefs.KEY_RADIO_SIDE, Type.SIDE);
         keys.put(LauncherPrefs.KEY_MAP_ENABLED, Type.BOOLEAN);
+        keys.put(HomeNavigationSurfacePolicy.KEY, Type.NAV_SURFACE);
         keys.put(LauncherPrefs.KEY_MAP_CONTROLS_ENABLED, Type.BOOLEAN);
         keys.put(LauncherPrefs.KEY_MEDIA_MODE, Type.MEDIA);
         keys.put(LauncherPrefs.KEY_APPEARANCE_MODE, Type.APPEARANCE);
@@ -121,6 +122,7 @@ final class ConfigurationCodec {
             if (type == Type.MEDIA && oneOf(text, "auto", "prefer_music")) return;
             if (type == Type.APPEARANCE && oneOf(text, "auto", "day", "high_contrast", "dim", "night")) return;
             if (type == Type.AUTO_SOURCE && oneOf(text, "sensor", "schedule")) return;
+            if (type == Type.NAV_SURFACE && HomeNavigationSurfacePolicy.isKnown(text)) return;
         }
         throw new JSONException("Invalid value for " + key);
     }

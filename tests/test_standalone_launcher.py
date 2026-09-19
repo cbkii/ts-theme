@@ -225,7 +225,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('addSection("Appearance")', settings)
         self.assertIn('addSection("Advanced HOME / recovery")', settings)
         self.assertIn('"Map controls"', settings)
-        self.assertIn('"Experimental Leaflet map"', settings)
+        self.assertIn('"Legacy online map fallback', settings)
         self.assertIn('"Display appearance"', settings)
         self.assertIn('"Auto appearance source"', settings)
         self.assertIn('"Rail position"', settings)
