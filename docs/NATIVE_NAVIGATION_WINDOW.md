@@ -27,11 +27,11 @@ Physical TESTING attempt 2 stopped before mode 5: the exact OEM `am help` output
 The helper owns one bounded `present-native` transaction:
 
 1. inspect same-package tasks;
-2. adopt exactly one existing task without launching;
+2. adopt exactly one existing task without creating another task;
 3. fail closed if multiple pre-existing tasks are ambiguous;
 4. only when no task exists, start the resolved ordinary launcher component once with explicit display 0 and `windowingMode=5`;
 5. acquire the resulting exact task;
-6. mark that task resizeable, resize it to the panel rectangle and read state back;
+6. for an existing fullscreen task, request mode 5 with `am start --task <id> --windowingMode 5` using its observed same-package component, then verify the same ID/mode before resizing; mark it resizeable, apply the panel rectangle, focus and read state back;
 7. accept task configuration only for the configured package, exact task, display 0, mode 5 and exact bounds;
 8. keep physical visibility, z-order and touch qualification separate rather than inferring them from task geometry.
 
@@ -52,6 +52,10 @@ An unobservable component is `unknown`, not `COMPONENT_MISMATCH`. Package plus e
 Only one helper operation may be in flight. Bounds and lifecycle callbacks coalesce behind it; one authority generation can make at most one package-only acquisition attempt. A transient HOME stop during freeform launch/convergence does not invalidate the transaction or destroy the backend.
 
 HOME return validates the same authorised task first. Genuine task disappearance starts a new bounded reacquisition generation. App drawer, Settings and unrelated tasks never become navigation authority.
+
+The 2026-09-20 captures establish bounded rendering on PR11-5aea8bc. They also expose a suspension bug (HOME component validated against the map package) and failed warm resizing. Both task authorities are now checked before suspension; each component is checked against the package being inspected. The drawer is delivered only after suspension completes and HOME is visible. HOME quick/source Activity launches use the same barrier, and repeated requests cannot schedule a late second suspension after the app launch. Explicit HOME/fullscreen cancels an unshown drawer request. Once this package is default HOME, ordinary app entry redirects to HomeAlias before creating a second controller.
+
+The helper retains bounded failed-command output in its response/log. The probe uses Android-side deadlines and completion sentinels, clears Termux loader variables, captures rolling lifecycle logs, and records the timestamp of any last-valid final sample. These mechanisms have host behavioural tests; exact TS18 lifecycle and touch qualification remains required. No cache clearing or force-stop is a recovery strategy.
 
 Failure is latched for the current package/mode/generation. HOME remains usable and does not automatically launch navigation again. The user receives separate **Retry** and **Open fullscreen** actions. Retry starts one new generation; fullscreen is always explicit.
 

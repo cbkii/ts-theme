@@ -12,6 +12,11 @@ final class NavigationWindowUiState {
         return changed;
     }
 
+    void onHomeVisibleWithOverlay() {
+        homeVisible = true;
+        launcherOverlayOpen = true;
+    }
+
     void onHomeStopped() {
         homeVisible = false;
     }

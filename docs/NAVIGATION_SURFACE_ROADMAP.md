@@ -8,6 +8,8 @@ The primary architecture is one external task on physical display 0 in Android f
 
 ## Evidence already established
 
+- `PR11-5aea8bc` physically displayed bounded Organic Maps on standalone HOME (task 9059, display 0, mode 5, bounds `0,141,1131,702`). Warm recovery and drawer launches failed; force-stop/cache clearing preceded the successful run, so the cause of recovery is not isolated. Inside-map touch is still unconfirmed.
+- Lifecycle repair now targets the reproduced HOME-package validation mismatch, explicit same-task fullscreen-to-mode-5 recovery, serialized drawer/app handoff, and duplicate ordinary-entry/HOME controllers. The collector restores the proven root completion-sentinel transport with cleared Termux loader variables and bounded Android-side execution.
 - Exact-device DoFun/Organic Maps captures prove a normal third-party navigation task can run on display 0 in mode 5 at compact bounds.
 - Organic Maps receives real compact Activity/Decor/Surface geometry in that state; it is not standard Android PiP.
 - The first PR #11 TESTING build failed before a valid freeform transition: it launched fullscreen first, cancelled delayed repair when HOME stopped, misparsed the physical `Hist #0` component and repeatedly relaunched.
@@ -41,11 +43,11 @@ Status: current PR #11 implementation phase.
 - [x] Capture ActivityManager, WindowManager, InputDispatcher, SurfaceFlinger and screenshots together at focused state changes.
 - [x] Add a separately namespaced broad discovery phase covering AOSP freeform, system task embedding/organising, virtual display, PiP, DoFun/RePlugin, Topway services and privilege feasibility.
 
-Repository acceptance remains subject to exact-head validation and a refreshed TESTING APK. Mode 5, composition and input remain physically unqualified.
+Repository acceptance remains subject to exact-head validation and a refreshed TESTING APK. Initial mode 5 and visible composition are demonstrated; repeatable lifecycle and physical input remain unqualified.
 
 ## Phase 2 - Organic Maps physical core gate
 
-Status: blocked on the current Phase 1 TESTING APK and exact TS18 run. Attempt 2 did not execute mode 5.
+Status: initial bounded rendering demonstrated on `PR11-5aea8bc`; prioritize warm starts, drawer/app transitions and fullscreen/HOME round trips in the next exact TS18 run.
 
 Use `NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md` and require independent results for:
 

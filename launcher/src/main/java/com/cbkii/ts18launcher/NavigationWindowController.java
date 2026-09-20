@@ -27,6 +27,7 @@ final class NavigationWindowController {
     private final Activity activity;
     private final NativeNavigationPanel panel;
     private final NavigationWindowUiState uiState = new NavigationWindowUiState();
+    private final NavigationOverlayGate overlayGate = new NavigationOverlayGate();
 
     private NavigationSurfaceBackend backend;
     private String backendMode = "";
@@ -62,6 +63,12 @@ final class NavigationWindowController {
 
     void onHomeVisible() {
         if (state == State.DESTROYED) return;
+        if (overlayGate.isPending()) {
+            uiState.onHomeVisibleWithOverlay();
+            overlayGate.onVisible();
+            return;
+        }
+        overlayGate.onVisible();
         uiState.onHomeVisible();
         // HOME reaches this callback only after LauncherActivity has confirmed that its
         // in-HOME overlay is closed. Cancel an obsolete queued suspension from a quick
@@ -79,6 +86,7 @@ final class NavigationWindowController {
     void onHomeStopped() {
         if (state == State.DESTROYED) return;
         uiState.onHomeStopped();
+        overlayGate.onStopped();
         needsValidation = true;
         if (activeOperationId != 0) {
             Log.i(TAG, "HOME stopped during bounded transaction; transaction retained id="
@@ -93,6 +101,23 @@ final class NavigationWindowController {
         suspendForLauncherSurface("launcher overlay");
     }
 
+    void openLauncherOverlay(Runnable show) {
+        if (state == State.DESTROYED || !overlayGate.request(show)) return;
+        uiState.onLauncherOverlayOpened();
+        suspendForLauncherSurface("launcher overlay");
+    }
+
+    void cancelLauncherOverlay() {
+        overlayGate.cancel();
+        pendingSuspendReason = "";
+    }
+
+    void launchAfterSuspension(Runnable launch) {
+        // A deliberate app selection supersedes an unshown drawer request.
+        cancelLauncherOverlay();
+        openLauncherOverlay(launch);
+    }
+
     void suspendForExperimentalMap() {
         if (state == State.DESTROYED) return;
         uiState.onLauncherOverlayOpened();
@@ -102,6 +127,8 @@ final class NavigationWindowController {
     /** Returns true when the controller accepted or completed the user-authorised handoff. */
     boolean openFullscreen(Location location) {
         if (state == State.DESTROYED) return false;
+        overlayGate.cancel();
+        pendingSuspendReason = "";
         String pkg = selectedPackage();
         if (pkg.isEmpty()) {
             panel.showUnavailable("Choose a Navigation app in Settings", null);
@@ -117,6 +144,7 @@ final class NavigationWindowController {
     }
 
     void destroy() {
+        overlayGate.cancel();
         authorityGeneration++;
         activeOperationId = 0;
         state = State.DESTROYED;
@@ -193,7 +221,11 @@ final class NavigationWindowController {
                 showWindowedStatus(configuredPackage, activeTaskId, target);
                 return;
             }
-            startVerify(configuredPackage, component, target, activeTaskId);
+            if (needsValidation) {
+                startPresent(configuredPackage, component, target, activeTaskId);
+            } else {
+                startVerify(configuredPackage, component, target, activeTaskId);
+            }
         } else {
             startPresent(configuredPackage, component, target, -1);
         }
@@ -250,6 +282,11 @@ final class NavigationWindowController {
 
     private void startPresent(String pkg, String component, NavigationWindowBounds target,
             int taskHint) {
+        if (!uiState.canPresentNavigation()) {
+            needsValidation = true;
+            drainPendingWork();
+            return;
+        }
         boolean acquisition = taskHint <= 0;
         if (acquisition && acquisitionAttemptGeneration == authorityGeneration) {
             latchFailure(pkg, configuredMode, "Acquisition already attempted; use Retry");
@@ -326,6 +363,7 @@ final class NavigationWindowController {
                     adoptAuthority(nextMode, nextPackage);
                     state = State.SUSPENDED;
                     reconcile(true);
+                    drainPendingWork();
                 });
     }
 
@@ -338,6 +376,7 @@ final class NavigationWindowController {
         if (!hasManagedNativeTask()) {
             state = State.SUSPENDED;
             Log.i(TAG, "suspend " + reason + " without managed task");
+            overlayGate.onSettled();
             return;
         }
         ensureNativeBackend();
@@ -349,6 +388,7 @@ final class NavigationWindowController {
         state = State.SUSPENDING;
         backend.suspend(pkg, task, activity.getPackageName(), activity.getTaskId(), result -> {
             if (!finishOperation(operation)) return;
+            if (!result.success) Log.w(TAG, "suspend helper failure: " + result.raw);
             if ("TASK_NOT_FOUND".equals(result.code)) {
                 activeTaskId = -1;
             } else if (acceptIdentity(result, pkg, task) && result.windowingMode == 1) {
@@ -359,6 +399,10 @@ final class NavigationWindowController {
             state = State.SUSPENDED;
             needsValidation = true;
             Log.i(TAG, "suspended navigation reason=" + reason + " task=" + task);
+            // Requests made during this suspension are satisfied by this result.
+            // Do not let a second suspension run after the selected app launches.
+            pendingSuspendReason = "";
+            overlayGate.onSettled();
             drainPendingWork();
         });
     }
@@ -475,6 +519,7 @@ final class NavigationWindowController {
     }
 
     private static void logCapabilityEvidence(NavigationHelperResult result) {
+        if (!result.success) Log.w(TAG, "helper failure: " + result.raw);
         if (result.helpExit < 0 && result.launchExit < 0) return;
         Log.i(TAG, "native launch evidence code=" + result.code + " helpExit="
                 + result.helpExit + " helpWindowingMode=" + result.helpWindowingMode

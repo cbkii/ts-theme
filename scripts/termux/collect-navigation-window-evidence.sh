@@ -15,7 +15,7 @@ RUN_DISCOVERY=1
 LAUNCHER=com.cbkii.ts18launcher
 DOFUN=com.dofun.variety
 HELPER=/data/adb/ts18-launcher/nav-window.sh
-ANDROID_PATH=/system/bin:/system/xbin:/vendor/bin
+ANDROID_PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin
 ROOT_OK=0
 STOP_REQUESTED=0
 FAILS=0
@@ -28,6 +28,8 @@ LAST_SIGNATURE=""
 TARGET=""
 MODE=unknown
 WORK=""
+ROOT_PID=""
+LAST_SAMPLE_AT=none
 
 usage() {
   printf '%s\n' \
@@ -96,7 +98,8 @@ safe_output_base "$OUT_BASE" || exit 64
 case "$MAX_EXPORT_MIB" in ''|*[!0-9]*) exit 64 ;; esac
 [ "$MAX_EXPORT_MIB" -ge 32 ] && [ "$MAX_EXPORT_MIB" -le 256 ] || exit 64
 
-STAMP="$(date +%Y%m%d-%H%M%S 2>/dev/null || printf unknown)"
+umask 077
+STAMP="$(date +%Y%m%d-%H%M%S 2>/dev/null || printf unknown)-$$"
 OUT="$OUT_BASE/TS18-navigation-window-$STAMP"
 ZIP="$OUT.zip"
 [ ! -e "$OUT" ] && [ ! -e "$ZIP" ] && [ ! -e "$ZIP.sha256" ] || exit 73
@@ -128,13 +131,60 @@ have() {
   command -v "$1" >/dev/null 2>&1
 }
 
+stop_root_wrapper() {
+  [ -n "$ROOT_PID" ] || return 0
+  if kill -0 "$ROOT_PID" 2>/dev/null; then
+    kill -TERM "$ROOT_PID" 2>/dev/null || true
+    sleep 0.1
+    kill -KILL "$ROOT_PID" 2>/dev/null || true
+  fi
+  wait "$ROOT_PID" 2>/dev/null || true
+  ROOT_PID=""
+}
+
+# The tested Magisk client can outlive a completed root command. Root records
+# the command status separately; never infer failure from the client lifetime.
+run_root_bounded() {
+  local seconds="$1" stdout_file="$2" stderr_file="$3" command_text="$4"
+  local command_file status_file deadline root_rc token
+  token="${BASHPID:-$$}-$RANDOM"
+  command_file="$WORK/root-command-$token.sh"
+  status_file="$WORK/root-status-$token.txt"
+  {
+    printf 'PATH=%s\nexport PATH\nunset LD_PRELOAD LD_LIBRARY_PATH\n' "$ANDROID_PATH"
+    printf '%s\n' "$command_text"
+  } >"$command_file"
+  : >"$status_file"
+  su -c "PATH=$ANDROID_PATH; export PATH; unset LD_PRELOAD LD_LIBRARY_PATH; if /system/bin/toybox timeout 1 /system/bin/true >/dev/null 2>&1; then /system/bin/toybox timeout '$seconds' /system/bin/sh '$command_file'; root_rc=\$?; else root_rc=125; fi; printf '%s\\n' \"\$root_rc\" >'$status_file'" \
+    >"$stdout_file" 2>"$stderr_file" &
+  ROOT_PID=$!
+  deadline=$((SECONDS + seconds + 3))
+  while [ ! -s "$status_file" ] && kill -0 "$ROOT_PID" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do
+    sleep 0.1
+  done
+  root_rc=124
+  if [ -s "$status_file" ]; then
+    root_rc="$(tr -d '\r\n ' <"$status_file")"
+    case "$root_rc" in ''|*[!0-9]*) root_rc=125 ;; esac
+  else
+    printf 'root completion sentinel not observed before deadline\n' >>"$stderr_file"
+  fi
+  stop_root_wrapper
+  rm -f -- "$command_file" "$status_file"
+  return "$root_rc"
+}
+
 capture_with_timeout() {
-  seconds="$1"
-  rel="$2"
+  local seconds="$1" rel="$2" rc=0 command_text="" arg
   shift 2
   mkdir -p "$(dirname "$OUT/$rel")"
-  timeout -k 2 "$seconds" "$@" >"$OUT/$rel" 2>&1
-  rc=$?
+  if [[ "$1" == /system/* ]] && [ "$ROOT_OK" -eq 1 ]; then
+    for arg in "$@"; do command_text+=" '${arg//\'/\'\\\'\'}'"; done
+    run_root_bounded "$seconds" "$OUT/$rel" "$WORK/capture.stderr" "$command_text" || rc=$?
+    cat "$WORK/capture.stderr" >>"$OUT/$rel"
+  else
+    timeout -k 2 "$seconds" env -u LD_PRELOAD -u LD_LIBRARY_PATH "$@" >"$OUT/$rel" 2>&1 || rc=$?
+  fi
   if [ "$rc" -ne 0 ]; then
     printf '\n[capture] exit=%s\n' "$rc" >>"$OUT/$rel"
   fi
@@ -148,17 +198,15 @@ capture() {
 }
 
 root_capture_with_timeout() {
-  seconds="$1"
-  rel="$2"
-  command_text="$3"
+  local seconds="$1" rel="$2" command_text="$3" rc=0
   mkdir -p "$(dirname "$OUT/$rel")"
   if [ "$ROOT_OK" -ne 1 ]; then
     printf 'BLOCKED: root unavailable\n' >"$OUT/$rel"
     return 0
   fi
-  timeout -k 2 "$seconds" su -c "PATH=$ANDROID_PATH; export PATH; $command_text" \
-    >"$OUT/$rel" 2>&1
-  rc=$?
+  log "Capturing $rel (limit ${seconds}s)"
+  run_root_bounded "$seconds" "$OUT/$rel" "$WORK/capture.stderr" "$command_text" || rc=$?
+  cat "$WORK/capture.stderr" >>"$OUT/$rel"
   if [ "$rc" -ne 0 ]; then
     printf '\n[root capture] exit=%s\n' "$rc" >>"$OUT/$rel"
   fi
@@ -207,6 +255,7 @@ seal_archive() {
 finalize() {
   rc=$?
   trap - EXIT INT TERM HUP
+  stop_root_wrapper
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then rm -rf -- "$WORK"; fi
   printf 'fails=%s\nblocked=%s\nwarns=%s\ncheckpoints=%s\ntarget=%s\nmode=%s\nbroad_discovery=%s\n' \
     "$FAILS" "$BLOCKED" "$WARNS" "$CHECKPOINTS" "${TARGET:-unknown}" "$MODE" \
@@ -235,8 +284,10 @@ if ! have timeout || ! have sha256sum || ! have zip; then
 fi
 
 if have su; then
-  root_uid="$(timeout -k 1 4 su -c "PATH=$ANDROID_PATH; export PATH; id -u" 2>/dev/null | tail -n 1)"
-  if [ "$root_uid" = 0 ]; then
+  root_rc=0
+  run_root_bounded 4 "$OUT/root/check.txt" "$OUT/root/check.stderr.txt" 'id -u' || root_rc=$?
+  root_uid="$(tail -n 1 "$OUT/root/check.txt")"
+  if [ "$root_uid" = 0 ] && [ "$root_rc" -eq 0 ]; then
     ROOT_OK=1
     result PASS root uid0
   else
@@ -322,13 +373,13 @@ root_capture helper/cmd-activity-help.txt \
   'cmd activity help 2>&1; rc=$?; printf "\ncmd_activity_help_exit=%s\n" "$rc"'
 
 capture_state_file() {
-  destination="$1"
-  command_text="$2"
+  local destination="$1" command_text="$2" rc=0
   if [ "$ROOT_OK" -eq 1 ]; then
-    timeout -k 2 "$CAPTURE_TIMEOUT" su -c \
-      "PATH=$ANDROID_PATH; export PATH; $command_text" >"$destination" 2>&1
+    run_root_bounded "$CAPTURE_TIMEOUT" "$destination" "$WORK/state.stderr" "$command_text" || rc=$?
+    cat "$WORK/state.stderr" >>"$destination"
+    return "$rc"
   else
-    timeout -k 2 "$CAPTURE_TIMEOUT" /system/bin/sh -c "$command_text" \
+    timeout -k 2 "$CAPTURE_TIMEOUT" env -u LD_PRELOAD -u LD_LIBRARY_PATH /system/bin/sh -c "$command_text" \
       >"$destination" 2>&1
   fi
 }
@@ -360,14 +411,15 @@ take_checkpoint() {
   root_capture "surface/checkpoints/$index-relevant.txt" \
     "dumpsys SurfaceFlinger 2>&1 | grep -Ei '$surface_pattern' | head -n 5000"
   if [ "$ROOT_OK" -eq 1 ]; then
-    timeout -k 2 6 su -c "PATH=$ANDROID_PATH; export PATH; screencap -p" \
-      >"$OUT/screens/$index.png" 2>/dev/null || rm -f "$OUT/screens/$index.png"
+    run_root_bounded 6 "$OUT/screens/$index.png" "$OUT/screens/$index.stderr.txt" 'screencap -p' \
+      || rm -f "$OUT/screens/$index.png"
   fi
   if [ -n "$TARGET" ]; then root_capture "helper/$index-status.txt" "$HELPER status '$TARGET' 0"; fi
   log "CHECKPOINT $index $reason"
 }
 
 sample_state() {
+  capture_recent_logs
   activity_rc=0
   window_rc=0
   input_rc=0
@@ -392,6 +444,7 @@ sample_state() {
   mv "$WORK/activity.next.txt" "$WORK/activity.txt"
   mv "$WORK/window.next.txt" "$WORK/window.txt"
   mv "$WORK/input.next.txt" "$WORK/input.txt"
+  LAST_SAMPLE_AT="$(date -Ins)"
   if [ "$SAMPLE_FAILURE_REPORTED" -eq 1 ]; then
     SAMPLE_FAILURE_REPORTED=0
     result INFO focused-state "activity/window/input sampling recovered"
@@ -516,9 +569,21 @@ run_broad_discovery() {
       /system/*|/system_ext/*|/product/*|/vendor/*|/apex/*|/data/app/*) ;;
       *) continue ;;
     esac
-    size="$(timeout -k 1 5 su -c "PATH=$ANDROID_PATH; export PATH; wc -c <'$source_path'" 2>/dev/null | tail -n 1)"
-    case "$size" in ''|*[!0-9]*) continue ;; esac
-    source_sha="$(timeout -k 1 12 su -c "PATH=$ANDROID_PATH; export PATH; sha256sum '$source_path'" 2>/dev/null | awk '{print $1}' | tail -n 1)"
+    case "$source_path" in *[!A-Za-z0-9._/@=+,:~-]*) continue ;; esac
+    if ! run_root_bounded 5 "$WORK/size.txt" "$WORK/export.stderr" "wc -c <'$source_path'"; then
+      printf 'BLOCKED_SIZE\tunknown\tunknown\t%s\t-\n' "$source_path" >>"$OUT/discovery/static/export-index.tsv"
+      continue
+    fi
+    size="$(tr -d '[:space:]' <"$WORK/size.txt")"
+    case "$size" in ''|*[!0-9]*)
+      printf 'BLOCKED_SIZE\tunknown\tunknown\t%s\t-\n' "$source_path" >>"$OUT/discovery/static/export-index.tsv"
+      continue ;;
+    esac
+    if ! run_root_bounded 12 "$WORK/hash.txt" "$WORK/export.stderr" "sha256sum '$source_path'"; then
+      printf 'BLOCKED_HASH\t%s\tunknown\t%s\t-\n' "$size" "$source_path" >>"$OUT/discovery/static/export-index.tsv"
+      continue
+    fi
+    source_sha="$(awk '{print $1}' "$WORK/hash.txt")"
     if [ $((export_total + size)) -gt "$export_limit" ]; then
       printf 'SKIPPED_LIMIT\t%s\t%s\t%s\t-\n' "$size" "${source_sha:-unknown}" "$source_path" \
         >>"$OUT/discovery/static/export-index.tsv"
@@ -526,9 +591,9 @@ run_broad_discovery() {
     fi
     safe_name="$(printf '%s' "$source_path" | tr '/:' '__')"
     destination="$OUT/discovery/static/bytes/$safe_name"
-    if timeout -k 2 "$DISCOVERY_TIMEOUT" su -c \
-        "PATH=$ANDROID_PATH; export PATH; cat '$source_path'" >"$destination" 2>/dev/null \
-        && [ "$(wc -c <"$destination")" = "$size" ]; then
+    if run_root_bounded "$DISCOVERY_TIMEOUT" "$destination" "$WORK/export.stderr" "cat '$source_path'" \
+        && [ "$(wc -c <"$destination")" = "$size" ] \
+        && [ "$(sha256sum "$destination" | awk '{print $1}')" = "$source_sha" ]; then
       export_total=$((export_total + size))
       printf 'EXPORTED\t%s\t%s\t%s\t%s\n' "$size" "${source_sha:-unknown}" "$source_path" "$safe_name" \
         >>"$OUT/discovery/static/export-index.tsv"
@@ -581,6 +646,23 @@ EOF
   fi
 }
 
+capture_recent_logs() {
+  [ "$ROOT_OK" -eq 1 ] || return 0
+  local captured_at rc=0
+  captured_at="$(date -Ins)"
+  run_root_bounded 6 "$WORK/log-window.txt" "$WORK/log-window.stderr" \
+    "logcat -b main -b system -b events -d -v threadtime -t 4000" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '\n[capture] snapshot_at=%s rolling_tail=4000\n' "$captured_at" >>"$OUT/logs/lifecycle.txt"
+    grep -Ei 'TS18Nav|am_|wm_|ActivityTaskManager|WindowManager|InputDispatcher|InCarVisuals|InCarWindowGeometry|organicmaps|ts18launcher|isPipLauncher|forcepip|dofun|cardoor' \
+      "$WORK/log-window.txt" >>"$OUT/logs/lifecycle.txt" || true
+    tail -c 8388608 "$OUT/logs/lifecycle.txt" >"$WORK/log-tail.txt"
+    mv "$WORK/log-tail.txt" "$OUT/logs/lifecycle.txt"
+  else
+    printf 'capture_at=%s exit=%s\n' "$captured_at" "$rc" >>"$OUT/logs/lifecycle-gaps.txt"
+  fi
+}
+
 if ! sample_state; then
   SAMPLE_FAILURE_REPORTED=1
   result FAIL focused-state "activity/window/input unreadable"
@@ -606,7 +688,9 @@ while [ "$STOP_REQUESTED" -eq 0 ]; do
   fi
 done
 
-sample_state || true
+final_sample=PASS
+sample_state || final_sample=BLOCKED
+printf 'final_sample=%s\nlast_valid_sample=%s\n' "$final_sample" "$LAST_SAMPLE_AT" >"$OUT/window/final-metadata.txt"
 if [ -s "$WORK/activity.txt" ]; then cp "$WORK/activity.txt" "$OUT/window/final-activity.txt"; fi
 if [ -s "$WORK/window.txt" ]; then cp "$WORK/window.txt" "$OUT/window/final-window.txt"; fi
 if [ -s "$WORK/input.txt" ]; then cp "$WORK/input.txt" "$OUT/input/final-input.txt"; fi

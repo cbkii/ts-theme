@@ -65,6 +65,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
     private boolean launchedAsHome;
+    private boolean redirectingToHome;
     private boolean locationPermissionRequested;
     private boolean mediaRefreshPolling;
     private MediaListenerService.Snapshot genericSnapshot = new MediaListenerService.Snapshot("", "", "", false);
@@ -72,6 +73,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        if (redirectToCanonicalHome()) return;
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
@@ -106,8 +108,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (redirectingToHome || root == null) return;
         launchedAsHome = intent != null && intent.hasCategory(Intent.CATEGORY_HOME);
         if (launchedAsHome) {
+            if (navigationWindowController != null) navigationWindowController.cancelLauncherOverlay();
             if (appDrawerPanel != null) appDrawerPanel.restoreDashboardRoot();
             root.clearFocus();
             appsButton.requestFocus();
@@ -137,6 +141,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onStart() {
         super.onStart();
+        if (redirectingToHome || redirectToCanonicalHome()) return;
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
         MediaListenerService.addObserver(this);
@@ -150,6 +155,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onStop() {
+        if (root == null) { super.onStop(); return; }
         appearanceController.stop();
         stopMediaRefreshPolling();
         MediaListenerService.removeObserver(this);
@@ -385,6 +391,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void updateMapVisibility() {
+        if (redirectingToHome || isFinishing()) return;
         boolean experimentalLeaflet = ExperimentalMapPolicy.enabled(this);
         if (experimentalLeaflet) {
             nativeNavigationPanel.setVisibility(View.GONE);
@@ -509,9 +516,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openQuick(int index) {
-        if (!ShortcutSlot.launch(this, LauncherPrefs.QUICK_KEYS[index])) openPicker(LauncherPrefs.QUICK_KEYS[index]);
-        mediaSelection.select(LauncherPrefs.lastSource(this));
-        updateLabels();
+        launchAfterNavigation(() -> {
+            if (!ShortcutSlot.launch(this, LauncherPrefs.QUICK_KEYS[index])) openPicker(LauncherPrefs.QUICK_KEYS[index]);
+            mediaSelection.select(LauncherPrefs.lastSource(this));
+            updateLabels();
+        });
     }
 
     private void toggleAppDrawer() {
@@ -523,9 +532,33 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (appDrawerPanel.isOpen()) appDrawerPanel.hidePanel();
         else {
             if (mapPanel != null) mapPanel.stop();
-            if (!ExperimentalMapPolicy.enabled(this)) navigationWindowController.onLauncherOverlayOpened();
-            appDrawerPanel.refreshPreferences();
-            appDrawerPanel.showPanel();
+            Runnable show = () -> {
+                if (isFinishing() || isDestroyed()) return;
+                appDrawerPanel.refreshPreferences();
+                appDrawerPanel.showPanel();
+            };
+            if (!ExperimentalMapPolicy.enabled(this)) navigationWindowController.openLauncherOverlay(show);
+            else show.run();
+        }
+    }
+
+    private boolean redirectToCanonicalHome() {
+        // The ordinary app entry and HOME alias otherwise create distinct tasks,
+        // each with a controller for the same external map. Keep preview mode
+        // while another launcher is HOME, but use only the alias once selected.
+        if (getComponentName().getClassName().endsWith(".HomeAlias")
+                || !HomeMode.isDefaultHome(this)) return false;
+        try {
+            startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                    .setClassName(this, getPackageName() + ".HomeAlias")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
+            redirectingToHome = true;
+            if (navigationWindowController != null) navigationWindowController.destroy();
+            finish();
+            return true;
+        } catch (RuntimeException e) {
+            android.util.Log.w("TS18Nav", "HOME redirect unavailable", e);
+            return false;
         }
     }
 
@@ -543,6 +576,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openCurrentMedia() {
+        launchAfterNavigation(this::openCurrentMediaNow);
+    }
+
+    private void openCurrentMediaNow() {
         selectSource(MediaSelection.MUSIC);
         if (!genericSnapshot.packageName.isEmpty() && AppResolver.launchPackage(this, genericSnapshot.packageName)) return;
         String fallback = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
@@ -559,6 +596,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openConfigured(String key) {
+        launchAfterNavigation(() -> openConfiguredNow(key));
+    }
+
+    private void launchAfterNavigation(Runnable launch) {
+        if (ExperimentalMapPolicy.enabled(this) || navigationWindowController == null) launch.run();
+        else navigationWindowController.launchAfterSuspension(launch);
+    }
+
+    private void openConfiguredNow(String key) {
         if (LauncherPrefs.KEY_RADIO.equals(key)) selectSource(MediaSelection.RADIO);
         else if (LauncherPrefs.KEY_MUSIC.equals(key)) selectSource(MediaSelection.MUSIC);
         String pkg;

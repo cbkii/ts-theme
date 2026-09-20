@@ -87,7 +87,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             helper_root = root / "helper"
             bin_dir.mkdir()
             helper_root.mkdir()
-            for command in ("awk", "cat", "cut", "grep", "rm", "sleep", "tr"):
+            for command in ("awk", "cat", "cut", "grep", "head", "rm", "sleep", "tr"):
                 resolved = shutil.which(command)
                 if resolved is None:
                     self.fail(f"required test command is unavailable: {command}")
@@ -200,10 +200,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("present-native)", self.helper)
         self.assertIn('read_task_once "$PKG" 0', self.helper)
         self.assertIn('2) fail TASK_AMBIGUOUS', self.helper)
-        self.assertEqual(
-            1,
-            self.helper.count("am start --user 0 --display 0 --windowingMode 5"),
-        )
+        cold_launch = self.helper.split("launch_freeform_once()", 1)[1].split("move_task_fullscreen()", 1)[0]
+        self.assertEqual(1, cold_launch.count("am start --user 0 --display 0 --windowingMode 5"))
         self.assertIn("-a android.intent.action.MAIN -c android.intent.category.LAUNCHER", self.helper)
         self.assertIn('am task resizeable "$wanted_task" 2', self.helper)
         self.assertIn('am task resize "$wanted_task" "$left" "$top" "$right" "$bottom"', self.helper)
@@ -415,7 +413,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("at your own pace", self.playbook)
         self.assertIn("Press Ctrl-C once", self.playbook)
         self.assertIn("Mode 5 and exact bounds", self.playbook)
-        self.assertIn("Attempt 2 did not execute mode 5", self.roadmap)
+        self.assertIn("initial bounded rendering demonstrated on `PR11-5aea8bc`", self.roadmap)
         self.assertIn("no mode-5 launch or resize occurred", self.playbook)
         self.assertIn("Phase 3 - conditional Topway policy recovery", self.roadmap)
         self.assertIn("log-only, exact-build-hash-gated LSPosed trace", self.roadmap)

@@ -4,6 +4,7 @@
 
 PATH=/system/bin:/system/xbin:/vendor/bin
 export PATH
+unset LD_PRELOAD LD_LIBRARY_PATH
 umask 077
 
 ROOT_DIR=/data/adb/ts18-launcher
@@ -165,12 +166,18 @@ function task_from_record(line, value) {
   sub(/[^0-9].*$/, "", value)
   return value
 }
-/mResumedActivity: ActivityRecord\{|topResumedActivity=ActivityRecord\{/ {
+/mResumedActivity: ActivityRecord\{|topResumedActivity=ActivityRecord\{|^[[:space:]]*ResumedActivity:[[:space:]]*ActivityRecord\{/ {
   task=task_from_record($0)
   if (task != "") {
-    print task
-    exit
+    if ($0 ~ /topResumedActivity=/) top=task
+    else if ($0 ~ /^[[:space:]]*ResumedActivity:/) global=task
+    else if (fallback == "") fallback=task
   }
+}
+END {
+  if (top != "") print top
+  else if (global != "") print global
+  else if (fallback != "") print fallback
 }'
 
 PKG=unknown
@@ -271,6 +278,13 @@ emit_protocol() {
 fail() {
   code="$1"
   shift
+  if [ -s "$LAUNCH_OUTPUT" ]; then
+    printf 'command_output_begin\n'
+    # Leave room for the final protocol within the Java reader's 48-line cap.
+    head -c 4096 "$LAUNCH_OUTPUT" | head -n 20
+    printf '\ncommand_output_end\n'
+    log_event "command failure code=$code output=$(head -c 1024 "$LAUNCH_OUTPUT" | tr '\n' ' ')"
+  fi
   log_event "FAIL $code $*"
   emit_protocol FAIL "$code"
   exit 1
@@ -349,7 +363,7 @@ read_task() {
 validate_observed_component() {
   case "$TASK_COMPONENT" in
     unknown|'') return 0 ;;
-    "$PKG"/*) return 0 ;;
+    "${1:-$PKG}"/*) return 0 ;;
     *) fail COMPONENT_MISMATCH ;;
   esac
 }
@@ -366,7 +380,7 @@ require_task() {
     2) fail TASK_AMBIGUOUS "count=${TASK_COUNT:-unknown}" ;;
     *) fail TASK_STATE_UNREADABLE ;;
   esac
-  validate_observed_component
+  validate_observed_component "$pkg"
 }
 
 wait_state() {
@@ -377,7 +391,7 @@ wait_state() {
   tries=0
   while [ "$tries" -lt 30 ]; do
     if read_task_once "$pkg" "$task"; then
-      validate_observed_component
+      validate_observed_component "$pkg"
       if [ "$DISPLAY_ID" = 0 ] && [ "$WINDOWING_MODE" = "$mode" ]; then
         if [ "$expected_bounds" = any ] || [ "$TASK_BOUNDS" = "$expected_bounds" ]; then
           return 0
@@ -409,6 +423,13 @@ require_foreground_task() {
   expected_task="$1"
   code="$2"
   wait_foreground_task "$expected_task" || fail "$code"
+}
+
+require_handoff_foreground() {
+  # Never restore HOME over an unrelated app selected during a transaction.
+  capture_activity || fail TASK_STATE_UNREADABLE
+  foreground_task="$(parse_foreground_task_snapshot)"
+  [ "$foreground_task" = "$1" ] || [ "$foreground_task" = "$2" ] || fail FOREGROUND_CHANGED
 }
 
 verify_state() {
@@ -472,7 +493,7 @@ move_task_fullscreen() {
 }
 
 [ "$(id -u 2>/dev/null)" = 0 ] || fail ROOT_REQUIRED
-for required in am dumpsys awk getprop grep tr cut cat; do
+for required in am dumpsys awk getprop grep tr cut cat head; do
   command -v "$required" >/dev/null 2>&1 || fail "${required}_MISSING"
 done
 
@@ -530,6 +551,14 @@ case "$action" in
 
     wanted_task="$TASK_ID"
     [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+    # Android Q may reject resizeTask on a fullscreen configuration even when
+    # resizeable=2. Establish mode 5 on this exact task before applying bounds.
+    if [ "$WINDOWING_MODE" != 5 ]; then
+      [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
+      am start --user 0 --display 0 --windowingMode 5 --task "$wanted_task" \
+        -f 0x20000000 -n "$TASK_COMPONENT" >"$LAUNCH_OUTPUT" 2>&1 || fail FREEFORM_TRANSITION_FAILED
+      wait_state "$PKG" "$wanted_task" 5 any || fail FREEFORM_TRANSITION_REJECTED
+    fi
     am task resizeable "$wanted_task" 2 >"$LAUNCH_OUTPUT" 2>&1 || fail RESIZEABLE_FAILED
     am task resize "$wanted_task" "$left" "$top" "$right" "$bottom" \
       >"$LAUNCH_OUTPUT" 2>&1 || fail RESIZE_FAILED
@@ -537,6 +566,10 @@ case "$action" in
       require_task "$PKG" "$wanted_task" 1
       verify_state 5 "$expected"
     fi
+    require_task "$PKG" "$wanted_task" 1
+    verify_state 5 "$expected"
+    am task focus "$wanted_task" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
+    require_foreground_task "$wanted_task" NATIVE_NOT_FOREGROUND
     require_task "$PKG" "$wanted_task" 1
     verify_state 5 "$expected"
     emit_protocol OK PRESENTED_NATIVE
@@ -581,9 +614,17 @@ case "$action" in
     [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
     [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
 
-    move_task_fullscreen "$PKG" "$hint"
+    # Check both authorities before changing either task.
+    navigation_task="$hint"
+    require_task "$HOME_PKG" "$home_task" 1
+    require_task "$PKG" "$navigation_task" 1
+    require_handoff_foreground "$home_task" "$navigation_task"
+    if [ "$WINDOWING_MODE" != 1 ]; then
+      move_task_fullscreen "$PKG" "$navigation_task"
+    fi
     wanted_task="$TASK_ID"
     require_task "$HOME_PKG" "$home_task" 1
+    require_handoff_foreground "$home_task" "$wanted_task"
     am task focus "$home_task" >"$LAUNCH_OUTPUT" 2>&1 || fail HOME_FOCUS_FAILED
     require_foreground_task "$home_task" HOME_NOT_FOREGROUND
     PKG="${2:-}"

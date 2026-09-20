@@ -6,6 +6,17 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class NavigationWindowUiStateTest {
+    @Test public void pendingDrawerSurvivesTransientHomeStopWithoutReclaimingMap() {
+        NavigationWindowUiState state = new NavigationWindowUiState();
+        state.onHomeVisible();
+        state.onLauncherOverlayOpened();
+        state.onHomeStopped();
+        state.onHomeVisibleWithOverlay();
+        assertFalse(state.canPresentNavigation());
+        state.onHomeVisible();
+        assertTrue(state.canPresentNavigation());
+    }
+
     @Test public void homeReturnClearsDrawerOverlaySuppression() {
         NavigationWindowUiState state = new NavigationWindowUiState();
 
