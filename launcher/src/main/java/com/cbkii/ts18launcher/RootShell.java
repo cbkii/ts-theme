@@ -27,7 +27,18 @@ final class RootShell {
     private RootShell() {}
 
     static Result run(String command, long timeoutSeconds) {
-        if (command == null || command.isEmpty() || timeoutSeconds <= 0) {
+        if (timeoutSeconds <= 0) return new Result(false, -1, "invalid root command");
+        return runInternal(command, timeoutSeconds, TimeUnit.SECONDS.toMillis(timeoutSeconds + 3));
+    }
+
+    static Result runMillis(String command, long timeoutMillis) {
+        if (timeoutMillis <= 0) return new Result(false, -1, "invalid root command");
+        long shellSeconds = Math.max(1L, (timeoutMillis + 999L) / 1000L);
+        return runInternal(command, shellSeconds, timeoutMillis + 1500L);
+    }
+
+    private static Result runInternal(String command, long shellTimeoutSeconds, long waitMillis) {
+        if (command == null || command.isEmpty()) {
             return new Result(false, -1, "invalid root command");
         }
 
@@ -35,12 +46,8 @@ final class RootShell {
         StringBuilder output = new StringBuilder();
         Thread drainer = null;
         try {
-            // Keep the destructive/long-running boundary inside the root shell as well as
-            // around the Java process. Android 10 ships toybox; if this exact unit lacks
-            // its timeout applet the command fails closed and Settings opens the public
-            // HOME selection path instead.
             String wrapped = "exec /system/bin/toybox timeout -k 1 "
-                    + timeoutSeconds
+                    + shellTimeoutSeconds
                     + " /system/bin/sh -c "
                     + shellQuote(command);
             process = new ProcessBuilder("su", "-c", wrapped)
@@ -52,7 +59,7 @@ final class RootShell {
             drainer.setDaemon(true);
             drainer.start();
 
-            boolean completed = process.waitFor(timeoutSeconds + 3, TimeUnit.SECONDS);
+            boolean completed = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
             if (!completed) {
                 process.destroy();
                 if (!process.waitFor(500, TimeUnit.MILLISECONDS)) {
