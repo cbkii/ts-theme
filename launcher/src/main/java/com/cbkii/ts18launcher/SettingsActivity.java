@@ -140,7 +140,7 @@ public final class SettingsActivity extends Activity {
                         LauncherPrefs.radioOnRight(this) ? LauncherPrefs.RAIL_RIGHT : LauncherPrefs.RAIL_LEFT,
                         value -> { LauncherPrefs.setRadioSide(this, value); render(); }));
         addSwitchRow(R.drawable.ic_power, "Warm media sources on HOME start",
-                "Pre-connect exported media services; never opens app UI",
+                "Root-first background readiness; never opens app UI",
                 UiPersonalizationPrefs.mediaStartupWarmup(this),
                 checked -> UiPersonalizationPrefs.setMediaStartupWarmup(this, checked));
         addActionRow(R.drawable.ic_music, "Notification access",
