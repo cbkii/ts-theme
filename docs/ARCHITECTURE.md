@@ -85,9 +85,9 @@ On this exact TS18, `com.tw.media` is **Auxio-TS**. That result must not be trea
 
 ## Radio
 
-Radio is a separate authority from generic music. Third-party NavRadio+ (`com.navimods.radio`) exposed a usable MediaSession on the physical TS18 and may therefore be controlled through that exact session when actions are advertised.
+Radio is a separate authority from generic music. Third-party NavRadio+ (`com.navimods.radio`) exposed a usable MediaSession on the physical TS18. Supplied NavRadio+ bytes also declare an exported Media3 `RadioService`, so the launcher may use a runtime-verified, bounded root-first service adapter to make that real session ready without opening `RadioActivity`.
 
-This does not establish the native Topway radio contract. No stock-radio package or private command surface is guessed. If native Topway radio/music do not expose adequate Android MediaSessions, exact-device evidence must identify the owning Topway contract before a dedicated adapter is added.
+The exact current stock `com.tw.radio` APK declares no Android service component. It is therefore session-only in this launcher: an already-existing session may be observed, but HOME never hide-launches its Activity and does not infer private Topway commands. Exact-device evidence must identify the owning Topway service/transport before native radio control is extended. See `docs/MEDIA_BACKGROUND_READINESS.md`.
 
 ## Home-screen map
 
