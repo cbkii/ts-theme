@@ -64,14 +64,15 @@ No first-run wizard is currently planned. The default Settings quick slot plus s
 
 ### Media controls and bootstrap
 
-Radio and generic Music remain separate authorities. Transport buttons are never disabled merely because a session/action has not appeared. A press performs one bounded public-API chain:
+Radio and generic Music remain separate authorities. Transport buttons are never disabled merely because a session/action has not appeared. A press performs one bounded background-only chain:
 
 1. exact active MediaSession for the target package when available/capable;
-2. exported `android.media.browse.MediaBrowserService`;
-3. one ordinary source-app launch plus bounded exact-session retry (~4.5 seconds);
-4. short visible failure status if still unavailable.
+2. evidence-backed per-source adapter;
+3. bounded Magisk-root service activation first for exact Auxio-TS/NavRadio contracts, with normal Android service/bind fallback;
+4. exported `android.media.browse.MediaBrowserService` for other compatible sources;
+5. bounded exact-session retry and short visible failure status.
 
-Settings exposes **Warm media sources on HOME start**. When enabled, HOME pre-connects exported standard MediaBrowser services without intentionally foreground-launching their Activities. The launcher creates no MediaSession and never requests audio focus.
+No readiness/transport path launches a source Activity. Settings exposes **Warm media sources on HOME start**. When enabled, HOME reconciles readiness on start/resume/focus using the same idempotent adapters. Exact stock `com.tw.radio` is session-only because its current APK declares no service component. The launcher creates no MediaSession and never requests audio focus.
 
 Starting a non-playing Music source best-effort pauses genuinely playing Radio first; starting Radio does the converse. The selected source owns shared metadata, with last explicit source resolving simultaneous stale PLAYING claims. Generic Music retains the visible-only one-second reconciliation fallback proven useful in physical Auxio-TS testing.
 
