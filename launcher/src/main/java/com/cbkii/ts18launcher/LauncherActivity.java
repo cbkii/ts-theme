@@ -29,6 +29,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private static final int MAX_QUICK_SLOTS = 6;
     private static final long MEDIA_REFRESH_INTERVAL_MS = 1000L;
     private static final long MEDIA_STATUS_MS = 1800L;
+    private static final long MEDIA_READY_RECONCILE_DELAY_MS = 250L;
 
     private FrameLayout root;
     private LinearLayout rail;
@@ -58,6 +59,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             mediaRefreshHandler.postDelayed(this, MEDIA_REFRESH_INTERVAL_MS);
         }
     };
+    private final Runnable mediaReadyReconcile = () -> {
+        if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+            mediaBootstrapper.warmConfiguredSources();
+        }
+    };
     private MapPanel mapPanel;
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
@@ -81,10 +87,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         buildRadioPanel();
         buildMusicPanel();
         mediaText = metadataView("Music", "");
-        mediaText.setOnClickListener(v -> {
-            if (MediaSelection.RADIO.equals(mediaSelection.displayed())) openConfigured(LauncherPrefs.KEY_RADIO);
-            else openCurrentMedia();
-        });
+        mediaText.setClickable(false);
+        mediaText.setFocusable(false);
         mediaText.setLongClickable(false);
         root.addView(mediaText);
         buildDate();
@@ -104,6 +108,19 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             appsButton.requestFocus();
             root.bringToFront();
             if (mapPanel != null && ExperimentalMapPolicy.enabled(this)) mapPanel.resumeWebView();
+            scheduleMediaReadiness();
+        }
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        scheduleMediaReadiness();
+    }
+
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && (launchedAsHome || HomeMode.isDefaultHome(this))) {
+            scheduleMediaReadiness();
         }
     }
 
@@ -133,7 +150,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         MediaListenerService.refreshActiveSessions();
         startMediaRefreshPolling();
         applyRailConfiguration();
-        if (UiPersonalizationPrefs.mediaStartupWarmup(this)) mediaBootstrapper.warmConfiguredSources();
+        scheduleMediaReadiness();
         if (appDrawerPanel != null) appDrawerPanel.refreshPreferences();
         root.post(this::updateMapVisibility);
         updateLabels();
@@ -142,6 +159,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onStop() {
         appearanceController.stop();
         stopMediaRefreshPolling();
+        mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (mapPanel != null) mapPanel.stop();
@@ -172,6 +190,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void stopMediaRefreshPolling() {
         mediaRefreshPolling = false;
         mediaRefreshHandler.removeCallbacks(mediaRefreshPoll);
+    }
+
+    private void scheduleMediaReadiness() {
+        mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
+        if (UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+            mediaRefreshHandler.postDelayed(mediaReadyReconcile, MEDIA_READY_RECONCILE_DELAY_MS);
+        }
     }
 
     private void buildRail() {
@@ -518,14 +543,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     genericSnapshot.state == android.media.session.PlaybackState.STATE_PLAYING);
             updateLabels();
         });
-    }
-
-    private void openCurrentMedia() {
-        selectSource(MediaSelection.MUSIC);
-        if (!genericSnapshot.packageName.isEmpty() && AppResolver.launchPackage(this, genericSnapshot.packageName)) return;
-        String fallback = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
-        if (fallback.isEmpty()) fallback = TopwayAdapter.defaultMusicPackage(this);
-        if (!AppResolver.launchPackage(this, fallback)) openPicker(LauncherPrefs.KEY_MUSIC);
     }
 
     private void openNavigation(Location location) {
