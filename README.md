@@ -25,7 +25,7 @@ Recommended offline-capable ecosystem choices include **Organic Maps** and **Osm
 
 Package: `com.cbkii.ts18launcher`.
 
-The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material runtime/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes existing Android media sessions; bounded media bootstrap uses only standard MediaSession/MediaBrowser surfaces plus a last-resort ordinary app launch.
+The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material runtime/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes existing Android media sessions; bounded media readiness is background-only and uses exact per-source service adapters plus standard MediaSession/MediaBrowser surfaces. No readiness/transport path opens a source Activity.
 
 ### TS18 Mono Drive HOME
 
@@ -48,11 +48,11 @@ Radio and Music remain separate playback authorities but share one metadata area
 
 The shared metadata surface uses a 22sp slow-marquee primary title/station plus static 16sp secondary artist/program/source. The last explicitly selected source resolves simultaneous stale `PLAYING` reports.
 
-The Radio source icon always opens configured/default Radio. The Music source icon always opens configured/default Music. Previous / Play-Pause / Next remain usable at all times. A press uses the bounded public-API sequence: exact package MediaSession -> exported MediaBrowserService -> one ordinary source-app launch and bounded exact-session retry (~4.5 s maximum) -> short visible failure status. The launcher creates no MediaSession and never owns audio focus.
+The Radio source icon always opens configured/default Radio. The Music source icon always opens configured/default Music. Those explicit source/app icons are the only media-strip controls allowed to foreground the source apps; the shared metadata surface is display-only. Previous / Play-Pause / Next remain usable at all times. A press uses the bounded background sequence: exact package MediaSession -> evidence-backed source adapter -> exported MediaBrowser/session service -> exact-session retry (~4.5 s) -> short visible failure status. There is no Activity-launch fallback. The launcher creates no MediaSession and never owns audio focus.
 
-A **Warm media sources on HOME start** switch optionally pre-connects exported MediaBrowser services without intentionally opening their Activity UI. Starting non-playing Music sends one best-effort Pause to genuinely playing Radio first; starting Radio similarly pauses Music.
+A **Warm media sources on HOME start** switch runs the same idempotent Media Ready reconciliation on HOME start/resume/focus. For exact Auxio-TS and NavRadio+ service contracts, bounded Magisk root is the primary service-activation path and ordinary Android service/bind behaviour is the fallback/control path. Generic sources use an exported MediaBrowser service when present. Starting non-playing Music sends one best-effort Pause to genuinely playing Radio first; starting Radio similarly pauses Music.
 
-On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. Third-party **NavRadio+ is `com.navimods.radio`**. Native Topway music/radio remain separately unverified; no private Topway command is guessed.
+On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. NavRadio+ `com.navimods.radio` is adapted through its exported Media3 `RadioService` only when that component resolves in the installed build. Exact stock **`com.tw.radio`** declares no Android service component, so it remains session-only and is never secretly foregrounded for readiness. Private Topway radio commands remain outside this adapter until their transport/authority is separately qualified. See [background media readiness adapters](docs/MEDIA_BACKGROUND_READINESS.md).
 
 ### Shortcut App / Icon model
 
