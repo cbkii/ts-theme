@@ -1,9 +1,8 @@
 package com.cbkii.ts18launcher;
 
-import android.app.Activity;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ResolveInfo;
 import android.media.browse.MediaBrowser;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
@@ -19,40 +18,58 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Bounded source warm-up/bootstrap using public Android media surfaces only.
- * It never owns playback, audio focus, a MediaSession, or a persistent foreground service.
+ * Bounded, background-only source readiness and transport bootstrap.
+ *
+ * It never launches a source Activity, owns playback/audio focus, creates a MediaSession, or
+ * synthesises private Topway commands. Exact source adapters may ask Magisk root to start a proven
+ * exported background service first; normal Android service/bind paths remain the fallback.
  */
 final class MediaSourceBootstrapper {
     interface ResultCallback { void onResult(boolean success, String message); }
 
-    private static final String MEDIA_BROWSER_ACTION = "android.media.browse.MediaBrowserService";
     private static final long COMMAND_TIMEOUT_MS = 4500L;
     private static final long COMMAND_RETRY_MS = 250L;
-    private static final long RETURN_TO_HOME_MS = 700L;
+    private static final long SERVICE_RETRY_GUARD_MS = 2500L;
+    private static final long ROOT_START_TIMEOUT_MS = 900L;
 
-    private final Activity activity;
+    private final Context context;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Connection> connections = new HashMap<>();
+    private final Map<String, ServiceStart> serviceStarts = new HashMap<>();
+    private final ExecutorService rootExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "ts18-media-root");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final MediaSessionManager sessionManager;
     private final ComponentName listenerComponent;
     private boolean destroyed;
 
-    MediaSourceBootstrapper(Activity activity) {
-        this.activity = activity;
-        sessionManager = (MediaSessionManager) activity.getSystemService(Activity.MEDIA_SESSION_SERVICE);
-        listenerComponent = new ComponentName(activity, MediaListenerService.class);
+    MediaSourceBootstrapper(Context context) {
+        this.context = context.getApplicationContext();
+        sessionManager =
+                (MediaSessionManager) this.context.getSystemService(Context.MEDIA_SESSION_SERVICE);
+        listenerComponent = new ComponentName(this.context, MediaListenerService.class);
     }
 
     void warmConfiguredSources() {
-        warm(RadioProvider.resolvePackage(activity));
+        warm(RadioProvider.resolvePackage(context));
         warm(configuredMusicPackage());
     }
 
     void warm(String packageName) {
-        if (destroyed || packageName == null || packageName.isEmpty() || exactController(packageName) != null) return;
-        ensureConnection(packageName);
+        if (destroyed || packageName == null || packageName.isEmpty()
+                || exactController(packageName) != null) return;
+        MediaSourceAdapter adapter = MediaSourceAdapter.resolve(context, packageName);
+        if (adapter.kind == MediaSourceAdapter.Kind.MEDIA_BROWSER) {
+            queueBrowser(adapter, null);
+        } else if (adapter.kind == MediaSourceAdapter.Kind.EXPLICIT_SERVICE) {
+            prepareExplicitService(adapter, null);
+        }
     }
 
     void pausePackage(String packageName) {
@@ -60,21 +77,28 @@ final class MediaSourceBootstrapper {
         MediaController exact = exactController(packageName);
         if (exact != null && pauseIfPlaying(exact)) return;
         Connection connection = connections.get(packageName);
-        if (connection != null && connection.controller != null) pauseIfPlaying(connection.controller);
+        if (connection != null && connection.controller != null) {
+            pauseIfPlaying(connection.controller);
+        }
     }
 
     boolean isPlaying(String packageName) {
         MediaController exact = exactController(packageName);
         if (exact != null) return isPlaying(exact);
         Connection connection = connections.get(packageName);
-        return connection != null && connection.controller != null && isPlaying(connection.controller);
+        return connection != null && connection.controller != null
+                && isPlaying(connection.controller);
     }
 
     void command(String sourceLabel, String packageName, MediaListenerService.Command command,
                  ResultCallback callback) {
-        if (destroyed) { finish(callback, false, "Launcher unavailable"); return; }
+        if (destroyed) {
+            finish(callback, false, "Launcher unavailable");
+            return;
+        }
         if (packageName == null || packageName.isEmpty()) {
-            finish(callback, false, "No " + sourceLabel.toLowerCase(java.util.Locale.ROOT) + " app configured");
+            finish(callback, false,
+                    "No " + sourceLabel.toLowerCase(java.util.Locale.ROOT) + " app configured");
             return;
         }
 
@@ -84,20 +108,17 @@ final class MediaSourceBootstrapper {
             return;
         }
 
-        // A dormant/partially initialised session may advertise no useful action yet.
-        // Continue through the bounded bootstrap path instead of turning the HOME button off.
         Pending pending = new Pending(sourceLabel, packageName, command, callback,
-                command == MediaListenerService.Command.PLAY_PAUSE);
-        Connection connection = ensureConnection(packageName);
-        if (connection == null) {
-            fallbackLaunch(pending);
-            return;
+                command == MediaListenerService.Command.PLAY_PAUSE,
+                SystemClock.uptimeMillis() + COMMAND_TIMEOUT_MS);
+        MediaSourceAdapter adapter = MediaSourceAdapter.resolve(context, packageName);
+        if (adapter.kind == MediaSourceAdapter.Kind.MEDIA_BROWSER) {
+            queueBrowser(adapter, pending);
+        } else if (adapter.kind == MediaSourceAdapter.Kind.EXPLICIT_SERVICE) {
+            prepareExplicitService(adapter, pending);
+        } else {
+            finish(callback, false, adapter.notReadyMessage(sourceLabel));
         }
-        if (connection.controller != null) {
-            issueConnected(connection.controller, pending);
-            return;
-        }
-        connection.pending.add(pending);
     }
 
     void destroy() {
@@ -105,20 +126,26 @@ final class MediaSourceBootstrapper {
         handler.removeCallbacksAndMessages(null);
         for (Connection connection : connections.values()) {
             if (connection.browser != null) {
-                try { connection.browser.disconnect(); } catch (RuntimeException ignored) {}
+                try {
+                    connection.browser.disconnect();
+                } catch (RuntimeException ignored) {
+                    // Best-effort lifecycle cleanup.
+                }
             }
         }
         connections.clear();
+        serviceStarts.clear();
+        rootExecutor.shutdownNow();
     }
 
     private String configuredMusicPackage() {
-        String packageName = LauncherPrefs.packageFor(activity, LauncherPrefs.KEY_MUSIC);
-        return packageName.isEmpty() ? TopwayAdapter.defaultMusicPackage(activity) : packageName;
+        String packageName = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_MUSIC);
+        return packageName.isEmpty() ? TopwayAdapter.defaultMusicPackage(context) : packageName;
     }
 
     private MediaController exactController(String packageName) {
         if (sessionManager == null || packageName == null || packageName.isEmpty()
-                || !MediaListenerService.hasNotificationAccess(activity)) return null;
+                || !MediaListenerService.hasNotificationAccess(context)) return null;
         try {
             MediaController fallback = null;
             for (MediaController controller : sessionManager.getActiveSessions(listenerComponent)) {
@@ -127,120 +154,189 @@ final class MediaSourceBootstrapper {
                 if (fallback == null) fallback = controller;
             }
             return fallback;
-        } catch (RuntimeException ignored) { return null; }
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
-    private Connection ensureConnection(String packageName) {
-        Connection existing = connections.get(packageName);
-        if (existing != null) return existing;
-        ComponentName service = mediaBrowserService(packageName);
-        if (service == null) return null;
+    private void queueBrowser(MediaSourceAdapter adapter, Pending pending) {
+        Connection connection = connections.get(adapter.packageName);
+        if (connection == null) {
+            connection = new Connection(adapter);
+            connections.put(adapter.packageName, connection);
+        }
+        if (pending != null) connection.pending.add(pending);
+        if (connection.preparing || connection.controller != null) {
+            if (connection.controller != null && pending != null) {
+                issueConnected(connection.controller, pending);
+                connection.pending.remove(pending);
+            }
+            return;
+        }
 
-        Connection connection = new Connection(packageName);
+        connection.preparing = true;
+        final Connection target = connection;
+        if (adapter.rootPrime) {
+            rootExecutor.execute(() -> {
+                RootShell.runMillis(adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
+                handler.post(() -> connectBrowser(target));
+            });
+        } else {
+            connectBrowser(target);
+        }
+    }
+
+    private void connectBrowser(Connection connection) {
+        if (destroyed || connections.get(connection.adapter.packageName) != connection) return;
+        if (connection.browser != null) return;
+
+        final String packageName = connection.adapter.packageName;
         MediaBrowser.ConnectionCallback connectionCallback = new MediaBrowser.ConnectionCallback() {
             @Override public void onConnected() {
                 Connection current = connections.get(packageName);
-                if (destroyed || current == null || current.browser == null || !current.browser.isConnected()) return;
+                if (destroyed || current == null || current.browser == null
+                        || !current.browser.isConnected()) return;
                 try {
-                    current.controller = new MediaController(activity, current.browser.getSessionToken());
+                    current.controller =
+                            new MediaController(context, current.browser.getSessionToken());
+                    current.preparing = false;
                     MediaListenerService.refreshActiveSessions();
-                    drain(current, true);
-                } catch (RuntimeException ignored) { connectionFailed(packageName); }
+                    drain(current);
+                } catch (RuntimeException ignored) {
+                    connectionFailed(packageName);
+                }
             }
-            @Override public void onConnectionSuspended() {
-                Connection current = connections.get(packageName);
-                if (current != null) current.controller = null;
-            }
-            @Override public void onConnectionFailed() { connectionFailed(packageName); }
-        };
-        connection.browser = new MediaBrowser(activity, service, connectionCallback, (Bundle) null);
-        connections.put(packageName, connection);
-        try { connection.browser.connect(); }
-        catch (RuntimeException ignored) { connections.remove(packageName); return null; }
-        return connection;
-    }
 
-    private ComponentName mediaBrowserService(String packageName) {
-        Intent query = new Intent(MEDIA_BROWSER_ACTION).setPackage(packageName);
-        final List<ResolveInfo> services;
-        try { services = activity.getPackageManager().queryIntentServices(query, 0); }
-        catch (RuntimeException ignored) { return null; }
-        for (ResolveInfo info : services) {
-            if (info == null || info.serviceInfo == null || !info.serviceInfo.exported) continue;
-            return new ComponentName(info.serviceInfo.packageName, info.serviceInfo.name);
+            @Override public void onConnectionSuspended() {
+                connectionFailed(packageName);
+            }
+
+            @Override public void onConnectionFailed() {
+                connectionFailed(packageName);
+            }
+        };
+
+        connection.browser =
+                new MediaBrowser(context, connection.adapter.service, connectionCallback, (Bundle) null);
+        try {
+            connection.browser.connect();
+        } catch (RuntimeException ignored) {
+            connectionFailed(packageName);
         }
-        return null;
     }
 
     private void connectionFailed(String packageName) {
         Connection failed = connections.remove(packageName);
         if (failed == null) return;
         if (failed.browser != null) {
-            try { failed.browser.disconnect(); } catch (RuntimeException ignored) {}
+            try {
+                failed.browser.disconnect();
+            } catch (RuntimeException ignored) {
+                // Best-effort lifecycle cleanup.
+            }
         }
         List<Pending> pending = new ArrayList<>(failed.pending);
         failed.pending.clear();
-        for (Pending command : pending) fallbackLaunch(command);
+        for (Pending command : pending) retryExact(command);
     }
 
-    private void drain(Connection connection, boolean connected) {
+    private void drain(Connection connection) {
         List<Pending> pending = new ArrayList<>(connection.pending);
         connection.pending.clear();
-        if (!connected || connection.controller == null) {
-            for (Pending command : pending) fallbackLaunch(command);
-            return;
-        }
         for (Pending command : pending) issueConnected(connection.controller, command);
     }
 
     private void issueConnected(MediaController controller, Pending pending) {
+        if (pending.playRequest && isPlaying(controller)) {
+            finish(pending.callback, true, "");
+            return;
+        }
         if (send(controller, pending.command)) {
             MediaListenerService.refreshActiveSessions();
             finish(pending.callback, true, "");
             return;
         }
-        // A connected browser can still expose a session before its playback actions are ready.
-        // Give the source one bounded Activity bootstrap before reporting the action unavailable.
-        fallbackLaunch(pending);
+        retryExact(pending);
     }
 
-    private void fallbackLaunch(Pending pending) {
-        if (destroyed) { finish(pending.callback, false, "Launcher unavailable"); return; }
-        if (!AppResolver.launchPackage(activity, pending.packageName)) {
-            finish(pending.callback, false, pending.sourceLabel + " app unavailable");
+    private void prepareExplicitService(MediaSourceAdapter adapter, Pending pending) {
+        ServiceStart start = serviceStarts.get(adapter.packageName);
+        if (start == null) {
+            start = new ServiceStart(adapter);
+            serviceStarts.put(adapter.packageName, start);
+        }
+        if (pending != null) start.pending.add(pending);
+
+        long now = SystemClock.uptimeMillis();
+        if (start.inFlight) return;
+        if (start.lastAttemptMs > 0L && now - start.lastAttemptMs < SERVICE_RETRY_GUARD_MS) {
+            if (pending != null) {
+                start.pending.remove(pending);
+                retryExact(pending);
+            }
             return;
         }
-        long deadline = SystemClock.uptimeMillis() + COMMAND_TIMEOUT_MS;
-        handler.postDelayed(this::returnToLauncher, RETURN_TO_HOME_MS);
-        retryExact(pending, deadline);
+
+        start.inFlight = true;
+        start.lastAttemptMs = now;
+        final ServiceStart target = start;
+        rootExecutor.execute(() -> {
+            RootShell.Result root =
+                    RootShell.runMillis(adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
+            handler.post(() -> {
+                if (destroyed || serviceStarts.get(adapter.packageName) != target) return;
+                boolean started = root.success();
+                if (!started) started = startExplicitServiceNormally(adapter);
+                target.inFlight = false;
+                MediaListenerService.refreshActiveSessions();
+                handler.postDelayed(MediaListenerService::refreshActiveSessions, COMMAND_RETRY_MS);
+
+                List<Pending> commands = new ArrayList<>(target.pending);
+                target.pending.clear();
+                for (Pending command : commands) {
+                    if (started) retryExact(command);
+                    else finish(command.callback, false,
+                            adapter.notReadyMessage(command.sourceLabel));
+                }
+            });
+        });
     }
 
-    private void retryExact(Pending pending, long deadline) {
+    private boolean startExplicitServiceNormally(MediaSourceAdapter adapter) {
+        Intent intent = adapter.explicitServiceIntent();
+        if (intent == null) return false;
+        try {
+            if (adapter.foregroundService) context.startForegroundService(intent);
+            else context.startService(intent);
+            return true;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private void retryExact(Pending pending) {
         if (destroyed) return;
         MediaListenerService.refreshActiveSessions();
         MediaController exact = exactController(pending.packageName);
         if (exact != null) {
-            // Some sources auto-start when their Activity is opened. For an initial Play request,
-            // treat that as success rather than immediately toggling the newly-started source off.
-            if (pending.startIntent && isPlaying(exact)) { finish(pending.callback, true, ""); return; }
-            if (send(exact, pending.command)) { finish(pending.callback, true, ""); return; }
+            // A background service may auto-resume its source while becoming ready. An initial
+            // Play request is then already satisfied and must not immediately toggle it back off.
+            if (pending.playRequest && isPlaying(exact)) {
+                finish(pending.callback, true, "");
+                return;
+            }
+            if (send(exact, pending.command)) {
+                finish(pending.callback, true, "");
+                return;
+            }
         }
-        if (SystemClock.uptimeMillis() >= deadline) {
-            finish(pending.callback, false, exact == null
-                    ? pending.sourceLabel + " did not become ready"
-                    : actionName(pending.command) + " unavailable");
+
+        if (SystemClock.uptimeMillis() >= pending.deadlineMs) {
+            MediaSourceAdapter adapter = MediaSourceAdapter.resolve(context, pending.packageName);
+            finish(pending.callback, false, adapter.notReadyMessage(pending.sourceLabel));
             return;
         }
-        handler.postDelayed(() -> retryExact(pending, deadline), COMMAND_RETRY_MS);
-    }
-
-    private void returnToLauncher() {
-        if (destroyed || activity.isFinishing() || activity.isDestroyed()) return;
-        Intent intent = new Intent(activity, LauncherActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                        | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        | Intent.FLAG_ACTIVITY_NO_ANIMATION);
-        try { activity.startActivity(intent); } catch (RuntimeException ignored) {}
+        handler.postDelayed(() -> retryExact(pending), COMMAND_RETRY_MS);
     }
 
     private static boolean send(MediaController controller, MediaListenerService.Command command) {
@@ -252,27 +348,37 @@ final class MediaSourceBootstrapper {
             switch (command) {
                 case PREVIOUS:
                     if ((actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) == 0L) return false;
-                    controller.getTransportControls().skipToPrevious(); return true;
+                    controller.getTransportControls().skipToPrevious();
+                    return true;
                 case NEXT:
                     if ((actions & PlaybackState.ACTION_SKIP_TO_NEXT) == 0L) return false;
-                    controller.getTransportControls().skipToNext(); return true;
+                    controller.getTransportControls().skipToNext();
+                    return true;
                 case PLAY_PAUSE:
                     boolean playing = usesPauseAction(stateValue);
-                    long direct = playing ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY;
-                    if ((actions & direct) == 0L && (actions & PlaybackState.ACTION_PLAY_PAUSE) == 0L) return false;
+                    long direct =
+                            playing ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY;
+                    if ((actions & direct) == 0L
+                            && (actions & PlaybackState.ACTION_PLAY_PAUSE) == 0L) return false;
                     if (playing) controller.getTransportControls().pause();
                     else controller.getTransportControls().play();
                     return true;
                 default:
                     return false;
             }
-        } catch (RuntimeException ignored) { return false; }
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static boolean pauseIfPlaying(MediaController controller) {
         if (!isPlaying(controller)) return false;
-        try { controller.getTransportControls().pause(); return true; }
-        catch (RuntimeException ignored) { return false; }
+        try {
+            controller.getTransportControls().pause();
+            return true;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static boolean isPlaying(MediaController controller) {
@@ -286,12 +392,6 @@ final class MediaSourceBootstrapper {
                 || state == PlaybackState.STATE_CONNECTING;
     }
 
-    private static String actionName(MediaListenerService.Command command) {
-        if (command == MediaListenerService.Command.PREVIOUS) return "Previous";
-        if (command == MediaListenerService.Command.NEXT) return "Next";
-        return "Play/pause";
-    }
-
     private void finish(ResultCallback callback, boolean success, String message) {
         if (callback == null) return;
         if (Looper.myLooper() == Looper.getMainLooper()) callback.onResult(success, message);
@@ -299,11 +399,26 @@ final class MediaSourceBootstrapper {
     }
 
     private static final class Connection {
-        final String packageName;
+        final MediaSourceAdapter adapter;
         final List<Pending> pending = new ArrayList<>();
         MediaBrowser browser;
         MediaController controller;
-        Connection(String packageName) { this.packageName = packageName; }
+        boolean preparing;
+
+        Connection(MediaSourceAdapter adapter) {
+            this.adapter = adapter;
+        }
+    }
+
+    private static final class ServiceStart {
+        final MediaSourceAdapter adapter;
+        final List<Pending> pending = new ArrayList<>();
+        boolean inFlight;
+        long lastAttemptMs;
+
+        ServiceStart(MediaSourceAdapter adapter) {
+            this.adapter = adapter;
+        }
     }
 
     private static final class Pending {
@@ -311,14 +426,17 @@ final class MediaSourceBootstrapper {
         final String packageName;
         final MediaListenerService.Command command;
         final ResultCallback callback;
-        final boolean startIntent;
+        final boolean playRequest;
+        final long deadlineMs;
+
         Pending(String sourceLabel, String packageName, MediaListenerService.Command command,
-                ResultCallback callback, boolean startIntent) {
+                ResultCallback callback, boolean playRequest, long deadlineMs) {
             this.sourceLabel = sourceLabel;
             this.packageName = packageName;
             this.command = command;
             this.callback = callback;
-            this.startIntent = startIntent;
+            this.playRequest = playRequest;
+            this.deadlineMs = deadlineMs;
         }
     }
 }
