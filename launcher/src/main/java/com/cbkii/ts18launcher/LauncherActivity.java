@@ -59,11 +59,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             mediaRefreshHandler.postDelayed(this, MEDIA_REFRESH_INTERVAL_MS);
         }
     };
-    private final Runnable mediaReadyReconcile = () -> {
-        if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-            mediaBootstrapper.warmConfiguredSources();
-        }
-    };
+    private final Runnable mediaReadyReconcile = this::runMediaReadiness;
     private NativeNavigationPanel nativeNavigationPanel;
     private NavigationWindowController navigationWindowController;
     private MapPanel mapPanel;
@@ -210,6 +206,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void stopMediaRefreshPolling() {
         mediaRefreshPolling = false;
         mediaRefreshHandler.removeCallbacks(mediaRefreshPoll);
+    }
+
+    private void runMediaReadiness() {
+        if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+            mediaBootstrapper.warmConfiguredSources();
+        }
     }
 
     private void scheduleMediaReadiness() {
