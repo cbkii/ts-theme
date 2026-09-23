@@ -9,13 +9,7 @@ import android.content.pm.ServiceInfo;
 
 import java.util.List;
 
-/**
- * Background-readiness contract for one configured media source.
- *
- * Exact adapters may use a bounded root service start as their activation path. Generic sources
- * remain limited to an exported Android MediaBrowserService. No adapter is allowed to launch an
- * Activity; foreground app opening stays owned by the explicit Radio/Music source icons.
- */
+/** Evidence-backed background activation contract for one configured media source. */
 final class MediaSourceAdapter {
     static final String MEDIA_BROWSER_ACTION = "android.media.browse.MediaBrowserService";
     static final String MEDIA3_SESSION_ACTION = "androidx.media3.session.MediaSessionService";
@@ -33,17 +27,19 @@ final class MediaSourceAdapter {
     final String action;
     final boolean rootPrime;
     final boolean foregroundService;
+    final boolean passiveWarmSafe;
     final String unavailableReason;
 
     private MediaSourceAdapter(String packageName, Kind kind, ComponentName service, String action,
                                boolean rootPrime, boolean foregroundService,
-                               String unavailableReason) {
+                               boolean passiveWarmSafe, String unavailableReason) {
         this.packageName = packageName;
         this.kind = kind;
         this.service = service;
         this.action = action;
         this.rootPrime = rootPrime;
         this.foregroundService = foregroundService;
+        this.passiveWarmSafe = passiveWarmSafe;
         this.unavailableReason = unavailableReason;
     }
 
@@ -57,18 +53,21 @@ final class MediaSourceAdapter {
             ComponentName service = exportedService(context, exact)
                     ? exact : findExportedService(context, packageName, MEDIA3_SESSION_ACTION);
             if (service != null) {
+                // The supplied reference establishes the exported service contract, but not that
+                // passive service start on the installed API-29 build is non-disruptive. Prepare it
+                // interactively on Play until physical qualification proves passive warm-up safe.
                 return new MediaSourceAdapter(packageName, Kind.EXPLICIT_SERVICE, service,
-                        MEDIA3_SESSION_ACTION, true, true, "");
+                        MEDIA3_SESSION_ACTION, true, true, false, "");
             }
             return sessionOnly(packageName,
                     "NavRadio+ background service is not available in the installed build");
         }
 
-        // Exact current TW Radio bytes declare no Android service component. Do not turn its
-        // Activity into a hidden warm-up path and do not infer private Topway commands from strings.
+        // Exact current TW Radio bytes declare no Android service component. No external Topway
+        // background control route has yet been qualified either. Do not hide-launch its Activity.
         if (STOCK_TW_RADIO_PACKAGE.equals(packageName)) {
             return sessionOnly(packageName,
-                    "Stock TW Radio has no exported background media service");
+                    "Stock TW Radio has no exported background media service; external control route unqualified");
         }
 
         ComponentName browser = findExportedService(context, packageName, MEDIA_BROWSER_ACTION);
@@ -76,7 +75,7 @@ final class MediaSourceAdapter {
             boolean exactAuxio = AUXIO_PACKAGE.equals(packageName)
                     && AUXIO_BROWSER_SERVICE.equals(browser.getClassName());
             return new MediaSourceAdapter(packageName, Kind.MEDIA_BROWSER, browser,
-                    MEDIA_BROWSER_ACTION, exactAuxio, false, "");
+                    MEDIA_BROWSER_ACTION, exactAuxio, false, true, "");
         }
 
         return sessionOnly(packageName, "No exported background media service was found");
@@ -85,7 +84,10 @@ final class MediaSourceAdapter {
     String rootStartCommand() {
         if (!rootPrime || service == null || action == null || action.isEmpty()) return "";
         String verb = foregroundService ? "start-foreground-service" : "startservice";
-        return "/system/bin/am " + verb + " --user 0 -a " + action
+        String currentUser = "user=$(/system/bin/cmd activity get-current-user 2>/dev/null"
+                + " || /system/bin/am get-current-user 2>/dev/null); "
+                + "case \"$user\" in ''|*[!0-9]*) exit 1;; esac; ";
+        return currentUser + "exec /system/bin/am " + verb + " --user \"$user\" -a " + action
                 + " -n " + service.flattenToShortString();
     }
 
@@ -95,16 +97,19 @@ final class MediaSourceAdapter {
 
     String notReadyMessage(String label) {
         String source = label == null || label.isEmpty() ? "Source" : label;
-        if (!unavailableReason.isEmpty()) {
-            return unavailableReason + "; tap the " + source + " source icon";
-        }
-        return source + " did not become ready in background; tap the "
-                + source + " source icon";
+        if (!unavailableReason.isEmpty()) return unavailableReason;
+        return source + " did not become ready in background";
+    }
+
+    boolean maskedFallbackQualified() {
+        // No supplied/current exact-device evidence establishes safe cross-app overlay ordering,
+        // source survival after Activity loss, and camera/call window precedence. Keep this off.
+        return false;
     }
 
     private static MediaSourceAdapter sessionOnly(String packageName, String reason) {
         return new MediaSourceAdapter(packageName, Kind.SESSION_ONLY, null, "",
-                false, false, reason);
+                false, false, false, reason);
     }
 
     private static ComponentName findExportedService(Context context, String packageName,
