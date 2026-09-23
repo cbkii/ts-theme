@@ -20,6 +20,23 @@ public class MediaSelectionTest {
         assertEquals(MediaSelection.RADIO, selection.reconcile(false, false));
     }
 
+    @Test public void failedSwitchReturnsDisplayToSolePlayingAuthority() {
+        MediaSelection selection = new MediaSelection(MediaSelection.MUSIC);
+        selection.reconcile(false, true);
+        selection.select(MediaSelection.RADIO);
+        assertEquals(MediaSelection.RADIO, selection.displayed());
+        assertEquals(MediaSelection.MUSIC,
+                selection.reconcileAfterFailedSwitch(false, true));
+    }
+
+    @Test public void failedSwitchKeepsExplicitSourceWhenPlaybackIsAmbiguous() {
+        MediaSelection selection = new MediaSelection(MediaSelection.RADIO);
+        assertEquals(MediaSelection.RADIO,
+                selection.reconcileAfterFailedSwitch(false, false));
+        assertEquals(MediaSelection.RADIO,
+                selection.reconcileAfterFailedSwitch(true, true));
+    }
+
     @Test public void rememberedUsablePackagePrecedesOtherActiveFallback() {
         assertEquals(1, MediaSelection.pick(Arrays.asList(
                 new MediaSelection.Candidate("other", true, true, true, false),
