@@ -1,58 +1,38 @@
-# TS18 Dashboard
+# ts-theme
 
-Android dashboard development for CB's Topway TS18 (Android 10/API 29, 1280 x 720).
+`ts-theme` is a standalone Android 10/API 29 launcher/theme implementation for the exact CB TS18 environment. It is intentionally lightweight: framework Java/Views, one DEX, no native runtime payload, no Kotlin/AndroidX runtime and no launcher-owned media session/audio focus.
 
-The repository has two deliberately separate runtime lanes:
-
-- **`launcher/` - standalone TS18 HOME candidate (primary direction).** An ordinary independently signed Android launcher that owns the dashboard directly and removes DoFun/RePlugin from the normal runtime path.
-- **`theme/` - legacy DoFun/RePlugin theme lane.** Retained as rollback/reference while standalone HOME is physically qualified.
-
-DoFun remains installed and enabled during launcher qualification.
-
-## Project posture: local, offline and private by default
-
-**Local, offline and private by default** is the repository-wide position for `ts-theme`.
-
-- **Network availability is optional.** Network access is not an assumed prerequisite for HOME operation.
-- Prefer on-device state, local media libraries and offline-capable navigation applications where practical.
-- There is **no remote analytics** by default. Do not add tracking, remote configuration, cloud logging or user-behaviour telemetry by default.
-- Diagnostics are explicit, bounded and local/exportable; the user decides whether to share them.
-- Remote services may be used only when a feature explicitly requires them and the dependency is visible, bounded and justified.
-
-Recommended offline-capable ecosystem choices include **Organic Maps** and **OsmAnd/OsmAnd+** for navigation, and **Auxio-TS, Auxio and VLC** for local media. These are recommendations, not launcher dependencies.
+The project preserves DoFun as the recoverable HOME authority while the standalone launcher is qualified. Protected Topway/SystemUI/vehicle services are not replaced or guessed.
 
 ## Standalone launcher
 
-Package: `com.cbkii.ts18launcher`.
+The standalone launcher provides a fixed landscape automotive HOME built around the observed TS18 geometry and safe-area contracts. It includes:
 
-The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material runtime/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes existing Android media sessions; bounded media readiness is background-only and uses exact per-source service adapters plus standard MediaSession/MediaBrowser surfaces. No readiness/transport path opens a source Activity.
+- fixed Apps and Navigation rail endpoints with 3–6 optional quick shortcuts;
+- separate Radio and Music transport groups around one shared now-playing metadata surface;
+- local app drawer/search and configurable quick-access slots;
+- appearance modes and semantic accent hue;
+- optional experimental Leaflet/WebView map comparator, off by default;
+- bounded read-only diagnostics and explicit HOME rollback tooling.
 
-### TS18 Mono Drive HOME
+A notification-listener service observes existing Android media sessions; bounded media readiness is background-only and uses exact per-source service adapters plus standard MediaSession/MediaBrowser surfaces. No readiness/transport path opens a source Activity.
 
-Exact TS18 testing preserves the physical Topway/SystemUI authority: 1280 x 720 panel, 55 px top boundary, safe-right x=1225 and safe-bottom y=702. HOME uses a **96 px side rail** and **88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip**. Physical SystemUI boundaries remain raw pixels; inner UI uses semantic Android dimensions where appropriate.
+### Radio / Music interaction
 
-The rail can be Driver side, Left or Right; on this exact Australian RHD unit Driver side means right. Radio/Music control groups can be swapped independently with `Radio / Music sides`.
+Radio and Music remain separate authorities. Selection is a launcher presentation choice, not proof of which hardware path is audible.
 
-The rail order is fixed as **Apps at the top, optional 3-6 configurable quick slots in the middle, and Navigation at the bottom**. Quick 1 defaults to the **Settings** role. The HOME-shortcuts section can be disabled entirely from Settings; when disabled the middle quick slots disappear and their count/editor settings are hidden. When enabled, the visible middle slots divide the available middle rail height evenly rather than being packed as though all six were always present. Navigation remains fixed at the bottom.
-
-The fixed Navigation button uses the selected accent hue. The date is display-only, transparent, non-clickable and non-focusable. Its compact 128 px allocation leaves more width for shared metadata.
-
-### Shared media presentation
-
-Radio and Music remain separate playback authorities but share one metadata area. The selected/last-explicit source has the strongest visual emphasis:
-
-- selected source group uses a restrained charcoal-to-accent gradient pointing inward toward metadata;
+- each source has its own source icon, Previous, Play/Pause and Next controls;
 - selected Play/Pause uses the filled semantic accent treatment;
 - the inactive source remains fully actionable and retains a subtle accent gradient/ring rather than appearing disabled;
 - source icons also distinguish selected versus inactive state without removing the inactive source's affordance.
 
-The shared metadata surface uses a 22sp slow-marquee primary title/station plus static 16sp secondary artist/program/source. The last explicitly selected source resolves simultaneous stale `PLAYING` reports.
+The shared metadata surface uses a 22sp slow-marquee primary title/station plus static 16sp secondary artist/program/source. Identical one-second session snapshots do not restart the marquee hold; bound MediaBrowser controllers are observed by their real MediaSession token, and empty metadata fields fall through to valid display-title/subtitle fields. The last explicitly selected source resolves simultaneous stale `PLAYING` reports.
 
-The Radio source icon always opens configured/default Radio. The Music source icon always opens configured/default Music. Those explicit source/app icons are the only media-strip controls allowed to foreground the source apps; the shared metadata surface is display-only. Previous / Play-Pause / Next remain usable at all times. A press uses the bounded background sequence: exact package MediaSession -> evidence-backed source adapter -> exported MediaBrowser/session service -> exact-session retry (~4.5 s) -> short visible failure status. There is no Activity-launch fallback. The launcher creates no MediaSession and never owns audio focus.
+The Radio source icon always opens configured/default Radio. The Music source icon always opens configured/default Music. Those explicit source/app icons are the only media-strip controls allowed to foreground the source apps; the shared metadata surface is display-only. Previous / Play-Pause / Next remain usable at all times. A press uses the bounded background sequence: exact package MediaSession -> evidence-backed source adapter -> exported MediaBrowser/session service -> bounded session discovery -> directional playback acknowledgement. A Play/Pause intent is resolved once at tap time and retained through preparation; duplicate in-flight Play/Pause requests are coalesced. There is no Activity-launch fallback. The launcher creates no MediaSession and never owns audio focus.
 
-A **Warm media sources on HOME start** switch runs the same idempotent Media Ready reconciliation on HOME start/resume/focus. For exact Auxio-TS and NavRadio+ service contracts, bounded Magisk root is the primary service-activation path and ordinary Android service/bind behaviour is the fallback/control path. Generic sources use an exported MediaBrowser service when present. Starting non-playing Music sends one best-effort Pause to genuinely playing Radio first; starting Radio similarly pauses Music.
+A **Warm media sources on HOME start** switch runs idempotent Media Ready reconciliation on HOME start/resume/focus. Auxio-TS may be passively prepared through its exact exported MediaBrowser wrapper with bounded Magisk-root priming and ordinary binding fallback. Generic sources may use an exported standard MediaBrowser service when present. NavRadio+ is deliberately **interactive-Play preparation only** until the installed API-29 build proves that starting its service while idle does not activate radio or switch routing. Preparing either source does not pause the opposite source; the opposite source is paused only after the newly requested source has acknowledged Play.
 
-On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. NavRadio+ `com.navimods.radio` is adapted through its exported Media3 `RadioService` only when that component resolves in the installed build. Exact stock **`com.tw.radio`** declares no Android service component, so it remains session-only and is never secretly foregrounded for readiness. Private Topway radio commands remain outside this adapter until their transport/authority is separately qualified. See [background media readiness adapters](docs/MEDIA_BACKGROUND_READINESS.md).
+On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. NavRadio+ `com.navimods.radio` is adapted through its exported Media3 `RadioService` only when that component resolves in the installed build. Exact stock **`com.tw.radio`** declares no Android service component, so it remains existing-session/external-route only and is never secretly foregrounded for readiness. Private Topway radio commands remain outside this adapter until their transport/authority is separately qualified. A masked Activity fallback is not enabled: overlay permission, source survival after Activity loss and OEM camera/call/SystemUI ordering are not yet physically qualified. See [background media readiness adapters](docs/MEDIA_BACKGROUND_READINESS.md).
 
 ### Shortcut App / Icon model
 
@@ -96,9 +76,10 @@ Versioned SAF JSON export/import is whitelisted and transactional. It includes a
 Read-only physical evidence helpers:
 
 - `scripts/termux/measure-standalone-launcher.sh` - CPU/RAM/frame measurements;
-- `scripts/termux/collect-window-media-evidence.sh` - bounded task/window/freeform/PiP, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture.
+- `scripts/termux/collect-window-media-evidence.sh` - bounded task/window/freeform/PiP, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture;
+- `scripts/termux/collect-fast-media-evidence.sh` - bounded source/user/root-domain/service/session readiness capture plus a fast-media physical qualification playbook under `/storage/emulated/0/Download/ts-theme/`.
 
-These diagnostics do not mutate protected state. Permission/time-out/root gaps are BLOCKED/UNKNOWN rather than evidence of absence.
+These diagnostics do not mutate protected state. Permission/time-out/root gaps are BLOCKED/UNVERIFIED rather than evidence of absence.
 
 ## UX and physical qualification
 
@@ -106,7 +87,7 @@ These diagnostics do not mutate protected state. Permission/time-out/root gaps a
 
 Before any further typography, icon-size or touch-target redesign, capture and validate the actual device's `wm size`, `wm density`, `densityDpi` and relevant display metrics. Do not convert proven SystemUI boundaries away from raw pixels merely for stylistic consistency.
 
-Physical validation is still required for the selected/inactive media hierarchy and gradients, 128 px date, adaptive rail spacing and shortcut-disable state, actual app-icon Settings preview, colour-circle accent selector, media bootstrap/warm-up, appearance modes and exact sidebar/decor-fitted geometry.
+Physical validation is still required for selected/inactive media hierarchy and gradients, 128 px date, adaptive rail spacing and shortcut-disable state, actual app-icon Settings preview, colour-circle accent selector, installed-source media readiness, appearance modes and exact sidebar/decor-fitted geometry. Fast-media qualification separately covers cold boot, launcher/player restart, repeated HOME returns, root unavailable, USB late/unavailable, opposite-source playback, reboot and ACC sleep/wake; audible onset remains a physical observation rather than a CI claim.
 
 ## Safe HOME rollout
 
