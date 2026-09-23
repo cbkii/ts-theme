@@ -63,11 +63,11 @@ final class MediaSourceAdapter {
                     "NavRadio+ background service is not available in the installed build");
         }
 
-        // Exact current TW Radio bytes declare no Android service component. Do not turn its
-        // Activity into a hidden warm-up path and do not infer private Topway commands from strings.
+        // Exact current TW Radio bytes declare no Android service component. No external Topway
+        // background control route has yet been qualified either. Do not hide-launch its Activity.
         if (STOCK_TW_RADIO_PACKAGE.equals(packageName)) {
             return sessionOnly(packageName,
-                    "Stock TW Radio has no qualified background control route");
+                    "Stock TW Radio has no exported background media service; external control route unqualified");
         }
 
         ComponentName browser = findExportedService(context, packageName, MEDIA_BROWSER_ACTION);
