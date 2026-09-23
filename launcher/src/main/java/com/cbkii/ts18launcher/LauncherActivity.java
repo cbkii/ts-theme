@@ -67,6 +67,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private boolean launchedAsHome;
     private boolean locationPermissionRequested;
     private boolean mediaRefreshPolling;
+    private boolean mediaStatusActive;
+    private int mediaStatusGeneration;
     private MediaListenerService.Snapshot genericSnapshot = new MediaListenerService.Snapshot("", "", "", false);
     private MediaListenerService.Snapshot radioSnapshot = new MediaListenerService.Snapshot("", "", "", false);
 
@@ -156,6 +158,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         appearanceController.stop();
         stopMediaRefreshPolling();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
+        mediaStatusGeneration++;
+        mediaStatusActive = false;
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (mapPanel != null) mapPanel.stop();
@@ -341,15 +345,28 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void runSourceCommand(String label, String packageName, MediaListenerService.Command command) {
+        int generation = ++mediaStatusGeneration;
+        mediaStatusActive = true;
         String appLabel = AppResolver.labelFor(this, packageName, label);
-        mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE ? "Starting " + label + "…" : label, appLabel);
+        mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
+                ? "Preparing " + label + "…" : label, appLabel);
         mediaBootstrapper.command(label, packageName, command, (success, message) -> {
-            if (isFinishing() || isDestroyed()) return;
+            if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
             MediaListenerService.refreshActiveSessions();
-            if (success) updateLabels();
-            else {
+            if (success) {
+                mediaStatusActive = false;
+                updateLabels();
+            } else {
+                if (command == MediaListenerService.Command.PLAY_PAUSE) {
+                    mediaSelection.reconcileAfterFailedSwitch(
+                            radioSnapshot.playing, genericSnapshot.playing);
+                }
                 mediaText.setMetadata(label, message);
-                mediaRefreshHandler.postDelayed(this::updateLabels, MEDIA_STATUS_MS);
+                mediaRefreshHandler.postDelayed(() -> {
+                    if (generation != mediaStatusGeneration) return;
+                    mediaStatusActive = false;
+                    updateLabels();
+                }, MEDIA_STATUS_MS);
             }
         });
     }
@@ -455,9 +472,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 radioSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
         setMediaButtonsReady(radioPrevious, radioPlayPause, radioNext);
         if (!MediaListenerService.hasNotificationAccess(this)) {
-            if (MediaSelection.MUSIC.equals(mediaSelection.displayed()))
-                mediaText.setMetadata("Media access required", "Use Settings gear · Notification access");
-            else mediaText.setMetadata(radioLabel, "Radio");
+            if (!mediaStatusActive) {
+                if (MediaSelection.MUSIC.equals(mediaSelection.displayed()))
+                    mediaText.setMetadata("Media access required", "Use Settings gear · Notification access");
+                else mediaText.setMetadata(radioLabel, "Radio");
+            }
             AutomotiveUi.setIconWithCrossfade(this, playPause, R.drawable.ic_play);
             setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
             updateMediaPresentation();
@@ -471,7 +490,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         boolean showRadio = MediaSelection.RADIO.equals(mediaSelection.displayed());
         MediaListenerService.Snapshot displayed = showRadio ? radioSnapshot : genericSnapshot;
         String label = showRadio ? radioLabel : sourceLabel;
-        mediaText.setMetadata(primaryMetadata(displayed, label), secondaryMetadata(displayed, label));
+        if (!mediaStatusActive) {
+            mediaText.setMetadata(primaryMetadata(displayed, label), secondaryMetadata(displayed, label));
+        }
         AutomotiveUi.setIconWithCrossfade(this, playPause,
                 genericSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
         setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
