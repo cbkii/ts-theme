@@ -81,10 +81,13 @@ final class MediaSourceAdapter {
         return sessionOnly(packageName, "No exported background media service was found");
     }
 
-    String rootStartCommand(int userId) {
+    String rootStartCommand() {
         if (!rootPrime || service == null || action == null || action.isEmpty()) return "";
         String verb = foregroundService ? "start-foreground-service" : "startservice";
-        return "/system/bin/am " + verb + " --user " + Math.max(0, userId) + " -a " + action
+        String currentUser = "user=$(/system/bin/cmd activity get-current-user 2>/dev/null"
+                + " || /system/bin/am get-current-user 2>/dev/null); "
+                + "case \"$user\" in ''|*[!0-9]*) exit 1;; esac; ";
+        return currentUser + "exec /system/bin/am " + verb + " --user \"$user\" -a " + action
                 + " -n " + service.flattenToShortString();
     }
 
