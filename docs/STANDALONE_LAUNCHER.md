@@ -14,7 +14,24 @@ JDK 17, Gradle 9.5, Android platform 29 and Build Tools 36. The release remains 
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 ```
 
-Successful same-repository PR validation feeds the fixed draft release **000 Testing Only Version**.
+## Testing-build workflow
+
+The fixed draft release **000 Testing Only Version** is an explicit engineering/physical-validation channel, not an automatic output of every successful PR validation. A TESTING snapshot can be requested by:
+
+1. adding the `testing-apk` label to a PR;
+2. putting `/testing-apk` in the newest PR commit message;
+3. commenting `/testing-apk` in the PR conversation;
+4. manually running **Refresh Testing APK Draft** from the default branch and setting `source_to_build` to a PR number, branch, tag or commit SHA.
+
+Commit/comment requests idempotently ensure the PR carries the `testing-apk` label. The label is visible state, not permission for every later commit to overwrite the draft; later snapshots still require another explicit request.
+
+The workflow builds the exact requested repository source with read-only permissions, then hands only the APK/metadata artifact to the signing publisher. The release-envelope checker remains release-only; the debug APK is not required to satisfy the one-DEX release contract. Manual arbitrary-source Gradle caching is read-only. PR conversation comments are handled from the default-branch workflow definition; inline review-thread comments are intentionally not a signing trigger.
+
+The draft retains the **two newest successfully published snapshot groups**. Each group has uniquely named TESTING and DEBUG APKs plus BUILD_INFO, signer and checksum metadata. The release notes are authoritative for the snapshot PR, PR head, base at request, actual built SHA, trigger, actor and workflow run. If a PR has moved since an older snapshot, the notes show both the snapshot head and the current PR head without invalidating the older APK.
+
+All TESTING APKs deliberately retain `versionName=0.0.0-testing` and `versionCode=999999` so they stay in one reinstall/update lane. Commits predating the standalone launcher naturally cannot produce its APK.
+
+Request a TESTING snapshot at a meaningful install/device-test checkpoint, especially before exact TS18 physical validation of changed map, media/radio, HOME/lifecycle, SystemUI/geometry, root/integration or OEM-specific behaviour; when reproducing a device-only defect; when handing a build to a physical tester; or before a risky follow-up change where preserving the current known build is useful. Docs-only or incidental changes normally need only Validate.
 
 ## Automotive HOME UI
 
@@ -68,13 +85,16 @@ Radio and generic Music remain separate authorities. Transport buttons are never
 
 1. exact active MediaSession for the target package when available/capable;
 2. evidence-backed per-source adapter;
-3. bounded Magisk-root service activation first for exact Auxio-TS/NavRadio contracts, with normal Android service/bind fallback;
-4. exported `android.media.browse.MediaBrowserService` for other compatible sources;
-5. bounded exact-session retry and short visible failure status.
+3. bounded Magisk-root service activation first for exact Auxio-TS, followed by its exported MediaBrowser wrapper and ordinary binding fallback;
+4. bounded root-first NavRadio service activation only for an interactive Play request while passive service start remains physically unqualified;
+5. exported `android.media.browse.MediaBrowserService` for other compatible sources;
+6. bounded exact-session retry, one directional command, playback acknowledgement for Play/Pause, and a short visible failure status.
 
-No readiness/transport path launches a source Activity. Settings exposes **Warm media sources on HOME start**. When enabled, HOME reconciles readiness on start/resume/focus using the same idempotent adapters. Exact stock `com.tw.radio` is session-only because its current APK declares no service component. The launcher creates no MediaSession and never requests audio focus.
+No readiness/transport path launches a source Activity. Settings exposes **Warm media sources on HOME start**. When enabled, HOME reconciles readiness on start/resume/focus only through passively qualified adapters. Exact stock `com.tw.radio` is existing-session/external-route only because its current APK declares no service component. The launcher creates no MediaSession and never requests audio focus.
 
-Starting a non-playing Music source best-effort pauses genuinely playing Radio first; starting Radio does the converse. The selected source owns shared metadata, with last explicit source resolving simultaneous stale PLAYING claims. Generic Music retains the visible-only one-second reconciliation fallback proven useful in physical Auxio-TS testing.
+A Play/Pause intent is resolved once at tap time and retained through preparation. Duplicate in-flight Play/Pause intents are coalesced under one monotonic deadline. Preparing a new source does not stop the currently working opposite source; the opposite source is paused only after the requested source has acknowledged Play. Failed source switches reconcile the displayed source to actual playback rather than leaving a stale selected-source state. Generic Music retains the visible-only one-second reconciliation fallback proven useful in physical Auxio-TS testing.
+
+MediaBrowser-acquired controllers feed the same metadata pipeline as active-session controllers and are deduplicated by real `MediaSession.Token`. Empty/whitespace title/artist fields fall through to valid display title/subtitle values. Identical one-second snapshots do not restart the slow marquee's five-second stationary hold.
 
 ## Appearance
 
@@ -115,13 +135,15 @@ The drawer keeps Settings/Close, five configurable quick-access slots, always-vi
 
 SAF JSON export/import is versioned, whitelisted and transactional. It includes app/role assignments, HOME shortcut visibility/count, rail and Radio/Music sides, map settings, media mode, startup warm-up, accent hue, icon overrides and appearance settings/schedule. It excludes secrets, caches and location history.
 
-## Read-only evidence collector
+## Read-only evidence collectors
 
 `scripts/termux/collect-window-media-evidence.sh` is a bounded read-only discriminator for physical validation and the separate map-windowing investigation. It captures `wm size`/`wm density`, display/window/task state, package/services, MediaBrowser/MediaSession state, optional root-readable launcher preferences and bounded relevant logs. It does not mutate settings, packages, tasks, playback or windows.
 
+`scripts/termux/collect-fast-media-evidence.sh` adds bounded source/user/root-domain/service/session readiness capture plus a generated physical fast-media playbook under `/storage/emulated/0/Download/ts-theme/`. PASS/FAIL/BLOCKED/UNVERIFIED status is kept separate from physical audible-onset observations.
+
 ## Physical requalification
 
-Keep DoFun as HOME and test the launcher as an ordinary Activity first.
+Keep DoFun as HOME and test the launcher as an ordinary Activity first. Before beginning a new physical-validation round, request `/testing-apk` (or use another explicit TESTING trigger) on the exact commit you intend to install, then use the fixed draft release notes to confirm the APK's PR/head/built SHA before copying it to the TS18.
 
 1. Verify Apps -> default Settings slot -> configured middle shortcuts -> accented Navigation, including 3/4/5/6 slot spacing and shortcuts-disabled mode.
 2. Confirm Navigation remains fixed at bottom and visible slots use the available middle rail height evenly.
@@ -130,14 +152,14 @@ Keep DoFun as HOME and test the launcher as an ordinary Activity first.
 5. Test Radio/Music sides independently from rail side.
 6. Configure HOME/drawer slots through App/Icon; verify explicit apps show real untinted icons for App and Auto previews, while overrides remain monochrome Material Symbols.
 7. Test all accent colour circles and confirm only semantic accent elements change.
-8. Test media bootstrap, startup warm-up ON/OFF, opposite-source pause-on-start and shared metadata arbitration.
+8. Test cold/background one-tap media readiness, duplicate Play/Pause coalescing, deferred opposite-source pause, startup warm-up ON/OFF and shared metadata/marquee arbitration.
 9. Capture exact `wm size`, `wm density`, `densityDpi` before proposing further typography/icon/target changes.
 10. Validate full physical and decor-fitted/right-sidebar geometry. Do not infer generic split-screen support.
 11. Confirm experimental Leaflet remains off by default; do not score future placeholder work unless the WebView itself is retained.
-12. Re-run `MONO_DRIVE_UX_ACCEPTANCE.md` and `measure-standalone-launcher.sh`.
+12. Run `collect-fast-media-evidence.sh`, `MONO_DRIVE_UX_ACCEPTANCE.md` and `measure-standalone-launcher.sh` where applicable.
 13. Only after ordinary-Activity gates pass continue HOME/reboot/cold-boot/ACC qualification.
 
-Native Topway radio/music, Bluetooth/projection, reverse-camera behaviour and future windowed navigation remain unclaimed unless separately exercised.
+NavRadio passive warm-up, a stock TW Radio external control route and any masked Activity fallback remain unqualified until exact physical evidence establishes those contracts. Native Topway radio/music, Bluetooth/projection, reverse-camera behaviour and future windowed navigation remain unclaimed unless separately exercised.
 
 ## Rollback
 
