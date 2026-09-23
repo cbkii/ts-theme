@@ -347,7 +347,7 @@ final class NavigationWindowController {
                     if (!finishOperation(operation)) return;
                     boolean missing = "TASK_NOT_FOUND".equals(result.code);
                     if (!missing && !(acceptIdentity(result, managedPackage, managedTask)
-                            && result.windowingMode == 1)) {
+                            && result.windowingMode == 5)) {
                         adoptAuthority(nextMode, nextPackage);
                         latchFailure(nextPackage, nextMode,
                                 "Could not leave previous navigation task · " + result.code);
@@ -391,7 +391,7 @@ final class NavigationWindowController {
             if (!result.success) Log.w(TAG, "suspend helper failure: " + result.raw);
             if ("TASK_NOT_FOUND".equals(result.code)) {
                 activeTaskId = -1;
-            } else if (acceptIdentity(result, pkg, task) && result.windowingMode == 1) {
+            } else if (acceptIdentity(result, pkg, task) && result.windowingMode == 5) {
                 activeTaskId = result.taskId;
             } else {
                 latchFailure(pkg, configuredMode, "Could not suspend navigation · " + result.code);

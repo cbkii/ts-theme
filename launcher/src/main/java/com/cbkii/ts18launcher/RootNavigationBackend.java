@@ -58,8 +58,9 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
             return;
         }
-        submit(() -> helper.run("suspend", packageName, Integer.toString(taskId),
-                homePackage, Integer.toString(homeTaskId)), callback);
+        // A routine HOME/overlay suspension must not re-launch the navigation Activity merely
+        // to change its windowing mode. Keep the existing mode-5 task intact and put HOME above it.
+        submit(() -> helper.parkWindowedTask(packageName, taskId, homePackage, homeTaskId), callback);
     }
 
     @Override public void destroy() {

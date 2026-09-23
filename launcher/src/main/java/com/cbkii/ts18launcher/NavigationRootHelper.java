@@ -56,6 +56,75 @@ final class NavigationRootHelper {
         return parsed;
     }
 
+    /**
+     * Parks an already-windowed navigation task behind HOME without starting an Activity.
+     *
+     * A warm suspend is deliberately a task-focus transaction only. Reissuing `am start` for
+     * the navigation Activity can deliver a new Intent to a SINGLE_TOP Activity and therefore
+     * re-enter application startup/permission code even though the task already exists.
+     */
+    synchronized NavigationHelperResult parkWindowedTask(String packageName, int taskId,
+            String homePackage, int homeTaskId) {
+        if (!PACKAGE.matcher(packageName == null ? "" : packageName).matches()
+                || !PACKAGE.matcher(homePackage == null ? "" : homePackage).matches()
+                || taskId <= 0 || homeTaskId <= 0) {
+            return NavigationHelperResult.failure("BAD_ARGUMENT", "");
+        }
+
+        NavigationHelperResult navigationBefore = run("status", packageName,
+                Integer.toString(taskId));
+        if (!isExactTask(navigationBefore, packageName, taskId)) return navigationBefore;
+        if (navigationBefore.displayId != 0 || navigationBefore.windowingMode != 5) {
+            return NavigationHelperResult.failure("SUSPEND_STATE_MISMATCH", navigationBefore.raw);
+        }
+        NavigationHelperResult homeBefore = run("status", homePackage,
+                Integer.toString(homeTaskId));
+        if (!isExactTask(homeBefore, homePackage, homeTaskId)) return homeBefore;
+
+        String command = "PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin; export PATH; "
+                + "unset LD_PRELOAD LD_LIBRARY_PATH; am task focus " + homeTaskId;
+        ProcessResult focus = executeRoot(command, COMMAND_TIMEOUT_MS);
+        if (focus.timedOut) return NavigationHelperResult.failure("HOME_FOCUS_TIMEOUT", focus.output);
+        if (focus.exitCode != 0) return NavigationHelperResult.failure("HOME_FOCUS_FAILED", focus.output);
+
+        NavigationHelperResult navigationAfter = run("status", packageName,
+                Integer.toString(taskId));
+        if (!isExactTask(navigationAfter, packageName, taskId)) return navigationAfter;
+        if (navigationAfter.displayId != 0 || navigationAfter.windowingMode != 5
+                || !navigationBefore.bounds.equals(navigationAfter.bounds)) {
+            return NavigationHelperResult.failure("SUSPEND_STATE_CHANGED", navigationAfter.raw);
+        }
+        return withCode(navigationAfter, "SUSPENDED");
+    }
+
+    private static boolean isExactTask(NavigationHelperResult result, String packageName, int taskId) {
+        if (!result.success || result.taskId != taskId || !packageName.equals(result.packageName)) {
+            return false;
+        }
+        return result.component == null || result.component.isEmpty()
+                || "unknown".equals(result.component)
+                || result.component.startsWith(packageName + "/");
+    }
+
+    private static NavigationHelperResult withCode(NavigationHelperResult result, String code) {
+        StringBuilder line = new StringBuilder("OK code=").append(code)
+                .append(" task=").append(result.taskId)
+                .append(" stack=").append(result.stackId >= 0 ? result.stackId : "unknown")
+                .append(" package=").append(result.packageName)
+                .append(" component=").append(result.component == null || result.component.isEmpty()
+                        ? "unknown" : result.component)
+                .append(" display=").append(result.displayId >= 0 ? result.displayId : "unknown")
+                .append(" windowingMode=").append(result.windowingMode >= 0
+                        ? result.windowingMode : "unknown")
+                .append(" bounds=").append(result.bounds == null || result.bounds.isEmpty()
+                        ? "unknown" : result.bounds)
+                .append(" supportsPip=").append(result.supportsPip >= 0
+                        ? result.supportsPip : "unknown")
+                .append(" launched=0 transaction=0 helpExit=not-run helpWindowingMode=0")
+                .append(" helpDisplay=0 launchExit=not-run");
+        return NavigationHelperResult.parse(line.toString());
+    }
+
     private NavigationHelperResult ensureInstalled() {
         if (installedThisProcess) return NavigationHelperResult.parse("OK code=INSTALLED");
         File staged = new File(context.getNoBackupFilesDir(), "nav-window.sh");
