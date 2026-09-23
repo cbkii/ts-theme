@@ -10,7 +10,6 @@ import android.media.session.PlaybackState;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Process;
 import android.os.SystemClock;
 
 import com.cbkii.ts18launcher.platform.TopwayAdapter;
@@ -58,6 +57,7 @@ final class MediaSourceBootstrapper {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Connection> connections = new HashMap<>();
     private final Map<String, ServiceStart> serviceStarts = new HashMap<>();
+    private final Map<String, Pending> inFlightToggle = new HashMap<>();
     private final Map<String, Status> statuses = new LinkedHashMap<>();
     private final ExecutorService rootExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "ts18-media-root");
@@ -66,6 +66,7 @@ final class MediaSourceBootstrapper {
     });
     private final MediaSessionManager sessionManager;
     private final ComponentName listenerComponent;
+    private String deferredPauseCandidate = "";
     private boolean destroyed;
 
     MediaSourceBootstrapper(Context context) {
@@ -109,13 +110,17 @@ final class MediaSourceBootstrapper {
         else prepareExplicitService(adapter, null);
     }
 
+    /**
+     * Nominate a currently-playing opposite source for a requested switch. It is not paused here;
+     * the pause is committed only after the new source's Play acknowledgement succeeds.
+     */
     void pausePackage(String packageName) {
-        if (packageName == null || packageName.isEmpty()) return;
-        MediaController controller = controllerForPackage(packageName);
-        if (controller == null || !isPlaying(controller)) return;
-        if (sendDesired(controller, MediaCommandPolicy.Desired.PAUSE)) {
-            MediaListenerService.refreshActiveSessions();
+        if (packageName == null || packageName.isEmpty()) {
+            deferredPauseCandidate = "";
+            return;
         }
+        MediaController controller = controllerForPackage(packageName);
+        deferredPauseCandidate = controller != null && isPlaying(controller) ? packageName : "";
     }
 
     boolean isPlaying(String packageName) {
@@ -146,6 +151,7 @@ final class MediaSourceBootstrapper {
             return;
         }
         if (packageName == null || packageName.isEmpty()) {
+            deferredPauseCandidate = "";
             finishCallback(callback, false,
                     "No " + sourceLabel.toLowerCase(java.util.Locale.ROOT) + " app configured");
             return;
@@ -156,6 +162,26 @@ final class MediaSourceBootstrapper {
         MediaCommandPolicy.Desired desired = MediaCommandPolicy.resolve(command, isPlaying(controller));
         Pending pending = new Pending(sourceLabel, packageName, desired, callback,
                 SystemClock.uptimeMillis() + COMMAND_TIMEOUT_MS);
+        if (desired == MediaCommandPolicy.Desired.PLAY) {
+            pending.pauseOnPlayPackage = deferredPauseCandidate;
+        }
+        deferredPauseCandidate = "";
+
+        if (desired == MediaCommandPolicy.Desired.PLAY
+                || desired == MediaCommandPolicy.Desired.PAUSE) {
+            Pending existing = inFlightToggle.get(packageName);
+            if (existing != null && !existing.settled && existing.desired == desired) {
+                existing.callbacks.addAll(pending.callbacks);
+                if (existing.pauseOnPlayPackage.isEmpty()) {
+                    existing.pauseOnPlayPackage = pending.pauseOnPlayPackage;
+                }
+                return;
+            }
+            if (existing != null && !existing.settled) {
+                finish(existing, false, "Superseded by a newer Play/Pause request");
+            }
+            inFlightToggle.put(packageName, pending);
+        }
 
         if (controller != null && supports(controller, desired)) {
             dispatchToController(controller, pending);
@@ -184,8 +210,11 @@ final class MediaSourceBootstrapper {
         for (ServiceStart start : new ArrayList<>(serviceStarts.values())) {
             finishAll(start.pending, false, "Launcher unavailable");
         }
+        finishAll(new ArrayList<>(inFlightToggle.values()), false, "Launcher unavailable");
         connections.clear();
         serviceStarts.clear();
+        inFlightToggle.clear();
+        deferredPauseCandidate = "";
         rootExecutor.shutdownNow();
     }
 
@@ -242,8 +271,7 @@ final class MediaSourceBootstrapper {
         final Connection target = connection;
         if (adapter.rootPrime) {
             rootExecutor.execute(() -> {
-                int userId = Process.myUserHandle().getIdentifier();
-                RootShell.runMillis(adapter.rootStartCommand(userId), ROOT_START_TIMEOUT_MS);
+                RootShell.runMillis(adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
                 handler.post(() -> connectBrowser(target, generation, deadlineMs));
             });
         } else {
@@ -352,7 +380,7 @@ final class MediaSourceBootstrapper {
     private void issueConnected(MediaController controller, Pending pending) {
         if (pending.settled) return;
         if (MediaCommandPolicy.acknowledged(pending.desired, stateOf(controller))) {
-            finish(pending, true, "");
+            completeAcknowledged(controller, pending);
             return;
         }
         if (supports(controller, pending.desired)) {
@@ -387,9 +415,8 @@ final class MediaSourceBootstrapper {
                 "Root service start, normal Android fallback, then exact-session discovery");
         final ServiceStart target = start;
         rootExecutor.execute(() -> {
-            int userId = Process.myUserHandle().getIdentifier();
             RootShell.Result root =
-                    RootShell.runMillis(adapter.rootStartCommand(userId), ROOT_START_TIMEOUT_MS);
+                    RootShell.runMillis(adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
             handler.post(() -> {
                 if (destroyed || serviceStarts.get(adapter.packageName) != target
                         || target.generation != generation) return;
@@ -462,7 +489,7 @@ final class MediaSourceBootstrapper {
         if (controller != null) {
             markController(pending.packageName, controller);
             if (MediaCommandPolicy.acknowledged(pending.desired, stateOf(controller))) {
-                finish(pending, true, "");
+                completeAcknowledged(controller, pending);
                 return;
             }
             if (supports(controller, pending.desired) && !pending.dispatched) {
@@ -479,8 +506,7 @@ final class MediaSourceBootstrapper {
         if (destroyed || pending.settled) return;
         int state = stateOf(controller);
         if (MediaCommandPolicy.acknowledged(pending.desired, state)) {
-            markController(pending.packageName, controller);
-            finish(pending, true, "");
+            completeAcknowledged(controller, pending);
             return;
         }
         if (!supports(controller, pending.desired)) {
@@ -524,8 +550,7 @@ final class MediaSourceBootstrapper {
             return;
         }
         if (MediaCommandPolicy.acknowledged(pending.desired, state)) {
-            markController(pending.packageName, controller);
-            finish(pending, true, "");
+            completeAcknowledged(controller, pending);
             return;
         }
         if (state == PlaybackState.STATE_ERROR) {
@@ -545,6 +570,25 @@ final class MediaSourceBootstrapper {
         handler.postDelayed(() -> awaitAcknowledgement(controller, pending),
                 Math.max(1L, MediaCommandPolicy.boundedDelay(
                         now, pending.ackDeadlineMs, ACK_RETRY_MS)));
+    }
+
+    private void completeAcknowledged(MediaController controller, Pending pending) {
+        markController(pending.packageName, controller);
+        if (pending.desired == MediaCommandPolicy.Desired.PLAY) commitDeferredPause(pending);
+        finish(pending, true, "");
+    }
+
+    private void commitDeferredPause(Pending pending) {
+        String oppositePackage = pending.pauseOnPlayPackage;
+        pending.pauseOnPlayPackage = "";
+        if (oppositePackage == null || oppositePackage.isEmpty()
+                || oppositePackage.equals(pending.packageName)) return;
+        MediaController opposite = controllerForPackage(oppositePackage);
+        if (opposite == null || !isPlaying(opposite)) return;
+        if (supports(opposite, MediaCommandPolicy.Desired.PAUSE)
+                && sendDesired(opposite, MediaCommandPolicy.Desired.PAUSE)) {
+            MediaListenerService.refreshActiveSessions();
+        }
     }
 
     private static boolean sendDesired(MediaController controller, MediaCommandPolicy.Desired desired) {
@@ -626,6 +670,9 @@ final class MediaSourceBootstrapper {
                 if (!existing.settled && !existing.dispatched
                         && existing.desired == incoming.desired) {
                     existing.callbacks.addAll(incoming.callbacks);
+                    if (existing.pauseOnPlayPackage.isEmpty()) {
+                        existing.pauseOnPlayPackage = incoming.pauseOnPlayPackage;
+                    }
                     return existing;
                 }
             }
@@ -647,6 +694,11 @@ final class MediaSourceBootstrapper {
                 start.pending.clear();
             }
         }
+        for (Pending pending : new ArrayList<>(inFlightToggle.values())) {
+            if (!packageName.equals(pending.packageName)) {
+                finish(pending, false, "Superseded by a newer source command");
+            }
+        }
     }
 
     private void finishAll(List<Pending> pending, boolean success, String message) {
@@ -656,6 +708,9 @@ final class MediaSourceBootstrapper {
     private void finish(Pending pending, boolean success, String message) {
         if (pending == null || pending.settled) return;
         pending.settled = true;
+        if (inFlightToggle.get(pending.packageName) == pending) {
+            inFlightToggle.remove(pending.packageName);
+        }
         for (ResultCallback callback : new ArrayList<>(pending.callbacks)) {
             finishCallback(callback, success, message);
         }
@@ -705,6 +760,7 @@ final class MediaSourceBootstrapper {
         boolean dispatched;
         boolean settled;
         long ackDeadlineMs;
+        String pauseOnPlayPackage = "";
 
         Pending(String sourceLabel, String packageName, MediaCommandPolicy.Desired desired,
                 ResultCallback callback, long deadlineMs) {
