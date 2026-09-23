@@ -4,13 +4,15 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.view.View;
 import android.view.animation.LinearInterpolator;
 import android.widget.TextView;
 
 /** Endless low-speed marquee with five-second readable holds at both ends. */
 final class SlowMarqueeTextView extends TextView {
-    private static final long HOLD_MS = 5000L;
+    static final long HOLD_MS = 5000L;
     private static final float SPEED_DP_PER_SECOND = 24f;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ValueAnimator animator;
@@ -35,29 +37,49 @@ final class SlowMarqueeTextView extends TextView {
         super.onDetachedFromWindow();
     }
 
+    @Override protected void onVisibilityChanged(View changedView, int visibility) {
+        super.onVisibilityChanged(changedView, visibility);
+        if (handler == null || !isAttachedToWindow()) return;
+        if (visibility == View.VISIBLE && getWindowVisibility() == View.VISIBLE) scheduleFromStart();
+        else cancelMarquee();
+    }
+
+    @Override protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (handler == null || !isAttachedToWindow()) return;
+        if (visibility == View.VISIBLE && getVisibility() == View.VISIBLE) scheduleFromStart();
+        else cancelMarquee();
+    }
+
     @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        scheduleFromStart();
+        if (w != oldw) scheduleFromStart();
     }
 
     @Override public void setText(CharSequence text, BufferType type) {
-        super.setText(text, type);
+        CharSequence safe = text == null ? "" : text;
+        if (TextUtils.equals(getText(), safe)) return;
+        super.setText(safe, type);
         if (handler != null) scheduleFromStart();
     }
 
     private void scheduleFromStart() {
         cancelMarquee();
         scrollTo(0, 0);
+        if (!isAttachedToWindow() || getVisibility() != View.VISIBLE
+                || getWindowVisibility() != View.VISIBLE) return;
         handler.postDelayed(restart, HOLD_MS);
     }
 
     private void startMarquee() {
         int available = Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
-        int content = (int) Math.ceil(getPaint().measureText(getText() == null ? "" : getText().toString()));
+        int content = (int) Math.ceil(getPaint().measureText(
+                getText() == null ? "" : getText().toString()));
         int overflow = Math.max(0, content - available);
         if (overflow <= 0 || !isShown()) return;
         float pxPerSecond = SPEED_DP_PER_SECOND * getResources().getDisplayMetrics().density;
-        long duration = Math.max(3500L, Math.min(30000L, (long) (overflow / pxPerSecond * 1000f)));
+        long duration = Math.max(3500L,
+                Math.min(30000L, (long) (overflow / pxPerSecond * 1000f)));
         ValueAnimator next = ValueAnimator.ofInt(0, overflow);
         animator = next;
         next.setInterpolator(new LinearInterpolator());
@@ -70,7 +92,7 @@ final class SlowMarqueeTextView extends TextView {
                     if (animator != next) return;
                     scrollTo(0, 0);
                     animator = null;
-                    handler.postDelayed(restart, HOLD_MS);
+                    if (isShown()) handler.postDelayed(restart, HOLD_MS);
                 }, HOLD_MS);
             }
         });
