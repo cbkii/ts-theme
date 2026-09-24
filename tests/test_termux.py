@@ -40,4 +40,25 @@ class TermuxToolkitTests(unittest.TestCase):
         common=(SCRIPTS/"lib/common.sh").read_text(encoding="utf-8"); install=(SCRIPTS/"ts18-theme-install.sh").read_text(encoding="utf-8"); rollback=(SCRIPTS/"ts18-theme-rollback.sh").read_text(encoding="utf-8")
         self.assertIn('^[0-9]+\\.jar$',common); self.assertIn("test ! -L",install); self.assertIn("test ! -L",rollback); self.assertIn("restore_interrupted_donor",install)
         self.assertLess(install.index("donor-original.jar"),install.index("cat '$TS18_FIXED_STAGE' > '$DONOR_TARGET'")); self.assertIn("p.l-sha256.txt",install); self.assertIn('[[ "$pl_after" == "$pl_before" ]]',install)
+    def test_fast_media_default_collectors_are_read_only(self):
+        fast=(SCRIPTS/"collect-fast-media-evidence.sh").read_text(encoding="utf-8")
+        stock=(SCRIPTS/"collect-stock-radio-evidence.sh").read_text(encoding="utf-8")
+        acc=(SCRIPTS/"collect-acc-media-lifecycle.sh").read_text(encoding="utf-8")
+        for text in (fast,stock,acc):
+            for forbidden in ("am start-foreground-service","am startservice","input keyevent","force-stop","sendBroadcast","service call"):
+                self.assertNotIn(forbidden,text)
+        self.assertNotIn("logcat -c", stock)
+        self.assertIn("Screen-on/off", acc)
+        self.assertIn("NOT classified as ACC", acc)
+    def test_navradio_mutation_requires_exact_explicit_flag_and_never_plays_or_stops(self):
+        path=SCRIPTS/"qualify-navradio-service-start.sh"
+        result=subprocess.run(["bash",str(path)],capture_output=True,text=True,timeout=5)
+        self.assertEqual(2,result.returncode)
+        text=path.read_text(encoding="utf-8")
+        self.assertIn('--qualify-navradio-service-start',text)
+        self.assertIn('query-intent-services',text)
+        self.assertIn('com\\.navimods\\.radio/',text)
+        self.assertIn('am start-foreground-service',text)
+        for forbidden in ("force-stop","input keyevent"," media play","service call"):
+            self.assertNotIn(forbidden,text)
 if __name__ == "__main__": unittest.main()
