@@ -104,8 +104,6 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
             return;
         }
-        // A routine HOME/overlay suspension must not re-launch the navigation Activity merely
-        // to change its windowing mode. Keep the existing mode-5 task intact and put HOME above it.
         submit(() -> helper.parkWindowedTask(packageName, taskId, homePackage, homeTaskId), callback);
     }
 
@@ -132,8 +130,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                 + "w=${size%x*}; h=${size#*x}; "
                 + "case \"$w:$h\" in *[!0-9:]*|:|*:) exit 42;; esac; "
                 + "[ \"$w\" -gt 0 ] && [ \"$h\" -gt 0 ] || exit 43; "
-                + "am task resizeable " + taskId + " 2 >/dev/null 2>&1 || exit 44; "
-                + "am task resize " + taskId + " 0 0 \"$w\" \"$h\" >/dev/null 2>&1 || exit 45; "
+                + "am task resize " + taskId + " 0 0 \"$w\" \"$h\" >/dev/null 2>&1 || exit 44; "
                 + "printf 'FULL_BOUNDS=0,0,%s,%s\\n' \"$w\" \"$h\"";
     }
 
