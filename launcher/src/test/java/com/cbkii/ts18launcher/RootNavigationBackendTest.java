@@ -1,6 +1,7 @@
 package com.cbkii.ts18launcher;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -9,8 +10,8 @@ public final class RootNavigationBackendTest {
     @Test public void fullscreenResizeTargetsPhysicalDisplayForSameTask() {
         String command = RootNavigationBackend.fullscreenResizeCommand(9257);
         assertTrue(command.contains("wm size"));
-        assertTrue(command.contains("am task resizeable 9257 2"));
         assertTrue(command.contains("am task resize 9257 0 0"));
+        assertFalse(command.contains("am task resizeable"));
         assertTrue(command.contains("FULL_BOUNDS=0,0"));
     }
 
