@@ -81,6 +81,11 @@ final class NavigationPermissionBootstrapper {
             return new Result(true, false, packageName,
                     java.util.Collections.emptyList(), "Disabled");
         }
+        String assignedPackage = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_NAV);
+        if (assignedPackage.isEmpty() || !assignedPackage.equals(packageName)) {
+            return new Result(true, false, packageName,
+                    java.util.Collections.emptyList(), "Not the assigned navigation app");
+        }
         if (!safePackage(packageName)) {
             return new Result(false, false, packageName,
                     java.util.Collections.emptyList(), "Unsafe package name");
