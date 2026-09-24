@@ -45,7 +45,7 @@ final class MediaSourceAdapter {
 
     static MediaSourceAdapter resolve(Context context, String packageName) {
         if (packageName == null || packageName.isEmpty()) {
-            return sessionOnly("", "No media app configured");
+            return traced(sessionOnly("", "No media app configured"));
         }
 
         if (NAVRADIO_PACKAGE.equals(packageName)) {
@@ -56,29 +56,29 @@ final class MediaSourceAdapter {
                 // The supplied reference establishes the exported service contract, but not that
                 // passive service start on the installed API-29 build is non-disruptive. Prepare it
                 // interactively on Play until physical qualification proves passive warm-up safe.
-                return new MediaSourceAdapter(packageName, Kind.EXPLICIT_SERVICE, service,
-                        MEDIA3_SESSION_ACTION, true, true, false, "");
+                return traced(new MediaSourceAdapter(packageName, Kind.EXPLICIT_SERVICE, service,
+                        MEDIA3_SESSION_ACTION, true, true, false, ""));
             }
-            return sessionOnly(packageName,
-                    "NavRadio+ background service is not available in the installed build");
+            return traced(sessionOnly(packageName,
+                    "NavRadio+ background service is not available in the installed build"));
         }
 
         // Exact current TW Radio bytes declare no Android service component. No external Topway
         // background control route has yet been qualified either. Do not hide-launch its Activity.
         if (STOCK_TW_RADIO_PACKAGE.equals(packageName)) {
-            return sessionOnly(packageName,
-                    "Stock TW Radio has no exported background media service; external control route unqualified");
+            return traced(sessionOnly(packageName,
+                    "Stock TW Radio has no exported background media service; external control route unqualified"));
         }
 
         ComponentName browser = findExportedService(context, packageName, MEDIA_BROWSER_ACTION);
         if (browser != null) {
             boolean exactAuxio = AUXIO_PACKAGE.equals(packageName)
                     && AUXIO_BROWSER_SERVICE.equals(browser.getClassName());
-            return new MediaSourceAdapter(packageName, Kind.MEDIA_BROWSER, browser,
-                    MEDIA_BROWSER_ACTION, exactAuxio, false, true, "");
+            return traced(new MediaSourceAdapter(packageName, Kind.MEDIA_BROWSER, browser,
+                    MEDIA_BROWSER_ACTION, exactAuxio, false, true, ""));
         }
 
-        return sessionOnly(packageName, "No exported background media service was found");
+        return traced(sessionOnly(packageName, "No exported background media service was found"));
     }
 
     String rootStartCommand() {
@@ -105,6 +105,17 @@ final class MediaSourceAdapter {
         // No supplied/current exact-device evidence establishes safe cross-app overlay ordering,
         // source survival after Activity loss, and camera/call window precedence. Keep this off.
         return false;
+    }
+
+    private static MediaSourceAdapter traced(MediaSourceAdapter adapter) {
+        String serviceName = adapter.service == null ? "none" : adapter.service.flattenToShortString();
+        MediaEventTrace.record("adapter.resolve",
+                (adapter.packageName.isEmpty() ? "none" : adapter.packageName)
+                        + " kind=" + adapter.kind
+                        + " root=" + adapter.rootPrime
+                        + " passiveWarm=" + adapter.passiveWarmSafe
+                        + " service=" + serviceName);
+        return adapter;
     }
 
     private static MediaSourceAdapter sessionOnly(String packageName, String reason) {
