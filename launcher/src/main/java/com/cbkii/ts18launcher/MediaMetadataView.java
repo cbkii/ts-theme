@@ -47,16 +47,16 @@ final class MediaMetadataView extends LinearLayout {
     }
 
     void setMetadata(String title, String context) {
-        String safeTitle = title == null ? "" : title.trim();
-        String safeContext = context == null ? "" : context.trim();
-        if (!safeTitle.equals(lastPrimary)) {
-            lastPrimary = safeTitle;
-            primary.setText(safeTitle);
+        MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
+                lastPrimary, lastSecondary, title, context);
+        if (change.primaryChanged) {
+            lastPrimary = change.primary;
+            primary.setText(change.primary);
         }
-        if (!safeContext.equals(lastSecondary)) {
-            lastSecondary = safeContext;
-            secondary.setText(safeContext);
-            secondary.setVisibility(safeContext.isEmpty() ? View.GONE : View.VISIBLE);
+        if (change.secondaryChanged) {
+            lastSecondary = change.secondary;
+            secondary.setText(change.secondary);
+            secondary.setVisibility(change.secondary.isEmpty() ? View.GONE : View.VISIBLE);
         }
     }
 }
