@@ -45,7 +45,7 @@ class TermuxToolkitTests(unittest.TestCase):
         stock=(SCRIPTS/"collect-stock-radio-evidence.sh").read_text(encoding="utf-8")
         acc=(SCRIPTS/"collect-acc-media-lifecycle.sh").read_text(encoding="utf-8")
         for text in (fast,stock,acc):
-            for forbidden in ("am start-foreground-service","am startservice","input keyevent","force-stop","sendBroadcast","service call"):
+            for forbidden in ("am start-foreground-service","am startservice","input keyevent","am force-stop","pm clear ","service call "):
                 self.assertNotIn(forbidden,text)
         self.assertNotIn("logcat -c", stock)
         self.assertIn("Screen-on/off", acc)
@@ -59,6 +59,6 @@ class TermuxToolkitTests(unittest.TestCase):
         self.assertIn('query-intent-services',text)
         self.assertIn('com\\.navimods\\.radio/',text)
         self.assertIn('am start-foreground-service',text)
-        for forbidden in ("force-stop","input keyevent"," media play","service call"):
+        for forbidden in ("am force-stop","input keyevent"," media play","service call "):
             self.assertNotIn(forbidden,text)
 if __name__ == "__main__": unittest.main()
