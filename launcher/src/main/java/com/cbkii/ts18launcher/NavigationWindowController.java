@@ -536,6 +536,8 @@ final class NavigationWindowController {
     }
 
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) {
+        // Physical visibility and touch are not inferred from Android task identity/bounds alone;
+        // those remain exact-device qualification observations even after this helper succeeds.
         panel.showConfigured("", () -> openFullscreen(null));
     }
 
