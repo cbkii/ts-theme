@@ -9,12 +9,14 @@ import java.util.concurrent.Executors;
 
 /** Shared bounded executor for one root-backed navigation experiment. */
 abstract class RootNavigationBackend implements NavigationSurfaceBackend {
+    private final Context context;
     private final NavigationRootHelper helper;
     private final ExecutorService executor;
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean destroyed;
 
     RootNavigationBackend(Context context, String threadName) {
+        this.context = context.getApplicationContext();
         helper = new NavigationRootHelper(context);
         executor = Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, threadName);
@@ -25,17 +27,23 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
 
     @Override public void present(String packageName, String launchComponent,
             NavigationWindowBounds bounds, int taskId, int transactionId, Callback callback) {
-        submit(() -> helper.run("present-native", packageName, launchComponent,
-                Integer.toString(bounds.left), Integer.toString(bounds.top),
-                Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId),
-                Integer.toString(transactionId)), callback);
+        submit(() -> {
+            ensureNavigationPermissions(packageName);
+            return helper.run("present-native", packageName, launchComponent,
+                    Integer.toString(bounds.left), Integer.toString(bounds.top),
+                    Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId),
+                    Integer.toString(transactionId));
+        }, callback);
     }
 
     @Override public void verify(String packageName, NavigationWindowBounds bounds,
             int taskId, Callback callback) {
-        submit(() -> helper.run("verify-native", packageName,
-                Integer.toString(bounds.left), Integer.toString(bounds.top),
-                Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId)), callback);
+        submit(() -> {
+            ensureNavigationPermissions(packageName);
+            return helper.run("verify-native", packageName,
+                    Integer.toString(bounds.left), Integer.toString(bounds.top),
+                    Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId));
+        }, callback);
     }
 
     @Override public void status(String packageName, int taskId, Callback callback) {
@@ -48,7 +56,10 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
             return;
         }
-        submit(() -> helper.run("fullscreen", packageName, Integer.toString(taskId)), callback);
+        submit(() -> {
+            ensureNavigationPermissions(packageName);
+            return helper.run("fullscreen", packageName, Integer.toString(taskId));
+        }, callback);
     }
 
     @Override public void suspend(String packageName, int taskId, String homePackage,
@@ -67,6 +78,16 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
         destroyed = true;
         executor.shutdownNow();
         main.removeCallbacksAndMessages(null);
+    }
+
+    private void ensureNavigationPermissions(String packageName) {
+        NavigationPermissionBootstrapper.Result result =
+                NavigationPermissionBootstrapper.ensureNow(context, packageName);
+        if (!result.success && result.attempted) {
+            android.util.Log.w("TS18NavPerm",
+                    "permission mitigation failed open package=" + packageName
+                            + " detail=" + result.detail);
+        }
     }
 
     private static String taskHint(int taskId) {
