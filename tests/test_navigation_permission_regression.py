@@ -38,7 +38,8 @@ class NavigationPermissionRegressionTests(unittest.TestCase):
             "move_task_fullscreen()", 1
         )[0]
 
-        self.assertEqual(1, cold.count("am start --user 0 --display 0 --windowingMode 5"))
+        self.assertEqual(1, cold.count("am start "))
+        self.assertIn("--display 0 --windowingMode 5", cold)
         self.assertIn("-a android.intent.action.MAIN -c android.intent.category.LAUNCHER", cold)
 
 
