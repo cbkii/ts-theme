@@ -49,14 +49,16 @@ final class MediaMetadataView extends LinearLayout {
     void setMetadata(String title, String context) {
         String safeTitle = title == null ? "" : title.trim();
         String safeContext = context == null ? "" : context.trim();
-        if (!safeTitle.equals(lastPrimary)) {
+        if (MarqueePolicy.primaryChanged(lastPrimary, safeTitle)) {
             lastPrimary = safeTitle;
             primary.setText(safeTitle);
+            MediaEventTrace.record("metadata.primary", safeTitle.isEmpty() ? "empty" : safeTitle);
         }
         if (!safeContext.equals(lastSecondary)) {
             lastSecondary = safeContext;
             secondary.setText(safeContext);
             secondary.setVisibility(safeContext.isEmpty() ? View.GONE : View.VISIBLE);
+            MediaEventTrace.record("metadata.secondary", safeContext.isEmpty() ? "empty" : safeContext);
         }
     }
 }
