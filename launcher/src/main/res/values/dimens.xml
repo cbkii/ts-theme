@@ -19,6 +19,8 @@
     <dimen name="ui_drawer_header_height">80dp</dimen>
     <dimen name="ui_drawer_quick_height">116dp</dimen>
     <dimen name="ui_search_height">80dp</dimen>
+    <dimen name="ui_settings_nav_width">232dp</dimen>
+    <dimen name="ui_settings_nav_item_height">80dp</dimen>
     <dimen name="ui_settings_row_height">80dp</dimen>
     <dimen name="ui_settings_shortcut_editor_height">136dp</dimen>
 
