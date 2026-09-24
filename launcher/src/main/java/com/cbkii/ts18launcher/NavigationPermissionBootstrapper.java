@@ -42,6 +42,9 @@ final class NavigationPermissionBootstrapper {
 
     private static final String TAG = "TS18NavPerm";
     private static final long ROOT_TIMEOUT_MS = 2200L;
+    // Android allocates app UIDs in per-user ranges of 100000. Use the launcher process UID so
+    // the bounded pm grant targets the same Android user without hidden UserHandle APIs or user 0.
+    private static final int ANDROID_UID_PER_USER_RANGE = 100000;
     private static final Object ROOT_GRANT_LOCK = new Object();
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "ts18-nav-permissions");
@@ -108,7 +111,7 @@ final class NavigationPermissionBootstrapper {
                         "Declared navigation location permissions already granted or not requested");
             }
 
-            int userId = Process.myUserHandle().getIdentifier();
+            int userId = Math.max(0, Process.myUid() / ANDROID_UID_PER_USER_RANGE);
             StringBuilder command = new StringBuilder("failed=0");
             for (String permission : missing) {
                 if (!NavigationPermissionPolicy.isAllowed(permission)) continue;
@@ -134,9 +137,9 @@ final class NavigationPermissionBootstrapper {
                 detail = "Permission grant incomplete: " + String.join(", ", remaining);
             }
             if (success) Log.i(TAG, "root permission mitigation complete package=" + packageName
-                    + " permissions=" + missing);
+                    + " user=" + userId + " permissions=" + missing);
             else Log.w(TAG, "root permission mitigation incomplete package=" + packageName
-                    + " detail=" + detail + " output=" + root.output);
+                    + " user=" + userId + " detail=" + detail + " output=" + root.output);
             return new Result(success, true, packageName, missing, detail);
         }
     }
