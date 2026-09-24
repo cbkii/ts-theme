@@ -92,6 +92,10 @@ final class MediaSourceBootstrapper {
         if (destroyed || packageName == null || packageName.isEmpty()) return;
         MediaController controller = controllerForPackage(packageName);
         if (controller != null) {
+            Connection connection = connections.get(packageName);
+            if (connection != null && connection.controller == controller) {
+                MediaListenerService.observeExternalController(controller);
+            }
             markController(packageName, controller);
             if (controllerReadyForPlay(controller)) return;
         }
@@ -254,6 +258,7 @@ final class MediaSourceBootstrapper {
         }
         Pending actual = pending == null ? null : addPending(connection.pending, pending);
         if (connection.controller != null) {
+            MediaListenerService.observeExternalController(connection.controller);
             if (actual != null) issueConnected(connection.controller, actual);
             return;
         }
@@ -297,6 +302,7 @@ final class MediaSourceBootstrapper {
                 try {
                     connection.controller =
                             new MediaController(context, connection.browser.getSessionToken());
+                    attachBrowserController(connection, generation);
                     connection.preparing = false;
                     MediaListenerService.observeExternalController(connection.controller);
                     markController(packageName, connection.controller);
@@ -330,6 +336,40 @@ final class MediaSourceBootstrapper {
         }
     }
 
+    private void attachBrowserController(Connection connection, int generation) {
+        MediaController controller = connection.controller;
+        if (controller == null) throw new IllegalStateException("MediaBrowser controller missing");
+        MediaController.Callback callback = new MediaController.Callback() {
+            @Override public void onSessionDestroyed() {
+                handler.post(() -> browserSessionDestroyed(connection, generation));
+            }
+        };
+        controller.registerCallback(callback);
+        connection.controllerCallback = callback;
+    }
+
+    private void browserSessionDestroyed(Connection connection, int generation) {
+        if (!valid(connection, generation)) return;
+        String packageName = connection.adapter.packageName;
+        MediaSourceAdapter adapter = connection.adapter;
+        List<Pending> queued = new ArrayList<>(connection.pending);
+        connection.pending.clear();
+        connections.remove(packageName);
+        disconnect(connection);
+        mark(packageName, MediaCommandPolicy.Phase.FAILED,
+                "Bound MediaSession ended; a future request will reconnect");
+
+        long now = SystemClock.uptimeMillis();
+        for (Pending command : queued) {
+            if (command.settled) continue;
+            if (now >= command.deadlineMs) {
+                finish(command, false, command.sourceLabel + " session ended before dispatch");
+            } else {
+                queueBrowser(adapter, command);
+            }
+        }
+    }
+
     private boolean valid(Connection connection, int generation) {
         return !destroyed && connection != null
                 && connections.get(connection.adapter.packageName) == connection
@@ -350,8 +390,18 @@ final class MediaSourceBootstrapper {
     private void disconnect(Connection connection) {
         removeConnectTimeout(connection);
         if (connection.controller != null) {
+            if (connection.controllerCallback != null) {
+                try {
+                    connection.controller.unregisterCallback(connection.controllerCallback);
+                } catch (RuntimeException ignored) {
+                    // Session may already be destroyed.
+                }
+                connection.controllerCallback = null;
+            }
             MediaListenerService.forgetExternalController(connection.controller);
             connection.controller = null;
+        } else {
+            connection.controllerCallback = null;
         }
         if (connection.browser != null) {
             try {
@@ -728,6 +778,7 @@ final class MediaSourceBootstrapper {
         final List<Pending> pending = new ArrayList<>();
         MediaBrowser browser;
         MediaController controller;
+        MediaController.Callback controllerCallback;
         Runnable connectTimeout;
         boolean preparing;
         int generation;
