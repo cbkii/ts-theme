@@ -17,10 +17,13 @@ class NavigationRootPermissionTests(unittest.TestCase):
 
     def test_root_grant_is_narrow_bounded_current_user_assigned_app_only(self):
         bootstrap = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationPermissionBootstrapper.java").read_text()
+        android_user = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/AndroidUserId.java").read_text()
         policy = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationPermissionPolicy.java").read_text()
         self.assertIn('/system/bin/pm grant --user ', bootstrap)
         self.assertIn('ROOT_TIMEOUT_MS = 2200L', bootstrap)
-        self.assertIn('Process.myUid() / ANDROID_UID_PER_USER_RANGE', bootstrap)
+        self.assertIn('AndroidUserId.current()', bootstrap)
+        self.assertIn('Process.myUid()', android_user)
+        self.assertIn('uid / UID_RANGE_PER_USER', android_user)
         self.assertIn('LauncherPrefs.packageFor(context, LauncherPrefs.KEY_NAV)', bootstrap)
         self.assertIn('!assignedPackage.equals(packageName)', bootstrap)
         self.assertNotIn('pm grant --user 0', bootstrap)
@@ -44,6 +47,14 @@ class NavigationRootPermissionTests(unittest.TestCase):
         )[0]
         self.assertIn('LauncherPrefs.KEY_NAV.equals(pickKey)', assignment)
         self.assertIn('NavigationPermissionBootstrapper.ensureEarly(this);', assignment)
+
+    def test_configuration_import_runs_existing_early_bootstrap_hook(self):
+        settings = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java").read_text()
+        commit = settings.split('private void commitConfiguration', 1)[1].split(
+            'private void configurationMessage', 1
+        )[0]
+
+        self.assertIn('if (!reset) NavigationPermissionBootstrapper.ensureEarly(this);', commit)
 
     def test_native_navigation_checks_permission_mitigation_before_task_transition(self):
         backend = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/RootNavigationBackend.java").read_text()

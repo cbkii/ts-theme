@@ -485,19 +485,20 @@ final class NavigationWindowController {
 
     private static boolean acceptIdentity(NavigationHelperResult result, String pkg,
             int expectedTask) {
-        if (!result.success || result.taskId <= 0 || !pkg.equals(result.packageName)) return false;
+        if (!result.success || result.userId != AndroidUserId.current()
+                || result.taskId <= 0 || !pkg.equals(result.packageName)) return false;
         if (expectedTask > 0 && result.taskId != expectedTask) return false;
-        return componentMatchesOrUnknown(result.component, pkg);
+        return componentMatches(result.component, pkg);
     }
 
-    private static boolean componentMatchesOrUnknown(String component, String pkg) {
-        return component == null || component.isEmpty() || "unknown".equals(component)
-                || component.startsWith(pkg + "/");
+    private static boolean componentMatches(String component, String pkg) {
+        return component != null && !component.isEmpty() && !"unknown".equals(component)
+                && component.startsWith(pkg + "/");
     }
 
     private void retainObservedTask(NavigationHelperResult result, String pkg) {
-        if (result.taskId > 0 && pkg.equals(result.packageName)
-                && componentMatchesOrUnknown(result.component, pkg)) {
+        if (result.userId == AndroidUserId.current() && result.taskId > 0
+                && pkg.equals(result.packageName) && componentMatches(result.component, pkg)) {
             activePackage = pkg;
             activeTaskId = result.taskId;
         }

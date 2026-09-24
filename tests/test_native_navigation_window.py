@@ -60,9 +60,10 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             raise AssertionError("Foreground task parser must remain directly fixture-testable")
         cls.focus_awk = focus_match.group(1)
 
-    def parse_fixture(self, name, package="app.organicmaps.incar", hint="0"):
+    def parse_fixture(self, name, package="app.organicmaps.incar", hint="0", user="0"):
         completed = subprocess.run(
             ["awk", "-v", f"pkg={package}", "-v", f"hint={hint}",
+             "-v", f"target_user={user}",
              self.task_awk, str(FIXTURES / name)],
             check=True,
             capture_output=True,
@@ -190,6 +191,9 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertTrue(self.parse_fixture("nav-activity-ambiguous.txt", hint="1002").startswith(
             "FOUND 1002 8 0 5 200,120,700,520 "))
 
+    def test_task_parser_rejects_a_task_owned_by_another_android_user(self):
+        self.assertEqual("NONE", self.parse_fixture("nav-activity-freeform.txt", user="10"))
+
     def test_parser_uses_task_bounds_not_nested_activity_configuration(self):
         result = self.parse_fixture("nav-activity-freeform.txt")
         self.assertIn(" 5 475,72,1211,459 ", result)
@@ -201,7 +205,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn('read_task_once "$PKG" 0', self.helper)
         self.assertIn('2) fail TASK_AMBIGUOUS', self.helper)
         cold_launch = self.helper.split("launch_freeform_once()", 1)[1].split("move_task_fullscreen()", 1)[0]
-        self.assertEqual(1, cold_launch.count("am start --user 0 --display 0 --windowingMode 5"))
+        self.assertEqual(1, cold_launch.count(
+            'am start --user "$ANDROID_USER" --display 0 --windowingMode 5'))
         self.assertIn("-a android.intent.action.MAIN -c android.intent.category.LAUNCHER", self.helper)
         self.assertIn('am task resizeable "$wanted_task" 2', self.helper)
         self.assertIn('am task resize "$wanted_task" "$left" "$top" "$right" "$bottom"', self.helper)
@@ -218,7 +223,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
 
     def test_help_flags_are_authoritative_even_when_help_exits_255(self):
         completed = self.run_helper(
-            ["probe"],
+            ["probe", "0"],
             help_text="usage: am start [--display DISPLAY_ID] [--windowingMode WINDOWING_MODE]",
             help_exit=255,
         )
@@ -234,13 +239,13 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             "usage: am start [--windowingMode WINDOWING_MODE]",
         ):
             with self.subTest(help_text=help_text):
-                completed = self.run_helper(["probe"], help_text=help_text, help_exit=0)
+                completed = self.run_helper(["probe", "0"], help_text=help_text, help_exit=0)
                 self.assertEqual(0, completed.returncode, completed.stderr)
                 self.assertIn("nativeLaunch=0", completed.stdout)
 
     def test_actual_unknown_option_launch_is_classified_unsupported(self):
         completed = self.run_helper(
-            ["present-native", "app.organicmaps.incar",
+            ["present-native", "0", "app.organicmaps.incar",
              "app.organicmaps.incar/app.organicmaps.MwmActivity",
              "524", "77", "1174", "453", "0", "1"],
             help_text="usage: am start [--display DISPLAY_ID] [--windowingMode WINDOWING_MODE]",
@@ -255,7 +260,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
 
     def test_other_actual_launch_failure_is_classified_failed(self):
         completed = self.run_helper(
-            ["present-native", "app.organicmaps.incar",
+            ["present-native", "0", "app.organicmaps.incar",
              "app.organicmaps.incar/app.organicmaps.MwmActivity",
              "524", "77", "1174", "453", "0", "1"],
             help_text="usage: am start [--display DISPLAY_ID] [--windowingMode WINDOWING_MODE]",
@@ -328,8 +333,9 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("private void retry()", self.controller)
         self.assertNotIn("NavigationProvider.open(activity, pkg, null));\n        Log.w(TAG, \"native navigation failed", self.controller)
 
-    def test_success_accepts_unknown_component_but_checks_task_display_mode_bounds(self):
+    def test_success_requires_current_user_component_task_display_mode_and_bounds(self):
         for token in (
+            "result.userId != AndroidUserId.current()",
             "result.taskId != expectedTask",
             '"unknown".equals(component)',
             "result.displayId == 0",
@@ -337,6 +343,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             "target.toString().equals(result.bounds)",
         ):
             self.assertIn(token, self.controller)
+        self.assertIn('&& component.startsWith(pkg + "/")', self.controller)
         self.assertIn("panel.showConfigured", self.controller)
         self.assertIn("Physical visibility and touch are not inferred", self.controller)
         self.assertNotIn("showReady", self.controller + self.panel)

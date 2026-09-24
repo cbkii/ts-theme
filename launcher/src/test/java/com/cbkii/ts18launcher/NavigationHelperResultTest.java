@@ -9,12 +9,13 @@ import static org.junit.Assert.assertTrue;
 public class NavigationHelperResultTest {
     @Test public void parsesNativePresentationWithTransactionIdentity() {
         NavigationHelperResult result = NavigationHelperResult.parse(
-                "OK code=PRESENTED_NATIVE task=9681 stack=13 package=app.organicmaps.incar "
+                "OK code=PRESENTED_NATIVE user=10 task=9681 stack=13 package=app.organicmaps.incar "
                         + "component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 "
                         + "windowingMode=5 bounds=524,77,1174,453 supportsPip=0 "
                         + "launched=1 transaction=7 helpExit=255 helpWindowingMode=1 "
                         + "helpDisplay=1 launchExit=0");
         assertTrue(result.success);
+        assertEquals(10, result.userId);
         assertEquals(9681, result.taskId);
         assertEquals(13, result.stackId);
         assertEquals(0, result.displayId);
@@ -53,6 +54,7 @@ public class NavigationHelperResultTest {
         assertEquals(-1, result.supportsPip);
         assertEquals(-1, result.launched);
         assertEquals(-1, result.transactionId);
+        assertEquals(-1, result.userId);
         assertEquals(-1, result.helpExit);
         assertEquals(-1, result.launchExit);
     }

@@ -103,7 +103,7 @@ in_task && !matched && /mBounds=Rect\(/ {
   pending_bounds=bounds_of($0)
   next
 }
-in_task && !matched && /^[[:space:]]*\* TaskRecord\{/ && (index($0, " A=" pkg " ") || index($0, " A=" pkg "}")) {
+in_task && !matched && /^[[:space:]]*\* TaskRecord\{/ && (index($0, " A=" pkg " ") || index($0, " A=" pkg "}")) && index($0, " U=" target_user " ") {
   if (hint != "0" && task != hint) next
   matched=1
   hist0=0
@@ -181,6 +181,7 @@ END {
 }'
 
 PKG=unknown
+ANDROID_USER=unknown
 TASK_ID=unknown
 STACK_ID=unknown
 DISPLAY_ID=unknown
@@ -267,8 +268,8 @@ vendor_state_fields() {
 emit_protocol() {
   outcome="$1"
   code="$2"
-  printf '%s code=%s task=%s stack=%s package=%s component=%s display=%s windowingMode=%s bounds=%s supportsPip=%s launched=%s transaction=%s helpExit=%s helpWindowingMode=%s helpDisplay=%s launchExit=%s ' \
-    "$outcome" "$code" "$TASK_ID" "$STACK_ID" "$PKG" "$TASK_COMPONENT" "$DISPLAY_ID" \
+  printf '%s code=%s user=%s task=%s stack=%s package=%s component=%s display=%s windowingMode=%s bounds=%s supportsPip=%s launched=%s transaction=%s helpExit=%s helpWindowingMode=%s helpDisplay=%s launchExit=%s ' \
+    "$outcome" "$code" "$ANDROID_USER" "$TASK_ID" "$STACK_ID" "$PKG" "$TASK_COMPONENT" "$DISPLAY_ID" \
     "$WINDOWING_MODE" "$TASK_BOUNDS" "$SUPPORTS_PIP" "$LAUNCHED" "$TRANSACTION" \
     "$HELP_EXIT" "$HELP_WINDOWING_MODE" "$HELP_DISPLAY" "$LAUNCH_EXIT"
   vendor_state_fields
@@ -298,7 +299,7 @@ capture_activity() {
 parse_task_snapshot() {
   pkg="$1"
   hint="$2"
-  awk -v pkg="$pkg" -v hint="$hint" "$TASK_SNAPSHOT_AWK" "$SNAPSHOT"
+  awk -v pkg="$pkg" -v hint="$hint" -v target_user="$ANDROID_USER" "$TASK_SNAPSHOT_AWK" "$SNAPSHOT"
 }
 
 parse_foreground_task_snapshot() {
@@ -460,7 +461,7 @@ launch_freeform_once() {
     *) fail COMPONENT_PACKAGE_MISMATCH ;;
   esac
   native_launch_supported || fail FREEFORM_LAUNCH_UNSUPPORTED
-  am start --user 0 --display 0 --windowingMode 5 \
+  am start --user "$ANDROID_USER" --display 0 --windowingMode 5 \
     -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
     -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
   LAUNCH_EXIT=$?
@@ -482,7 +483,7 @@ move_task_fullscreen() {
   component="$TASK_COMPONENT"
   if [ "$WINDOWING_MODE" != 1 ]; then
     [ "$component" != unknown ] || fail COMPONENT_UNKNOWN
-    am start --user 0 --display 0 --windowingMode 1 --task "$wanted_task" \
+    am start --user "$ANDROID_USER" --display 0 --windowingMode 1 --task "$wanted_task" \
       -f 0x20000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_FAILED
   else
     am task focus "$wanted_task" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
@@ -498,6 +499,8 @@ for required in am dumpsys awk getprop grep tr cut cat head; do
 done
 
 action="${1:-}"
+ANDROID_USER="${2:-}"
+valid_uint "$ANDROID_USER" || fail BAD_ANDROID_USER
 case "$action" in
   probe)
     native_launch=0
@@ -509,8 +512,8 @@ case "$action" in
     ;;
 
   status)
-    PKG="${2:-}"
-    hint="${3:-0}"
+    PKG="${3:-}"
+    hint="${4:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
     require_task "$PKG" "$hint" 1
@@ -518,14 +521,14 @@ case "$action" in
     ;;
 
   present-native)
-    PKG="${2:-}"
-    launch_component="${3:-}"
-    left="${4:-}"
-    top="${5:-}"
-    right="${6:-}"
-    bottom="${7:-}"
-    hint="${8:-0}"
-    TRANSACTION="${9:-0}"
+    PKG="${3:-}"
+    launch_component="${4:-}"
+    left="${5:-}"
+    top="${6:-}"
+    right="${7:-}"
+    bottom="${8:-}"
+    hint="${9:-0}"
+    TRANSACTION="${10:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_component "$launch_component" || fail BAD_COMPONENT
     valid_uint "$hint" || fail BAD_TASK
@@ -551,11 +554,12 @@ case "$action" in
 
     wanted_task="$TASK_ID"
     [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+    [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
     # Android Q may reject resizeTask on a fullscreen configuration even when
     # resizeable=2. Establish mode 5 on this exact task before applying bounds.
     if [ "$WINDOWING_MODE" != 5 ]; then
       [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
-      am start --user 0 --display 0 --windowingMode 5 --task "$wanted_task" \
+      am start --user "$ANDROID_USER" --display 0 --windowingMode 5 --task "$wanted_task" \
         -f 0x20000000 -n "$TASK_COMPONENT" >"$LAUNCH_OUTPUT" 2>&1 || fail FREEFORM_TRANSITION_FAILED
       wait_state "$PKG" "$wanted_task" 5 any || fail FREEFORM_TRANSITION_REJECTED
     fi
@@ -577,12 +581,12 @@ case "$action" in
     ;;
 
   verify-native)
-    PKG="${2:-}"
-    left="${3:-}"
-    top="${4:-}"
-    right="${5:-}"
-    bottom="${6:-}"
-    hint="${7:-0}"
+    PKG="${3:-}"
+    left="${4:-}"
+    top="${5:-}"
+    right="${6:-}"
+    bottom="${7:-}"
+    hint="${8:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
     [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
@@ -593,8 +597,8 @@ case "$action" in
     ;;
 
   fullscreen)
-    PKG="${2:-}"
-    hint="${3:-0}"
+    PKG="${3:-}"
+    hint="${4:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
     [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
@@ -602,11 +606,11 @@ case "$action" in
     emit_protocol OK FULLSCREEN
     ;;
 
-  suspend)
-    PKG="${2:-}"
-    hint="${3:-0}"
-    HOME_PKG="${4:-}"
-    home_task="${5:-0}"
+  park-windowed)
+    PKG="${3:-}"
+    hint="${4:-0}"
+    HOME_PKG="${5:-}"
+    home_task="${6:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
     valid_package "$HOME_PKG" || fail BAD_HOME_PACKAGE
@@ -614,22 +618,31 @@ case "$action" in
     [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
     [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
 
-    # Check both authorities before changing either task.
+    # Routine parking must preserve the exact freeform navigation task; mode changes are separate
+    # explicit transactions because Android Q may require Activity re-delivery for those changes.
     navigation_task="$hint"
-    require_task "$HOME_PKG" "$home_task" 1
     require_task "$PKG" "$navigation_task" 1
-    require_handoff_foreground "$home_task" "$navigation_task"
-    if [ "$WINDOWING_MODE" != 1 ]; then
-      move_task_fullscreen "$PKG" "$navigation_task"
-    fi
-    wanted_task="$TASK_ID"
+    [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+    [ "$WINDOWING_MODE" = 5 ] || fail SUSPEND_MODE_MISMATCH
+    [ "$TASK_BOUNDS" != unknown ] || fail BOUNDS_UNKNOWN
+    [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
+    navigation_bounds="$TASK_BOUNDS"
+    navigation_component="$TASK_COMPONENT"
     require_task "$HOME_PKG" "$home_task" 1
-    require_handoff_foreground "$home_task" "$wanted_task"
+    [ "$DISPLAY_ID" = 0 ] || fail HOME_DISPLAY_MISMATCH
+    [ "$WINDOWING_MODE" = 1 ] || fail HOME_MODE_MISMATCH
+    require_handoff_foreground "$home_task" "$navigation_task"
     am task focus "$home_task" >"$LAUNCH_OUTPUT" 2>&1 || fail HOME_FOCUS_FAILED
     require_foreground_task "$home_task" HOME_NOT_FOREGROUND
-    PKG="${2:-}"
-    require_task "$PKG" "$wanted_task" 1
-    [ "$WINDOWING_MODE" = 1 ] || fail SUSPEND_MODE_MISMATCH
+    require_task "$HOME_PKG" "$home_task" 1
+    [ "$DISPLAY_ID" = 0 ] || fail HOME_DISPLAY_MISMATCH
+    [ "$WINDOWING_MODE" = 1 ] || fail HOME_MODE_MISMATCH
+    PKG="${3:-}"
+    require_task "$PKG" "$navigation_task" 1
+    [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+    [ "$WINDOWING_MODE" = 5 ] || fail SUSPEND_STATE_CHANGED
+    [ "$TASK_BOUNDS" = "$navigation_bounds" ] || fail SUSPEND_STATE_CHANGED
+    [ "$TASK_COMPONENT" = "$navigation_component" ] || fail SUSPEND_STATE_CHANGED
     emit_protocol OK SUSPENDED
     ;;
 

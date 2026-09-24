@@ -435,7 +435,11 @@ public final class SettingsActivity extends Activity {
                 configurationMessage(applied
                         ? (reset ? "Settings reset" : "Settings imported")
                         : "Settings were not changed");
-                if (applied) { MediaListenerService.refreshActiveSessions(); recreate(); }
+                if (applied) {
+                    MediaListenerService.refreshActiveSessions();
+                    if (!reset) NavigationPermissionBootstrapper.ensureEarly(this);
+                    recreate();
+                }
             });
         });
     }

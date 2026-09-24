@@ -8,13 +8,17 @@ The required machine state is:
 
 `selected package -> one task -> display 0 -> windowingMode 5 -> exact HOME panel bounds`
 
+Task discovery and every task transaction must use the Android user derived from the launcher
+process UID. Record that user before testing; do not assume user 0 merely because the captured
+2026-09-12 unit used launcher UID 10223 and Organic Maps UID 10209 (both user 0).
+
 The required user result is:
 
 `map visible and interactive inside the panel + launcher visible and interactive outside it`
 
 Physical TESTING attempt 2 is not a failed mode-5 result. The installed helper stopped at a false capability preflight because this OEM's `am help` advertised both required flags but exited 255. Retry repeated that same abort; no mode-5 launch or resize occurred. Use this playbook only with the corrected TESTING APK whose helper reports the help exit and advertised flags separately.
 
-The 2026-09-20 PR11-5aea8bc captures establish visible bounded rendering, but also expose broken suspension and warm recovery. The next candidate corrects HOME/package validation, explicitly returns existing fullscreen tasks to mode 5 before resizing, waits for suspension before exposing the drawer, and routes ordinary launcher entry to the selected HOME alias. A task reporting mode 5 and bounds is still only **configured**; physical touch remains a separate gate.
+The 2026-09-20 PR11-5aea8bc captures establish visible bounded rendering, but also expose broken suspension and warm recovery. The next candidate corrects HOME/package validation, parks an already-windowed task by focusing HOME without Activity re-delivery, explicitly returns existing fullscreen tasks to mode 5 before resizing, waits for suspension before exposing the drawer, and routes ordinary launcher entry to the selected HOME alias. The fullscreen/freeform transaction is deliberately distinct from warm parking: captured Android-Q behaviour rejects resize before mode 5 is established, so that explicit transition may still re-deliver the existing Activity. A task reporting mode 5 and bounds is still only **configured**; physical touch remains a separate gate.
 
 ## Prepare
 
