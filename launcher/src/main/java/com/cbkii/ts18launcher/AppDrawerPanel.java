@@ -32,10 +32,19 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** In-HOME app list. It overlays only the map surface, leaving the media strip visible. */
 @SuppressLint({"SetTextI18n", "ViewConstructor"})
 final class AppDrawerPanel extends android.widget.FrameLayout {
+    private static final ExecutorService LOADER = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "ts18-app-drawer-loader");
+        thread.setDaemon(true);
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
+
     private final Activity activity;
     private final Runnable onDismiss;
     private final List<Entry> allEntries = new ArrayList<>();
@@ -45,6 +54,8 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private final GridView grid;
     private final AppsAdapter adapter = new AppsAdapter();
     private boolean loaded;
+    private boolean loading;
+    private int loadGeneration;
 
     AppDrawerPanel(Activity activity, Runnable onDismiss) {
         super(activity);
@@ -135,8 +146,10 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     boolean isOpen() { return getVisibility() == View.VISIBLE; }
 
+    void preload() { ensureLoaded(); }
+
     void showPanel() {
-        if (!loaded) { loadEntries(); loaded = true; }
+        ensureLoaded();
         refreshPreferences();
         if (search.length() == 0) filter(""); else search.setText("");
         search.clearFocus();
@@ -145,6 +158,12 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         bringToFront();
         animate().cancel();
         animate().alpha(1f).setDuration(AutomotiveUi.DRAWER_MS).start();
+    }
+
+    void destroy() {
+        loadGeneration++;
+        loading = false;
+        animate().cancel();
     }
 
     void hidePanel() {
@@ -241,8 +260,26 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         if (input != null) input.hideSoftInputFromWindow(search.getWindowToken(), 0);
     }
 
-    private void loadEntries() {
-        allEntries.clear();
+    private void ensureLoaded() {
+        if (loaded || loading) return;
+        loading = true;
+        final int generation = ++loadGeneration;
+        LOADER.execute(() -> {
+            List<Entry> entries = loadEntries();
+            post(() -> {
+                if (generation != loadGeneration) return;
+                allEntries.clear();
+                allEntries.addAll(entries);
+                loaded = true;
+                loading = false;
+                filter(search.getText() == null ? "" : search.getText().toString());
+                MediaEventTrace.record("drawer", "catalog-ready", "count=" + allEntries.size());
+            });
+        });
+    }
+
+    private List<Entry> loadEntries() {
+        List<Entry> entries = new ArrayList<>();
         PackageManager pm = activity.getPackageManager();
         Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> resolved = pm.queryIntentActivities(query, PackageManager.MATCH_ALL);
@@ -256,10 +293,17 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             if (component == null) continue;
             seenPackages.add(packageName);
             CharSequence label = info.activityInfo.applicationInfo.loadLabel(pm);
-            allEntries.add(new Entry(packageName, component.getClassName(),
-                    label == null ? packageName : label.toString()));
+            Entry entry = new Entry(packageName, component.getClassName(),
+                    label == null ? packageName : label.toString());
+            try { entry.icon = pm.getActivityIcon(component); }
+            catch (PackageManager.NameNotFoundException ignored) {
+                try { entry.icon = pm.getApplicationIcon(packageName); }
+                catch (PackageManager.NameNotFoundException ignoredAgain) { /* UI fallback below. */ }
+            }
+            entries.add(entry);
         }
-        Collections.sort(allEntries, Comparator.comparing(e -> e.label.toLowerCase(Locale.ROOT)));
+        Collections.sort(entries, Comparator.comparing(e -> e.label.toLowerCase(Locale.ROOT)));
+        return entries;
     }
 
     private void filter(String query) {
@@ -335,14 +379,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
                 cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 46));
             }
             Entry entry = visibleEntries.get(position);
-            if (entry.icon == null) {
-                PackageManager pm = activity.getPackageManager();
-                try { entry.icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName)); }
-                catch (PackageManager.NameNotFoundException ignored) {
-                    try { entry.icon = pm.getApplicationIcon(entry.packageName); }
-                    catch (PackageManager.NameNotFoundException ignoredAgain) { entry.icon = activity.getDrawable(R.drawable.ic_launcher); }
-                }
-            }
+            if (entry.icon == null) entry.icon = activity.getDrawable(R.drawable.ic_launcher);
             icon.setImageDrawable(entry.icon);
             label.setText(entry.label);
             cell.setMinimumHeight(116);

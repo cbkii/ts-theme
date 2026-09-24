@@ -51,6 +51,10 @@ public final class MediaListenerService extends NotificationListenerService {
             return packageName.isEmpty() && title.isEmpty() && artist.isEmpty();
         }
 
+        public boolean hasMetadata() {
+            return !title.isEmpty() || !artist.isEmpty();
+        }
+
         public String displayText() {
             if (!artist.isEmpty() && !title.isEmpty()) return artist + " – " + title;
             if (!title.isEmpty()) return title;
@@ -62,9 +66,11 @@ public final class MediaListenerService extends NotificationListenerService {
             if (command == null || packageName.isEmpty()) return false;
             switch (command) {
                 case PREVIOUS:
-                    return (actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L;
+                    return (actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L
+                            || MediaSourceAdapter.allowsUnadvertisedSkip(packageName);
                 case NEXT:
-                    return (actions & PlaybackState.ACTION_SKIP_TO_NEXT) != 0L;
+                    return (actions & PlaybackState.ACTION_SKIP_TO_NEXT) != 0L
+                            || MediaSourceAdapter.allowsUnadvertisedSkip(packageName);
                 case PLAY_PAUSE:
                     long direct = playing ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY;
                     return (actions & direct) != 0L
@@ -144,7 +150,9 @@ public final class MediaListenerService extends NotificationListenerService {
         releaseAll();
         detachSessionListener();
         instance = null;
-        publishEmpty();
+        // Framework listener reconnects are transient on this unit. Keep the last valid visible
+        // metadata; a genuine session removal is still cleared by reconcile().
+        notifyObservers();
         super.onListenerDisconnected();
         if (listenerComponent != null) requestRebind(listenerComponent);
     }
@@ -154,7 +162,7 @@ public final class MediaListenerService extends NotificationListenerService {
         releaseAll();
         detachSessionListener();
         if (instance == this) instance = null;
-        publishEmpty();
+        notifyObservers();
         super.onDestroy();
     }
 
@@ -216,8 +224,8 @@ public final class MediaListenerService extends NotificationListenerService {
 
         Snapshot previousGeneric = lastGeneric;
         Snapshot previousRadio = lastRadio;
-        Snapshot nextGeneric = snapshotOf(genericController);
-        Snapshot nextRadio = snapshotOf(radioController);
+        Snapshot nextGeneric = stabiliseSnapshot(previousGeneric, snapshotOf(genericController));
+        Snapshot nextRadio = stabiliseSnapshot(previousRadio, snapshotOf(radioController));
         lastGeneric = nextGeneric;
         lastRadio = nextRadio;
         if (!sameSnapshot(previousGeneric, nextGeneric)) {
@@ -428,6 +436,16 @@ public final class MediaListenerService extends NotificationListenerService {
         return value == null ? "" : value.trim();
     }
 
+    static Snapshot stabiliseSnapshot(Snapshot previous, Snapshot next) {
+        if (next == null) return new Snapshot("", "", "", false);
+        if (previous == null || next.packageName.isEmpty()
+                || !next.packageName.equals(previous.packageName)
+                || next.hasMetadata() || !previous.hasMetadata()) return next;
+        MediaEventTrace.record("metadata", "retain-valid",
+                next.packageName + " state=" + stateName(next.state));
+        return new Snapshot(next.packageName, previous.title, previous.artist, next.state, next.actions);
+    }
+
     private static boolean sameSnapshot(Snapshot first, Snapshot second) {
         if (first == second) return true;
         if (first == null || second == null) return false;
@@ -523,6 +541,15 @@ public final class MediaListenerService extends NotificationListenerService {
         if (service != null) service.refresh();
     }
 
+    static boolean hasObservableSession(String packageName) {
+        MediaListenerService service = instance;
+        if (service == null || packageName == null || packageName.isEmpty()) return false;
+        for (MediaController controller : service.activeAndExternalControllers()) {
+            if (controller != null && packageName.equals(controller.getPackageName())) return true;
+        }
+        return false;
+    }
+
     static void noteExplicitLaunch(Context context, String pkg) {
         if (pkg == null || pkg.isEmpty()) return;
         if (pkg.equals(RadioProvider.resolvePackage(context))) {
@@ -591,11 +618,13 @@ public final class MediaListenerService extends NotificationListenerService {
             boolean pauseSide = state != null && usesPauseAction(state.getState());
             switch (command) {
                 case PREVIOUS:
-                    if ((actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) == 0L) return false;
+                    if ((actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) == 0L
+                            && !MediaSourceAdapter.allowsUnadvertisedSkip(controller.getPackageName())) return false;
                     controller.getTransportControls().skipToPrevious();
                     break;
                 case NEXT:
-                    if ((actions & PlaybackState.ACTION_SKIP_TO_NEXT) == 0L) return false;
+                    if ((actions & PlaybackState.ACTION_SKIP_TO_NEXT) == 0L
+                            && !MediaSourceAdapter.allowsUnadvertisedSkip(controller.getPackageName())) return false;
                     controller.getTransportControls().skipToNext();
                     break;
                 case PLAY_PAUSE:
@@ -611,6 +640,11 @@ public final class MediaListenerService extends NotificationListenerService {
             }
             MediaEventTrace.record("listener-command", "dispatched",
                     controller.getPackageName() + " command=" + command);
+            if ((command == Command.PREVIOUS || command == Command.NEXT)
+                    && MediaSourceAdapter.allowsUnadvertisedSkip(controller.getPackageName())) {
+                MediaEventTrace.record("listener-command", "exact-skip-compat",
+                        controller.getPackageName() + " command=" + command);
+            }
             return true;
         } catch (RuntimeException e) {
             MediaEventTrace.record("listener-command", "failed",

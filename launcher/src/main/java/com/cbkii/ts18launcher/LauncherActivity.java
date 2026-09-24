@@ -64,6 +64,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
+    private StartupBootstrapCoordinator startupBootstrap;
     private boolean launchedAsHome;
     private boolean locationPermissionRequested;
     private boolean mediaRefreshPolling;
@@ -76,6 +77,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        boolean coldProcessStart = state == null;
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
@@ -93,10 +95,25 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaText.setLongClickable(false);
         root.addView(mediaText);
         buildDate();
+        appDrawerPanel = new AppDrawerPanel(this, () -> {
+            if (mapPanel != null && ExperimentalMapPolicy.enabled(this)) {
+                requestMapLocationIfNeeded();
+                mapPanel.resumeWebView();
+            }
+        });
+        root.addView(appDrawerPanel);
+        appDrawerPanel.preload();
         updateMediaPresentation();
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 applyGeometry(right - left, bottom - top));
-        root.post(() -> applyGeometry(root.getWidth(), root.getHeight()));
+        root.post(() -> {
+            applyGeometry(root.getWidth(), root.getHeight());
+            if (coldProcessStart && (launchedAsHome || HomeMode.isDefaultHome(this))
+                    && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+                startupBootstrap = new StartupBootstrapCoordinator(this, mediaBootstrapper);
+                startupBootstrap.start();
+            }
+        });
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -175,7 +192,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onDestroy() {
         stopMediaRefreshPolling();
         mediaRefreshHandler.removeCallbacksAndMessages(null);
+        if (startupBootstrap != null) startupBootstrap.destroy();
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();
+        if (appDrawerPanel != null) appDrawerPanel.destroy();
         if (mapPanel != null) mapPanel.destroy();
         super.onDestroy();
     }
@@ -199,6 +218,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void runMediaReadiness() {
+        if (startupBootstrap != null && startupBootstrap.isRunning()) return;
         if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
             mediaBootstrapper.warmConfiguredSources();
         }
@@ -243,6 +263,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         rail.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         appsButton = railButton(R.drawable.ic_apps, "Apps");
         appsButton.setOnClickListener(v -> toggleAppDrawer());
+        appsButton.setOnLongClickListener(v -> {
+            startActivity(new Intent(this, SettingsActivity.class));
+            return true;
+        });
         rail.addView(appsButton, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Ts18Geometry.RAIL_ENDPOINT_HEIGHT));
 
@@ -566,21 +590,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void toggleAppDrawer() {
-        if (appDrawerPanel == null) {
-            appDrawerPanel = new AppDrawerPanel(this, () -> {
-                if (mapPanel != null && ExperimentalMapPolicy.enabled(this)) {
-                    requestMapLocationIfNeeded();
-                    mapPanel.resumeWebView();
-                }
-            });
-            root.addView(appDrawerPanel);
-            applyGeometry(root.getWidth(), root.getHeight());
-        }
         if (appDrawerPanel.isOpen()) appDrawerPanel.hidePanel();
         else {
+            MediaEventTrace.record("drawer", "open-request");
             if (mapPanel != null) mapPanel.stop();
             appDrawerPanel.refreshPreferences();
             appDrawerPanel.showPanel();
+            MediaEventTrace.record("drawer", "visible");
         }
     }
 
