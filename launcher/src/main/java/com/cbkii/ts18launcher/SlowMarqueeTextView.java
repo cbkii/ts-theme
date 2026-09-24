@@ -11,11 +11,13 @@ import android.widget.TextView;
 
 /** Endless low-speed marquee with five-second readable holds at both ends. */
 final class SlowMarqueeTextView extends TextView {
-    static final long HOLD_MS = SlowMarqueeSchedule.HOLD_MS;
+    static final long HOLD_MS = 5000L;
     private static final float SPEED_DP_PER_SECOND = 24f;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final SlowMarqueeSchedule schedule = new SlowMarqueeSchedule();
+    private final Runnable restart = () -> startMarquee(scheduledToken);
     private ValueAnimator animator;
+    private int scheduledToken;
 
     SlowMarqueeTextView(Context context) { super(context); init(); }
     SlowMarqueeTextView(Context context, AttributeSet attrs) { super(context, attrs); init(); }
@@ -67,8 +69,8 @@ final class SlowMarqueeTextView extends TextView {
         scrollTo(0, 0);
         if (!isAttachedToWindow() || getVisibility() != View.VISIBLE
                 || getWindowVisibility() != View.VISIBLE) return;
-        int token = schedule.arm();
-        handler.postDelayed(() -> startMarquee(token), HOLD_MS);
+        scheduledToken = schedule.arm();
+        handler.postDelayed(restart, HOLD_MS);
     }
 
     private void startMarquee(int token) {
@@ -93,9 +95,7 @@ final class SlowMarqueeTextView extends TextView {
                     if (animator != next || !schedule.accepts(token)) return;
                     scrollTo(0, 0);
                     animator = null;
-                    if (isShown()) {
-                        handler.postDelayed(() -> startMarquee(token), HOLD_MS);
-                    }
+                    if (isShown()) handler.postDelayed(restart, HOLD_MS);
                 }, HOLD_MS);
             }
         });
@@ -105,6 +105,7 @@ final class SlowMarqueeTextView extends TextView {
     private void cancelMarquee() {
         handler.removeCallbacksAndMessages(null);
         schedule.cancel();
+        scheduledToken = 0;
         ValueAnimator old = animator;
         animator = null;
         if (old != null) old.cancel();
