@@ -9,21 +9,32 @@ import org.junit.Test;
 public final class MediaMetadataPolicyTest {
     @Test public void identicalOneSecondSnapshotsDoNotResetPrimary() {
         MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
-                "Long primary title", "Artist", "Long primary title", "Artist");
+                "Long primary title", "Artist", "music:com.tw.media", "music:com.tw.media",
+                "Long primary title", "Artist");
         assertFalse(change.primaryChanged);
         assertFalse(change.secondaryChanged);
     }
 
     @Test public void playbackOnlyOrArtistOnlyChangesDoNotResetPrimary() {
         MediaMetadataPolicy.Change artistChange = MediaMetadataPolicy.update(
-                "Track", "Artist A", "Track", "Artist B");
+                "Track", "Artist A", "music:com.tw.media", "music:com.tw.media",
+                "Track", "Artist B");
         assertFalse(artistChange.primaryChanged);
         assertTrue(artistChange.secondaryChanged);
     }
 
-    @Test public void primaryTitleOrSourceChangeResetsPrimary() {
+    @Test public void primaryTitleChangeResetsPrimary() {
         MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
-                "Track A", "Artist", "Track B", "Artist");
+                "Track A", "Artist", "music:com.tw.media", "music:com.tw.media",
+                "Track B", "Artist");
+        assertTrue(change.primaryChanged);
+        assertFalse(change.secondaryChanged);
+    }
+
+    @Test public void sourceChangeWithSameTitleResetsPrimary() {
+        MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
+                "Shared title", "Context", "music:com.tw.media", "radio:com.navimods.radio",
+                "Shared title", "Context");
         assertTrue(change.primaryChanged);
         assertFalse(change.secondaryChanged);
     }
