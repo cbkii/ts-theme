@@ -15,11 +15,13 @@ class NavigationRootPermissionTests(unittest.TestCase):
         self.assertIn('KEY_NAV_ROOT_PERMISSION_GRANT, Type.BOOLEAN', codec)
         self.assertIn('Pre-grant navigation location permissions (root)', settings)
 
-    def test_root_grant_is_narrow_bounded_and_never_opens_settings(self):
+    def test_root_grant_is_narrow_bounded_current_user_and_never_opens_settings(self):
         bootstrap = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationPermissionBootstrapper.java").read_text()
         policy = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationPermissionPolicy.java").read_text()
         self.assertIn('/system/bin/pm grant --user ', bootstrap)
         self.assertIn('ROOT_TIMEOUT_MS = 2200L', bootstrap)
+        self.assertIn('Process.myUid() / ANDROID_UID_PER_USER_RANGE', bootstrap)
+        self.assertNotIn('pm grant --user 0', bootstrap)
         self.assertNotIn('ACTION_APPLICATION_DETAILS_SETTINGS', bootstrap)
         self.assertNotIn('ACTION_LOCATION_SOURCE_SETTINGS', bootstrap)
         for permission in (
