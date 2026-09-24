@@ -23,7 +23,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .github/ts18-remediation/pr10-*.b64 | base64 -d > /tmp/ts18-apply-pr10.py
+          {
+            head -c 6500 .github/ts18-remediation/pr10-01.b64
+            cat .github/ts18-remediation/pr10-02.b64 \
+                .github/ts18-remediation/pr10-03.b64 \
+                .github/ts18-remediation/pr10-04.b64 \
+                .github/ts18-remediation/pr10-05.b64 \
+                .github/ts18-remediation/pr10-06.b64 \
+                .github/ts18-remediation/pr10-07.b64 \
+                .github/ts18-remediation/pr10-08.b64
+          } | base64 -d > /tmp/ts18-apply-pr10.py
           python3 -m py_compile /tmp/ts18-apply-pr10.py
           python3 /tmp/ts18-apply-pr10.py
 
