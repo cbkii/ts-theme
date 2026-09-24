@@ -13,8 +13,8 @@ import java.util.List;
 
 /**
  * Bounded true-cold-start preparation. Background contracts remain preferred; when Android overlay
- * access is already granted, exact configured media Activities may be primed sequentially behind
- * the opaque startup mask and immediately returned to HOME.
+ * access is already granted, the two exact physically-used media Activities may be primed
+ * sequentially behind the opaque startup mask and immediately returned to HOME.
  */
 final class StartupBootstrapCoordinator {
     private static final long GLOBAL_TIMEOUT_MS = 9000L;
@@ -61,19 +61,25 @@ final class StartupBootstrapCoordinator {
         if (music == null || music.isEmpty()) music = TopwayAdapter.defaultMusicPackage(activity);
         String radio = RadioProvider.resolvePackage(activity);
         if (MediaSelection.RADIO.equals(LauncherPrefs.lastSource(activity))) {
-            add(exact, radio);
-            add(exact, music);
+            addQualified(exact, radio);
+            addQualified(exact, music);
         } else {
-            add(exact, music);
-            add(exact, radio);
+            addQualified(exact, music);
+            addQualified(exact, radio);
         }
         sources.addAll(exact);
         primeNext();
     }
 
-    private void add(LinkedHashSet<String> values, String packageName) {
-        if (packageName != null && !packageName.isEmpty()
-                && !activity.getPackageName().equals(packageName)) values.add(packageName);
+    private void addQualified(LinkedHashSet<String> values, String packageName) {
+        if (packageName == null || packageName.isEmpty()
+                || activity.getPackageName().equals(packageName)) return;
+        if (!MediaSourceAdapter.AUXIO_PACKAGE.equals(packageName)
+                && !MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName)) {
+            MediaEventTrace.record("startup", "foreground-prime-unqualified", packageName);
+            return;
+        }
+        values.add(packageName);
     }
 
     private void primeNext() {
