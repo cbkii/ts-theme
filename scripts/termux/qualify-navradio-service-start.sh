@@ -49,6 +49,8 @@ run_capture_sh() {
 
 root_available() {
   command -v su >/dev/null 2>&1 || return 1
+  # The command substitution is intentionally evaluated by the root child shell.
+  # shellcheck disable=SC2016
   timeout -k 1 3 su -c 'test "$(id -u)" = 0' >/dev/null 2>&1
 }
 
