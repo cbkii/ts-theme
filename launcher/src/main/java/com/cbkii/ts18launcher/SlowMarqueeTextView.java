@@ -12,8 +12,7 @@ import android.widget.TextView;
 
 /** Endless low-speed marquee with five-second readable holds at both ends. */
 final class SlowMarqueeTextView extends TextView {
-    static final long HOLD_MS = 5000L;
-    private static final float SPEED_DP_PER_SECOND = 24f;
+    static final long HOLD_MS = MarqueePolicy.HOLD_MS;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ValueAnimator animator;
     private final Runnable restart = this::startMarquee;
@@ -75,11 +74,10 @@ final class SlowMarqueeTextView extends TextView {
         int available = Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
         int content = (int) Math.ceil(getPaint().measureText(
                 getText() == null ? "" : getText().toString()));
-        int overflow = Math.max(0, content - available);
+        int overflow = MarqueePolicy.overflowPx(content, available);
         if (overflow <= 0 || !isShown()) return;
-        float pxPerSecond = SPEED_DP_PER_SECOND * getResources().getDisplayMetrics().density;
-        long duration = Math.max(3500L,
-                Math.min(30000L, (long) (overflow / pxPerSecond * 1000f)));
+        long duration = MarqueePolicy.durationMs(
+                overflow, getResources().getDisplayMetrics().density);
         ValueAnimator next = ValueAnimator.ofInt(0, overflow);
         animator = next;
         next.setInterpolator(new LinearInterpolator());
