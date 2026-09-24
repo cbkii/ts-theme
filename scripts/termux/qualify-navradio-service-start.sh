@@ -107,7 +107,7 @@ snapshot after-1500ms
 sleep 2
 snapshot after-3500ms
 
-PID_AFTER="$(cat "$OUT/after-3500ms-pid.txt" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+PID_AFTER="$(tr '\n' ' ' <"$OUT/after-3500ms-pid.txt" 2>/dev/null | sed 's/[[:space:]]*$//')"
 if grep -q "$PKG" "$OUT/after-3500ms-media-session.txt" 2>/dev/null; then
   SESSION_OBSERVED="yes"
 else

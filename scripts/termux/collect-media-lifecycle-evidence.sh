@@ -63,7 +63,7 @@ while :; do
     printf '%s\n' '-- media sessions --'
     dumpsys media_session 2>&1 | grep -Ei -C 4 'com\.tw\.media|com\.tw\.radio|com\.navimods\.radio|state=|actions=' | head -n 220 || true
     printf '%s\n' '-- storage --'
-    cat /proc/mounts 2>/dev/null | grep -Ei 'usbdisk|media_rw|mnt/runtime|/storage/' || true
+    grep -Ei 'usbdisk|media_rw|mnt/runtime|/storage/' /proc/mounts 2>/dev/null || true
   } >>"$TIMELINE"
   sleep "$INTERVAL"
 done
