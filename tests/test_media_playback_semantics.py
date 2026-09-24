@@ -32,6 +32,17 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn("connection.controller.unregisterCallback(connection.controllerCallback);", bootstrap)
         self.assertIn("queueBrowser(adapter, command);", bootstrap)
 
+    def test_home_stop_and_media_configuration_change_invalidate_obsolete_commands(self):
+        launcher = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java").read_text(encoding="utf-8")
+        self.assertIn("reconcileMediaConfiguration();", launcher)
+        self.assertIn("boolean commandPending = mediaStatusActive;", launcher)
+        self.assertIn("if (commandPending) resetMediaBootstrapper();", launcher)
+        self.assertIn("mediaStatusGeneration++;", launcher)
+        self.assertIn("mediaBootstrapper.destroy();", launcher)
+        self.assertIn("mediaBootstrapper = new MediaSourceBootstrapper(this);", launcher)
+        self.assertIn("radioPackage.equals(mediaRadioPackage)", launcher)
+        self.assertIn("musicPackage.equals(mediaMusicPackage)", launcher)
+
 
 if __name__ == "__main__":
     unittest.main()
