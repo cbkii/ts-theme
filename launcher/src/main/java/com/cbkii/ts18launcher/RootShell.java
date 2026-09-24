@@ -27,21 +27,23 @@ final class RootShell {
     private RootShell() {}
 
     static Result run(String command, long timeoutSeconds) {
-        if (timeoutSeconds <= 0) return new Result(false, -1, "invalid root command");
+        if (timeoutSeconds <= 0) return traced(new Result(false, -1, "invalid root command"));
         return runInternal(command, timeoutSeconds, TimeUnit.SECONDS.toMillis(timeoutSeconds + 3));
     }
 
     static Result runMillis(String command, long timeoutMillis) {
-        if (timeoutMillis <= 0) return new Result(false, -1, "invalid root command");
+        if (timeoutMillis <= 0) return traced(new Result(false, -1, "invalid root command"));
         long shellSeconds = Math.max(1L, (timeoutMillis + 999L) / 1000L);
         return runInternal(command, shellSeconds, timeoutMillis + 1500L);
     }
 
     private static Result runInternal(String command, long shellTimeoutSeconds, long waitMillis) {
         if (command == null || command.isEmpty()) {
-            return new Result(false, -1, "invalid root command");
+            return traced(new Result(false, -1, "invalid root command"));
         }
 
+        MediaDiagnostics.record("root", "begin timeout_ms=" + waitMillis
+                + " thread=" + Thread.currentThread().getName());
         Process process = null;
         StringBuilder output = new StringBuilder();
         Thread drainer = null;
@@ -66,21 +68,29 @@ final class RootShell {
                     process.destroyForcibly();
                 }
                 joinQuietly(drainer, 1000);
-                return new Result(false, -1, appendStatus(output, "root command timed out"));
+                return traced(new Result(false, -1,
+                        appendStatus(output, "root command timed out")));
             }
 
             joinQuietly(drainer, 1000);
-            return new Result(true, process.exitValue(), output.toString());
+            return traced(new Result(true, process.exitValue(), output.toString()));
         } catch (IOException e) {
-            return new Result(false, -1, e.getClass().getSimpleName() + ": " + e.getMessage());
+            return traced(new Result(false, -1,
+                    e.getClass().getSimpleName() + ": " + e.getMessage()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new Result(false, -1, "interrupted");
+            return traced(new Result(false, -1, "interrupted"));
         } finally {
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
             }
         }
+    }
+
+    private static Result traced(Result result) {
+        MediaDiagnostics.record("root", "result=" + MediaDiagnostics.rootOutcome(result)
+                + " thread=" + Thread.currentThread().getName());
+        return result;
     }
 
     private static void drain(Process process, StringBuilder output) {
