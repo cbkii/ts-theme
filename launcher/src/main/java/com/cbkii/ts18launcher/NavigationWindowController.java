@@ -101,9 +101,15 @@ final class NavigationWindowController {
         suspendForLauncherSurface("launcher overlay");
     }
 
+    /**
+     * The drawer is a launcher recovery/control surface. Show it immediately and repair/verify the
+     * parked navigation task asynchronously; do not put visible Apps response behind root dumpsys.
+     */
     void openLauncherOverlay(Runnable show) {
-        if (state == State.DESTROYED || !overlayGate.request(show)) return;
-        uiState.onLauncherOverlayOpened();
+        if (state == State.DESTROYED || !uiState.onLauncherOverlayOpened()) return;
+        overlayGate.cancel();
+        if (show != null) show.run();
+        Log.i(TAG, "launcher overlay visible before navigation suspension verification");
         suspendForLauncherSurface("launcher overlay");
     }
 
@@ -113,9 +119,12 @@ final class NavigationWindowController {
     }
 
     void launchAfterSuspension(Runnable launch) {
-        // A deliberate app selection supersedes an unshown drawer request.
+        // Deliberately launching another app still waits for the navigation handoff. This is
+        // distinct from merely showing the in-HOME drawer.
         cancelLauncherOverlay();
-        openLauncherOverlay(launch);
+        if (state == State.DESTROYED || !overlayGate.request(launch)) return;
+        uiState.onLauncherOverlayOpened();
+        suspendForLauncherSurface("external app launch");
     }
 
     void suspendForExperimentalMap() {
@@ -266,8 +275,8 @@ final class NavigationWindowController {
             }
             if ("TASK_NOT_FOUND".equals(result.code)) {
                 activeTaskId = -1;
-                beginReacquisitionGeneration();
-                startPresent(pkg, component, currentTarget(target), -1);
+                latchFailure(pkg, configuredMode, "Navigation app closed · use Retry");
+                drainPendingWork();
                 return;
             }
             if ("TASK_AMBIGUOUS".equals(result.code)
@@ -308,9 +317,7 @@ final class NavigationWindowController {
                 markWindowed(result, pkg, target);
             } else if (taskHint > 0 && "TASK_NOT_FOUND".equals(result.code)) {
                 activeTaskId = -1;
-                beginReacquisitionGeneration();
-                startPresent(pkg, component, currentTarget(target), -1);
-                return;
+                latchFailure(pkg, configuredMode, "Navigation app closed · use Retry");
             } else {
                 latchFailure(pkg, configuredMode, result.code);
             }
@@ -399,8 +406,6 @@ final class NavigationWindowController {
             state = State.SUSPENDED;
             needsValidation = true;
             Log.i(TAG, "suspended navigation reason=" + reason + " task=" + task);
-            // Requests made during this suspension are satisfied by this result.
-            // Do not let a second suspension run after the selected app launches.
             pendingSuspendReason = "";
             overlayGate.onSettled();
             drainPendingWork();
@@ -422,13 +427,16 @@ final class NavigationWindowController {
             if (acceptIdentity(result, pkg, task) && result.windowingMode == 1) {
                 activeTaskId = result.taskId;
                 needsValidation = true;
-                Log.i(TAG, "fullscreen task=" + task + " package=" + pkg);
+                Log.i(TAG, "fullscreen task=" + task + " package=" + pkg
+                        + " verifiedBounds=" + result.bounds);
                 if (location != null && !NavigationProvider.open(activity, pkg, location)) {
                     Log.w(TAG, "location handoff failed after fullscreen transition package=" + pkg);
                 }
             } else {
                 Log.w(TAG, "fullscreen helper failed code=" + result.code + " raw=" + result.raw);
-                NavigationProvider.open(activity, pkg, location);
+                if ("TASK_NOT_FOUND".equals(result.code)) activeTaskId = -1;
+                latchFailure(pkg, configuredMode,
+                        "Fullscreen unavailable · " + (result.code == null ? "UNKNOWN" : result.code));
             }
             drainPendingWork();
         });
@@ -528,11 +536,7 @@ final class NavigationWindowController {
     }
 
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) {
-        panel.showConfigured(label(pkg) + " · mode 5 configured"
-                + "\nTask " + taskId + " · Display 0 · "
-                + target.width() + "×" + target.height()
-                + "\nPhysical visibility and touch are not inferred",
-                () -> openFullscreen(null));
+        panel.showConfigured("", () -> openFullscreen(null));
     }
 
     private void latchFailure(String pkg, String mode, String detail) {
@@ -554,8 +558,7 @@ final class NavigationWindowController {
 
     private void showLatchedFailure() {
         if (!uiState.canPresentNavigation()) return;
-        panel.showFailure("Native navigation unavailable · " + failureDetail,
-                this::retry, () -> openFullscreen(null));
+        panel.showFailure("Navigation unavailable", this::retry, () -> openFullscreen(null));
     }
 
     private void clearFailureLatch() {
