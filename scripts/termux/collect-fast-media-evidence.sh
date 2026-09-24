@@ -116,6 +116,8 @@ capture_sh media/audio-focus-route.txt \
   "dumpsys audio 2>&1 | grep -Ei -C 3 'focus|AudioFocus|route|device|com\.tw\.media|com\.tw\.radio|com\.navimods\.radio' | tail -n 500 || true"
 capture_sh media/ts18-media-trace.txt \
   "logcat -d -v threadtime -s TS18Media:I '*:S' 2>&1 | tail -n 240 || true"
+capture_root media/ts18-media-trace-root.txt \
+  "logcat -d -v threadtime -s TS18Media:I '*:S' 2>&1 | tail -n 240 || true"
 
 capture_sh lifecycle/resumed-task.txt \
   "dumpsys activity activities 2>&1 | grep -Ei -m 40 'mResumedActivity|topResumedActivity|ResumedActivity|com\.cbkii\.ts18launcher|com\.tw\.media|com\.tw\.radio|com\.navimods\.radio' || true"
@@ -125,15 +127,21 @@ capture_sh lifecycle/notification-listener.txt \
   "dumpsys notification 2>&1 | grep -Ei -C 2 'com\.cbkii\.ts18launcher|MediaListenerService|enabled_notification_listeners' | head -n 200 || true"
 
 capture_sh storage/mounts.txt \
-  "cat /proc/mounts 2>&1 | grep -Ei 'usbdisk|media_rw|mnt/runtime|/storage/' || true"
+  "grep -Ei 'usbdisk|media_rw|mnt/runtime|/storage/' /proc/mounts 2>&1 || true"
 capture_sh storage/storage-dirs.txt \
   "ls -la /storage 2>&1 || true"
+capture_sh storage/volumes.txt \
+  "sm list-volumes all 2>&1 || true"
 capture_sh storage/usb.txt \
   "dumpsys usb 2>&1 | head -n 400 || true"
 
 for pkg in com.cbkii.ts18launcher com.tw.media com.tw.radio com.navimods.radio; do
   capture "packages/$pkg-package.txt" dumpsys package "$pkg"
   capture_sh "packages/$pkg-path.txt" "pm path '$pkg' 2>&1 || true"
+  capture_sh "packages/$pkg-hash-readable.txt" \
+    "pm path '$pkg' 2>/dev/null | sed 's/^package://' | while IFS= read -r p; do if test -r \"\$p\"; then sha256sum \"\$p\"; else printf 'UNREADABLE %s\\n' \"\$p\"; fi; done"
+  capture_root "packages/$pkg-hash-root.txt" \
+    "pm path '$pkg' 2>/dev/null | sed 's/^package://' | while IFS= read -r p; do sha256sum \"\$p\" 2>/dev/null || true; done"
   capture_sh "runtime/$pkg-pid.txt" "pidof '$pkg' 2>&1 || true"
   capture_sh "runtime/$pkg-services.txt" \
     "dumpsys activity services '$pkg' 2>&1 || true"
@@ -145,7 +153,7 @@ capture_sh packages/media3-session-services.txt \
   "cmd package query-intent-services -a androidx.media3.session.MediaSessionService 2>&1 || pm query-services -a androidx.media3.session.MediaSessionService 2>&1 || true"
 
 capture_root runtime/root-process-contexts.txt \
-  "ps -AZ 2>/dev/null | grep -E 'com\.cbkii\.ts18launcher|com\.tw\.media|com\.tw\.radio|com\.navimods\.radio' || true"
+  "ps -AZ 2>/dev/null | grep -E 'com\.cbkii\.ts18launcher|com\.tw\.media|com\.tw\.radio|com\.navimods\.radio|com\.tw\.service|com\.tw\.service\.xt|com\.tw\.core' || true"
 if [[ -n "$CURRENT_USER" ]]; then
   capture_root runtime/launcher-prefs.txt \
     "cat /data/user/$CURRENT_USER/com.cbkii.ts18launcher/shared_prefs/ts18_launcher.xml 2>/dev/null || cat /data/data/com.cbkii.ts18launcher/shared_prefs/ts18_launcher.xml 2>/dev/null || true"
@@ -154,13 +162,22 @@ else
   record runtime/launcher-prefs.txt BLOCKED "current Android user unresolved"
 fi
 
+capture_sh topway/processes.txt \
+  "ps -A 2>&1 | grep -E 'com\.tw\.service|com\.tw\.service\.xt|com\.tw\.core|com\.tw\.radio|com\.navimods\.radio|com\.tw\.media' || true"
+for pkg in com.tw.service com.tw.service.xt com.tw.core; do
+  capture_sh "topway/$pkg-services.txt" "dumpsys activity services '$pkg' 2>&1 || true"
+done
+
+capture_sh overlay/appop.txt \
+  "cmd appops get com.cbkii.ts18launcher android:system_alert_window 2>&1 || appops get com.cbkii.ts18launcher SYSTEM_ALERT_WINDOW 2>&1 || true"
+
 cat >"$OUT/PLAYBOOK.txt" <<'EOF'
 Fast-media physical qualification
 =================================
 
 1. Capture this directory before touching Radio/Music. Record which source is selected on HOME.
 2. For each configured source, separately record a healthy manually-opened baseline:
-   - app version/package/user
+   - app version/package/user and APK hash where readable
    - service/process state
    - exact MediaSession state/actions/metadata
    - whether HOME controls work after returning normally to HOME.

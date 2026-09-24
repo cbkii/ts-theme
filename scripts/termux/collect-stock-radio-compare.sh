@@ -50,10 +50,25 @@ capture_sh() {
   capture "$name" sh -c "$*"
 }
 
+capture_root() {
+  local name="$1"
+  shift
+  if ! command -v su >/dev/null 2>&1; then
+    printf 'BLOCKED: su unavailable\n' >"$OUT/$name"
+    return 0
+  fi
+  timeout -k 2 "$CAP_TIMEOUT" su -c "$*" >"$OUT/$name" 2>&1 \
+    || printf '\nBLOCKED root_exit=%s\n' "$?" >>"$OUT/$name"
+}
+
 capture timestamp.txt date -Ins
 capture current-user.txt sh -c 'cmd activity get-current-user 2>/dev/null || am get-current-user 2>/dev/null || true'
 capture package.txt dumpsys package "$PKG"
 capture_sh path.txt "pm path '$PKG' 2>&1 || true"
+capture_sh hash-readable.txt \
+  "pm path '$PKG' 2>/dev/null | sed 's/^package://' | while IFS= read -r p; do if test -r \"\$p\"; then sha256sum \"\$p\"; else printf 'UNREADABLE %s\\n' \"\$p\"; fi; done"
+capture_root hash-root.txt \
+  "pm path '$PKG' 2>/dev/null | sed 's/^package://' | while IFS= read -r p; do sha256sum \"\$p\" 2>/dev/null || true; done"
 capture_sh pid.txt "pidof '$PKG' 2>&1 || true"
 capture_sh radio-services.txt "dumpsys activity services '$PKG' 2>&1 || true"
 capture media-session.txt dumpsys media_session
@@ -65,6 +80,10 @@ capture_sh audio.txt \
   "dumpsys audio 2>&1 | grep -Ei -C 4 'focus|AudioFocus|route|device|com\.tw\.radio' | tail -n 600 || true"
 capture_sh vendor-services.txt \
   "dumpsys activity services 2>&1 | grep -Ei -C 3 'com\.tw\.service|com\.tw\.service\.xt|com\.tw\.core|com\.tw\.radio' | tail -n 800 || true"
+capture_sh vendor-processes.txt \
+  "ps -A 2>&1 | grep -E 'com\.tw\.service|com\.tw\.service\.xt|com\.tw\.core|com\.tw\.radio' || true"
+capture_root vendor-process-contexts.txt \
+  "ps -AZ 2>/dev/null | grep -E 'com\.tw\.service|com\.tw\.service\.xt|com\.tw\.core|com\.tw\.radio' || true"
 capture_sh recent-radio-log.txt \
   "logcat -d -v threadtime -T '5 minutes ago' 2>&1 | grep -Ei 'com\.tw\.radio|RadioService|radioPre|radioSetChannel|radioOpenChannel|TWUtil|SOURCE_VALUE_RADIO' | tail -n 600 || true"
 
@@ -77,7 +96,7 @@ change the audio source or force-stop anything.
 EOF
 
 if [[ "$PHASE" == "cold" ]]; then
-  cat >>"$OUT_BASE/NEXT.txt" <<EOF
+  cat >"$OUT_BASE/NEXT.txt" <<EOF
 1. Preserve this cold capture.
 2. Manually open stock TW Radio using its normal UI.
 3. Confirm it is operating normally, then return normally to TS18 Launcher HOME.
