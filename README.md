@@ -46,13 +46,13 @@ Radio and Music remain separate playback authorities but share one metadata area
 - the inactive source remains fully actionable and retains a subtle accent gradient/ring rather than appearing disabled;
 - source icons also distinguish selected versus inactive state without removing the inactive source's affordance.
 
-The shared metadata surface uses a 22sp slow-marquee primary title/station plus static 16sp secondary artist/program/source. The last explicitly selected source resolves simultaneous stale `PLAYING` reports.
+The shared metadata surface uses a 22sp slow-marquee primary title/station plus static 16sp secondary artist/program/source. Identical one-second session snapshots do not restart the marquee's five-second hold. MediaBrowser-acquired controllers are observed through their real MediaSession token and deduplicated against active sessions; empty/whitespace TITLE/ARTIST fields fall through to valid display-title/subtitle metadata. The last explicitly selected source resolves simultaneous stale `PLAYING` reports.
 
-The Radio source icon always opens configured/default Radio. The Music source icon always opens configured/default Music. Those explicit source/app icons are the only media-strip controls allowed to foreground the source apps; the shared metadata surface is display-only. Previous / Play-Pause / Next remain usable at all times. A press uses the bounded background sequence: exact package MediaSession -> evidence-backed source adapter -> exported MediaBrowser/session service -> exact-session retry (~4.5 s) -> short visible failure status. There is no Activity-launch fallback. The launcher creates no MediaSession and never owns audio focus.
+The Radio source icon always opens configured/default Radio. The Music source icon always opens configured/default Music. Those explicit source/app icons are the only media-strip controls allowed to foreground the source apps; the shared metadata surface is display-only. Previous / Play-Pause / Next remain usable at all times. A press uses a bounded background sequence: exact package MediaSession -> evidence-backed source adapter -> exported MediaBrowser/session service -> bounded session discovery -> one directional command -> playback acknowledgement for Play/Pause. A Play/Pause intent is resolved once at tap time and retained through preparation; duplicate in-flight Play/Pause requests are coalesced. There is no Activity-launch fallback. The launcher creates no MediaSession and never owns audio focus.
 
-A **Warm media sources on HOME start** switch runs the same idempotent Media Ready reconciliation on HOME start/resume/focus. For exact Auxio-TS and NavRadio+ service contracts, bounded Magisk root is the primary service-activation path and ordinary Android service/bind behaviour is the fallback/control path. Generic sources use an exported MediaBrowser service when present. Starting non-playing Music sends one best-effort Pause to genuinely playing Radio first; starting Radio similarly pauses Music.
+A **Warm media sources on HOME start** switch runs idempotent Media Ready reconciliation on HOME start/resume/focus. Auxio-TS may be passively prepared through its exact exported MediaBrowser wrapper with bounded Magisk-root service priming and ordinary binding fallback. Generic sources use an exported standard MediaBrowser service when present. NavRadio+ remains **interactive-Play preparation only** until the installed API-29 build proves that starting its service while idle does not activate radio or switch routing. Preparing one source does not pause the other; a genuinely playing opposite source is paused only after the newly requested source has acknowledged Play.
 
-On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. NavRadio+ `com.navimods.radio` is adapted through its exported Media3 `RadioService` only when that component resolves in the installed build. Exact stock **`com.tw.radio`** declares no Android service component, so it remains session-only and is never secretly foregrounded for readiness. Private Topway radio commands remain outside this adapter until their transport/authority is separately qualified. See [background media readiness adapters](docs/MEDIA_BACKGROUND_READINESS.md).
+On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. NavRadio+ `com.navimods.radio` is adapted through its exported Media3 `RadioService` only when that component resolves in the installed build. Exact stock **`com.tw.radio`** declares no Android service component, so it remains existing-session/external-route only and is never secretly foregrounded for readiness. Private Topway radio commands remain outside this adapter until their transport/authority is separately qualified. A masked Activity fallback remains disabled because overlay permission, source survival after Activity loss and OEM camera/call/SystemUI ordering are not yet physically qualified. See [background media readiness adapters](docs/MEDIA_BACKGROUND_READINESS.md).
 
 ### Shortcut App / Icon model
 
@@ -95,7 +95,7 @@ Exact TS18 evidence from a known-good DoFun/Organic Maps launch establishes a re
 
 The mode-5 path is root-assisted but bounded. Java resolves the configured package's ordinary exported launcher Activity. One helper transaction first adopts exactly one existing same-package task; only if none exists does it launch that component once with explicit display 0 and mode 5, then acquire, resize and verify the exact task. Ambiguous tasks fail closed. HOME stops do not cancel an in-flight transaction, callbacks coalesce behind one operation, and a failure latch keeps HOME usable until explicit Retry or Open fullscreen.
 
-Physical testing of `PR11-5aea8bc` proved visible bounded Organic Maps rendering on standalone HOME. Subsequent loads and app-tray handoffs failed. The next candidate validates HOME against its own package, explicitly returns an existing fullscreen task to mode 5 before resizing, and waits for suspension/HOME restoration before exposing drawer launch buttons. Ordinary app entry redirects to the HOME alias when this launcher is the selected HOME, avoiding two controllers competing for the map. Warm recovery and inside-map touch remain physical validation gates; begin the next run without force-stop or cache clearing.
+Physical testing of `PR11-5aea8bc` proved visible bounded Organic Maps rendering on standalone HOME but also exposed unreliable warm lifecycle/app handoff and permission/settings UI after launcher-driven task handling. Current code no longer restarts a warm navigation Activity merely to park it: warm suspension focuses the canonical HOME task while retaining and revalidating the existing navigation task. That change is repository-verified but still requires exact-device retest; inside-map touch, warm recovery and vehicle lifecycle remain physical gates.
 
 The Leaflet/WebView implementation remains **OFF by default on a clean install**. When selected it retains pinned Leaflet 1.9.4, restricted OSM raster requests through the native TileBroker, bounded cache/revalidation, renderer recovery, process-local state, no arbitrary browsing and no JS bridge. The raster cache is not an Organic Maps/OsmAnd/Google/Yandex offline database.
 
@@ -107,14 +107,15 @@ See [native HOME navigation window](docs/NATIVE_NAVIGATION_WINDOW.md), the [phys
 
 Versioned SAF JSON export/import is whitelisted and transactional. It includes app/role assignments, HOME shortcut visibility/count, rail and Radio/Music sides, navigation-surface/map settings, media mode, startup media warm-up, accent hue, icon overrides and appearance schedule. It does not export secrets, caches or location history.
 
-Physical evidence helpers include:
+Read-only physical evidence helpers:
 
 - `scripts/termux/measure-standalone-launcher.sh` - CPU/RAM/frame measurements;
-- `scripts/termux/collect-window-media-evidence.sh` - read-only bounded task/window, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture;
-- `scripts/termux/collect-navigation-window-evidence.sh` - read-only two-layer PR #11 qualification: focused activity/window/input/surface checkpoints during physical actions, followed after one Ctrl-C by a separate broad platform/Topway/DoFun and alternative-route discovery capture;
-- `scripts/termux/collect-topway-window-policy-evidence.sh` - read-only bounded exact-device collection for the unresolved Topway/DoFun navigation policy, with runtime-classpath discovery and a filtered relevant log stream.
+- `scripts/termux/collect-window-media-evidence.sh` - bounded task/window, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture;
+- `scripts/termux/collect-fast-media-evidence.sh` - bounded source/user/root-domain/service/session readiness capture and a generated physical fast-media playbook under `/storage/emulated/0/Download/ts-theme/`;
+- `scripts/termux/collect-navigation-window-evidence.sh` - read-only focused activity/window/input/surface checkpoints plus bounded broader platform/Topway/DoFun discovery;
+- `scripts/termux/collect-topway-window-policy-evidence.sh` - read-only bounded exact-device collection for unresolved Topway/DoFun navigation policy.
 
-The navigation collector writes only its own Download evidence bundle. It does not launch/resize/focus tasks, inject input, change settings/packages or write observed Topway state. The launcher itself stages its narrow systemless helper. Captured evidence uses a verified internal SHA-256 manifest and a separate archive SHA-256. Permission/time-out/root gaps remain BLOCKED/UNKNOWN rather than evidence of absence.
+These diagnostics do not mutate protected state. Permission/time-out/root gaps are BLOCKED/UNVERIFIED rather than evidence of absence.
 
 ## UX and physical qualification
 
@@ -122,7 +123,7 @@ The navigation collector writes only its own Download evidence bundle. It does n
 
 Before any further typography, icon-size or touch-target redesign, capture and validate the actual device's `wm size`, `wm density`, `densityDpi` and relevant display metrics. Do not convert proven SystemUI boundaries away from raw pixels merely for stylistic consistency.
 
-Physical validation is still required for the selected/inactive media hierarchy and gradients, 128 px date, adaptive rail spacing and shortcut-disable state, actual app-icon Settings preview, colour-circle accent selector, media bootstrap/warm-up, appearance modes and exact sidebar/decor-fitted geometry.
+Physical validation is still required for the selected/inactive media hierarchy and gradients, 128 px date, adaptive rail spacing and shortcut-disable state, actual app-icon Settings preview, colour-circle accent selector, installed-source media readiness, appearance modes and exact sidebar/decor-fitted geometry. Fast-media qualification separately covers launcher/player restart, cold boot, repeated HOME returns, root unavailable, Auxio USB late/unavailable, opposite-source playback, reboot and ACC sleep/wake. Audible onset remains a physical observation rather than a CI claim. Native navigation qualification separately covers stable warm task reuse, map touch, drawer/app transitions, fullscreen/HOME return and lifecycle transitions without spurious permission/settings prompts or task/process churn.
 
 ## Safe HOME rollout
 
@@ -140,6 +141,21 @@ gradle :theme:lintDebug :theme:assembleDebug
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 ```
 
-CI also requires an empty launcher release runtime dependency graph, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin release envelope, pinned Leaflet assets, Material Symbols attribution and valid APK signature. Successful same-repository PR validation refreshes the fixed draft **000 Testing Only Version**.
+CI also requires an empty launcher release runtime dependency graph, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin release envelope, pinned Leaflet assets, Material Symbols attribution and valid APK signature.
+
+## Testing and candidate releases
+
+The fixed draft **000 Testing Only Version** is an explicit development/physical-validation channel rather than an automatic output of every PR validation. Request a snapshot in any of four ways:
+
+- add the `testing-apk` label to a PR;
+- put `/testing-apk` in the newest PR commit message;
+- comment `/testing-apk` in the PR conversation;
+- run **Refresh Testing APK Draft** manually from the default branch and set `source_to_build` to a PR number, branch, tag or commit SHA.
+
+Commit/comment commands also ensure the PR carries the `testing-apk` label. The draft retains the two newest successfully published snapshot groups, each with distinct TESTING/DEBUG APKs and metadata. Its human-readable release notes identify the PR, snapshot head, actual built SHA, trigger and workflow run for each APK. All TESTING APKs deliberately keep `versionName=0.0.0-testing` and `versionCode=999999`.
+
+Request a TESTING snapshot when an installable build is needed for exact TS18 physical validation or another meaningful engineering checkpoint; ordinary CI remains the right path for incidental commits that do not need device installation.
+
+The separate **Standalone Launcher Candidate** workflow produces an explicitly versioned qualified bundle and may optionally publish a prerelease. The legacy **Manual Release** workflow remains separate.
 
 CI proves source/build/release contracts only. It does not prove physical head-unit behaviour.
