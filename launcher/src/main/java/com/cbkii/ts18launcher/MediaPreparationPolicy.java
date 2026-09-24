@@ -1,6 +1,6 @@
 package com.cbkii.ts18launcher;
 
-/** Pure service-start/coexistence decisions exercised by JVM tests. */
+/** Pure service-start, dispatch and coexistence decisions exercised by JVM tests. */
 final class MediaPreparationPolicy {
     enum StartRoute { ROOT, NORMAL_ANDROID, FAILED }
 
@@ -18,6 +18,19 @@ final class MediaPreparationPolicy {
         return !destroyed
                 && expectedGeneration == currentGeneration
                 && nowMs < deadlineMs;
+    }
+
+    static boolean shouldDispatch(boolean settled, boolean alreadyDispatched,
+                                  boolean callbackCurrent, boolean controllerCapable) {
+        return !settled && !alreadyDispatched && callbackCurrent && controllerCapable;
+    }
+
+    static boolean shouldCoalesce(MediaCommandPolicy.Desired existing,
+                                  MediaCommandPolicy.Desired incoming,
+                                  boolean settled, boolean dispatched) {
+        return !settled && !dispatched && existing != null && existing == incoming
+                && (incoming == MediaCommandPolicy.Desired.PLAY
+                || incoming == MediaCommandPolicy.Desired.PAUSE);
     }
 
     static boolean shouldCommitOppositePause(
