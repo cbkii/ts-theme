@@ -6,6 +6,7 @@ import android.media.session.PlaybackState;
 final class MediaCommandPolicy {
     enum Desired { PLAY, PAUSE, PREVIOUS, NEXT }
     enum Phase { UNAVAILABLE, IDLE, STARTING, CONNECTED, READY, PLAYING, BLOCKED, FAILED }
+    enum RootRoute { ROOT_SUCCEEDED, NORMAL_FALLBACK }
 
     private MediaCommandPolicy() {}
 
@@ -65,5 +66,27 @@ final class MediaCommandPolicy {
 
     static long boundedDelay(long nowMs, long deadlineMs, long requestedMs) {
         return Math.max(0L, Math.min(requestedMs, remaining(nowMs, deadlineMs)));
+    }
+
+    static RootRoute routeAfterRoot(boolean rootSucceeded) {
+        return rootSucceeded ? RootRoute.ROOT_SUCCEEDED : RootRoute.NORMAL_FALLBACK;
+    }
+
+    static boolean callbackStillCurrent(
+            boolean destroyed, boolean settled, int expectedGeneration, int currentGeneration,
+            long nowMs, long deadlineMs) {
+        return !destroyed && !settled && expectedGeneration == currentGeneration
+                && nowMs < deadlineMs;
+    }
+
+    static boolean shouldCommitOppositePause(
+            boolean requestedPlayAcknowledged, boolean oppositeStillPlaying, boolean samePackage) {
+        return requestedPlayAcknowledged && oppositeStillPlaying && !samePackage;
+    }
+
+    static boolean shouldCoalesceToggle(
+            Desired existing, boolean existingSettled, boolean existingDispatched, Desired incoming) {
+        return !existingSettled && !existingDispatched && existing == incoming
+                && (incoming == Desired.PLAY || incoming == Desired.PAUSE);
     }
 }
