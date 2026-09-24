@@ -15,9 +15,9 @@ final class SlowMarqueeTextView extends TextView {
     private static final float SPEED_DP_PER_SECOND = 24f;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final SlowMarqueeSchedule schedule = new SlowMarqueeSchedule();
+    private int scheduledToken;
     private final Runnable restart = () -> startMarquee(scheduledToken);
     private ValueAnimator animator;
-    private int scheduledToken;
 
     SlowMarqueeTextView(Context context) { super(context); init(); }
     SlowMarqueeTextView(Context context, AttributeSet attrs) { super(context, attrs); init(); }
