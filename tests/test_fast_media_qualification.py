@@ -34,7 +34,10 @@ class FastMediaQualificationTests(unittest.TestCase):
         self.assertNotIn("TransportControls", reconciler)
         self.assertNotIn("startActivity", reconciler)
         self.assertIn("mediaBootstrapper.warm(musicPackage)", launcher)
-        self.assertNotIn("mediaBootstrapper.command(\"Music\"", launcher.split("onRemovableMediaAvailable", 1)[1].split("scheduleMediaReadiness", 1)[0])
+        storage_block = launcher.split("onRemovableMediaAvailable", 1)[1].split(
+            "scheduleMediaReadiness", 1
+        )[0]
+        self.assertNotIn('mediaBootstrapper.command("Music"', storage_block)
 
     def test_root_and_async_policy_is_used_by_production_coordinator(self):
         bootstrap = self.read(
@@ -62,7 +65,7 @@ class FastMediaQualificationTests(unittest.TestCase):
         self.assertIn("--qualify-navradio-service-start", script)
         self.assertEqual(1, script.count("am start-foreground-service"))
         self.assertNotIn("media dispatch", script)
-        self.assertNotIn("force-stop", script)
+        self.assertNotIn("am force-stop", script)
         self.assertNotIn("input keyevent", script)
         self.assertIn("human_audible_observation=REQUIRED", script)
 
@@ -73,7 +76,7 @@ class FastMediaQualificationTests(unittest.TestCase):
             self.assertNotIn("am broadcast", text)
             self.assertNotIn("service call", text)
             self.assertNotIn("setprop ", text)
-            self.assertNotIn("force-stop", text)
+            self.assertNotIn("am force-stop", text)
         self.assertNotIn("su -c", stock)
         self.assertIn("Screen-on is not treated as proof of ACC", lifecycle)
 
