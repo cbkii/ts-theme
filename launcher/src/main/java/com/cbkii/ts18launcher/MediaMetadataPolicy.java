@@ -23,8 +23,8 @@ final class MediaMetadataPolicy {
         String primary = normalise(nextPrimary);
         String secondary = normalise(nextSecondary);
         return new Change(primary, secondary,
-                !normalise(previousPrimary).equals(primary),
-                !normalise(previousSecondary).equals(secondary));
+                previousPrimary == null || !normalise(previousPrimary).equals(primary),
+                previousSecondary == null || !normalise(previousSecondary).equals(secondary));
     }
 
     static String firstNonBlank(CharSequence... values) {
