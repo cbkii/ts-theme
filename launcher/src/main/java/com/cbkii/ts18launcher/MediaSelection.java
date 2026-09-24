@@ -25,10 +25,23 @@ final class MediaSelection {
         if (radioPlaying == musicPlaying) displayed = explicit;
         else if (!observed || radioPlaying != radioWasPlaying || musicPlaying != musicWasPlaying)
             displayed = radioPlaying ? RADIO : MUSIC;
+        rememberPlayback(radioPlaying, musicPlaying);
+        return displayed;
+    }
+
+    String reconcileAfterFailedSwitch(boolean radioPlaying, boolean musicPlaying) {
+        // A failed requested switch must not leave HOME claiming the non-playing source while the
+        // opposite source is still the sole player. Keep the explicit preference for future taps.
+        displayed = radioPlaying == musicPlaying
+                ? explicit : radioPlaying ? RADIO : MUSIC;
+        rememberPlayback(radioPlaying, musicPlaying);
+        return displayed;
+    }
+
+    private void rememberPlayback(boolean radioPlaying, boolean musicPlaying) {
         observed = true;
         radioWasPlaying = radioPlaying;
         musicWasPlaying = musicPlaying;
-        return displayed;
     }
 
     String displayed() { return displayed; }

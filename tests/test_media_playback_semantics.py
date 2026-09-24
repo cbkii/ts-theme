@@ -16,6 +16,22 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn("boolean pauseSide = state != null && usesPauseAction(state.getState());", media)
         self.assertIn("if (pauseSide) controller.getTransportControls().pause();", media)
 
+    def test_bound_browser_controllers_survive_notification_listener_rebind(self):
+        media = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaListenerService.java").read_text(encoding="utf-8")
+        self.assertIn("REGISTERED_EXTERNAL", media)
+        self.assertIn("attachRegisteredExternalControllers();", media)
+        self.assertIn("REGISTERED_EXTERNAL.put(token, controller);", media)
+        self.assertIn("forgetRegisteredExternalController(token, controller);", media)
+        self.assertIn("forgetExternalController(controller);", media)
+
+    def test_destroyed_browser_session_invalidates_cached_controller(self):
+        bootstrap = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceBootstrapper.java").read_text(encoding="utf-8")
+        self.assertIn("attachBrowserController(connection, generation);", bootstrap)
+        self.assertIn("browserSessionDestroyed(connection, generation)", bootstrap)
+        self.assertIn("connections.remove(packageName);", bootstrap)
+        self.assertIn("connection.controller.unregisterCallback(connection.controllerCallback);", bootstrap)
+        self.assertIn("queueBrowser(adapter, command);", bootstrap)
+
 
 if __name__ == "__main__":
     unittest.main()

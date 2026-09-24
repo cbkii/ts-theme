@@ -81,6 +81,14 @@ public final class MediaListenerService extends NotificationListenerService {
 
     private static final CopyOnWriteArrayList<WeakReference<Observer>> OBSERVERS =
             new CopyOnWriteArrayList<>();
+    private static final Object EXTERNAL_REGISTRY_LOCK = new Object();
+    /**
+     * Browser-owned controllers outlive NotificationListenerService reconnects. Keep only the
+     * controllers explicitly owned by MediaSourceBootstrapper so a listener rebind can resume
+     * metadata observation without starting the source again.
+     */
+    private static final Map<MediaSession.Token, MediaController> REGISTERED_EXTERNAL =
+            new HashMap<>();
     private static volatile MediaListenerService instance;
     private static volatile Snapshot lastGeneric = new Snapshot("", "", "", false);
     private static volatile Snapshot lastRadio = new Snapshot("", "", "", false);
@@ -123,6 +131,7 @@ public final class MediaListenerService extends NotificationListenerService {
             publishEmpty();
             return;
         }
+        attachRegisteredExternalControllers();
         refresh();
     }
 
@@ -218,13 +227,40 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     static void observeExternalController(MediaController controller) {
+        MediaSession.Token token = tokenOf(controller);
+        if (controller == null || token == null) return;
+        synchronized (EXTERNAL_REGISTRY_LOCK) {
+            REGISTERED_EXTERNAL.put(token, controller);
+        }
         MediaListenerService service = instance;
         if (service != null) service.addExternalController(controller);
     }
 
     static void forgetExternalController(MediaController controller) {
+        MediaSession.Token token = tokenOf(controller);
+        if (token == null) return;
+        forgetRegisteredExternalController(token, controller);
         MediaListenerService service = instance;
-        if (service != null) service.removeExternalController(tokenOf(controller));
+        if (service != null) service.removeExternalController(token);
+    }
+
+    private static void forgetRegisteredExternalController(
+            MediaSession.Token token, MediaController expectedController) {
+        if (token == null) return;
+        synchronized (EXTERNAL_REGISTRY_LOCK) {
+            MediaController registered = REGISTERED_EXTERNAL.get(token);
+            if (expectedController == null || registered == expectedController) {
+                REGISTERED_EXTERNAL.remove(token);
+            }
+        }
+    }
+
+    private void attachRegisteredExternalControllers() {
+        List<MediaController> registered;
+        synchronized (EXTERNAL_REGISTRY_LOCK) {
+            registered = new ArrayList<>(REGISTERED_EXTERNAL.values());
+        }
+        for (MediaController controller : registered) addExternalController(controller);
     }
 
     private void addExternalController(MediaController controller) {
@@ -235,12 +271,13 @@ public final class MediaListenerService extends NotificationListenerService {
             @Override public void onPlaybackStateChanged(PlaybackState state) { refresh(); }
             @Override public void onQueueChanged(List<MediaSession.QueueItem> queue) { refresh(); }
             @Override public void onSessionDestroyed() {
-                removeExternalController(token);
+                forgetExternalController(controller);
             }
         };
         try {
             controller.registerCallback(observer);
         } catch (RuntimeException ignored) {
+            forgetRegisteredExternalController(token, controller);
             return;
         }
         external.put(token, controller);
