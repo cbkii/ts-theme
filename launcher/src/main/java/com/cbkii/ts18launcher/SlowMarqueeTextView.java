@@ -4,7 +4,6 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.animation.LinearInterpolator;
@@ -58,7 +57,7 @@ final class SlowMarqueeTextView extends TextView {
 
     @Override public void setText(CharSequence text, BufferType type) {
         CharSequence safe = text == null ? "" : text;
-        if (TextUtils.equals(getText(), safe)) return;
+        if (!SlowMarqueePolicy.contentChanged(getText(), safe)) return;
         super.setText(safe, type);
         if (handler != null) scheduleFromStart();
     }
@@ -75,8 +74,8 @@ final class SlowMarqueeTextView extends TextView {
         int available = Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
         int content = (int) Math.ceil(getPaint().measureText(
                 getText() == null ? "" : getText().toString()));
-        int overflow = Math.max(0, content - available);
-        if (overflow <= 0 || !isShown()) return;
+        if (!SlowMarqueePolicy.shouldAnimate(content, available, isShown())) return;
+        int overflow = SlowMarqueePolicy.overflowPx(content, available);
         float pxPerSecond = SPEED_DP_PER_SECOND * getResources().getDisplayMetrics().density;
         long duration = Math.max(3500L,
                 Math.min(30000L, (long) (overflow / pxPerSecond * 1000f)));

@@ -616,8 +616,14 @@ public final class SettingsActivity extends Activity {
 
     private void showMediaDiagnostics() {
         MediaListenerService.refreshActiveSessions();
-        new AlertDialog.Builder(this).setTitle("Active media sessions")
-                .setMessage(MediaListenerService.sessionDiagnostics(this)).setPositiveButton("Close", null).show();
+        String sessions = MediaListenerService.sessionDiagnostics(this);
+        String trace = MediaEventTrace.dump(40);
+        new AlertDialog.Builder(this).setTitle("Media diagnostics")
+                .setMessage(sessions
+                        + "\n\nRecent media events"
+                        + "\nPlayback acknowledgement is not audible-output proof.\n"
+                        + trace)
+                .setPositiveButton("Close", null).show();
     }
 
     private void confirmRootHome() {

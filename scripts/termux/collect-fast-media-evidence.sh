@@ -93,17 +93,43 @@ printf 'surface\tstatus\tdetail\n' >"$STATUS"
 log "TS18 fast-media readiness collector"
 log "READ ONLY: do not press source Play until baseline capture is complete"
 
+CURRENT_USER="$(cmd activity get-current-user 2>/dev/null || am get-current-user 2>/dev/null || true)"
+CURRENT_USER="$(printf '%s' "$CURRENT_USER" | tr -cd '0-9')"
+
 capture identity/date.txt date -Ins
 capture identity/id.txt id
 capture identity/id-z.txt id -Z
 capture identity/getprop.txt getprop
-capture identity/current-user.txt sh -c \
-  'cmd activity get-current-user 2>/dev/null || am get-current-user 2>/dev/null || true'
+printf '%s\n' "${CURRENT_USER:-UNVERIFIED}" >"$OUT/identity/current-user.txt"
+if [[ -n "$CURRENT_USER" ]]; then
+  record identity/current-user.txt PASS "current Android user resolved"
+else
+  record identity/current-user.txt UNVERIFIED "current Android user could not be resolved"
+  WARNINGS=$((WARNINGS + 1))
+fi
 capture_root identity/root-id.txt 'id; id -Z 2>/dev/null || true; printf "user="; cmd activity get-current-user 2>/dev/null || true'
 
 capture media/media-session.txt dumpsys media_session
 capture_sh media/selected-sessions.txt \
   "dumpsys media_session 2>&1 | grep -Ei -C 6 'com\.tw\.media|com\.tw\.radio|com\.navimods\.radio|state=|actions=|metadata' || true"
+capture_sh media/audio-focus-route.txt \
+  "dumpsys audio 2>&1 | grep -Ei -C 3 'focus|AudioFocus|route|device|com\.tw\.media|com\.tw\.radio|com\.navimods\.radio' | tail -n 500 || true"
+capture_sh media/ts18-media-trace.txt \
+  "logcat -d -v threadtime -s TS18Media:I '*:S' 2>&1 | tail -n 240 || true"
+
+capture_sh lifecycle/resumed-task.txt \
+  "dumpsys activity activities 2>&1 | grep -Ei -m 40 'mResumedActivity|topResumedActivity|ResumedActivity|com\.cbkii\.ts18launcher|com\.tw\.media|com\.tw\.radio|com\.navimods\.radio' || true"
+capture_sh lifecycle/power.txt \
+  "dumpsys power 2>&1 | grep -Ei -m 120 'Wakefulness|Display Power|mWakefulness|mScreenBrightness|mHoldingWakeLock|mIsPowered' || true"
+capture_sh lifecycle/notification-listener.txt \
+  "dumpsys notification 2>&1 | grep -Ei -C 2 'com\.cbkii\.ts18launcher|MediaListenerService|enabled_notification_listeners' | head -n 200 || true"
+
+capture_sh storage/mounts.txt \
+  "cat /proc/mounts 2>&1 | grep -Ei 'usbdisk|media_rw|mnt/runtime|/storage/' || true"
+capture_sh storage/storage-dirs.txt \
+  "ls -la /storage 2>&1 || true"
+capture_sh storage/usb.txt \
+  "dumpsys usb 2>&1 | head -n 400 || true"
 
 for pkg in com.cbkii.ts18launcher com.tw.media com.tw.radio com.navimods.radio; do
   capture "packages/$pkg-package.txt" dumpsys package "$pkg"
@@ -120,8 +146,13 @@ capture_sh packages/media3-session-services.txt \
 
 capture_root runtime/root-process-contexts.txt \
   "ps -AZ 2>/dev/null | grep -E 'com\.cbkii\.ts18launcher|com\.tw\.media|com\.tw\.radio|com\.navimods\.radio' || true"
-capture_root runtime/launcher-prefs.txt \
-  "cat /data/user/0/com.cbkii.ts18launcher/shared_prefs/ts18_launcher.xml 2>/dev/null || cat /data/data/com.cbkii.ts18launcher/shared_prefs/ts18_launcher.xml 2>/dev/null || true"
+if [[ -n "$CURRENT_USER" ]]; then
+  capture_root runtime/launcher-prefs.txt \
+    "cat /data/user/$CURRENT_USER/com.cbkii.ts18launcher/shared_prefs/ts18_launcher.xml 2>/dev/null || cat /data/data/com.cbkii.ts18launcher/shared_prefs/ts18_launcher.xml 2>/dev/null || true"
+else
+  printf 'BLOCKED: current Android user unresolved\n' >"$OUT/runtime/launcher-prefs.txt"
+  record runtime/launcher-prefs.txt BLOCKED "current Android user unresolved"
+fi
 
 cat >"$OUT/PLAYBOOK.txt" <<'EOF'
 Fast-media physical qualification
@@ -144,12 +175,14 @@ Fast-media physical qualification
    normal Android path exists; record BLOCKED where the source contract itself is unavailable.
 5. Repeat with the opposite source already playing. Passive preparation must not interrupt it.
 6. Auxio-TS: repeat with USB present, late-mounted and unavailable. Do not clear app data/grants.
-7. NavRadio+: specifically observe whether service start alone changes radio/audio routing.
-   Passive warm-up remains unqualified until this is proven non-disruptive on the installed build.
-8. Stock TW Radio: capture any exact session/vendor service/callback evidence. Absence of a service
-   in the Radio APK alone is not proof that no external Topway route exists.
-9. Lifecycle matrix: launcher restart, player process death, cold boot, repeated HOME returns,
-   reboot and ACC sleep/wake. Screen-on is not treated as proof of ACC wake.
+   MEDIA_MOUNTED may ask the launcher to re-warm the configured music source only while HOME is
+   resumed. That is not a source scan, queue mutation or autoplay request.
+7. NavRadio+: run qualify-navradio-service-start.sh --qualify-navradio-service-start separately.
+   It performs one explicit service-start mutation and must not be mixed into this read-only baseline.
+8. Stock TW Radio: use collect-stock-radio-compare.sh for the cold/manual-open comparison. Absence
+   of a service in the Radio APK alone is not proof that no external Topway route exists.
+9. Lifecycle matrix: use collect-media-lifecycle-evidence.sh while physically performing reboot or
+   ACC sleep/wake. Screen-on is not treated as proof of ACC wake.
 
 Loader/overlay qualification
 ============================

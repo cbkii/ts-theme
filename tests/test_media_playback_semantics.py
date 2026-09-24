@@ -23,6 +23,8 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn("REGISTERED_EXTERNAL.put(token, controller);", media)
         self.assertIn("forgetRegisteredExternalController(token, controller);", media)
         self.assertIn("forgetExternalController(controller);", media)
+        self.assertIn('MediaEventTrace.record("listener", "connected")', media)
+        self.assertIn('MediaEventTrace.record("listener", "disconnected"', media)
 
     def test_destroyed_browser_session_invalidates_cached_controller(self):
         bootstrap = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceBootstrapper.java").read_text(encoding="utf-8")
@@ -31,6 +33,7 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn("connections.remove(packageName);", bootstrap)
         self.assertIn("connection.controller.unregisterCallback(connection.controllerCallback);", bootstrap)
         self.assertIn("queueBrowser(adapter, command);", bootstrap)
+        self.assertIn('MediaEventTrace.record("session", "bound-destroyed"', bootstrap)
 
     def test_home_stop_and_media_configuration_change_invalidate_obsolete_commands(self):
         launcher = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java").read_text(encoding="utf-8")
@@ -42,6 +45,34 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn("mediaBootstrapper = new MediaSourceBootstrapper(this);", launcher)
         self.assertIn("radioPackage.equals(mediaRadioPackage)", launcher)
         self.assertIn("musicPackage.equals(mediaMusicPackage)", launcher)
+
+    def test_removable_storage_reconciliation_is_mount_only_and_non_playing(self):
+        app = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/Ts18LauncherApp.java").read_text(encoding="utf-8")
+        manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+        self.assertIn('android:name=".Ts18LauncherApp"', manifest)
+        self.assertIn("Intent.ACTION_MEDIA_MOUNTED", app)
+        self.assertIn("RemovableMediaPolicy.shouldWarm", app)
+        self.assertIn("bootstrapper.warm(target);", app)
+        self.assertNotIn("bootstrapper.command", app)
+        self.assertNotIn("startActivity", app)
+        self.assertNotIn("forceStopPackage", app)
+
+    def test_media_trace_is_bounded_local_and_visible_in_settings(self):
+        trace = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaEventTrace.java").read_text(encoding="utf-8")
+        settings = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java").read_text(encoding="utf-8")
+        self.assertIn("MAX_EVENTS = 192", trace)
+        self.assertIn('LOG_TAG = "TS18Media"', trace)
+        self.assertNotIn("Http", trace)
+        self.assertNotIn("Socket", trace)
+        self.assertIn("MediaEventTrace.dump(40)", settings)
+        self.assertIn("Playback acknowledgement is not audible-output proof", settings)
+
+    def test_background_readiness_never_grows_an_activity_fallback(self):
+        bootstrap = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceBootstrapper.java").read_text(encoding="utf-8")
+        adapter = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceAdapter.java").read_text(encoding="utf-8")
+        self.assertNotIn("startActivity", bootstrap)
+        self.assertNotIn("getLaunchIntentForPackage", bootstrap)
+        self.assertIn("return false;", adapter.split("static boolean maskedFallbackQualified()", 1)[1].split("}", 1)[0])
 
 
 if __name__ == "__main__":

@@ -19,6 +19,12 @@ A PID, successful `am` exit, browser connection, token, or cached title is not b
 
 MediaBrowser-acquired controllers are also observed for metadata through their actual `MediaSession.Token`, deduplicated against notification-listener active sessions, and removed when their session/browser dies.
 
+## Local monotonic diagnostics
+
+`MediaEventTrace` is a bounded process-local ring and `TS18Media` logcat tag. It records launcher lifecycle, readiness phases, root/service/browser routes, exact-session observation/destruction, transport dispatch/acknowledgement, listener reconnects, opposite-source pause commits and removable-storage reconciliation. It stores no remote telemetry and performs no per-event filesystem writes.
+
+Settings > Advanced > Media diagnostics shows the active MediaSession view followed by the latest bounded event timeline. A playback-state acknowledgement remains distinct from physical audible output: the trace can establish dispatch and Android session state, not speaker onset.
+
 ## Supplied NavRadio+ reference
 
 File supplied for analysis: `NavRadio_Plus_v4_00_PREMIUM (1).apk`
@@ -48,9 +54,11 @@ File supplied for analysis: `Radio_TW_THEME.20240827.apk`
 
 The APK contains MediaBrowser/MediaSession support-library classes, but library payload is not an exported component contract. The launcher therefore does not invent a stock-radio service or private Topway command and does not hide-launch `RadioActivity`. An already-existing exact `com.tw.radio` MediaSession may be observed. A separate exact Topway service/callback/control route can be added only after it is recovered and qualified on the unit.
 
-## Auxio-TS
+## Auxio-TS and removable storage
 
 Current Auxio-TS repository code exposes `com.tw.media/com.tw.music.MusicService` as an exported `android.media.browse.MediaBrowserService` wrapper around the single Auxio playback authority. The launcher may bounded-root-prime that exact service and then bind the real browser/controller; ordinary binding remains the fallback/control path. The launcher does not scan the music library or own Auxio's queue. Saved-queue/USB restoration remains a player-side physical qualification gate.
+
+The launcher Application dynamically observes public removable-media availability. `MEDIA_MOUNTED` may request one debounced, bounded warm of the configured music source only while `LauncherActivity` is resumed and startup warm-up is enabled. It does not scan files, change Auxio source membership, mutate the queue, issue Play or replay an expired HOME command. Unmount/eject/removal refreshes session state and records diagnostics but does not claim the committed Auxio library is invalid. Actual `/storage/usbdiskN` visibility, SAF grants and queue usability remain Auxio/device authority.
 
 ## Adapter policy
 
@@ -61,7 +69,7 @@ Current Auxio-TS repository code exposes `com.tw.media/com.tw.music.MusicService
 | Stock TW Radio `com.tw.radio` | unsupported from the Radio APK | existing exact session only; external Topway route unqualified | no invented service/Activity fallback |
 | Other apps | exported standard MediaBrowser when present | same exported standard interface | actual browser token/controller and advertised actions |
 
-Root service commands run off the UI thread and target the launcher's current Android user rather than hard-coding user 0. Root does not imply platform signing, UID 1000 or OEM vehicle-service authority.
+Root service commands run off the UI thread and target the launcher's current Android user rather than hard-coding user 0. Root does not imply platform signing, UID 1000 or OEM vehicle-service authority. Root acceptance, normal-Android fallback and final readiness are separately recorded in the local event trace.
 
 ## Masked Activity fallback
 
@@ -69,10 +77,19 @@ The implementation contains no source-Activity fallback in its readiness/transpo
 
 ## Metadata/ticker
 
-The shared metadata display remains observation-only. Repeated identical snapshots no longer call `setText()` on unchanged primary/secondary content, so the one-second session reconciliation poll does not continually restart the marquee's five-second hold. The marquee cancels when hidden/detached and restarts after real text/width/visibility changes. Metadata fallback treats empty/whitespace TITLE/ARTIST fields as absent and continues to DISPLAY_TITLE/ALBUM_ARTIST/DISPLAY_SUBTITLE when supplied by the real source.
+The shared metadata display remains observation-only. Repeated identical snapshots no longer call `setText()` on unchanged primary/secondary content, so the one-second session reconciliation poll does not continually restart the marquee's five-second hold. `SlowMarqueePolicy` makes the semantic reset/overflow decision directly JVM-testable. The marquee cancels when hidden/detached and restarts after real text/width/visibility changes. Metadata fallback treats empty/whitespace TITLE/ARTIST fields as absent and continues to DISPLAY_TITLE/ALBUM_ARTIST/DISPLAY_SUBTITLE when supplied by the real source.
+
+## Qualification tools
+
+All output is under `/storage/emulated/0/Download/ts-theme/`.
+
+- `scripts/termux/collect-fast-media-evidence.sh` remains read-only. It captures identity, package/service/process state, MediaSessions, focus/route evidence, resumed task, notification-listener state, removable mounts and the bounded `TS18Media` timeline, then writes a dependency-aware playbook.
+- `scripts/termux/qualify-navradio-service-start.sh --qualify-navradio-service-start` is **explicitly mutating**. It discovers exactly one installed NavRadio Media3 session service, takes a before snapshot, performs one root-first service start with ordinary Termux-caller fallback, and captures bounded after snapshots. It never issues Play, changes routing, stops or force-stops NavRadio. A successful command/PID/session does not by itself qualify passive warm-up.
+- `scripts/termux/collect-stock-radio-compare.sh --session NAME --phase cold|opened` is read-only. Run `cold`, manually open stock Radio normally and return HOME, then run `opened` with the same session name. It captures the Android/vendor surfaces needed to identify what manual Activity initialisation actually changes without guessing an XTService/Binder route.
+- `scripts/termux/collect-media-lifecycle-evidence.sh [30..300]` is read-only and bounded. Run it while physically performing the intended ACC/reboot lifecycle transition. It correlates uptime/power, resumed task, processes, MediaSessions, storage and filtered Topway/ACC/sleep/wake logs. Display/screen-on alone is not classified as ACC.
 
 ## Physical qualification
 
-Use `scripts/termux/collect-fast-media-evidence.sh`. It is read-only, bounded and writes to `/storage/emulated/0/Download/ts-theme/media-readiness-<timestamp>/` with PASS/BLOCKED/UNVERIFIED capture status. Its generated `PLAYBOOK.txt` covers manually-opened baseline vs cold background attempt, root unavailable, opposite-source playback, Auxio USB/storage conditions, NavRadio start side effects, stock-radio external-route evidence, reboot and ACC sleep/wake.
+Physical audible onset, installed NavRadio service side effects, stock TW Radio cold-control authority and ACC lifecycle are not claimed by repository CI. Treat a failed root/source prerequisite as BLOCKED for dependent tests, not as proof that every downstream media contract failed.
 
-Physical audible onset, installed-package service behaviour and ACC lifecycle are not claimed by repository CI. Treat a failed root/source prerequisite as BLOCKED for dependent tests, not as proof that every downstream media contract failed.
+For audible-latency work, use the monotonic `TS18Media` events to measure HOME lifecycle, readiness request, root/browser/service result, exact-session observation, command dispatch, playback acknowledgement and metadata render; record physical audible onset separately by observation. For launcher/process death and notification-listener restart, capture the smallest lifecycle scenario rather than using force-stop as a substitute for ordinary process death.
