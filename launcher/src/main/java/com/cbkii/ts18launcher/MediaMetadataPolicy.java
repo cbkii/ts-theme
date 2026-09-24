@@ -20,10 +20,19 @@ final class MediaMetadataPolicy {
 
     static Change update(String previousPrimary, String previousSecondary,
                          String nextPrimary, String nextSecondary) {
+        return update(previousPrimary, previousSecondary, null, null, nextPrimary, nextSecondary);
+    }
+
+    static Change update(String previousPrimary, String previousSecondary,
+                         String previousSourceIdentity, String nextSourceIdentity,
+                         String nextPrimary, String nextSecondary) {
         String primary = normalise(nextPrimary);
         String secondary = normalise(nextSecondary);
+        boolean sourceChanged = previousSourceIdentity != null
+                && nextSourceIdentity != null
+                && !previousSourceIdentity.equals(nextSourceIdentity);
         return new Change(primary, secondary,
-                previousPrimary == null || !normalise(previousPrimary).equals(primary),
+                previousPrimary == null || !normalise(previousPrimary).equals(primary) || sourceChanged,
                 previousSecondary == null || !normalise(previousSecondary).equals(secondary));
     }
 
