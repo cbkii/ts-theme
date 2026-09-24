@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-      - "codex/**"
-      - "feat/**"
   pull_request:
 
 permissions:
@@ -18,7 +16,7 @@ concurrency:
 jobs:
   validate:
     name: Source, workflow and Android builds
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -55,10 +53,10 @@ jobs:
           set -euo pipefail
           python3 tools/ts18_theme.py validate
           python3 -m unittest discover -s tests -v
-          bash -n tools/*.sh scripts/termux/*.sh scripts/termux/lib/*.sh
+          bash -n tools/*.sh scripts/ci/*.sh scripts/termux/*.sh scripts/termux/lib/*.sh
           sh -n scripts/magisk/*.sh launcher/src/main/assets/nav/nav-window.sh
           python3 -m py_compile tools/launcher_apk_check.py
-          shellcheck tools/*.sh
+          shellcheck tools/*.sh scripts/ci/*.sh
           shellcheck -x -P scripts/termux scripts/termux/*.sh scripts/termux/lib/*.sh
           shellcheck -s sh scripts/magisk/*.sh
           # nav-window.sh deliberately stores literal AWK programs in single-quoted shell strings;
@@ -124,45 +122,24 @@ jobs:
           "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
             launcher/build/outputs/apk/release/launcher-release.apk
 
-          gradle --no-daemon --stacktrace \
-            -PVERSION_NAME=0.0.0-testing -PVERSION_CODE=999999 \
-            :launcher:assembleRelease
-          python3 tools/launcher_apk_check.py \
-            launcher/build/outputs/apk/release/launcher-release.apk
-          "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
-            launcher/build/outputs/apk/release/launcher-release.apk
-
-      - name: Prepare standalone launcher testing input
+      - name: Exercise shared fixed-version TESTING launcher build
         shell: bash
         env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          TESTING_SOURCE_KIND: validate
+          TESTING_REQUESTED_SOURCE: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          TESTING_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          TESTING_SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          TESTING_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          TESTING_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          TESTING_PR_BASE_REF: ${{ github.event.pull_request.base.ref || '' }}
+          TESTING_PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          TESTING_TRIGGER_TYPE: validate
+          TESTING_TRIGGER_ACTOR: ${{ github.actor }}
+          TESTING_BUILD_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          debug_apk="launcher/build/outputs/apk/debug/launcher-debug.apk"
-          release_apk="launcher/build/outputs/apk/release/launcher-release.apk"
-          test -s "$debug_apk"
-          test -s "$release_apk"
-          mkdir -p testing-input
-          cp "$debug_apk" testing-input/launcher-debug.apk
-          cp "$release_apk" testing-input/launcher-release.apk
-          cat > testing-input/BUILD_INFO.txt <<EOF
-          source_kind=validate
-          source_sha=$SOURCE_SHA
-          built_sha=$GITHUB_SHA
-          source_ref=$SOURCE_REF
-          pr_number=$PR_NUMBER
-          testing_version_name=0.0.0-testing
-          testing_version_code=999999
-          validate_run_id=$GITHUB_RUN_ID
-          validate_run_number=$GITHUB_RUN_NUMBER
-          EOF
-
-      - name: Upload standalone launcher testing input
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: standalone-launcher-testing-input
-          path: testing-input/
-          retention-days: 2
-          if-no-files-found: error
+          bash scripts/ci/build-launcher-testing-input.sh . "$RUNNER_TEMP/testing-input"
+          test -s "$RUNNER_TEMP/testing-input/launcher-debug.apk"
+          test -s "$RUNNER_TEMP/testing-input/launcher-release.apk"
+          grep -Fxq 'testing_version_name=0.0.0-testing' "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
+          grep -Fxq 'testing_version_code=999999' "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
