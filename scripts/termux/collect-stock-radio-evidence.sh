@@ -15,7 +15,7 @@ usage() {
 Usage: collect-stock-radio-evidence.sh --phase cold|opened [--log-seconds 5..60]
 
 Read-only. The user performs any Radio UI/transport action manually; this script sends no radio,
-Binder, broadcast, XTService or media transport command.
+Binder, broadcast, XTService or media transport command and does not clear logcat.
 EOF
 }
 
@@ -102,12 +102,19 @@ capture_root topway/process-contexts.txt \
 printf 'Capturing %ss bounded filtered logcat. Perform only the manual Radio action appropriate to this phase.\n' "$LOG_SECONDS" \
   | tee -a "$OUT/run.log"
 LOG_FILTER="ActivityManager|MediaSession|AudioManager|AudioService|com.tw.radio|com.tw.service|radioPre|radioSetChannel|radioOpenChannel"
+LOG_FILE="$OUT/logcat-filtered.txt"
 if timeout -k 2 $((LOG_SECONDS + 3)) sh -c \
-  "logcat -c 2>/dev/null || true; timeout '$LOG_SECONDS' logcat -v threadtime 2>&1 | grep -Ei '$LOG_FILTER' || true" \
-  >"$OUT/logcat-filtered.txt" 2>&1; then
-  record logcat-filtered.txt PASS "bounded filtered logcat"
+  "timeout '$LOG_SECONDS' logcat -v threadtime 2>&1 | grep -Ei '$LOG_FILTER' || true" \
+  >"$LOG_FILE" 2>&1; then
+  if grep -Eqi 'permission denied|not permitted|unable to open|read logs' "$LOG_FILE"; then
+    record logcat-filtered.txt UNVERIFIED "logcat permission unavailable"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    record logcat-filtered.txt PASS "bounded filtered logcat"
+  fi
 else
   rc=$?; record logcat-filtered.txt UNVERIFIED "unprivileged logcat unavailable/timed out rc=$rc"
+  WARNINGS=$((WARNINGS + 1))
 fi
 
 cat >"$OUT/INTERPRETATION.txt" <<EOF
