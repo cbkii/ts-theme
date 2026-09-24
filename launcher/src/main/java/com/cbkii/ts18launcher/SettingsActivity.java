@@ -178,6 +178,14 @@ public final class SettingsActivity extends Activity {
 
         addSection("Home widget apps");
         addPickerRow(R.drawable.ic_navigation, "Navigation", LauncherPrefs.KEY_NAV);
+        String navigationPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
+        if (navigationPackage.isEmpty()
+                && NavigationProvider.hasLauncherActivity(this, NavigationProvider.ORGANIC_MAPS_INCAR)) {
+            navigationPackage = NavigationProvider.ORGANIC_MAPS_INCAR;
+        }
+        addInfoRow(R.drawable.ic_navigation, "Navigation compatibility",
+                NavigationCompatibilityPolicy.settingsMessage(
+                        navigationPackage, HomeNavigationSurfacePolicy.mode(this)));
         addPickerRow(R.drawable.ic_music, "Music", LauncherPrefs.KEY_MUSIC);
         addPickerRow(R.drawable.ic_radio, "Radio", LauncherPrefs.KEY_RADIO);
         addPickerRow(R.drawable.ic_bluetooth, "Bluetooth", LauncherPrefs.KEY_BLUETOOTH);
@@ -244,7 +252,8 @@ public final class SettingsActivity extends Activity {
     private void renderMedia() {
         addSection("Playback");
         addSwitchRow(R.drawable.ic_power, "Prepare music and radio at startup",
-                "Keeps music and radio ready for faster playback.",
+                "Keeps music and radio ready. On a true cold start, configured apps may be "
+                        + "briefly initialised behind the startup mask when overlay access is granted.",
                 UiPersonalizationPrefs.mediaStartupWarmup(this),
                 checked -> UiPersonalizationPrefs.setMediaStartupWarmup(this, checked));
         addChoiceRow(R.drawable.ic_music, "Media control priority", mediaModeLabel(),
@@ -257,6 +266,18 @@ public final class SettingsActivity extends Activity {
                         }));
 
         addSection("Access");
+        addSystemRow(R.drawable.ic_apps, "Startup splash overlay",
+                StartupMaskController.hasOverlayAccess(this)
+                        ? "Granted · cold app preparation can stay hidden"
+                        : "Allow Display over other apps for masked cold-start preparation.",
+                v -> {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:" + getPackageName()));
+                    try { startActivity(intent); }
+                    catch (RuntimeException ignored) {
+                        Toast.makeText(this, "Overlay settings unavailable", Toast.LENGTH_SHORT).show();
+                    }
+                });
         addSystemRow(R.drawable.ic_notifications, "Notification access",
                 MediaListenerService.hasNotificationAccess(this) ? "Granted" : "Allow access for media controls.",
                 v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
