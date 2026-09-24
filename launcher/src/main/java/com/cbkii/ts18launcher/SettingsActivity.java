@@ -164,6 +164,13 @@ public final class SettingsActivity extends Activity {
         addPickerRow(R.drawable.ic_bluetooth, "Bluetooth app", LauncherPrefs.KEY_BLUETOOTH);
 
         addSection("Permissions");
+        addSwitchRow(R.drawable.ic_my_location, "Pre-grant navigation location permissions (root)",
+                "Default off · assigned app only · declared coarse/fine/background location · never opens Settings",
+                UiPersonalizationPrefs.navigationRootPermissionGrant(this), checked -> {
+                    UiPersonalizationPrefs.setNavigationRootPermissionGrant(this, checked);
+                    if (checked) NavigationPermissionBootstrapper.ensureEarly(this, result ->
+                            Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show());
+                });
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             addActionRow(R.drawable.ic_my_location, "Location permission", "Required only for the experimental HOME map",
                     v -> requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION,
