@@ -11,11 +11,11 @@ import android.widget.TextView;
 
 /** Endless low-speed marquee with five-second readable holds at both ends. */
 final class SlowMarqueeTextView extends TextView {
-    static final long HOLD_MS = 5000L;
+    static final long HOLD_MS = SlowMarqueeSchedule.HOLD_MS;
     private static final float SPEED_DP_PER_SECOND = 24f;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final SlowMarqueeSchedule schedule = new SlowMarqueeSchedule();
     private ValueAnimator animator;
-    private final Runnable restart = this::startMarquee;
 
     SlowMarqueeTextView(Context context) { super(context); init(); }
     SlowMarqueeTextView(Context context, AttributeSet attrs) { super(context, attrs); init(); }
@@ -67,10 +67,12 @@ final class SlowMarqueeTextView extends TextView {
         scrollTo(0, 0);
         if (!isAttachedToWindow() || getVisibility() != View.VISIBLE
                 || getWindowVisibility() != View.VISIBLE) return;
-        handler.postDelayed(restart, HOLD_MS);
+        int token = schedule.arm();
+        handler.postDelayed(() -> startMarquee(token), HOLD_MS);
     }
 
-    private void startMarquee() {
+    private void startMarquee(int token) {
+        if (!schedule.accepts(token)) return;
         int available = Math.max(0, getWidth() - getPaddingLeft() - getPaddingRight());
         int content = (int) Math.ceil(getPaint().measureText(
                 getText() == null ? "" : getText().toString()));
@@ -86,12 +88,14 @@ final class SlowMarqueeTextView extends TextView {
         next.addUpdateListener(value -> scrollTo((Integer) value.getAnimatedValue(), 0));
         next.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override public void onAnimationEnd(android.animation.Animator animation) {
-                if (animator != next) return;
+                if (animator != next || !schedule.accepts(token)) return;
                 handler.postDelayed(() -> {
-                    if (animator != next) return;
+                    if (animator != next || !schedule.accepts(token)) return;
                     scrollTo(0, 0);
                     animator = null;
-                    if (isShown()) handler.postDelayed(restart, HOLD_MS);
+                    if (isShown()) {
+                        handler.postDelayed(() -> startMarquee(token), HOLD_MS);
+                    }
                 }, HOLD_MS);
             }
         });
@@ -100,6 +104,7 @@ final class SlowMarqueeTextView extends TextView {
 
     private void cancelMarquee() {
         handler.removeCallbacksAndMessages(null);
+        schedule.cancel();
         ValueAnimator old = animator;
         animator = null;
         if (old != null) old.cancel();
