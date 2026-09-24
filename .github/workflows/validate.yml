@@ -143,3 +143,7 @@ jobs:
           test -s "$RUNNER_TEMP/testing-input/launcher-release.apk"
           grep -Fxq 'testing_version_name=0.0.0-testing' "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
           grep -Fxq 'testing_version_code=999999' "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
+          SOURCE_SHA="$TESTING_SOURCE_SHA"
+          validate_run_id=$GITHUB_RUN_ID
+          grep -Fxq "source_sha=$SOURCE_SHA" "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
+          grep -Fxq "build_run_id=$validate_run_id" "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
