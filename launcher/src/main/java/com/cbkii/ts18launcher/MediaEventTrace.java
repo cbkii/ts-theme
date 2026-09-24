@@ -27,7 +27,7 @@ final class MediaEventTrace {
     }
 
     static void record(String surface, String event, String detail) {
-        long elapsed = SystemClock.elapsedRealtime();
+        long elapsed = elapsedRealtime();
         String safeSurface = safe(surface);
         String safeEvent = safe(event);
         String safeDetail = safe(detail);
@@ -39,7 +39,7 @@ final class MediaEventTrace {
                 .append(elapsed).append("ms ")
                 .append(safeSurface).append('/').append(safeEvent);
         if (!safeDetail.isEmpty()) line.append(" · ").append(safeDetail);
-        Log.i(LOG_TAG, line.toString());
+        logInfo(line.toString());
     }
 
     static String dump() {
@@ -64,6 +64,24 @@ final class MediaEventTrace {
             if (!entry.detail.isEmpty()) out.append(" · ").append(entry.detail);
         }
         return out.toString();
+    }
+
+    private static long elapsedRealtime() {
+        try {
+            return SystemClock.elapsedRealtime();
+        } catch (RuntimeException | LinkageError unavailableAndroidRuntime) {
+            // Plain JVM tests use android.jar stubs. Keep the trace monotonic there without
+            // changing the Android-device authority, which always uses SystemClock.
+            return System.nanoTime() / 1_000_000L;
+        }
+    }
+
+    private static void logInfo(String line) {
+        try {
+            Log.i(LOG_TAG, line);
+        } catch (RuntimeException | LinkageError unavailableAndroidRuntime) {
+            // Ring-buffer evidence remains testable when android.util.Log is only a JVM stub.
+        }
     }
 
     private static String safe(String value) {

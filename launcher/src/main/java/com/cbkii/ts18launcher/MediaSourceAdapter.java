@@ -101,6 +101,11 @@ final class MediaSourceAdapter {
         return source + " did not become ready in background";
     }
 
+    /** Exact-device compatibility retained from the earlier working transport implementation. */
+    static boolean allowsUnadvertisedSkip(String packageName) {
+        return AUXIO_PACKAGE.equals(packageName) || NAVRADIO_PACKAGE.equals(packageName);
+    }
+
     boolean maskedFallbackQualified() {
         // No supplied/current exact-device evidence establishes safe cross-app overlay ordering,
         // source survival after Activity loss, and camera/call window precedence. Keep this off.

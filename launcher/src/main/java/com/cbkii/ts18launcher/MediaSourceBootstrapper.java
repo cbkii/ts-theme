@@ -709,7 +709,11 @@ final class MediaSourceBootstrapper {
 
     private static boolean supports(MediaController controller, MediaCommandPolicy.Desired desired) {
         PlaybackState state = playbackState(controller);
-        return state != null && MediaCommandPolicy.supports(desired, state.getActions());
+        if (state != null && MediaCommandPolicy.supports(desired, state.getActions())) return true;
+        if (controller == null) return false;
+        return (desired == MediaCommandPolicy.Desired.PREVIOUS
+                || desired == MediaCommandPolicy.Desired.NEXT)
+                && MediaSourceAdapter.allowsUnadvertisedSkip(controller.getPackageName());
     }
 
     private static boolean controllerReadyForPlay(MediaController controller) {
