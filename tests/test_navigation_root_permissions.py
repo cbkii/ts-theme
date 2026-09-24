@@ -29,6 +29,18 @@ class NavigationRootPermissionTests(unittest.TestCase):
         self.assertNotIn('CAMERA', policy)
         self.assertNotIn('READ_CONTACTS', policy)
 
+    def test_early_and_assignment_hooks_prepare_permissions(self):
+        manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text()
+        application = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/Ts18LauncherApplication.java").read_text()
+        drawer = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerActivity.java").read_text()
+        self.assertIn('android:name=".Ts18LauncherApplication"', manifest)
+        self.assertIn('NavigationPermissionBootstrapper.ensureEarly(this);', application)
+        assignment = drawer.split('private void onEntry(Entry entry)', 1)[1].split(
+            'private static final class Entry', 1
+        )[0]
+        self.assertIn('LauncherPrefs.KEY_NAV.equals(pickKey)', assignment)
+        self.assertIn('NavigationPermissionBootstrapper.ensureEarly(this);', assignment)
+
     def test_native_navigation_checks_permission_mitigation_before_task_transition(self):
         backend = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/RootNavigationBackend.java").read_text()
         present = backend.split('void present(', 1)[1].split('@Override public void verify', 1)[0]
