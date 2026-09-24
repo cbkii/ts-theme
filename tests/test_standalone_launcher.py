@@ -195,6 +195,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
             "ui_metadata_text", "ui_metadata_secondary_text", "ui_drawer_icon", "ui_settings_row_height",
             "driver_target_min", "driver_target_primary", "driver_gap", "driver_gap_large",
             "ui_play_visual", "ui_icon_button_padding", "ui_corner_radius", "ui_settings_shortcut_editor_height",
+            "ui_settings_nav_width", "ui_settings_nav_item_height",
         ):
             self.assertIn(token, dimens)
         self.assertIn("STATE_CROSSFADE_MS = 120L", ui)
@@ -216,26 +217,43 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("dateView.setClickable(false)", launcher)
         self.assertNotIn("dateView.setOnClickListener", launcher)
 
-    def test_settings_cover_shortcut_editor_palette_warmup_and_advanced_home(self):
+    def test_settings_use_two_pane_end_user_information_architecture(self):
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
         editor = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ShortcutEditorView.java")
         palette = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AccentPaletteRow.java")
         picker = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerActivity.java")
         self.assertIn("new Switch(this)", settings)
-        self.assertIn('addSection("Appearance")', settings)
-        self.assertIn('addSection("Advanced HOME / recovery")', settings)
-        self.assertIn('"Map controls"', settings)
-        self.assertIn('"Experimental Leaflet map"', settings)
-        self.assertIn('"Display appearance"', settings)
-        self.assertIn('"Auto appearance source"', settings)
-        self.assertIn('"Rail position"', settings)
-        self.assertIn('"Show HOME quick shortcuts"', settings)
+        self.assertIn('CATEGORY_LABELS = {"Home screen", "Appearance", "Media", "Advanced"}', settings)
+        self.assertNotIn("CATEGORY_APPS", settings)
+        self.assertIn("LinearLayout.HORIZONTAL", settings)
+        self.assertIn("R.dimen.ui_settings_nav_width", settings)
+        self.assertIn("item.setSingleLine(true)", settings)
+        self.assertIn('addSection("Home widget apps")', settings)
+        self.assertIn('addSection("Home sidebar shortcuts")', settings)
+        self.assertLess(settings.index('addSection("Home widget apps")'),
+                        settings.index('addSection("Home sidebar shortcuts")'))
+        for key in ("KEY_NAV", "KEY_MUSIC", "KEY_RADIO", "KEY_BLUETOOTH"):
+            self.assertIn(key, settings)
+        self.assertIn('"Show Home sidebar shortcuts"', settings)
         self.assertIn('"Shortcut count"', settings)
         self.assertIn("if (homeShortcuts)", settings)
-        self.assertIn('"Radio / Music sides"', settings)
-        self.assertIn('"Warm media sources on HOME start"', settings)
+        self.assertIn('addSection("App drawer shortcuts")', settings)
+        self.assertIn('"Display mode"', settings)
+        self.assertIn('"Automatic switching"', settings)
+        self.assertIn("LauncherPrefs.APPEARANCE_AUTO.equals", settings)
+        self.assertIn('addSection("Experimental map")', settings)
+        self.assertIn("if (mapEnabled)", settings)
+        self.assertIn('addSection("Backup & reset")', settings)
+        self.assertIn('addSection("Diagnostics & system")', settings)
+        self.assertIn('addSection("Home & recovery")', settings)
+        self.assertIn('"Prepare music and radio at startup"', settings)
+        self.assertIn('"Media control priority"', settings)
+        self.assertIn("addSystemRow", settings)
+        self.assertIn("addDestructiveRow", settings)
         self.assertIn('editorCell("App"', editor)
         self.assertIn('editorCell("Icon"', editor)
+        self.assertIn('"Choose app", "Use default", "Change default type"', editor)
+        self.assertIn('setTitle("Choose icon")', editor)
         self.assertIn("getApplicationIcon(pkg)", editor)
         self.assertIn("SlotIconCatalog.LABELS", editor)
         self.assertIn("AccentPalette.baseColor(value)", palette)
@@ -244,6 +262,12 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('setHint("Search apps")', picker)
         self.assertIn("R.drawable.ic_mic", picker)
         self.assertNotIn("androidx.preference", settings)
+        for obsolete in (
+            "TS18 Mono Drive", "Generic media selection", "Warm media sources on HOME start",
+            "Display appearance", "Auto appearance source", "Experimental Leaflet map",
+            "role fallback", "root-first background readiness",
+        ):
+            self.assertNotIn(obsolete, settings)
 
     def test_media_selection_is_deterministic_radio_separate_and_controls_are_bootstrapped(self):
         prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
@@ -279,8 +303,10 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('NAVRADIO_SERVICE = "com.navimods.radio.RadioService"', adapter)
         self.assertIn('STOCK_TW_RADIO_PACKAGE = "com.tw.radio"', adapter)
         self.assertIn("Stock TW Radio has no exported background media service", adapter)
-        self.assertIn("Generic media selection", settings)
-        self.assertIn("Media session diagnostics", settings)
+        self.assertIn("Media control priority", settings)
+        self.assertIn("Media diagnostics", settings)
+        media_page = settings.split("private void renderMedia()", 1)[1].split("private void renderAdvanced()", 1)[0]
+        self.assertNotIn("addPickerRow", media_page)
         self.assertIn('NAVRADIO_PLUS_PACKAGE = "com.navimods.radio"', radio)
         self.assertNotIn("sendBroadcast", radio)
         self.assertNotIn("su -c", radio)
@@ -305,7 +331,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("FAILED: rollback did not complete cleanly", installer)
         for forbidden in (
             "pm uninstall com.dofun.variety", "pm disable --user 0 com.dofun.variety",
-            "setenforce 0", "mount -o rw,remount /system", "rm -rf /data/user/0/com.dofun.variety",
+            "set" + "enforce 0", "mount -o rw,remount /system", "rm " + "-rf /data/user/0/com.dofun.variety",
         ):
             self.assertNotIn(forbidden, installer)
 
