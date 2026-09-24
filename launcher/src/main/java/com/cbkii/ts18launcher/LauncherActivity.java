@@ -72,6 +72,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private boolean mediaRefreshPolling;
     private boolean mediaStatusActive;
     private int mediaStatusGeneration;
+    private String mediaRadioPackage = "";
+    private String mediaMusicPackage = "";
     private MediaListenerService.Snapshot genericSnapshot = new MediaListenerService.Snapshot("", "", "", false);
     private MediaListenerService.Snapshot radioSnapshot = new MediaListenerService.Snapshot("", "", "", false);
 
@@ -82,6 +84,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
         mediaBootstrapper = new MediaSourceBootstrapper(this);
+        rememberMediaConfiguration();
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         setContentView(root);
@@ -159,6 +162,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onStart() {
         super.onStart();
         if (redirectingToHome || redirectToCanonicalHome()) return;
+        reconcileMediaConfiguration();
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
         MediaListenerService.addObserver(this);
@@ -176,8 +180,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         appearanceController.stop();
         stopMediaRefreshPolling();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
+        boolean commandPending = mediaStatusActive;
         mediaStatusGeneration++;
         mediaStatusActive = false;
+        if (commandPending) resetMediaBootstrapper();
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (mapPanel != null) mapPanel.stop();
@@ -223,6 +229,31 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (UiPersonalizationPrefs.mediaStartupWarmup(this)) {
             mediaRefreshHandler.postDelayed(mediaReadyReconcile, MEDIA_READY_RECONCILE_DELAY_MS);
         }
+    }
+
+    private void reconcileMediaConfiguration() {
+        String radioPackage = RadioProvider.resolvePackage(this);
+        String musicPackage = configuredMusicPackage();
+        if (radioPackage.equals(mediaRadioPackage) && musicPackage.equals(mediaMusicPackage)) return;
+        mediaStatusGeneration++;
+        mediaStatusActive = false;
+        resetMediaBootstrapper();
+    }
+
+    private void resetMediaBootstrapper() {
+        if (mediaBootstrapper != null) mediaBootstrapper.destroy();
+        mediaBootstrapper = new MediaSourceBootstrapper(this);
+        rememberMediaConfiguration();
+    }
+
+    private void rememberMediaConfiguration() {
+        mediaRadioPackage = RadioProvider.resolvePackage(this);
+        mediaMusicPackage = configuredMusicPackage();
+    }
+
+    private String configuredMusicPackage() {
+        String configured = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
+        return configured.isEmpty() ? TopwayAdapter.defaultMusicPackage(this) : configured;
     }
 
     private void buildRail() {
@@ -360,8 +391,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private String musicControlPackage() {
         if (!genericSnapshot.packageName.isEmpty()) return genericSnapshot.packageName;
-        String configured = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
-        return configured.isEmpty() ? TopwayAdapter.defaultMusicPackage(this) : configured;
+        return configuredMusicPackage();
     }
 
     private void runSourceCommand(String label, String packageName, MediaListenerService.Command command) {
@@ -518,8 +548,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             updateMediaPresentation();
             return;
         }
-        String fallback = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
-        if (fallback.isEmpty()) fallback = TopwayAdapter.defaultMusicPackage(this);
+        String fallback = configuredMusicPackage();
         String sourcePackage = genericSnapshot.packageName.isEmpty() ? fallback : genericSnapshot.packageName;
         String sourceLabel = AppResolver.labelFor(this, sourcePackage,
                 sourcePackage.isEmpty() ? "No active media session" : sourcePackage);
