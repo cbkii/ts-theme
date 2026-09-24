@@ -23,16 +23,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          {
-            head -c 6500 .github/ts18-remediation/pr10-01.b64
-            cat .github/ts18-remediation/pr10-02.b64 \
-                .github/ts18-remediation/pr10-03.b64 \
-                .github/ts18-remediation/pr10-04.b64 \
-                .github/ts18-remediation/pr10-05.b64 \
-                .github/ts18-remediation/pr10-06.b64 \
-                .github/ts18-remediation/pr10-07.b64 \
-                .github/ts18-remediation/pr10-08.b64
-          } | base64 -d > /tmp/ts18-apply-pr10.py
+          test "$(sha256sum .github/ts18-remediation/pr10.py.gz.b64 | awk '{print $1}')" = "7a59e5c8a449c6360d22015bfd12670586a4529aa13b894bd7d29774d236d86f"
+          base64 -d .github/ts18-remediation/pr10.py.gz.b64 > /tmp/ts18-apply-pr10.py.gz
+          test "$(sha256sum /tmp/ts18-apply-pr10.py.gz | awk '{print $1}')" = "06a8057de9134d3f5b2e02e8529ce90739025c30b4147241869a497a7e601eee"
+          gzip -dc /tmp/ts18-apply-pr10.py.gz > /tmp/ts18-apply-pr10.py
+          test "$(sha256sum /tmp/ts18-apply-pr10.py | awk '{print $1}')" = "c65182d1f21945a6e0aba2bc321b618f303825597f2bd10c821abd3a195de995"
           python3 -m py_compile /tmp/ts18-apply-pr10.py
           python3 /tmp/ts18-apply-pr10.py
 
