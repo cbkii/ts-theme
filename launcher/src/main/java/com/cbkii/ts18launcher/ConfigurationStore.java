@@ -25,7 +25,12 @@ final class ConfigurationStore {
     }
     static synchronized boolean replace(Context context, Map<String, Object> values) {
         Map<String, Object> previous = read(context);
-        if (edit(context, values).commit()) return true;
+        if (edit(context, values).commit()) {
+            // Imported navigation assignment/permission preferences should take effect immediately.
+            // Reset writes no assigned navigation package, so this remains a no-op in that case.
+            NavigationPermissionBootstrapper.ensureEarly(context);
+            return true;
+        }
         // commit() changes in-memory preferences even if storage fails: restore that snapshot too.
         edit(context, previous).commit();
         return false;

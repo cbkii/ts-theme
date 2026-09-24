@@ -163,18 +163,6 @@ public final class SettingsActivity extends Activity {
                         new String[] {LauncherPrefs.RAIL_LEFT, LauncherPrefs.RAIL_RIGHT},
                         LauncherPrefs.radioOnRight(this) ? LauncherPrefs.RAIL_RIGHT : LauncherPrefs.RAIL_LEFT,
                         value -> { LauncherPrefs.setRadioSide(this, value); render(); }));
-        addChoiceRow(R.drawable.ic_navigation, "Navigation display",
-                HomeNavigationSurfacePolicy.label(HomeNavigationSurfacePolicy.mode(this)),
-                v -> choose("Navigation display",
-                        new String[] {"Native navigation window · TESTING",
-                                "Fullscreen only · safe fallback",
-                                "Legacy online map fallback · Internet required"},
-                        new String[] {HomeNavigationSurfacePolicy.NATIVE_WINDOW,
-                                HomeNavigationSurfacePolicy.FULLSCREEN,
-                                HomeNavigationSurfacePolicy.LEAFLET},
-                        HomeNavigationSurfacePolicy.mode(this), value -> {
-                            HomeNavigationSurfacePolicy.setMode(this, value); recreate();
-                        }));
 
         addSection("Home widget apps");
         addPickerRow(R.drawable.ic_navigation, "Navigation", LauncherPrefs.KEY_NAV);
@@ -263,19 +251,14 @@ public final class SettingsActivity extends Activity {
     }
 
     private void renderAdvanced() {
-        addSection("Navigation access");
-        addSwitchRow(R.drawable.ic_my_location, "Pre-grant navigation location permissions (root)",
-                "Optional. Grants declared location access to the selected navigation app before launch.",
-                UiPersonalizationPrefs.navigationRootPermissionGrant(this), checked -> {
-                    UiPersonalizationPrefs.setNavigationRootPermissionGrant(this, checked);
-                    if (checked) NavigationPermissionBootstrapper.ensureEarly(this, result ->
-                            Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show());
-                });
-
         addSection("Experimental map");
         boolean mapEnabled = ExperimentalMapPolicy.enabled(this);
-        addInfoRow(R.drawable.ic_map, "Experimental Home map",
-                mapEnabled ? "Enabled as the legacy navigation display." : "Off");
+        addSwitchRow(R.drawable.ic_map, "Experimental Home map",
+                "Test map for on-device evaluation.",
+                mapEnabled, checked -> {
+                    ExperimentalMapPolicy.setEnabled(this, checked);
+                    render();
+                });
         if (mapEnabled) {
             addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom and follow controls.",
                     LauncherPrefs.mapControlsEnabled(this),
@@ -435,11 +418,7 @@ public final class SettingsActivity extends Activity {
                 configurationMessage(applied
                         ? (reset ? "Settings reset" : "Settings imported")
                         : "Settings were not changed");
-                if (applied) {
-                    MediaListenerService.refreshActiveSessions();
-                    if (!reset) NavigationPermissionBootstrapper.ensureEarly(this);
-                    recreate();
-                }
+                if (applied) { MediaListenerService.refreshActiveSessions(); recreate(); }
             });
         });
     }
@@ -637,8 +616,14 @@ public final class SettingsActivity extends Activity {
 
     private void showMediaDiagnostics() {
         MediaListenerService.refreshActiveSessions();
-        new AlertDialog.Builder(this).setTitle("Active media sessions")
-                .setMessage(MediaListenerService.sessionDiagnostics(this)).setPositiveButton("Close", null).show();
+        String sessions = MediaListenerService.sessionDiagnostics(this);
+        String trace = MediaEventTrace.dump(40);
+        new AlertDialog.Builder(this).setTitle("Media diagnostics")
+                .setMessage(sessions
+                        + "\n\nRecent media events"
+                        + "\nPlayback acknowledgement is not audible-output proof.\n"
+                        + trace)
+                .setPositiveButton("Close", null).show();
     }
 
     private void confirmRootHome() {

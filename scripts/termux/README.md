@@ -36,6 +36,40 @@ bash scripts/termux/install-standalone-launcher.sh --rollback-home
 bash scripts/termux/measure-standalone-launcher.sh
 ```
 
+## Fast-media qualification
+
+Start with the read-only baseline collector:
+
+```bash
+bash scripts/termux/collect-fast-media-evidence.sh
+```
+
+It captures the current Android user/root context, source package/service/process state, MediaSessions, audio focus/route evidence, resumed task, notification listener, removable storage and the launcher's bounded `TS18Media` monotonic trace.
+
+NavRadio service-start qualification is deliberately a separate, explicit mutation. Run it only when you intend to test whether the installed Android-10-compatible NavRadio service can be started without foreground UI or disruptive source/routing changes:
+
+```bash
+bash scripts/termux/qualify-navradio-service-start.sh --qualify-navradio-service-start
+```
+
+The script performs one discovered service start. It does not issue Play, stop/force-stop NavRadio or change the route. Physical observation is still required before enabling passive NavRadio warm-up.
+
+Compare stock TW Radio before and after a normal manual app open without inventing an OEM control route:
+
+```bash
+bash scripts/termux/collect-stock-radio-compare.sh --session radio1 --phase cold
+# Manually open stock Radio, verify normal operation, then return HOME.
+bash scripts/termux/collect-stock-radio-compare.sh --session radio1 --phase opened
+```
+
+For ACC/reboot lifecycle evidence, run the bounded read-only collector while physically performing the transition:
+
+```bash
+bash scripts/termux/collect-media-lifecycle-evidence.sh 120
+```
+
+The collector correlates uptime/power, tasks, processes, MediaSessions, storage and filtered vendor events. Display/screen-on alone is not classified as ACC.
+
 ## Native navigation-window qualification
 
 Use the event-driven collector with `docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md`. It does not mutate task/window/input/settings/package/Topway state. Start it on HOME, perform the ordinary UI actions at your own pace, then press Ctrl-C once.
@@ -74,4 +108,4 @@ It **does not** start/stop tasks, change settings, send playback/key input, alte
 
 Substantial outputs are written under `/storage/emulated/0/Download/`; transient work remains private where applicable. The helpers never clear DoFun application data, set SELinux permissive, broadly change ownership/mode, write `/system` or `/vendor`, or modify the `com.dofun.variety` APK outside the explicitly guarded legacy donor workflow.
 
-See `docs/INSTALL_TS18.md` and `docs/STANDALONE_LAUNCHER.md` for the associated installation and physical-validation procedures.
+See `docs/INSTALL_TS18.md`, `docs/STANDALONE_LAUNCHER.md` and `docs/MEDIA_BACKGROUND_READINESS.md` for the associated installation and physical-validation procedures.

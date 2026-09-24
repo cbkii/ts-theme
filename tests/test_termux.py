@@ -48,4 +48,23 @@ class TermuxToolkitTests(unittest.TestCase):
         common=(SCRIPTS/"lib/common.sh").read_text(encoding="utf-8"); install=(SCRIPTS/"ts18-theme-install.sh").read_text(encoding="utf-8"); rollback=(SCRIPTS/"ts18-theme-rollback.sh").read_text(encoding="utf-8")
         self.assertIn('^[0-9]+\\.jar$',common); self.assertIn("test ! -L",install); self.assertIn("test ! -L",rollback); self.assertIn("restore_interrupted_donor",install)
         self.assertLess(install.index("donor-original.jar"),install.index("cat '$TS18_FIXED_STAGE' > '$DONOR_TARGET'")); self.assertIn("p.l-sha256.txt",install); self.assertIn('[[ "$pl_after" == "$pl_before" ]]',install)
+    def test_fast_media_collector_retains_local_timeline_and_storage_evidence(self):
+        text=(SCRIPTS/"collect-fast-media-evidence.sh").read_text(encoding="utf-8")
+        self.assertIn("TS18Media:I",text); self.assertIn("/proc/mounts",text); self.assertIn("notification-listener.txt",text)
+        self.assertNotIn("am start-foreground-service",text)
+    def test_navradio_service_qualification_is_explicit_and_bounded(self):
+        text=(SCRIPTS/"qualify-navradio-service-start.sh").read_text(encoding="utf-8")
+        self.assertIn("--qualify-navradio-service-start",text); self.assertIn("start-foreground-service",text)
+        self.assertIn("expected exactly one installed NavRadio MediaSessionService",text)
+        self.assertNotIn("am force-stop",text); self.assertNotIn("am stopservice",text)
+        self.assertNotIn("input keyevent",text)
+    def test_stock_radio_comparator_is_read_only(self):
+        text=(SCRIPTS/"collect-stock-radio-compare.sh").read_text(encoding="utf-8")
+        self.assertIn("--phase cold|opened",text); self.assertIn("READ ONLY",text)
+        self.assertNotIn("am start ",text); self.assertNotIn("am broadcast",text); self.assertNotIn("service call",text)
+    def test_lifecycle_collector_is_time_bounded_and_does_not_drive_acc(self):
+        text=(SCRIPTS/"collect-media-lifecycle-evidence.sh").read_text(encoding="utf-8")
+        self.assertIn("DURATION < 30 || DURATION > 300",text); self.assertIn("timeout -k 2",text)
+        self.assertIn("Screen-on/display-on evidence is not classified as ACC",text)
+        self.assertNotIn("am broadcast",text); self.assertNotIn("input keyevent",text)
 if __name__ == "__main__": unittest.main()

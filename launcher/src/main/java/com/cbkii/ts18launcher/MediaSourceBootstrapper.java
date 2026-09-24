@@ -74,11 +74,14 @@ final class MediaSourceBootstrapper {
         sessionManager =
                 (MediaSessionManager) this.context.getSystemService(Context.MEDIA_SESSION_SERVICE);
         listenerComponent = new ComponentName(this.context, MediaListenerService.class);
+        MediaEventTrace.record("coordinator", "created");
     }
 
     void warmConfiguredSources() {
         String radio = RadioProvider.resolvePackage(context);
         String music = configuredMusicPackage();
+        MediaEventTrace.record("readiness", "warm-configured",
+                "radio=" + radio + " music=" + music);
         if (MediaSelection.RADIO.equals(LauncherPrefs.lastSource(context))) {
             warm(radio);
             warm(music);
@@ -90,6 +93,7 @@ final class MediaSourceBootstrapper {
 
     void warm(String packageName) {
         if (destroyed || packageName == null || packageName.isEmpty()) return;
+        MediaEventTrace.record("readiness", "warm-request", packageName);
         MediaController controller = controllerForPackage(packageName);
         if (controller != null) {
             Connection connection = connections.get(packageName);
@@ -125,6 +129,8 @@ final class MediaSourceBootstrapper {
         }
         MediaController controller = controllerForPackage(packageName);
         deferredPauseCandidate = controller != null && isPlaying(controller) ? packageName : "";
+        MediaEventTrace.record("switch", "opposite-candidate",
+                deferredPauseCandidate.isEmpty() ? "none" : deferredPauseCandidate);
     }
 
     boolean isPlaying(String packageName) {
@@ -164,6 +170,8 @@ final class MediaSourceBootstrapper {
         cancelPendingForOtherPackages(packageName);
         MediaController controller = controllerForPackage(packageName);
         MediaCommandPolicy.Desired desired = MediaCommandPolicy.resolve(command, isPlaying(controller));
+        MediaEventTrace.record("command", "request",
+                packageName + " desired=" + desired + " controller=" + (controller != null));
         Pending pending = new Pending(sourceLabel, packageName, desired, callback,
                 SystemClock.uptimeMillis() + COMMAND_TIMEOUT_MS);
         if (desired == MediaCommandPolicy.Desired.PLAY) {
@@ -179,6 +187,7 @@ final class MediaSourceBootstrapper {
                 if (existing.pauseOnPlayPackage.isEmpty()) {
                     existing.pauseOnPlayPackage = pending.pauseOnPlayPackage;
                 }
+                MediaEventTrace.record("command", "coalesced", packageName + " desired=" + desired);
                 return;
             }
             if (existing != null && !existing.settled) {
@@ -206,6 +215,7 @@ final class MediaSourceBootstrapper {
     void destroy() {
         if (destroyed) return;
         destroyed = true;
+        MediaEventTrace.record("coordinator", "destroyed");
         handler.removeCallbacksAndMessages(null);
         for (Connection connection : new ArrayList<>(connections.values())) {
             finishAll(connection.pending, false, "Launcher unavailable");
@@ -275,8 +285,13 @@ final class MediaSourceBootstrapper {
 
         final Connection target = connection;
         if (adapter.rootPrime) {
+            MediaEventTrace.record("browser", "root-prime-start", adapter.packageName);
             rootExecutor.execute(() -> {
-                RootShell.runMillis(adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
+                RootShell.Result root = RootShell.runMillis(
+                        adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
+                MediaEventTrace.record("browser",
+                        root.success() ? "root-prime-accepted" : "root-prime-not-accepted",
+                        adapter.packageName);
                 handler.post(() -> connectBrowser(target, generation, deadlineMs));
             });
         } else {
@@ -294,6 +309,7 @@ final class MediaSourceBootstrapper {
         if (connection.browser != null) return;
 
         final String packageName = connection.adapter.packageName;
+        MediaEventTrace.record("browser", "connect-start", packageName);
         MediaBrowser.ConnectionCallback callback = new MediaBrowser.ConnectionCallback() {
             @Override public void onConnected() {
                 if (!valid(connection, generation) || connection.browser == null
@@ -305,6 +321,7 @@ final class MediaSourceBootstrapper {
                     attachBrowserController(connection, generation);
                     connection.preparing = false;
                     MediaListenerService.observeExternalController(connection.controller);
+                    MediaEventTrace.record("browser", "connected", packageName);
                     markController(packageName, connection.controller);
                     MediaListenerService.refreshActiveSessions();
                     drain(connection);
@@ -356,6 +373,7 @@ final class MediaSourceBootstrapper {
         connection.pending.clear();
         connections.remove(packageName);
         disconnect(connection);
+        MediaEventTrace.record("session", "bound-destroyed", packageName);
         mark(packageName, MediaCommandPolicy.Phase.FAILED,
                 "Bound MediaSession ended; a future request will reconnect");
 
@@ -383,6 +401,7 @@ final class MediaSourceBootstrapper {
         connection.pending.clear();
         connections.remove(packageName);
         disconnect(connection);
+        MediaEventTrace.record("browser", "failed", packageName + " · " + message);
         mark(packageName, MediaCommandPolicy.Phase.FAILED, message);
         for (Pending command : pending) retryExact(command);
     }
@@ -464,16 +483,24 @@ final class MediaSourceBootstrapper {
         mark(adapter.packageName, MediaCommandPolicy.Phase.STARTING,
                 "Root service start, normal Android fallback, then exact-session discovery");
         final ServiceStart target = start;
+        MediaEventTrace.record("service", "root-start", adapter.packageName);
         rootExecutor.execute(() -> {
-            RootShell.Result root =
-                    RootShell.runMillis(adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
+            RootShell.Result root = RootShell.runMillis(
+                    adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
             handler.post(() -> {
                 if (destroyed || serviceStarts.get(adapter.packageName) != target
-                        || target.generation != generation) return;
-                boolean started = root.success();
-                if (!started) started = startExplicitServiceNormally(adapter);
+                        || target.generation != generation) {
+                    MediaEventTrace.record("service", "stale-start-result", adapter.packageName);
+                    return;
+                }
+                boolean normalAccepted = false;
+                if (!root.success()) normalAccepted = startExplicitServiceNormally(adapter);
+                MediaPreparationPolicy.StartRoute route = MediaPreparationPolicy.resolveStartRoute(
+                        root.success(), normalAccepted);
+                MediaEventTrace.record("service", "start-route",
+                        adapter.packageName + " · " + route);
                 target.inFlight = false;
-                if (!started) {
+                if (route == MediaPreparationPolicy.StartRoute.FAILED) {
                     mark(adapter.packageName, MediaCommandPolicy.Phase.FAILED,
                             "Background service start was rejected");
                     List<Pending> failed = new ArrayList<>(target.pending);
@@ -498,6 +525,7 @@ final class MediaSourceBootstrapper {
                 || start.generation != generation) return;
         MediaController controller = exactController(start.adapter.packageName);
         if (controller != null) {
+            MediaEventTrace.record("session", "exact-observed", start.adapter.packageName);
             markController(start.adapter.packageName, controller);
             return;
         }
@@ -568,12 +596,16 @@ final class MediaSourceBootstrapper {
             return;
         }
         if (!sendDesired(controller, pending.desired)) {
+            MediaEventTrace.record("command", "dispatch-rejected",
+                    pending.packageName + " desired=" + pending.desired);
             mark(pending.packageName, MediaCommandPolicy.Phase.FAILED,
                     "Controller rejected command dispatch");
             finish(pending, false, pending.sourceLabel + " command could not be sent");
             return;
         }
         pending.dispatched = true;
+        MediaEventTrace.record("command", "dispatched",
+                pending.packageName + " desired=" + pending.desired);
         MediaListenerService.refreshActiveSessions();
         if (pending.desired == MediaCommandPolicy.Desired.PREVIOUS
                 || pending.desired == MediaCommandPolicy.Desired.NEXT) {
@@ -623,6 +655,8 @@ final class MediaSourceBootstrapper {
     }
 
     private void completeAcknowledged(MediaController controller, Pending pending) {
+        MediaEventTrace.record("command", "acknowledged",
+                pending.packageName + " desired=" + pending.desired);
         markController(pending.packageName, controller);
         if (pending.desired == MediaCommandPolicy.Desired.PLAY) commitDeferredPause(pending);
         finish(pending, true, "");
@@ -631,12 +665,20 @@ final class MediaSourceBootstrapper {
     private void commitDeferredPause(Pending pending) {
         String oppositePackage = pending.pauseOnPlayPackage;
         pending.pauseOnPlayPackage = "";
-        if (oppositePackage == null || oppositePackage.isEmpty()
-                || oppositePackage.equals(pending.packageName)) return;
-        MediaController opposite = controllerForPackage(oppositePackage);
-        if (opposite == null || !isPlaying(opposite)) return;
-        if (supports(opposite, MediaCommandPolicy.Desired.PAUSE)
-                && sendDesired(opposite, MediaCommandPolicy.Desired.PAUSE)) {
+        MediaController opposite = oppositePackage == null || oppositePackage.isEmpty()
+                ? null : controllerForPackage(oppositePackage);
+        boolean oppositePlaying = opposite != null && isPlaying(opposite);
+        boolean pauseSupported = opposite != null
+                && supports(opposite, MediaCommandPolicy.Desired.PAUSE);
+        if (!MediaPreparationPolicy.shouldCommitOppositePause(
+                pending.packageName, oppositePackage, oppositePlaying, pauseSupported)) {
+            if (oppositePackage != null && !oppositePackage.isEmpty()) {
+                MediaEventTrace.record("switch", "opposite-pause-skipped", oppositePackage);
+            }
+            return;
+        }
+        if (sendDesired(opposite, MediaCommandPolicy.Desired.PAUSE)) {
+            MediaEventTrace.record("switch", "opposite-paused", oppositePackage);
             MediaListenerService.refreshActiveSessions();
         }
     }
@@ -711,6 +753,8 @@ final class MediaSourceBootstrapper {
     private void mark(String packageName, MediaCommandPolicy.Phase phase, String detail) {
         if (packageName == null || packageName.isEmpty()) return;
         statuses.put(packageName, new Status(phase, detail, SystemClock.uptimeMillis()));
+        MediaEventTrace.record("readiness", phase.name().toLowerCase(java.util.Locale.ROOT),
+                packageName + (detail == null || detail.isEmpty() ? "" : " · " + detail));
     }
 
     private Pending addPending(List<Pending> queue, Pending incoming) {
@@ -761,6 +805,9 @@ final class MediaSourceBootstrapper {
         if (inFlightToggle.get(pending.packageName) == pending) {
             inFlightToggle.remove(pending.packageName);
         }
+        MediaEventTrace.record("command", success ? "settled-success" : "settled-failure",
+                pending.packageName + " desired=" + pending.desired
+                        + (message == null || message.isEmpty() ? "" : " · " + message));
         for (ResultCallback callback : new ArrayList<>(pending.callbacks)) {
             finishCallback(callback, success, message);
         }

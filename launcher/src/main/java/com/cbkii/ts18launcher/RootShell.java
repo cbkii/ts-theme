@@ -39,9 +39,11 @@ final class RootShell {
 
     private static Result runInternal(String command, long shellTimeoutSeconds, long waitMillis) {
         if (command == null || command.isEmpty()) {
-            return new Result(false, -1, "invalid root command");
+            return traced(command, new Result(false, -1, "invalid root command"));
         }
 
+        String commandClass = commandClass(command);
+        MediaEventTrace.record("root", "request", commandClass);
         Process process = null;
         StringBuilder output = new StringBuilder();
         Thread drainer = null;
@@ -66,21 +68,40 @@ final class RootShell {
                     process.destroyForcibly();
                 }
                 joinQuietly(drainer, 1000);
-                return new Result(false, -1, appendStatus(output, "root command timed out"));
+                return traced(command,
+                        new Result(false, -1, appendStatus(output, "root command timed out")));
             }
 
             joinQuietly(drainer, 1000);
-            return new Result(true, process.exitValue(), output.toString());
+            return traced(command, new Result(true, process.exitValue(), output.toString()));
         } catch (IOException e) {
-            return new Result(false, -1, e.getClass().getSimpleName() + ": " + e.getMessage());
+            return traced(command,
+                    new Result(false, -1, e.getClass().getSimpleName() + ": " + e.getMessage()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new Result(false, -1, "interrupted");
+            return traced(command, new Result(false, -1, "interrupted"));
         } finally {
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
             }
         }
+    }
+
+    private static Result traced(String command, Result result) {
+        String outcome = result.success() ? "accepted"
+                : result.completed ? "rejected" : "unavailable-or-timeout";
+        MediaEventTrace.record("root", outcome,
+                commandClass(command) + " exit=" + result.exitCode);
+        return result;
+    }
+
+    private static String commandClass(String command) {
+        if (command == null || command.isEmpty()) return "invalid";
+        if (command.contains("com.tw.media")) return "media:com.tw.media";
+        if (command.contains("com.navimods.radio")) return "media:com.navimods.radio";
+        if (command.contains("set-home-activity")) return "home-selection";
+        if (command.contains("windowingMode") || command.contains("am stack")) return "navigation-window";
+        return "other";
     }
 
     private static void drain(Process process, StringBuilder output) {
