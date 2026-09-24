@@ -22,6 +22,9 @@ STAMP="$(date +%Y%m%d-%H%M%S 2>/dev/null || printf unknown)"
 OUT="$OUT_BASE/navradio-service-start-$STAMP"
 STATUS="$OUT/STATUS.tsv"
 CAP_TIMEOUT=8
+TERMUX_BIN="${PREFIX:-/data/data/com.termux/files/usr}/bin"
+ANDROID_ROOT_PATH="/system/bin:/system/xbin:/vendor/bin:/product/bin:/apex/com.android.runtime/bin"
+export PATH="$TERMUX_BIN:$ANDROID_ROOT_PATH"
 umask 077
 mkdir -p -- "$OUT" || exit 1
 printf 'surface\tstatus\tdetail\n' >"$STATUS"
@@ -44,37 +47,78 @@ run_capture() {
 run_capture_sh() {
   local name="$1"
   shift
-  run_capture "$name" sh -c "$*"
+  run_capture "$name" env PATH="$PATH" sh -c "$*"
 }
 
 root_available() {
   command -v su >/dev/null 2>&1 || return 1
-  # The command substitution is intentionally evaluated by the root child shell.
-  # shellcheck disable=SC2016
-  timeout -k 1 3 su -c 'test "$(id -u)" = 0' >/dev/null 2>&1
+  timeout -k 1 3 su -c "export PATH='$ANDROID_ROOT_PATH'; test \"\$(id -u)\" = 0" >/dev/null 2>&1
 }
 
-USER_ID="$(cmd activity get-current-user 2>/dev/null || am get-current-user 2>/dev/null || true)"
-USER_ID="$(printf '%s' "$USER_ID" | tr -cd '0-9')"
+resolve_current_user() {
+  local value
+  value="$(cmd activity get-current-user 2>/dev/null || true)"
+  value="${value//$'\r'/}"
+  if [[ "$value" =~ ^[[:space:]]*([0-9]+)[[:space:]]*$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  value="$(am get-current-user 2>/dev/null || true)"
+  value="${value//$'\r'/}"
+  if [[ "$value" =~ ^[[:space:]]*([0-9]+)[[:space:]]*$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
+USER_ID="$(resolve_current_user || true)"
 if [[ -z "$USER_ID" ]]; then
   printf 'BLOCKED: could not resolve current Android user\n' | tee "$OUT/SUMMARY.txt"
   record service-start BLOCKED "current Android user unresolved"
   exit 3
 fi
 
-SERVICES="$(cmd package query-intent-services --brief --components --user "$USER_ID" \
-  -a "$ACTION_MEDIA3" -p "$PKG" 2>/dev/null || true)"
-if [[ -z "$SERVICES" ]]; then
-  SERVICES="$(pm query-services --brief --components --user "$USER_ID" \
-    -a "$ACTION_MEDIA3" -p "$PKG" 2>/dev/null || true)"
+# Android 10/API29 PackageManagerShellCommand uses query-services; newer builds may also expose
+# aliases through pm. Capture each attempt so a missing command is not mistaken for no service.
+SERVICES=""
+DISCOVERY_ROUTE=""
+if SERVICES="$(cmd package query-services --brief --components --user "$USER_ID" \
+    -a "$ACTION_MEDIA3" -p "$PKG" 2>"$OUT/discovery-cmd-package.err")"; then
+  DISCOVERY_ROUTE="cmd-package-query-services"
 fi
-printf '%s\n' "$SERVICES" >"$OUT/discovered-services.txt"
-mapfile -t COMPONENTS < <(printf '%s\n' "$SERVICES" | grep -E '^com\.navimods\.radio/[A-Za-z0-9_.$]+$' | sort -u)
+if [[ -z "$SERVICES" ]]; then
+  if SERVICES="$(pm query-services --brief --components --user "$USER_ID" \
+      -a "$ACTION_MEDIA3" -p "$PKG" 2>"$OUT/discovery-pm.err")"; then
+    DISCOVERY_ROUTE="pm-query-services"
+  fi
+fi
+
+# Last-resort read-only API29-compatible package dump. It is accepted only when exactly one
+# component in this package is adjacent to the exact Media3 service action.
+if [[ -z "$SERVICES" ]]; then
+  dumpsys package "$PKG" >"$OUT/discovery-package-dump.txt" 2>&1 || true
+  mapfile -t DUMP_COMPONENTS < <(awk -v action="$ACTION_MEDIA3" -v pkg="$PKG" '
+    /^[[:space:]]+[0-9a-f]+[[:space:]]+'"$PKG"'\/[A-Za-z0-9_.$]+[[:space:]]+filter/ {
+      component=$2
+    }
+    index($0, action) && component ~ ("^" pkg "/") { print component }
+  ' "$OUT/discovery-package-dump.txt" | sort -u)
+  if (( ${#DUMP_COMPONENTS[@]} == 1 )); then
+    SERVICES="${DUMP_COMPONENTS[0]}"
+    DISCOVERY_ROUTE="dumpsys-package-intent-filter"
+  fi
+fi
+
+printf 'route=%s\n%s\n' "${DISCOVERY_ROUTE:-unresolved}" "$SERVICES" >"$OUT/discovered-services.txt"
+mapfile -t COMPONENTS < <(printf '%s\n' "$SERVICES" \
+  | grep -E '^com\.navimods\.radio/[A-Za-z0-9_.$]+$' | sort -u)
 if (( ${#COMPONENTS[@]} != 1 )); then
   printf 'BLOCKED: expected exactly one installed NavRadio MediaSessionService; found %s\n' \
     "${#COMPONENTS[@]}" | tee "$OUT/SUMMARY.txt"
-  printf 'No service was started.\n' >>"$OUT/SUMMARY.txt"
-  record service-start BLOCKED "expected exactly one installed service; found ${#COMPONENTS[@]}"
+  printf 'No service was started. Discovery route=%s. Review discovery error/package-dump files.\n' \
+    "${DISCOVERY_ROUTE:-unresolved}" >>"$OUT/SUMMARY.txt"
+  record service-start BLOCKED "service discovery unresolved/ambiguous; found ${#COMPONENTS[@]}"
   exit 4
 fi
 COMPONENT="${COMPONENTS[0]}"
@@ -97,14 +141,15 @@ snapshot() {
 snapshot before
 if root_available; then
   timeout -k 2 "$CAP_TIMEOUT" su -c \
-    "pm path '$PKG' 2>/dev/null | sed 's/^package://' | while IFS= read -r p; do sha256sum \"\$p\" 2>/dev/null || true; done" \
+    "export PATH='$ANDROID_ROOT_PATH'; pm path '$PKG' 2>/dev/null | sed 's/^package://' | while IFS= read -r p; do sha256sum \"\$p\" 2>/dev/null || true; done" \
     >"$OUT/before-hash-root.txt" 2>&1 || true
   record before-hash-root.txt PASS "root read-only hash attempted"
 else
   printf 'BLOCKED: root unavailable; readable hash remains authoritative if present\n' >"$OUT/before-hash-root.txt"
   record before-hash-root.txt BLOCKED "root unavailable"
 fi
-printf 'user=%s\ncomponent=%s\naction=%s\n' "$USER_ID" "$COMPONENT" "$ACTION_MEDIA3" >"$OUT/target.txt"
+printf 'user=%s\ncomponent=%s\naction=%s\ndiscovery_route=%s\n' \
+  "$USER_ID" "$COMPONENT" "$ACTION_MEDIA3" "$DISCOVERY_ROUTE" >"$OUT/target.txt"
 
 # Choose the caller before mutation so exactly one service-start command is ever issued.
 START_ROUTE="normal-termux-caller"
@@ -112,7 +157,7 @@ if root_available; then START_ROUTE="root"; fi
 START_RC=1
 if [[ "$START_ROUTE" == "root" ]]; then
   if timeout -k 2 4 su -c \
-      "am start-foreground-service --user $USER_ID -a $ACTION_MEDIA3 -n $COMPONENT" \
+      "export PATH='$ANDROID_ROOT_PATH'; am start-foreground-service --user $USER_ID -a $ACTION_MEDIA3 -n $COMPONENT" \
       >"$OUT/start.txt" 2>&1; then
     START_RC=0
     record service-start PASS "single root service-start command accepted"
@@ -155,6 +200,7 @@ NavRadio service-start qualification
 android_user=$USER_ID
 component=$COMPONENT
 service_action=$ACTION_MEDIA3
+discovery_route=$DISCOVERY_ROUTE
 start_route=$START_ROUTE
 service_start_commands_issued=1
 start_command_exit=$START_RC
