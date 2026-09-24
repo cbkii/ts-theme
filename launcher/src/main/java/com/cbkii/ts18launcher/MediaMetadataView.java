@@ -12,8 +12,8 @@ import android.widget.TextView;
 final class MediaMetadataView extends LinearLayout {
     private final SlowMarqueeTextView primary;
     private final TextView secondary;
-    private String lastPrimary;
-    private String lastSecondary;
+    private String lastPrimary = "";
+    private String lastSecondary = "";
 
     MediaMetadataView(Context context) {
         super(context);
@@ -47,13 +47,14 @@ final class MediaMetadataView extends LinearLayout {
     }
 
     void setMetadata(String title, String context) {
-        String safeTitle = title == null ? "" : title.trim();
-        String safeContext = context == null ? "" : context.trim();
-        if (!safeTitle.equals(lastPrimary)) {
+        String safeTitle = MediaTickerPolicy.normalise(title);
+        String safeContext = MediaTickerPolicy.normalise(context);
+        if (MediaTickerPolicy.primaryChanged(lastPrimary, safeTitle)) {
             lastPrimary = safeTitle;
             primary.setText(safeTitle);
+            MediaDiagnostics.record("metadata", "primary=" + safeTitle);
         }
-        if (!safeContext.equals(lastSecondary)) {
+        if (MediaTickerPolicy.secondaryChanged(lastSecondary, safeContext)) {
             lastSecondary = safeContext;
             secondary.setText(safeContext);
             secondary.setVisibility(safeContext.isEmpty() ? View.GONE : View.VISIBLE);
