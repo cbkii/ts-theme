@@ -64,6 +64,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
+    private RemovableMediaReconciler removableMediaReconciler;
     private boolean launchedAsHome;
     private boolean locationPermissionRequested;
     private boolean mediaRefreshPolling;
@@ -77,9 +78,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
+        MediaDiagnostics.record("home", "create launched_as_home=" + launchedAsHome);
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
         mediaBootstrapper = new MediaSourceBootstrapper(this);
+        removableMediaReconciler = new RemovableMediaReconciler(this, this::onRemovableMediaAvailable);
         rememberMediaConfiguration();
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
@@ -103,6 +106,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onNewIntent(intent);
         setIntent(intent);
         launchedAsHome = intent != null && intent.hasCategory(Intent.CATEGORY_HOME);
+        MediaDiagnostics.record("home", "new_intent launched_as_home=" + launchedAsHome);
         if (launchedAsHome) {
             if (appDrawerPanel != null) appDrawerPanel.restoreDashboardRoot();
             root.clearFocus();
@@ -115,11 +119,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onResume() {
         super.onResume();
+        MediaDiagnostics.record("home", "resume");
         scheduleMediaReadiness();
     }
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) MediaDiagnostics.record("home", "focus");
         if (hasFocus && (launchedAsHome || HomeMode.isDefaultHome(this))) {
             scheduleMediaReadiness();
         }
@@ -145,11 +151,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onStart() {
         super.onStart();
+        MediaDiagnostics.record("home", "start");
         reconcileMediaConfiguration();
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
         MediaListenerService.addObserver(this);
         MediaListenerService.refreshActiveSessions();
+        if (removableMediaReconciler != null) removableMediaReconciler.start();
         startMediaRefreshPolling();
         applyRailConfiguration();
         scheduleMediaReadiness();
@@ -159,6 +167,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onStop() {
+        MediaDiagnostics.record("home", "stop command_pending=" + mediaStatusActive);
+        if (removableMediaReconciler != null) removableMediaReconciler.stop();
         appearanceController.stop();
         stopMediaRefreshPolling();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
@@ -173,10 +183,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onDestroy() {
+        if (removableMediaReconciler != null) removableMediaReconciler.stop();
         stopMediaRefreshPolling();
         mediaRefreshHandler.removeCallbacksAndMessages(null);
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();
         if (mapPanel != null) mapPanel.destroy();
+        MediaDiagnostics.record("home", "destroy");
         super.onDestroy();
     }
 
@@ -200,8 +212,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void runMediaReadiness() {
         if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+            MediaDiagnostics.record("warm", "home_reconcile");
             mediaBootstrapper.warmConfiguredSources();
         }
+    }
+
+    private void onRemovableMediaAvailable() {
+        if (mediaBootstrapper == null || !UiPersonalizationPrefs.mediaStartupWarmup(this)) return;
+        String musicPackage = configuredMusicPackage();
+        if (musicPackage.isEmpty()) return;
+        MediaDiagnostics.record("storage", "reconcile_music package=" + musicPackage);
+        mediaBootstrapper.warm(musicPackage);
     }
 
     private void scheduleMediaReadiness() {
@@ -215,6 +236,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         String radioPackage = RadioProvider.resolvePackage(this);
         String musicPackage = configuredMusicPackage();
         if (radioPackage.equals(mediaRadioPackage) && musicPackage.equals(mediaMusicPackage)) return;
+        MediaDiagnostics.record("config", "media_generation_changed radio=" + radioPackage
+                + " music=" + musicPackage);
         mediaStatusGeneration++;
         mediaStatusActive = false;
         resetMediaBootstrapper();
@@ -377,6 +400,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void runSourceCommand(String label, String packageName, MediaListenerService.Command command) {
         int generation = ++mediaStatusGeneration;
         mediaStatusActive = true;
+        MediaDiagnostics.record("home", "command_generation=" + generation + " source=" + label);
         String appLabel = AppResolver.labelFor(this, packageName, label);
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
                 ? "Preparing " + label + "…" : label, appLabel);
