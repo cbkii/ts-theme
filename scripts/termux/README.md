@@ -1,6 +1,6 @@
 # TS18 Termux tools
 
-Use these helpers from Termux on the target TS18. Keep diagnostic collection read-only unless a specific installer/rollback action is intended.
+Use these helpers from Termux on the target TS18. Keep diagnostic collection read-only unless a specific installer/rollback or explicitly named qualification mutation is intended.
 
 ## Legacy DoFun theme installation
 
@@ -36,6 +36,38 @@ bash scripts/termux/install-standalone-launcher.sh --rollback-home
 bash scripts/termux/measure-standalone-launcher.sh
 ```
 
+## Fast-media evidence and qualification
+
+The default fast-media collector is read-only and labels each capture bundle for easy comparison:
+
+```bash
+bash scripts/termux/collect-fast-media-evidence.sh --label baseline
+bash scripts/termux/collect-fast-media-evidence.sh --label after-one-tap
+```
+
+It captures exact package/path/hash evidence where readable, current Android user, root identity separately from target-app identity, media sessions/actions/metadata, audio focus/route evidence, resumed task, notification-listener state, removable-storage state, relevant Topway processes/services and the launcher's bounded `TS18MediaTrace` event timeline. Outputs stay under `/storage/emulated/0/Download/ts-theme/`.
+
+NavRadio passive-start qualification is deliberately a separate **explicitly mutating** command. It discovers the installed `com.navimods.radio` Media3 service first, then performs exactly one bounded service-start request. It does not issue Play or stop/force-stop the app afterwards:
+
+```bash
+bash scripts/termux/qualify-navradio-service-start.sh --qualify-navradio-service-start
+```
+
+Stock TW Radio evidence remains read-only. Run it cold, then manually open stock Radio, return HOME and run the opened phase. Any manual station/transport action is performed by the user during the bounded log window; the script does not call XTService/Binder/broadcast/media transport itself.
+
+```bash
+bash scripts/termux/collect-stock-radio-evidence.sh --phase cold
+bash scripts/termux/collect-stock-radio-evidence.sh --phase opened --log-seconds 20
+```
+
+For reboot/ACC evidence, run the bounded lifecycle collector while physically performing the requested transition. It samples Android power/wakefulness, HOME/task, media/session/process/storage state and filtered relevant logs; it does not write MCU/CAN, properties, OEM services or playback, and it does not interpret screen-on as proof of ACC.
+
+```bash
+bash scripts/termux/collect-acc-media-lifecycle.sh --seconds 120
+```
+
+A missing root/logcat/source prerequisite is BLOCKED or UNVERIFIED for dependent evidence; it is not proof that the downstream contract failed.
+
 ## Window/media evidence collector
 
 `collect-window-media-evidence.sh` is a **read-only** targeted evidence bundle for media bootstrap validation and the separate future DoFun/Organic Maps windowing investigation.
@@ -58,6 +90,6 @@ The collector uses bounded commands to capture:
 
 It **does not** start/stop tasks, change settings, send playback/key input, alter packages or manipulate windows. Missing permissions, timed-out captures and unavailable root are recorded as blocked/unknown evidence rather than absence.
 
-Substantial outputs are written under `/storage/emulated/0/Download/`; transient work remains private where applicable. The helpers never clear DoFun application data, set SELinux permissive, broadly change ownership/mode, write `/system` or `/vendor`, or modify the `com.dofun.variety` APK outside the explicitly guarded legacy donor workflow.
+Substantial outputs are written under `/storage/emulated/0/Download/`; transient work remains private where applicable. The helpers never clear DoFun application data, set SELinux permissive, broadly change ownership/mode, write protected partitions, or modify the `com.dofun.variety` APK outside the explicitly guarded legacy donor workflow.
 
-See `docs/INSTALL_TS18.md` and `docs/STANDALONE_LAUNCHER.md` for the associated installation and physical-validation procedures.
+See `docs/INSTALL_TS18.md`, `docs/STANDALONE_LAUNCHER.md` and `docs/MEDIA_BACKGROUND_READINESS.md` for the associated installation and physical-validation procedures.
