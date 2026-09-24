@@ -287,7 +287,8 @@ public final class SettingsActivity extends Activity {
                                 commitConfiguration(java.util.Collections.emptyMap(), true)).show());
 
         addSection("Diagnostics & system");
-        addActionRow(R.drawable.ic_shortcut, "Media diagnostics", "View active media sessions.",
+        addActionRow(R.drawable.ic_shortcut, "Media diagnostics",
+                "View source routes, active sessions and the bounded readiness timeline.",
                 v -> showMediaDiagnostics());
         addInfoRow(R.drawable.ic_mic, "Voice search",
                 VoiceSearch.available(this) ? "Available" : "Unavailable");
@@ -616,8 +617,8 @@ public final class SettingsActivity extends Activity {
 
     private void showMediaDiagnostics() {
         MediaListenerService.refreshActiveSessions();
-        new AlertDialog.Builder(this).setTitle("Active media sessions")
-                .setMessage(MediaListenerService.sessionDiagnostics(this)).setPositiveButton("Close", null).show();
+        new AlertDialog.Builder(this).setTitle("Media diagnostics")
+                .setMessage(MediaDiagnostics.build(this)).setPositiveButton("Close", null).show();
     }
 
     private void confirmRootHome() {
