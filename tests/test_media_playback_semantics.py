@@ -47,9 +47,9 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn("musicPackage.equals(mediaMusicPackage)", launcher)
 
     def test_removable_storage_reconciliation_is_mount_only_and_non_playing(self):
-        app = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/Ts18LauncherApp.java").read_text(encoding="utf-8")
+        app = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/Ts18LauncherApplication.java").read_text(encoding="utf-8")
         manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
-        self.assertIn('android:name=".Ts18LauncherApp"', manifest)
+        self.assertIn('android:name=".Ts18LauncherApplication"', manifest)
         self.assertIn("Intent.ACTION_MEDIA_MOUNTED", app)
         self.assertIn("RemovableMediaPolicy.shouldWarm", app)
         self.assertIn("bootstrapper.warm(target);", app)
@@ -72,7 +72,8 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         adapter = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceAdapter.java").read_text(encoding="utf-8")
         self.assertNotIn("startActivity", bootstrap)
         self.assertNotIn("getLaunchIntentForPackage", bootstrap)
-        self.assertIn("return false;", adapter.split("static boolean maskedFallbackQualified()", 1)[1].split("}", 1)[0])
+        method = adapter.split("boolean maskedFallbackQualified()", 1)[1].split("}", 1)[0]
+        self.assertIn("return false;", method)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,8 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
  * music warm-up while HOME is resumed; it never scans media, owns the queue, auto-plays or replays
  * an expired command. Source membership and queue restoration remain player-owned.
  */
-public final class Ts18LauncherApp extends Application implements Application.ActivityLifecycleCallbacks {
+public final class Ts18LauncherApplication extends Application
+        implements Application.ActivityLifecycleCallbacks {
     private static final long STORAGE_WARM_DEBOUNCE_MS = 1500L;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean launcherResumed;
@@ -36,7 +37,7 @@ public final class Ts18LauncherApp extends Application implements Application.Ac
             MediaEventTrace.record("storage", event.name().toLowerCase(java.util.Locale.ROOT), detail);
             MediaListenerService.refreshActiveSessions();
             if (RemovableMediaPolicy.shouldWarm(event, launcherResumed,
-                    UiPersonalizationPrefs.mediaStartupWarmup(Ts18LauncherApp.this))) {
+                    UiPersonalizationPrefs.mediaStartupWarmup(Ts18LauncherApplication.this))) {
                 warmConfiguredMusicAfterMount();
             }
         }
