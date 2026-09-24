@@ -35,7 +35,7 @@ final class StartupMaskController {
         root.setClickable(true);
         root.setFocusable(true);
         TextView label = new TextView(activity);
-        label.setText("Starting…");
+        label.setText(R.string.starting_launcher);
         label.setTextColor(0xFFEAEAEA);
         label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 20f);
         label.setGravity(Gravity.CENTER);
