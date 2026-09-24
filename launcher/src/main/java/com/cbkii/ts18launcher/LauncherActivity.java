@@ -22,6 +22,7 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @SuppressLint("SetTextI18n")
 public class LauncherActivity extends Activity implements MediaListenerService.Observer {
@@ -30,6 +31,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private static final long MEDIA_REFRESH_INTERVAL_MS = 1000L;
     private static final long MEDIA_STATUS_MS = 1800L;
     private static final long MEDIA_READY_RECONCILE_DELAY_MS = 250L;
+    private static final AtomicBoolean STARTUP_BOOTSTRAP_CLAIMED = new AtomicBoolean();
 
     private FrameLayout root;
     private LinearLayout rail;
@@ -66,6 +68,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
+    private StartupBootstrapCoordinator startupBootstrap;
     private boolean launchedAsHome;
     private boolean redirectingToHome;
     private boolean locationPermissionRequested;
@@ -80,6 +83,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         if (redirectToCanonicalHome()) return;
+        boolean coldProcessStart = STARTUP_BOOTSTRAP_CLAIMED.compareAndSet(false, true);
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
@@ -104,10 +108,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaText.setLongClickable(false);
         root.addView(mediaText);
         buildDate();
+        appDrawerPanel = new AppDrawerPanel(this, () -> root.post(this::updateMapVisibility));
+        root.addView(appDrawerPanel);
+        appDrawerPanel.preload();
         updateMediaPresentation();
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 applyGeometry(right - left, bottom - top));
-        root.post(() -> applyGeometry(root.getWidth(), root.getHeight()));
+        root.post(() -> {
+            applyGeometry(root.getWidth(), root.getHeight());
+            if (coldProcessStart && (launchedAsHome || HomeMode.isDefaultHome(this))
+                    && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+                startupBootstrap = new StartupBootstrapCoordinator(this, mediaBootstrapper);
+                startupBootstrap.start();
+            }
+        });
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -194,7 +208,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onDestroy() {
         stopMediaRefreshPolling();
         mediaRefreshHandler.removeCallbacksAndMessages(null);
+        if (startupBootstrap != null) startupBootstrap.destroy();
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();
+        if (appDrawerPanel != null) appDrawerPanel.destroy();
         if (mapPanel != null) mapPanel.destroy();
         if (navigationWindowController != null) navigationWindowController.destroy();
         super.onDestroy();
@@ -219,6 +235,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void runMediaReadiness() {
+        if (startupBootstrap != null && startupBootstrap.isRunning()) return;
         if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
             mediaBootstrapper.warmConfiguredSources();
         }
@@ -263,6 +280,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         rail.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         appsButton = railButton(R.drawable.ic_apps, "Apps");
         appsButton.setOnClickListener(v -> toggleAppDrawer());
+        appsButton.setOnLongClickListener(v -> {
+            startActivity(new Intent(this, SettingsActivity.class));
+            return true;
+        });
         rail.addView(appsButton, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, Ts18Geometry.RAIL_ENDPOINT_HEIGHT));
 
@@ -604,11 +625,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void toggleAppDrawer() {
-        if (appDrawerPanel == null) {
-            appDrawerPanel = new AppDrawerPanel(this, () -> root.post(this::updateMapVisibility));
-            root.addView(appDrawerPanel);
-            applyGeometry(root.getWidth(), root.getHeight());
-        }
         if (appDrawerPanel.isOpen()) appDrawerPanel.hidePanel();
         else {
             if (mapPanel != null) mapPanel.stop();
