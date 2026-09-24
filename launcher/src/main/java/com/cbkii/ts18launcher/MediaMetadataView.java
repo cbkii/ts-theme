@@ -14,6 +14,7 @@ final class MediaMetadataView extends LinearLayout {
     private final TextView secondary;
     private String lastPrimary;
     private String lastSecondary;
+    private String lastSourceIdentity;
 
     MediaMetadataView(Context context) {
         super(context);
@@ -47,8 +48,10 @@ final class MediaMetadataView extends LinearLayout {
     }
 
     void setMetadata(String title, String context) {
+        String sourceIdentity = sourceIdentity();
         MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
-                lastPrimary, lastSecondary, title, context);
+                lastPrimary, lastSecondary, lastSourceIdentity, sourceIdentity, title, context);
+        lastSourceIdentity = sourceIdentity;
         if (change.primaryChanged) {
             lastPrimary = change.primary;
             primary.setText(change.primary);
@@ -58,5 +61,17 @@ final class MediaMetadataView extends LinearLayout {
             secondary.setText(change.secondary);
             secondary.setVisibility(change.secondary.isEmpty() ? View.GONE : View.VISIBLE);
         }
+    }
+
+    private String sourceIdentity() {
+        String selected = LauncherPrefs.lastSource(getContext());
+        if (MediaSelection.RADIO.equals(selected)) {
+            return "radio:" + RadioProvider.resolvePackage(getContext());
+        }
+        String packageName = LauncherPrefs.lastMusicPackage(getContext());
+        if (packageName.isEmpty()) {
+            packageName = LauncherPrefs.packageFor(getContext(), LauncherPrefs.KEY_MUSIC);
+        }
+        return "music:" + packageName;
     }
 }
