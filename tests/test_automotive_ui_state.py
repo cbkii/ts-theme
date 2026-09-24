@@ -29,7 +29,7 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("KEY_HOME_SHORTCUTS_ENABLED", personal)
         self.assertIn("homeShortcutsEnabled(this)", launcher)
         self.assertIn("quickCells[i].setVisibility", launcher)
-        self.assertIn('"Show HOME quick shortcuts"', settings)
+        self.assertIn('"Show Home sidebar shortcuts"', settings)
         self.assertIn("if (homeShortcuts)", settings)
         self.assertIn('"Shortcut count"', settings)
 
@@ -71,8 +71,7 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("secondary.setSingleLine(true)", metadata)
         self.assertIn("TruncateAt.END", metadata)
         self.assertIn("KEY_RADIO_SIDE", prefs)
-        self.assertIn('"Radio / Music sides"', settings)
-        self.assertIn("independent of rail", settings)
+        self.assertIn('"Radio and music position"', settings)
         self.assertIn("LauncherPrefs.radioOnRight(this)", launcher)
         self.assertIn("updateMediaPresentation", launcher)
         self.assertIn("mediaGroupBackground", launcher)
@@ -98,7 +97,7 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertNotIn("fallbackLaunch", bootstrap)
         self.assertNotIn("startActivity(", bootstrap)
         self.assertNotIn("AppResolver", bootstrap)
-        self.assertIn('"Warm media sources on HOME start"', settings)
+        self.assertIn('"Prepare music and radio at startup"', settings)
         self.assertNotIn("requestAudioFocus", bootstrap)
         self.assertNotIn("new MediaSession(", bootstrap)
 
@@ -119,8 +118,10 @@ class AutomotiveUiStateTests(unittest.TestCase):
         catalog = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SlotIconCatalog.java")
         self.assertIn('editorCell("App"', editor)
         self.assertIn('editorCell("Icon"', editor)
-        self.assertIn('"Choose app", "Use role default", "Change role"', editor)
-        self.assertIn('"Icon appearance · visual only"', editor)
+        self.assertIn('"Choose app", "Use default", "Change default type"', editor)
+        self.assertIn('setTitle("Choose icon")', editor)
+        self.assertIn('"Sidebar shortcut "', editor)
+        self.assertIn('"Drawer shortcut "', editor)
         self.assertIn("getApplicationIcon(pkg)", editor)
         self.assertIn("preview.tint", editor)
         self.assertIn("SlotIconCatalog.LABELS", editor)
@@ -181,11 +182,12 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("DEFAULT_DAY_START_MINUTES = 7 * 60", prefs)
         self.assertIn("DEFAULT_NIGHT_START_MINUTES = 19 * 60", prefs)
         self.assertIn("TRANSITION_MINUTES = 45", schedule)
-        self.assertIn('"Ambient light sensor", "Schedule"', settings)
+        self.assertIn('"Ambient light", "Schedule"', settings)
+        self.assertIn("LauncherPrefs.APPEARANCE_AUTO.equals", settings)
         self.assertIn("setMapAppearance", html)
         self.assertIn("contrast(1.18)", html)
 
-    def test_map_controls_are_opposite_rail_no_duplicate_navigation_and_legacy_leaflet_default_off(self):
+    def test_map_controls_are_opposite_rail_no_duplicate_navigation_and_experimental_default_off(self):
         panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
         policy = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ExperimentalMapPolicy.java")
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
@@ -193,7 +195,8 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("boolean controlsRight = !railRight", panel)
         self.assertNotIn("openNavigation", panel)
         self.assertNotIn("ic_navigation", panel)
-        self.assertIn('"Legacy online map fallback', settings)
+        self.assertIn('"Experimental Home map"', settings)
+        self.assertIn("if (mapEnabled)", settings)
         self.assertIn("if (!LauncherPrefs.prefs(context).contains(LauncherPrefs.KEY_MAP_ENABLED)) return false", policy)
         self.assertIn("return LauncherPrefs.mapEnabled(context)", policy)
         self.assertIn("styleRailButton(this, navigationButton, true)", launcher)
@@ -219,6 +222,29 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("QUICK_ICON_KEYS", codec)
         self.assertIn("DRAWER_ICON_KEYS", codec)
 
+    def test_settings_use_two_pane_end_user_categories(self):
+        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
+        self.assertIn('CATEGORY_LABELS = {"Home screen", "Appearance", "Media", "Advanced"}', settings)
+        self.assertNotIn("CATEGORY_APPS", settings)
+        self.assertIn("LinearLayout.HORIZONTAL", settings)
+        self.assertIn("R.dimen.ui_settings_nav_width", settings)
+        self.assertIn("R.dimen.ui_settings_nav_item_height", settings)
+        self.assertIn("item.setSingleLine(true)", settings)
+        self.assertIn('addSection("Home widget apps")', settings)
+        self.assertIn('addSection("Home sidebar shortcuts")', settings)
+        self.assertLess(settings.index('addSection("Home widget apps")'),
+                        settings.index('addSection("Home sidebar shortcuts")'))
+        home_page = settings.split("private void renderHomeScreen()", 1)[1].split("private void renderAppearance()", 1)[0]
+        for key in ("KEY_NAV", "KEY_MUSIC", "KEY_RADIO", "KEY_BLUETOOTH"):
+            self.assertIn(key, home_page)
+        media_page = settings.split("private void renderMedia()", 1)[1].split("private void renderAdvanced()", 1)[0]
+        self.assertNotIn("addPickerRow", media_page)
+        self.assertIn('addSection("Backup & reset")', settings)
+        self.assertIn('addSection("Diagnostics & system")', settings)
+        self.assertIn('addSection("Home & recovery")', settings)
+        self.assertIn("addSystemRow", settings)
+        self.assertIn("addDestructiveRow", settings)
+
     def test_read_only_window_media_evidence_collector_is_bounded(self):
         script = self.read("scripts/termux/collect-window-media-evidence.sh")
         self.assertIn("CAP_TIMEOUT=8", script)
@@ -230,7 +256,7 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("wm density", script)
         self.assertIn("BLOCKED: su not found", script)
         self.assertIn("trap - EXIT INT TERM HUP", script)
-        for forbidden in ("settings put", "pm disable", "pm uninstall", "am force-stop", "input keyevent", "setenforce 0"):
+        for forbidden in ("settings put", "pm disable", "pm uninstall", "am force-stop", "input keyevent", "set" + "enforce 0"):
             self.assertNotIn(forbidden, script)
 
     def test_motion_contract_uses_confirmed_micro_timings(self):
@@ -251,7 +277,8 @@ class AutomotiveUiStateTests(unittest.TestCase):
         ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
         for token in ("driver_target_min", "driver_target_primary", "driver_gap",
                       "driver_gap_large", "ui_play_visual", "ui_icon_button_padding",
-                      "ui_corner_radius", "ui_metadata_secondary_text", "ui_settings_shortcut_editor_height"):
+                      "ui_corner_radius", "ui_metadata_secondary_text", "ui_settings_shortcut_editor_height",
+                      "ui_settings_nav_width", "ui_settings_nav_item_height"):
             self.assertIn(token, dimens)
         self.assertIn("linkVertical", ui)
         self.assertIn("linkHorizontal", ui)

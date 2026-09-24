@@ -10,6 +10,7 @@
     <color name="ui_icon">#F5F5F5</color>
     <color name="ui_accent">#FF7043</color>
     <color name="ui_accent_dark">#E65F38</color>
+    <color name="ui_destructive">#EF5350</color>
     <color name="ui_ripple">#55FFFFFF</color>
 
     <color name="ui_night_black">#000000</color>

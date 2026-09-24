@@ -37,7 +37,7 @@ final class ShortcutEditorView extends LinearLayout {
     }
 
     private void build() {
-        String title = (drawer ? "Drawer " : "Quick ") + (index + 1);
+        String title = (drawer ? "Drawer shortcut " : "Sidebar shortcut ") + (index + 1);
         String packageKey = packageKey();
         String role = role();
         String appearance = drawer ? UiPersonalizationPrefs.drawerQuickIcon(activity, index)
@@ -115,12 +115,13 @@ final class ShortcutEditorView extends LinearLayout {
 
     private String targetLabel(String packageKey, String role) {
         String pkg = LauncherPrefs.packageFor(activity, packageKey);
-        return pkg.isEmpty() ? "Role · " + RoleIconCatalog.label(role) : AppResolver.labelFor(activity, pkg, pkg);
+        return pkg.isEmpty() ? "Default · " + RoleIconCatalog.label(role) : AppResolver.labelFor(activity, pkg, pkg);
     }
 
     private void chooseTarget() {
-        new AlertDialog.Builder(activity).setTitle((drawer ? "Drawer " : "Quick ") + (index + 1) + " app")
-                .setItems(new String[] {"Choose app", "Use role default", "Change role"}, (dialog, which) -> {
+        new AlertDialog.Builder(activity)
+                .setTitle((drawer ? "Drawer shortcut " : "Sidebar shortcut ") + (index + 1) + " app")
+                .setItems(new String[] {"Choose app", "Use default", "Change default type"}, (dialog, which) -> {
                     if (which == 0) {
                         Intent intent = new Intent(activity, AppDrawerActivity.class);
                         intent.putExtra(AppDrawerActivity.EXTRA_PICK_KEY, packageKey());
@@ -135,7 +136,7 @@ final class ShortcutEditorView extends LinearLayout {
 
     private void chooseRole() {
         String current = role();
-        new AlertDialog.Builder(activity).setTitle("Use role shortcut (clears app assignment)")
+        new AlertDialog.Builder(activity).setTitle("Choose default shortcut")
                 .setSingleChoiceItems(RoleIconCatalog.LABELS, indexOf(RoleIconCatalog.VALUES, current), (dialog, which) -> {
                     if (drawer) ShortcutSlot.chooseRole(activity, LauncherPrefs.DRAWER_ROLE_KEYS[index],
                             LauncherPrefs.DRAWER_QUICK_KEYS[index], RoleIconCatalog.VALUES[which]);
@@ -149,7 +150,7 @@ final class ShortcutEditorView extends LinearLayout {
     private void chooseIcon() {
         String current = drawer ? UiPersonalizationPrefs.drawerQuickIcon(activity, index)
                 : UiPersonalizationPrefs.quickIcon(activity, index);
-        new AlertDialog.Builder(activity).setTitle("Icon appearance · visual only")
+        new AlertDialog.Builder(activity).setTitle("Choose icon")
                 .setSingleChoiceItems(SlotIconCatalog.LABELS, indexOf(SlotIconCatalog.VALUES, current), (dialog, which) -> {
                     if (drawer) UiPersonalizationPrefs.setDrawerQuickIcon(activity, index, SlotIconCatalog.VALUES[which]);
                     else UiPersonalizationPrefs.setQuickIcon(activity, index, SlotIconCatalog.VALUES[which]);
