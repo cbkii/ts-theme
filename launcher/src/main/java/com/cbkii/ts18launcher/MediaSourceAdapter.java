@@ -72,10 +72,13 @@ final class MediaSourceAdapter {
 
         ComponentName browser = findExportedService(context, packageName, MEDIA_BROWSER_ACTION);
         if (browser != null) {
-            boolean exactAuxio = AUXIO_PACKAGE.equals(packageName)
-                    && AUXIO_BROWSER_SERVICE.equals(browser.getClassName());
+            // Exact TS18 evidence showed that root `am startservice` for Auxio reaches
+            // ActivityManager but is rejected by Android's background-service policy. Do not
+            // repeat that known-ineffective mutation. MediaBrowser binding remains valid when the
+            // source service already exists; genuinely cold readiness is owned by the masked
+            // foreground-prime coordinator instead.
             return new MediaSourceAdapter(packageName, Kind.MEDIA_BROWSER, browser,
-                    MEDIA_BROWSER_ACTION, exactAuxio, false, true, "");
+                    MEDIA_BROWSER_ACTION, false, false, true, "");
         }
 
         return sessionOnly(packageName, "No exported background media service was found");
