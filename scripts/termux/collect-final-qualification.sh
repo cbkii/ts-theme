@@ -145,8 +145,11 @@ manifest_tmp="$out_base/.manifest-$stamp.tmp"
 mv -- "$manifest_tmp" "$out/MANIFEST.sha256" || exit 1
 (cd "$out" && sha256sum -c MANIFEST.sha256 >MANIFEST_VERIFY.txt) || exit 1
 archive="$out.zip"
+archive_verify="$archive.verify.txt"
 (cd "$out_base" && zip -q -r "$archive" "${out##*/}") || exit 1
-unzip -tq "$archive" >"$out/ARCHIVE_VERIFY.txt" || exit 1
+# Verification is deliberately adjacent to the immutable ZIP. Do not mutate the sealed evidence
+# directory after the archive is created, otherwise directory and archive provenance diverge.
+unzip -tq "$archive" >"$archive_verify" || exit 1
 sha256sum "$archive" >"$archive.sha256"
-printf 'Output: %s\nArchive: %s\n' "$out" "$archive"
+printf 'Output: %s\nArchive: %s\nArchive verify: %s\n' "$out" "$archive" "$archive_verify"
 (( fails == 0 && required_blocked == 0 ))
