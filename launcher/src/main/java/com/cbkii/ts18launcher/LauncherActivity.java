@@ -27,7 +27,6 @@ import java.util.List;
 public class LauncherActivity extends Activity implements MediaListenerService.Observer {
     private static final int REQUEST_LOCATION = 4101;
     private static final int MAX_QUICK_SLOTS = 6;
-    private static final long MEDIA_REFRESH_INTERVAL_MS = 1000L;
     private static final long MEDIA_STATUS_MS = 1800L;
     private static final long MEDIA_READY_RECONCILE_DELAY_MS = 250L;
 
@@ -52,13 +51,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private final ImageButton[] quickButtons = new ImageButton[MAX_QUICK_SLOTS];
     private final FrameLayout[] quickCells = new FrameLayout[MAX_QUICK_SLOTS];
     private final Handler mediaRefreshHandler = new Handler(Looper.getMainLooper());
-    private final Runnable mediaRefreshPoll = new Runnable() {
-        @Override public void run() {
-            if (!mediaRefreshPolling) return;
-            MediaListenerService.refreshActiveSessions();
-            mediaRefreshHandler.postDelayed(this, MEDIA_REFRESH_INTERVAL_MS);
-        }
-    };
     private final Runnable mediaReadyReconcile = this::runMediaReadiness;
     private MapPanel mapPanel;
     private AppDrawerPanel appDrawerPanel;
@@ -67,7 +59,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private StartupBootstrapCoordinator startupBootstrap;
     private boolean launchedAsHome;
     private boolean locationPermissionRequested;
-    private boolean mediaRefreshPolling;
     private boolean mediaStatusActive;
     private int mediaStatusGeneration;
     private String mediaRadioPackage = "";
@@ -82,6 +73,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
         mediaBootstrapper = new MediaSourceBootstrapper(this);
+        startupBootstrap = new StartupBootstrapCoordinator(this, mediaBootstrapper);
         rememberMediaConfiguration();
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
@@ -110,7 +102,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             applyGeometry(root.getWidth(), root.getHeight());
             if (coldProcessStart && (launchedAsHome || HomeMode.isDefaultHome(this))
                     && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-                startupBootstrap = new StartupBootstrapCoordinator(this, mediaBootstrapper);
                 startupBootstrap.start();
             }
         });
@@ -167,7 +158,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         appearanceController.start();
         MediaListenerService.addObserver(this);
         MediaListenerService.refreshActiveSessions();
-        startMediaRefreshPolling();
         applyRailConfiguration();
         scheduleMediaReadiness();
         if (appDrawerPanel != null) appDrawerPanel.refreshPreferences();
@@ -177,12 +167,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onStop() {
         appearanceController.stop();
-        stopMediaRefreshPolling();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        boolean commandPending = mediaStatusActive;
-        mediaStatusGeneration++;
-        mediaStatusActive = false;
-        if (commandPending) resetMediaBootstrapper();
+        boolean controlledPrime = startupBootstrap != null && startupBootstrap.isRunning();
+        if (!controlledPrime) {
+            boolean commandPending = mediaStatusActive;
+            mediaStatusGeneration++;
+            mediaStatusActive = false;
+            if (commandPending) resetMediaBootstrapper();
+        }
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (mapPanel != null) mapPanel.stop();
@@ -190,7 +182,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onDestroy() {
-        stopMediaRefreshPolling();
         mediaRefreshHandler.removeCallbacksAndMessages(null);
         if (startupBootstrap != null) startupBootstrap.destroy();
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();
@@ -203,18 +194,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) { appDrawerPanel.hidePanel(); return; }
         if (launchedAsHome || HomeMode.isDefaultHome(this)) return;
         super.onBackPressed();
-    }
-
-    private void startMediaRefreshPolling() {
-        if (mediaRefreshPolling) return;
-        mediaRefreshPolling = true;
-        mediaRefreshHandler.removeCallbacks(mediaRefreshPoll);
-        mediaRefreshHandler.postDelayed(mediaRefreshPoll, MEDIA_REFRESH_INTERVAL_MS);
-    }
-
-    private void stopMediaRefreshPolling() {
-        mediaRefreshPolling = false;
-        mediaRefreshHandler.removeCallbacks(mediaRefreshPoll);
     }
 
     private void runMediaReadiness() {
@@ -398,12 +377,37 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         return configuredMusicPackage();
     }
 
+    private boolean snapshotSupports(String packageName, MediaListenerService.Command command) {
+        return packageName != null && ((!genericSnapshot.packageName.isEmpty()
+                && packageName.equals(genericSnapshot.packageName) && genericSnapshot.supports(command))
+                || (!radioSnapshot.packageName.isEmpty()
+                && packageName.equals(radioSnapshot.packageName) && radioSnapshot.supports(command)));
+    }
+
     private void runSourceCommand(String label, String packageName, MediaListenerService.Command command) {
         int generation = ++mediaStatusGeneration;
         mediaStatusActive = true;
         String appLabel = AppResolver.labelFor(this, packageName, label);
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
                 ? "Preparing " + label + "…" : label, appLabel);
+
+        if (command == MediaListenerService.Command.PLAY_PAUSE
+                && !snapshotSupports(packageName, command)
+                && startupBootstrap != null && !startupBootstrap.isRunning()) {
+            MediaEventTrace.record("readiness", "interactive-prime-request", packageName);
+            startupBootstrap.primeForCommand(packageName, (ready, detail) -> {
+                if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
+                MediaEventTrace.record("readiness", ready ? "interactive-prime-ready" : "interactive-prime-fallback",
+                        packageName + " · " + detail);
+                dispatchSourceCommand(label, packageName, command, generation);
+            });
+            return;
+        }
+        dispatchSourceCommand(label, packageName, command, generation);
+    }
+
+    private void dispatchSourceCommand(String label, String packageName,
+                                       MediaListenerService.Command command, int generation) {
         mediaBootstrapper.command(label, packageName, command, (success, message) -> {
             if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
             MediaListenerService.refreshActiveSessions();
@@ -556,7 +560,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (radioPanel == null || musicPanel == null || radioPlayPause == null || playPause == null) return;
         boolean radioActive = MediaSelection.RADIO.equals(mediaSelection.displayed());
         boolean radioOnRight = LauncherPrefs.radioOnRight(this);
-        // Gradient emphasis points inward toward shared metadata; both groups retain a subtle accent.
         radioPanel.setBackground(AutomotiveUi.mediaGroupBackground(this, radioActive, !radioOnRight));
         musicPanel.setBackground(AutomotiveUi.mediaGroupBackground(this, !radioActive, radioOnRight));
         AutomotiveUi.styleSourcePrimaryButton(this, radioPlayPause, radioActive);
@@ -594,9 +597,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         else {
             MediaEventTrace.record("drawer", "open-request");
             if (mapPanel != null) mapPanel.stop();
-            appDrawerPanel.refreshPreferences();
             appDrawerPanel.showPanel();
-            MediaEventTrace.record("drawer", "visible");
         }
     }
 
