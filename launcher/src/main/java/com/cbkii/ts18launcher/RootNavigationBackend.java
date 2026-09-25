@@ -29,6 +29,22 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
             NavigationWindowBounds bounds, int taskId, int transactionId, Callback callback) {
         submit(() -> {
             ensureNavigationPermissions(packageName);
+            if (taskId > 0) {
+                NavigationHelperResult verified = helper.run("verify-native", packageName,
+                        Integer.toString(bounds.left), Integer.toString(bounds.top),
+                        Integer.toString(bounds.right), Integer.toString(bounds.bottom),
+                        Integer.toString(taskId));
+                if (verified.success) {
+                    android.util.Log.i("TS18Nav", "present skipped; task already matches HOME bounds task="
+                            + taskId);
+                    return verified;
+                }
+                if ("TASK_NOT_FOUND".equals(verified.code)
+                        || "TASK_AMBIGUOUS".equals(verified.code)
+                        || "COMPONENT_MISMATCH".equals(verified.code)) return verified;
+                android.util.Log.i("TS18Nav", "verified mismatch before repair task=" + taskId
+                        + " code=" + verified.code);
+            }
             return helper.run("present-native", packageName, launchComponent,
                     Integer.toString(bounds.left), Integer.toString(bounds.top),
                     Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId),
