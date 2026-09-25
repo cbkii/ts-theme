@@ -25,6 +25,7 @@ final class NavigationRootHelper {
     private static final String ROOT_HELPER = ROOT_DIR + "/nav-window.sh";
     private static final long INSTALL_TIMEOUT_MS = 4000L;
     private static final long COMMAND_TIMEOUT_MS = 12000L;
+    private static final long HOME_FOCUS_TIMEOUT_MS = 1800L;
 
     private final Context context;
     private boolean installedThisProcess;
@@ -58,11 +59,10 @@ final class NavigationRootHelper {
     }
 
     /**
-     * Parks an already-windowed navigation task behind HOME without starting an Activity.
-     *
-     * A warm suspend is deliberately a task-focus transaction only. Reissuing `am start` for
-     * the navigation Activity can deliver a new Intent to a SINGLE_TOP Activity and therefore
-     * re-enter application startup/permission code even though the task already exists.
+     * Parks an already-windowed navigation task behind HOME without re-delivering its Activity.
+     * Routine drawer parking deliberately performs only status -> HOME focus -> status. Exact top
+     * Activity component equality is not an ownership invariant: one package/task may legitimately
+     * transition between startup and map Activities while this handoff is occurring.
      */
     synchronized NavigationHelperResult parkWindowedTask(String packageName, int taskId,
             String homePackage, int homeTaskId) {
@@ -72,8 +72,34 @@ final class NavigationRootHelper {
             return NavigationHelperResult.failure("BAD_ARGUMENT", "");
         }
 
-        return run("park-windowed", packageName, Integer.toString(taskId),
-                homePackage, Integer.toString(homeTaskId));
+        NavigationHelperResult before = run("status", packageName, Integer.toString(taskId));
+        if (!before.success) return before;
+        if (before.taskId != taskId || before.displayId != 0 || before.windowingMode != 5) {
+            return NavigationHelperResult.failure("SUSPEND_STATE_MISMATCH", before.raw);
+        }
+
+        ProcessResult focus = executeRoot(homeFocusCommand(homeTaskId), HOME_FOCUS_TIMEOUT_MS);
+        if (focus.timedOut) return NavigationHelperResult.failure("HOME_FOCUS_TIMEOUT", focus.output);
+        if (focus.exitCode != 0) return NavigationHelperResult.failure("HOME_FOCUS_FAILED", focus.output);
+
+        NavigationHelperResult after = run("status", packageName, Integer.toString(taskId));
+        if (!after.success) return after;
+        if (after.taskId != before.taskId || after.userId != before.userId
+                || after.displayId != before.displayId || after.windowingMode != 5
+                || !safeEquals(after.packageName, before.packageName)
+                || !safeEquals(after.bounds, before.bounds)) {
+            return NavigationHelperResult.failure("SUSPEND_STATE_CHANGED", after.raw);
+        }
+        return after;
+    }
+
+    static String homeFocusCommand(int homeTaskId) {
+        return "PATH=/system/bin:/system/xbin:/vendor/bin; export PATH; "
+                + "exec /system/bin/am task focus " + homeTaskId;
+    }
+
+    private static boolean safeEquals(String first, String second) {
+        return first == null ? second == null : first.equals(second);
     }
 
     private NavigationHelperResult ensureInstalled() {
@@ -132,11 +158,13 @@ final class NavigationRootHelper {
     private static ProcessResult executeRoot(String command, long timeoutMs) {
         Process process = null;
         try {
-            process = new ProcessBuilder("su", "-c", command).redirectErrorStream(true).start();
-            boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+            long shellSeconds = Math.max(1L, (timeoutMs + 999L) / 1000L);
+            String wrapped = "exec /system/bin/toybox timeout -k 1 " + shellSeconds
+                    + " /system/bin/sh -c " + singleQuote(command);
+            process = new ProcessBuilder("su", "-c", wrapped).redirectErrorStream(true).start();
+            boolean finished = process.waitFor(timeoutMs + 1500L, TimeUnit.MILLISECONDS);
             if (!finished) {
-                process.destroy();
-                if (!process.waitFor(250L, TimeUnit.MILLISECONDS)) process.destroyForcibly();
+                terminate(process);
                 return new ProcessResult(-1, "", true);
             }
             return new ProcessResult(process.exitValue(), readAll(process), false);
@@ -144,8 +172,21 @@ final class NavigationRootHelper {
             return new ProcessResult(-1, e.getClass().getSimpleName(), false);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            if (process != null) process.destroy();
+            if (process != null) terminate(process);
             return new ProcessResult(-1, "Interrupted", true);
+        } finally {
+            if (process != null && process.isAlive()) process.destroyForcibly();
+        }
+    }
+
+    private static void terminate(Process process) {
+        if (process == null) return;
+        process.destroy();
+        try {
+            if (!process.waitFor(300L, TimeUnit.MILLISECONDS)) process.destroyForcibly();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            process.destroyForcibly();
         }
     }
 
