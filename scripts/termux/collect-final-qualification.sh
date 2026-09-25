@@ -24,7 +24,7 @@ termux_bin="${TS18_TERMUX_BIN:-${PREFIX:-/data/data/com.termux/files/usr}/bin}"
 android_path="${TS18_ANDROID_PATH:-/system/bin:/system/xbin:/vendor/bin:/product/bin}"
 export PATH="$termux_bin:$android_path"
 case "$android_path" in *[!A-Za-z0-9._:/-]*) printf 'Invalid Android PATH\n' >&2; exit 64 ;; esac
-for tool in bash timeout date mkdir sha256sum zip unzip find sort xargs cat grep tail; do
+for tool in bash timeout date mkdir sha256sum zip unzip find sort xargs cat grep tail wc head mv; do
   command -v "$tool" >/dev/null 2>&1 || {
     printf 'Missing prerequisite: %s\n' "$tool" >&2
     exit 127
@@ -40,6 +40,7 @@ fails=0
 blocked=0
 required_blocked=0
 warns=0
+max_capture_bytes=4194304
 
 record() {
   printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >>"$status"
@@ -53,12 +54,23 @@ record() {
 }
 
 capture() {
-  local name="$1" class="$2" seconds="$3" rc=0
+  local name="$1" class="$2" seconds="$3" rc=0 truncated=0 bytes
   shift 3
   mkdir -p -- "$(dirname -- "$out/$name")"
   timeout -k 1 "$seconds" "$@" >"$out/$name" 2>&1 || rc=$?
+  bytes="$(wc -c <"$out/$name")"
+  if (( bytes > max_capture_bytes )); then
+    head -c "$max_capture_bytes" "$out/$name" >"$out/$name.tmp" || return 1
+    mv -- "$out/$name.tmp" "$out/$name" || return 1
+    printf '\n# TRUNCATED: original_bytes=%s limit_bytes=%s\n' \
+      "$bytes" "$max_capture_bytes" >>"$out/$name"
+    truncated=1
+  fi
   printf '\n# exit_status=%s\n' "$rc" >>"$out/$name"
-  if (( rc == 0 )); then record "$name" "$class" PASS 0
+  if (( truncated )); then
+    if [[ "$class" == REQUIRED ]]; then record "$name" "$class" FAIL "$rc;TRUNCATED"
+    else record "$name" "$class" WARN "$rc;TRUNCATED"; fi
+  elif (( rc == 0 )); then record "$name" "$class" PASS 0
   elif [[ "$class" == REQUIRED ]]; then record "$name" "$class" FAIL "$rc"
   else record "$name" "$class" WARN "$rc"; fi
 }
@@ -127,9 +139,11 @@ else
 fi
 
 printf 'fails=%s\nblocked=%s\nwarns=%s\n' "$fails" "$blocked" "$warns" >"$out/SUMMARY.txt"
+manifest_tmp="$out_base/.manifest-$stamp.tmp"
 (cd "$out" && find . -type f ! -name MANIFEST.sha256 ! -name MANIFEST_VERIFY.txt -print0 \
-  | sort -z | xargs -0 sha256sum >MANIFEST.sha256 \
-  && sha256sum -c MANIFEST.sha256 >MANIFEST_VERIFY.txt) || exit 1
+  | sort -z | xargs -0 sha256sum) >"$manifest_tmp" || exit 1
+mv -- "$manifest_tmp" "$out/MANIFEST.sha256" || exit 1
+(cd "$out" && sha256sum -c MANIFEST.sha256 >MANIFEST_VERIFY.txt) || exit 1
 archive="$out.zip"
 (cd "$out_base" && zip -q -r "$archive" "${out##*/}") || exit 1
 unzip -tq "$archive" >"$out/ARCHIVE_VERIFY.txt" || exit 1

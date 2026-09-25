@@ -12,7 +12,7 @@ COLLECTOR = ROOT / "scripts/termux/collect-final-qualification.sh"
 
 
 class FinalCollectorTest(unittest.TestCase):
-    def collect(self, user="0", wm_status=0):
+    def collect(self, user="0", wm_status=0, large_activity=False):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             binaries = base / "bin"
@@ -25,13 +25,16 @@ class FinalCollectorTest(unittest.TestCase):
                     "wm) if [ \"$1\" = size ] && [ \"$TEST_WM_STATUS\" != 0 ]; "
                     "then exit \"$TEST_WM_STATUS\"; fi; echo 'Physical size: 1280x720' ;;\n"
                     "getprop) echo 'test.build' ;;\n"
-                    "dumpsys) echo 'test snapshot' ;;\n"
+                    "dumpsys) if [ \"$1\" = activity ] && [ \"$TEST_LARGE_ACTIVITY\" = 1 ]; "
+                    "then head -c 4400000 /dev/zero | tr '\\000' x; "
+                    "else echo 'test snapshot'; fi ;;\n"
                     "logcat) echo 'test event' ;;\n"
                     "esac\n")
                 command.chmod(0o700)
             env = {**os.environ, "TS18_TERMUX_BIN": str(binaries),
                    "TS18_ANDROID_PATH": "/usr/bin:/bin", "TEST_ANDROID_USER": user,
-                   "TEST_WM_STATUS": str(wm_status)}
+                   "TEST_WM_STATUS": str(wm_status),
+                   "TEST_LARGE_ACTIVITY": str(int(large_activity))}
             result = subprocess.run(["bash", str(COLLECTOR), "--no-root", "--out-base", str(base)],
                                     env=env, capture_output=True, text=True, timeout=25)
             exported = next(base.glob("final-*/STATUS.tsv"))
@@ -62,6 +65,12 @@ class FinalCollectorTest(unittest.TestCase):
         self.assertIn("identity/android-user.txt\tREQUIRED\tBLOCKED\t1", rows)
         self.assertIn("packages-BLOCKED.txt\tOPTIONAL\tBLOCKED\t1", rows)
         self.assertIn("display/wm-size.txt\tREQUIRED\tPASS\t0", rows)
+        self.assertTrue(archive_ok)
+
+    def test_truncated_required_output_is_reported_as_failure(self):
+        result, rows, archive_ok, _ = self.collect(large_activity=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("window/activity.txt\tREQUIRED\tFAIL\t0;TRUNCATED", rows)
         self.assertTrue(archive_ok)
 
 
