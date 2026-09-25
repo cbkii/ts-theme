@@ -27,7 +27,7 @@ safe_label="$(printf '%s' "$label" | tr -cs 'A-Za-z0-9._-' '_' | sed 's/^_*//;s/
 termux_bin="${TS18_TERMUX_BIN:-${PREFIX:-/data/data/com.termux/files/usr}/bin}"
 android_path="${TS18_ANDROID_PATH:-/system/bin:/system/xbin:/vendor/bin:/product/bin}"
 export PATH="$termux_bin:$android_path"
-for tool in date mkdir sha256sum timeout cat awk sed tr; do
+for tool in date mkdir sha256sum timeout cat awk sed tr find sort xargs rm; do
   command -v "$tool" >/dev/null 2>&1 || { printf 'Missing prerequisite: %s\n' "$tool" >&2; exit 127; }
 done
 
@@ -44,13 +44,17 @@ method=direct
 rc=0
 
 if timeout -k 1 6 /system/bin/screencap -p "$png" 2>"$out/screencap.stderr"; then
-  :
+  rc=0
 else
   rc=$?
   rm -f -- "$png"
   if command -v su >/dev/null 2>&1; then
     method=root-stdout
-    timeout -k 1 6 su -c 'exec /system/bin/screencap -p' >"$png" 2>"$out/screencap.stderr" || rc=$?
+    if timeout -k 1 6 su -c 'exec /system/bin/screencap -p' >"$png" 2>"$out/screencap.stderr"; then
+      rc=0
+    else
+      rc=$?
+    fi
   fi
 fi
 end_ms="$(uptime_ms)"
@@ -58,7 +62,7 @@ wall_end="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z')"
 
 if [[ ! -s "$png" ]]; then
   rm -f -- "$png"
-  rc=${rc:-1}
+  (( rc == 0 )) && rc=1
 fi
 
 {
@@ -82,7 +86,7 @@ timeout -k 1 5 /system/bin/logcat -d -t 160 -v epoch -s TS18Media:I TS18Nav:I TS
 
 (
   cd "$out" || exit 1
-  find . -maxdepth 1 -type f ! -name MANIFEST.sha256 -print0 \
+  find . -maxdepth 1 -type f ! -name MANIFEST.sha256 ! -name MANIFEST_VERIFY.txt -print0 \
     | sort -z | xargs -0 sha256sum >MANIFEST.sha256
   sha256sum -c MANIFEST.sha256 >MANIFEST_VERIFY.txt
 ) || exit 1
