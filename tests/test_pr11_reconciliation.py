@@ -16,6 +16,8 @@ class Pr11ReconciliationTests(unittest.TestCase):
         self.assertIn("appDrawerPanel.preload()", launcher)
         self.assertIn("appsButton.setOnLongClickListener", launcher)
         self.assertIn("new Intent(this, SettingsActivity.class)", launcher)
+        self.assertNotIn("MEDIA_REFRESH_INTERVAL_MS", launcher)
+        self.assertNotIn("mediaRefreshPoll", launcher)
 
     def test_settings_keep_startup_overlay_and_non_blocking_navigation_warning(self):
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
@@ -35,11 +37,28 @@ class Pr11ReconciliationTests(unittest.TestCase):
         self.assertLess(method.index("show.run()"), method.index("suspendForLauncherSurface"))
         self.assertIn("Physical visibility and touch are not inferred", controller)
 
-    def test_fullscreen_uses_same_task_resize_without_unproven_resizeable_command(self):
+    def test_fullscreen_uses_same_task_without_reapplying_non_null_bounds(self):
         backend = self.read("launcher/src/main/java/com/cbkii/ts18launcher/RootNavigationBackend.java")
-        self.assertIn('"am task resize " + taskId + " 0 0', backend)
-        self.assertNotIn("am task resizeable", backend)
-        self.assertIn("FULLSCREEN_BOUNDS_STALE", backend)
+        helper = self.read("launcher/src/main/assets/nav/nav-window.sh")
+        self.assertIn('helper.run("fullscreen", packageName, Integer.toString(taskId))', backend)
+        self.assertIn("WindowManager-owned", backend)
+        self.assertNotIn("fullscreenResizeCommand", backend)
+        self.assertNotIn('"am task resize " + taskId + " 0 0', backend)
+        fullscreen = helper.split("move_task_fullscreen()", 1)[1].split(
+            '[ "$(id -u 2>/dev/null)" = 0 ]', 1
+        )[0]
+        self.assertIn('--windowingMode 1 --task "$wanted_task"', fullscreen)
+        self.assertIn('wait_state "$pkg" "$wanted_task" 1 any', fullscreen)
+        self.assertNotIn("am task resize ", fullscreen)
+
+    def test_known_navigation_task_is_verified_before_repair(self):
+        backend = self.read("launcher/src/main/java/com/cbkii/ts18launcher/RootNavigationBackend.java")
+        present = backend.split("@Override public void present", 1)[1].split(
+            "@Override public void verify", 1
+        )[0]
+        self.assertLess(present.index('helper.run("verify-native"'),
+                        present.index('helper.run("present-native"'))
+        self.assertIn("present skipped; task already matches HOME bounds", present)
 
 
 if __name__ == "__main__":
