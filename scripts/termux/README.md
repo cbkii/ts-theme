@@ -48,6 +48,20 @@ take a separate short state snapshot using the navigation collector below. Histo
 captures from the earlier heavy monitor are evidence of behaviour, not a clean latency
 baseline.
 
+After the physical action, capture one read-only final state snapshot:
+
+```bash
+bash scripts/termux/collect-final-qualification.sh
+```
+
+The final collector uses the Android command PATH in child shells, records an exit status
+for every capture, keeps required failures separate from root or user dependent blocked
+checks, and verifies its manifest and ZIP under `/storage/emulated/0/Download/ts-theme/`.
+It does not install a boot service or repeatedly sample ActivityManager, gfxinfo or
+SurfaceFlinger. Use `--no-root` if a root probe is inappropriate; it is labelled BLOCKED.
+The three earlier off-repository collector runs returned exit 127 on required Android
+commands and should not be interpreted as evidence that those Android services are absent.
+
 ```bash
 bash scripts/termux/measure-standalone-launcher.sh
 ```
