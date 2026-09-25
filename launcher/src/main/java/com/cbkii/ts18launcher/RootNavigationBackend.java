@@ -9,8 +9,6 @@ import java.util.concurrent.Executors;
 
 /** Shared bounded executor for one root-backed navigation experiment. */
 abstract class RootNavigationBackend implements NavigationSurfaceBackend {
-    private static final long FULLSCREEN_RESIZE_TIMEOUT_MS = 1400L;
-
     private final Context context;
     private final NavigationRootHelper helper;
     private final ExecutorService executor;
@@ -62,38 +60,15 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
             ensureNavigationPermissions(packageName);
             NavigationHelperResult transitioned =
                     helper.run("fullscreen", packageName, Integer.toString(taskId));
-            if (!transitioned.success || transitioned.windowingMode != 1) return transitioned;
-
-            // Physical TS18 qualification proved that mode=1 alone can retain the old freeform
-            // application geometry. Force one bounded standard Android task re-layout to the real
-            // physical display, then verify the same task/package/user/display again. No Topway
-            // property/file writer is involved, and park-windowed remains the reversible return.
-            RootShell.Result resize = RootShell.runMillis(
-                    fullscreenResizeCommand(taskId), FULLSCREEN_RESIZE_TIMEOUT_MS);
-            if (!resize.success()) {
-                android.util.Log.w("TS18Nav", "fullscreen physical resize rejected task=" + taskId
-                        + " exit=" + resize.exitCode);
-                return NavigationHelperResult.failure("FULLSCREEN_RESIZE_FAILED", resize.output);
-            }
-            String expectedBounds = parseFullBounds(resize.output);
-            if (expectedBounds.isEmpty()) {
-                return NavigationHelperResult.failure("FULLSCREEN_SIZE_UNREADABLE", resize.output);
-            }
-
-            NavigationHelperResult verified =
-                    helper.run("status", packageName, Integer.toString(taskId));
-            if (!verified.success || verified.taskId != taskId || verified.windowingMode != 1) {
-                return NavigationHelperResult.failure("FULLSCREEN_VERIFY_FAILED", verified.raw);
-            }
-            if (!expectedBounds.equals(verified.bounds)
-                    && !"0,0,0,0".equals(verified.bounds)) {
-                android.util.Log.w("TS18Nav", "fullscreen stale bounds task=" + taskId
-                        + " expected=" + expectedBounds + " observed=" + verified.bounds);
-                return NavigationHelperResult.failure("FULLSCREEN_BOUNDS_STALE", verified.raw);
-            }
-            android.util.Log.i("TS18Nav", "fullscreen geometry verified task=" + taskId
-                    + " bounds=" + verified.bounds + " physical=" + expectedBounds);
-            return verified;
+            // Do not follow a successful fullscreen transition with non-null task bounds. On
+            // Android Q/AOSP, applying explicit bounds to a non-freeform task is itself a route
+            // back into freeform. Let WindowManager own fullscreen geometry/insets and leave
+            // physical visibility/touch as an exact-device qualification boundary.
+            if (!transitioned.success || transitioned.taskId != taskId
+                    || transitioned.windowingMode != 1) return transitioned;
+            android.util.Log.i("TS18Nav", "fullscreen mode verified task=" + taskId
+                    + " bounds=" + transitioned.bounds + " (WindowManager-owned)");
+            return transitioned;
         }, callback);
     }
 
@@ -121,28 +96,6 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     "permission mitigation failed open package=" + packageName
                             + " detail=" + result.detail);
         }
-    }
-
-    static String fullscreenResizeCommand(int taskId) {
-        return "PATH=/system/bin:/system/xbin:/vendor/bin; export PATH; "
-                + "size=$(wm size 2>/dev/null | awk '/Physical size:/ {print $3; exit}'); "
-                + "case \"$size\" in [0-9]*x[0-9]*) ;; *) exit 41;; esac; "
-                + "w=${size%x*}; h=${size#*x}; "
-                + "case \"$w:$h\" in *[!0-9:]*|:|*:) exit 42;; esac; "
-                + "[ \"$w\" -gt 0 ] && [ \"$h\" -gt 0 ] || exit 43; "
-                + "am task resize " + taskId + " 0 0 \"$w\" \"$h\" >/dev/null 2>&1 || exit 44; "
-                + "printf 'FULL_BOUNDS=0,0,%s,%s\\n' \"$w\" \"$h\"";
-    }
-
-    static String parseFullBounds(String output) {
-        if (output == null || output.isEmpty()) return "";
-        for (String line : output.split("\\r?\\n")) {
-            String trimmed = line.trim();
-            if (!trimmed.startsWith("FULL_BOUNDS=")) continue;
-            String bounds = trimmed.substring("FULL_BOUNDS=".length());
-            return bounds.matches("[0-9]+,[0-9]+,[0-9]+,[0-9]+") ? bounds : "";
-        }
-        return "";
     }
 
     private static String taskHint(int taskId) {
