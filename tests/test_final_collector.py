@@ -42,25 +42,29 @@ class FinalCollectorTest(unittest.TestCase):
             archive = next(base.glob("final-*.zip"))
             with zipfile.ZipFile(archive) as z:
                 archive_ok = z.testzip() is None
+                archived_names = set(z.namelist())
             verified = (exported.parent / "MANIFEST_VERIFY.txt").read_text()
-            return result, rows, archive_ok, verified
+            archive_verify = Path(str(archive) + ".verify.txt")
+            return result, rows, archive_ok, verified, archive_verify.read_text(), archived_names
 
     def test_pass_keeps_optional_root_block_separate_and_verifies_archive(self):
-        result, rows, archive_ok, verified = self.collect()
+        result, rows, archive_ok, verified, archive_verify, archived_names = self.collect()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("display/wm-size.txt\tREQUIRED\tPASS\t0", rows)
         self.assertIn("identity/root.txt\tOPTIONAL\tBLOCKED\t0", rows)
         self.assertTrue(archive_ok)
         self.assertIn("OK", verified)
+        self.assertIn("No errors detected", archive_verify)
+        self.assertFalse(any(name.endswith("ARCHIVE_VERIFY.txt") for name in archived_names))
 
     def test_required_command_not_found_cannot_pass(self):
-        result, rows, archive_ok, _ = self.collect(wm_status=127)
+        result, rows, archive_ok, _, _, _ = self.collect(wm_status=127)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("display/wm-size.txt\tREQUIRED\tFAIL\t127", rows)
         self.assertTrue(archive_ok)
 
     def test_ambiguous_android_user_blocks_dependent_evidence(self):
-        result, rows, archive_ok, _ = self.collect(user="Current user: 0\nuser: 10")
+        result, rows, archive_ok, _, _, _ = self.collect(user="Current user: 0\nuser: 10")
         self.assertNotEqual(0, result.returncode)
         self.assertIn("identity/android-user.txt\tREQUIRED\tBLOCKED\t1", rows)
         self.assertIn("packages-BLOCKED.txt\tOPTIONAL\tBLOCKED\t1", rows)
@@ -68,7 +72,7 @@ class FinalCollectorTest(unittest.TestCase):
         self.assertTrue(archive_ok)
 
     def test_truncated_required_output_is_reported_as_failure(self):
-        result, rows, archive_ok, _ = self.collect(large_activity=True)
+        result, rows, archive_ok, _, _, _ = self.collect(large_activity=True)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("window/activity.txt\tREQUIRED\tFAIL\t0;TRUNCATED", rows)
         self.assertTrue(archive_ok)
