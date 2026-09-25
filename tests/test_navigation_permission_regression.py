@@ -11,16 +11,22 @@ SHELL_HELPER = ROOT / "launcher/src/main/assets/nav/nav-window.sh"
 class NavigationPermissionRegressionTests(unittest.TestCase):
     def test_warm_suspend_focuses_home_without_restarting_navigation(self):
         helper = ROOT_HELPER.read_text(encoding="utf-8")
-        shell = SHELL_HELPER.read_text(encoding="utf-8")
-        body = shell.split("  park-windowed)", 1)[1].split("  *) fail BAD_ACTION", 1)[0]
+        park = helper.split("NavigationHelperResult parkWindowedTask", 1)[1].split(
+            "static String homeFocusCommand", 1
+        )[0]
 
-        self.assertIn("am task focus", body)
-        self.assertNotIn("am start", body)
-        self.assertNotIn("pm grant", body)
-        self.assertNotIn("settings put", body)
-        self.assertIn("SUSPEND_STATE_CHANGED", body)
-        self.assertIn('[ "$WINDOWING_MODE" = 5 ]', body)
-        self.assertIn('run("park-windowed"', helper)
+        self.assertIn('run("status", packageName, Integer.toString(taskId))', park)
+        self.assertIn("homeFocusCommand(homeTaskId)", park)
+        self.assertIn('run("status", packageName, Integer.toString(taskId))', park)
+        self.assertIn("SUSPEND_STATE_CHANGED", park)
+        self.assertIn("after.windowingMode != 5", park)
+        self.assertIn("after.taskId != before.taskId", park)
+        self.assertIn("!safeEquals(after.bounds, before.bounds)", park)
+        self.assertNotIn("component", park.lower())
+        self.assertNotIn("am start", park)
+        self.assertNotIn("pm grant", park)
+        self.assertNotIn("settings put", park)
+        self.assertNotIn('run("park-windowed"', park)
 
     def test_home_stop_retains_existing_navigation_task_authority(self):
         controller = CONTROLLER.read_text(encoding="utf-8")
@@ -53,6 +59,12 @@ class NavigationPermissionRegressionTests(unittest.TestCase):
         self.assertIn('am start --user "$ANDROID_USER"', fullscreen)
         self.assertIn('am start --user "$ANDROID_USER"', present)
         self.assertIn("FREEFORM_TRANSITION_FAILED", present)
+
+    def test_root_navigation_processes_are_timeout_wrapped_and_force_terminated(self):
+        helper = ROOT_HELPER.read_text(encoding="utf-8")
+        self.assertIn("/system/bin/toybox timeout -k 1", helper)
+        self.assertIn("terminate(process)", helper)
+        self.assertIn("process.destroyForcibly()", helper)
 
 
 if __name__ == "__main__":
