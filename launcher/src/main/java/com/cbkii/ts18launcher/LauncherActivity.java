@@ -174,7 +174,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         MediaListenerService.refreshActiveSessions();
         applyRailConfiguration();
         scheduleMediaReadiness();
-        if (appDrawerPanel != null) appDrawerPanel.refreshPreferences();
         root.post(this::updateMapVisibility);
         updateLabels();
     }

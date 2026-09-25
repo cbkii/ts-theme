@@ -32,6 +32,22 @@ bash scripts/termux/install-standalone-launcher.sh --rollback-home
 
 `measure-standalone-launcher.sh` captures bounded launcher CPU/RAM/frame/runtime evidence. It does not convert a green build into physical proof.
 
+For drawer, fullscreen and media latency, use the low-overhead trace during one bounded
+physical action. It samples only selected process `/proc` counters every half second and
+launcher event logs from the current logcat boundary; it neither starts a persistent service
+nor runs `dumpsys`, `gfxinfo`, SurfaceFlinger or screenshots in its sampling loop.
+
+```bash
+bash scripts/termux/trace-home-performance.sh 60
+```
+
+The output is under `/storage/emulated/0/Download/ts-theme/home-trace-*`. Compare
+`drawer/open-request`, `drawer/visible`, `drawer/first-draw` and `drawer/catalog-ready`
+events with the process counters. When an exact task/window mismatch needs investigation,
+take a separate short state snapshot using the navigation collector below. Historical
+captures from the earlier heavy monitor are evidence of behaviour, not a clean latency
+baseline.
+
 ```bash
 bash scripts/termux/measure-standalone-launcher.sh
 ```

@@ -21,7 +21,7 @@ if cmd == 'id': print(0)
 elif cmd == 'dumpsys':
     print('Display #0')
     for task, pkg, component, mode, stack, bounds in [
-        (42, 'app.organicmaps.incar', 'app.organicmaps.MwmActivity', s['mode'], 4, s['bounds']),
+        (42, 'app.organicmaps.incar', s.get('nav_component', 'app.organicmaps.MwmActivity'), s['mode'], 4, s['bounds']),
         (7, 'com.cbkii.ts18launcher', s.get('home_component', 'com.cbkii.ts18launcher/.HomeAlias'), 1, 0, [0,0,0,0])]:
         if '/' not in component: component = pkg + '/' + component
         print('  Stack #%s: type=standard mode=%s' % (stack, 'freeform' if mode == 5 else 'fullscreen'))
@@ -40,7 +40,10 @@ elif cmd == 'am':
     if a[0] == 'start':
         assert '--task' in a and a[a.index('--task')+1] == '42', a
         s['mode'] = int(a[a.index('--windowingMode')+1]); s['focus'] = 42
-    elif a[:2] == ['task', 'focus']: s['focus'] = int(a[2])
+    elif a[:2] == ['task', 'focus']:
+        s['focus'] = int(a[2])
+        if s.get('transition_component_on_home_focus') and s['focus'] == 7:
+            s['nav_component'] = 'app.organicmaps.incar/app.organicmaps.MwmActivity'
     elif a[:2] == ['task', 'resize']:
         if s['mode'] != 5 or s.get('reject_resize'):
             print('IllegalArgumentException: resizeTask not allowed on task=42', file=sys.stderr)
@@ -89,6 +92,23 @@ class NavigationLifecycleTest(unittest.TestCase):
         result, state = self.run_helper(
             ['park-windowed', '0', 'app.organicmaps.incar', '42', 'com.cbkii.ts18launcher', '7'],
             home_component='other.package/.Activity')
+        self.assertIn('COMPONENT_MISMATCH', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_park_accepts_same_task_package_activity_transition(self):
+        result, state = self.run_helper(
+            ['park-windowed', '0', 'app.organicmaps.incar', '42', 'com.cbkii.ts18launcher', '7'],
+            nav_component='app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity',
+            transition_component_on_home_focus=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('OK code=SUSPENDED user=0 task=42', result.stdout)
+        self.assertEqual(7, state['focus'])
+        self.assertEqual([['task', 'focus', '7']], state['commands'])
+
+    def test_park_rejects_transition_outside_owned_package(self):
+        result, state = self.run_helper(
+            ['park-windowed', '0', 'app.organicmaps.incar', '42', 'com.cbkii.ts18launcher', '7'],
+            nav_component='other.package/.Activity')
         self.assertIn('COMPONENT_MISMATCH', result.stdout)
         self.assertEqual([], state['commands'])
 

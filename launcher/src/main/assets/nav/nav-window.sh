@@ -625,9 +625,7 @@ case "$action" in
     [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
     [ "$WINDOWING_MODE" = 5 ] || fail SUSPEND_MODE_MISMATCH
     [ "$TASK_BOUNDS" != unknown ] || fail BOUNDS_UNKNOWN
-    [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
     navigation_bounds="$TASK_BOUNDS"
-    navigation_component="$TASK_COMPONENT"
     require_task "$HOME_PKG" "$home_task" 1
     [ "$DISPLAY_ID" = 0 ] || fail HOME_DISPLAY_MISMATCH
     [ "$WINDOWING_MODE" = 1 ] || fail HOME_MODE_MISMATCH
@@ -642,7 +640,8 @@ case "$action" in
     [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
     [ "$WINDOWING_MODE" = 5 ] || fail SUSPEND_STATE_CHANGED
     [ "$TASK_BOUNDS" = "$navigation_bounds" ] || fail SUSPEND_STATE_CHANGED
-    [ "$TASK_COMPONENT" = "$navigation_component" ] || fail SUSPEND_STATE_CHANGED
+    # A navigation task can replace its top Activity during this handoff. require_task
+    # already verifies that the observed component still belongs to the same package.
     emit_protocol OK SUSPENDED
     ;;
 
