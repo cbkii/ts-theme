@@ -14,11 +14,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * Bounded true-cold-start preparation. One owner serialises exact-source foreground priming behind
- * the launcher mask; it does not race a second background warm-up path against the same source.
+ * Bounded exact-source foreground preparation. One owner serialises cold-start or explicit-user
+ * re-prime behind the launcher mask; it never races a second background warm-up for the same source.
  */
 final class StartupBootstrapCoordinator implements MediaListenerService.Observer {
+    interface PrimeCallback { void onResult(boolean ready, String detail); }
+
     private static final long GLOBAL_TIMEOUT_MS = 11000L;
+    private static final long INTERACTIVE_TIMEOUT_MS = 6000L;
     private static final long SOURCE_TIMEOUT_MS = 5000L;
     private static final long HOME_RETURN_TIMEOUT_MS = 1200L;
 
@@ -37,11 +40,14 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private boolean destroyed;
     private boolean observerRegistered;
     private boolean waitingForHome;
+    private boolean interactive;
+    private boolean currentReady;
     private int index;
     private int sourceGeneration;
     private long globalDeadline;
     private long sourceDeadline;
     private String currentPackage = "";
+    private PrimeCallback interactiveCallback;
 
     StartupBootstrapCoordinator(Activity activity, MediaSourceBootstrapper ignoredBootstrapper) {
         this.activity = activity;
@@ -58,20 +64,13 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
 
     void start() {
         if (running || destroyed) return;
-        running = true;
-        globalDeadline = SystemClock.uptimeMillis() + GLOBAL_TIMEOUT_MS;
-        boolean canMaskExternal = mask.show();
-        MediaEventTrace.record("startup", "begin", "externalMask=" + canMaskExternal);
+        interactive = false;
+        interactiveCallback = null;
+        sources.clear();
+        index = 0;
+        begin(GLOBAL_TIMEOUT_MS, "cold");
+        if (!running) return;
 
-        if (!canMaskExternal) {
-            MediaEventTrace.record("startup", "foreground-prime-skipped",
-                    "SYSTEM_ALERT_WINDOW unavailable");
-            finish();
-            return;
-        }
-
-        MediaListenerService.addObserver(this);
-        observerRegistered = true;
         LinkedHashSet<String> exact = new LinkedHashSet<>();
         String music = LauncherPrefs.packageFor(activity, LauncherPrefs.KEY_MUSIC);
         if (music == null || music.isEmpty()) music = TopwayAdapter.defaultMusicPackage(activity);
@@ -87,6 +86,52 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         primeNext();
     }
 
+    void primeForCommand(String packageName, PrimeCallback callback) {
+        if (callback == null) return;
+        if (destroyed) {
+            callback.onResult(false, "Launcher unavailable");
+            return;
+        }
+        if (isUsable(packageName)) {
+            callback.onResult(true, "Controller already ready");
+            return;
+        }
+        if (running) {
+            callback.onResult(false, "Source preparation already in progress");
+            return;
+        }
+        if (!qualified(packageName)) {
+            callback.onResult(false, "Source is not qualified for masked foreground preparation");
+            return;
+        }
+        interactive = true;
+        interactiveCallback = callback;
+        sources.clear();
+        sources.add(packageName);
+        index = 0;
+        begin(INTERACTIVE_TIMEOUT_MS, "interactive");
+        if (running) primeNext();
+    }
+
+    private void begin(long timeoutMs, String mode) {
+        running = true;
+        waitingForHome = false;
+        currentReady = false;
+        currentPackage = "";
+        globalDeadline = SystemClock.uptimeMillis() + timeoutMs;
+        boolean canMaskExternal = mask.show();
+        MediaEventTrace.record("startup", "begin", "mode=" + mode + " externalMask=" + canMaskExternal);
+        if (!canMaskExternal) {
+            MediaEventTrace.record("startup", "foreground-prime-skipped",
+                    "SYSTEM_ALERT_WINDOW unavailable");
+            if (interactive) completeInteractive(false, "Startup overlay unavailable");
+            else finishCold();
+            return;
+        }
+        MediaListenerService.addObserver(this);
+        observerRegistered = true;
+    }
+
     @Override public void onMediaStateChanged(MediaListenerService.Snapshot genericMedia,
                                                 MediaListenerService.Snapshot radio) {
         genericSnapshot = genericMedia == null
@@ -98,35 +143,46 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     }
 
     private void addQualified(LinkedHashSet<String> values, String packageName) {
-        if (packageName == null || packageName.isEmpty()
-                || activity.getPackageName().equals(packageName)) return;
-        if (!MediaSourceAdapter.AUXIO_PACKAGE.equals(packageName)
-                && !MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName)) {
+        if (qualified(packageName)) values.add(packageName);
+        else if (packageName != null && !packageName.isEmpty())
             MediaEventTrace.record("startup", "foreground-prime-unqualified", packageName);
-            return;
-        }
-        values.add(packageName);
+    }
+
+    private boolean qualified(String packageName) {
+        if (packageName == null || packageName.isEmpty()
+                || activity.getPackageName().equals(packageName)) return false;
+        return MediaSourceAdapter.AUXIO_PACKAGE.equals(packageName)
+                || MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName);
     }
 
     private void primeNext() {
         if (!running || destroyed || waitingForHome) return;
         if (SystemClock.uptimeMillis() >= globalDeadline || index >= sources.size()) {
-            finish();
+            if (interactive) completeInteractive(false, "Source did not become ready in time");
+            else finishCold();
             return;
         }
         String packageName = sources.get(index++);
         currentPackage = packageName;
+        currentReady = false;
         int generation = ++sourceGeneration;
         if (isUsable(packageName)) {
             MediaEventTrace.record("startup", "source-already-ready", packageName);
-            currentPackage = "";
-            primeNext();
+            currentReady = true;
+            if (interactive) completeInteractive(true, "Controller already ready");
+            else {
+                currentPackage = "";
+                primeNext();
+            }
             return;
         }
         if (!AppResolver.launchPackageQuietly(activity, packageName)) {
             MediaEventTrace.record("startup", "source-launch-failed", packageName);
-            currentPackage = "";
-            primeNext();
+            if (interactive) completeInteractive(false, "Source launch failed");
+            else {
+                currentPackage = "";
+                primeNext();
+            }
             return;
         }
         MediaEventTrace.record("startup", "source-launched", packageName);
@@ -140,7 +196,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     }
 
     private static boolean snapshotUsable(MediaListenerService.Snapshot snapshot, String packageName) {
-        return snapshot != null && packageName.equals(snapshot.packageName)
+        return snapshot != null && packageName != null && packageName.equals(snapshot.packageName)
                 && snapshot.supports(MediaListenerService.Command.PLAY_PAUSE);
     }
 
@@ -153,6 +209,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
                 sourceReady(packageName, generation);
                 return;
             }
+            currentReady = false;
             MediaEventTrace.record("startup", "source-timeout", packageName);
             returnHomeThenContinue(generation);
         }, delay);
@@ -161,6 +218,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private void sourceReady(String packageName, int generation) {
         if (!running || destroyed || generation != sourceGeneration
                 || !packageName.equals(currentPackage)) return;
+        currentReady = true;
         MediaEventTrace.record("startup", "source-controller-ready", packageName);
         returnHomeThenContinue(generation);
     }
@@ -172,8 +230,11 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         MediaEventTrace.record("startup", accepted ? "home-requested" : "home-request-failed");
         if (!accepted) {
             waitingForHome = false;
-            currentPackage = "";
-            primeNext();
+            if (interactive) completeInteractive(false, "Could not return HOME");
+            else {
+                currentPackage = "";
+                primeNext();
+            }
             return;
         }
         if (decor.hasWindowFocus()) {
@@ -191,41 +252,59 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         if (!running || destroyed || !waitingForHome) return;
         waitingForHome = false;
         MediaEventTrace.record("startup", "home-returned", currentPackage);
+        boolean ready = currentReady;
         currentPackage = "";
-        if (SystemClock.uptimeMillis() >= globalDeadline) finish();
+        if (interactive) {
+            completeInteractive(ready, ready ? "Controller ready" : "Source did not become ready");
+            return;
+        }
+        if (SystemClock.uptimeMillis() >= globalDeadline) finishCold();
         else primeNext();
     }
 
-    private void finish() {
+    private void finishCold() {
         if (!running) return;
+        cleanupRun();
+        HomeMode.bringLauncherToFront(activity);
+        MediaListenerService.refreshActiveSessions();
+        MediaEventTrace.record("startup", "complete", "mode=cold");
+    }
+
+    private void completeInteractive(boolean ready, String detail) {
+        PrimeCallback callback = interactiveCallback;
+        cleanupRun();
+        HomeMode.bringLauncherToFront(activity);
+        MediaListenerService.refreshActiveSessions();
+        MediaEventTrace.record("startup", "complete",
+                "mode=interactive ready=" + ready + " detail=" + detail);
+        if (callback != null) callback.onResult(ready, detail);
+    }
+
+    private void cleanupRun() {
         running = false;
         waitingForHome = false;
         currentPackage = "";
+        currentReady = false;
         sourceGeneration++;
         handler.removeCallbacksAndMessages(null);
         if (observerRegistered) {
             MediaListenerService.removeObserver(this);
             observerRegistered = false;
         }
-        HomeMode.bringLauncherToFront(activity);
-        MediaListenerService.refreshActiveSessions();
         mask.dismiss();
-        MediaEventTrace.record("startup", "complete");
+        sources.clear();
+        index = 0;
+        interactive = false;
+        interactiveCallback = null;
     }
 
     void destroy() {
         destroyed = true;
-        running = false;
-        waitingForHome = false;
-        currentPackage = "";
-        sourceGeneration++;
-        handler.removeCallbacksAndMessages(null);
-        if (observerRegistered) {
-            MediaListenerService.removeObserver(this);
-            observerRegistered = false;
-        }
+        PrimeCallback callback = interactiveCallback;
+        boolean wasInteractive = interactive && running;
+        cleanupRun();
+        if (wasInteractive && callback != null) callback.onResult(false, "Launcher unavailable");
         ViewTreeObserver observer = decor.getViewTreeObserver();
         if (observer.isAlive()) observer.removeOnWindowFocusChangeListener(focusListener);
-        mask.dismiss();
     }
 }
