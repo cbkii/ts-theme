@@ -27,7 +27,7 @@ safe_label="$(printf '%s' "$label" | tr -cs 'A-Za-z0-9._-' '_' | sed 's/^_*//;s/
 termux_bin="${TS18_TERMUX_BIN:-${PREFIX:-/data/data/com.termux/files/usr}/bin}"
 android_path="${TS18_ANDROID_PATH:-/system/bin:/system/xbin:/vendor/bin:/product/bin}"
 export PATH="$termux_bin:$android_path"
-for tool in date mkdir sha256sum timeout cat awk sed tr find sort xargs rm; do
+for tool in date mkdir sha256sum timeout cat awk sed tr find sort xargs rm mv; do
   command -v "$tool" >/dev/null 2>&1 || { printf 'Missing prerequisite: %s\n' "$tool" >&2; exit 127; }
 done
 
@@ -84,12 +84,11 @@ timeout -k 1 8 /system/bin/dumpsys window windows >"$out/window.txt" 2>&1 || tru
 timeout -k 1 5 /system/bin/logcat -d -t 160 -v epoch -s TS18Media:I TS18Nav:I TS18Launcher:I '*:S' \
   >"$out/events.txt" 2>&1 || true
 
-(
-  cd "$out" || exit 1
-  find . -maxdepth 1 -type f ! -name MANIFEST.sha256 ! -name MANIFEST_VERIFY.txt -print0 \
-    | sort -z | xargs -0 sha256sum >MANIFEST.sha256
-  sha256sum -c MANIFEST.sha256 >MANIFEST_VERIFY.txt
-) || exit 1
+manifest_work="$out_base/.ui-manifest-$stamp.work"
+(cd "$out" && find . -maxdepth 1 -type f ! -name MANIFEST.sha256 ! -name MANIFEST_VERIFY.txt -print0 \
+  | sort -z | xargs -0 sha256sum) >"$manifest_work" || exit 1
+mv -- "$manifest_work" "$out/MANIFEST.sha256" || exit 1
+(cd "$out" && sha256sum -c MANIFEST.sha256 >MANIFEST_VERIFY.txt) || exit 1
 
 if [[ -s "$png" ]]; then
   printf 'Captured: %s\n' "$out"
