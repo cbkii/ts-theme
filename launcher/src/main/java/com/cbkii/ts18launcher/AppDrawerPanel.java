@@ -9,6 +9,8 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -38,7 +40,7 @@ import java.util.concurrent.Executors;
 /** In-HOME app list. It overlays only the map surface, leaving the media strip visible. */
 @SuppressLint({"SetTextI18n", "ViewConstructor"})
 final class AppDrawerPanel extends android.widget.FrameLayout {
-    private static final ExecutorService LOADER = Executors.newSingleThreadExecutor(r -> {
+    private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "ts18-app-drawer-loader");
         thread.setDaemon(true);
         thread.setPriority(Thread.MIN_PRIORITY);
@@ -55,6 +57,8 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private final AppsAdapter adapter = new AppsAdapter();
     private boolean loaded;
     private boolean loading;
+    private boolean preloadScheduled;
+    private boolean destroyed;
     private int loadGeneration;
 
     AppDrawerPanel(Activity activity, Runnable onDismiss) {
@@ -146,9 +150,19 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     boolean isOpen() { return getVisibility() == View.VISIBLE; }
 
-    void preload() { ensureLoaded(); }
+    /** Stage expensive PackageManager/icon work until the launcher's main queue first becomes idle. */
+    void preload() {
+        if (loaded || loading || preloadScheduled || destroyed) return;
+        preloadScheduled = true;
+        Looper.myQueue().addIdleHandler(() -> {
+            preloadScheduled = false;
+            if (!destroyed) ensureLoaded();
+            return false;
+        });
+    }
 
     void showPanel() {
+        MediaEventTrace.record("drawer", "show-request", "uptime=" + SystemClock.uptimeMillis());
         ensureLoaded();
         refreshPreferences();
         if (search.length() == 0) filter(""); else search.setText("");
@@ -156,13 +170,17 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         setAlpha(0f);
         setVisibility(View.VISIBLE);
         bringToFront();
+        MediaEventTrace.record("drawer", "visible", "uptime=" + SystemClock.uptimeMillis());
         animate().cancel();
         animate().alpha(1f).setDuration(AutomotiveUi.DRAWER_MS).start();
     }
 
     void destroy() {
+        destroyed = true;
         loadGeneration++;
         loading = false;
+        preloadScheduled = false;
+        loader.shutdownNow();
         animate().cancel();
     }
 
@@ -261,19 +279,22 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     }
 
     private void ensureLoaded() {
-        if (loaded || loading) return;
+        if (loaded || loading || destroyed) return;
         loading = true;
         final int generation = ++loadGeneration;
-        LOADER.execute(() -> {
+        final long started = SystemClock.uptimeMillis();
+        loader.execute(() -> {
             List<Entry> entries = loadEntries();
             post(() -> {
-                if (generation != loadGeneration) return;
+                if (destroyed || generation != loadGeneration) return;
                 allEntries.clear();
                 allEntries.addAll(entries);
                 loaded = true;
                 loading = false;
                 filter(search.getText() == null ? "" : search.getText().toString());
-                MediaEventTrace.record("drawer", "catalog-ready", "count=" + allEntries.size());
+                MediaEventTrace.record("drawer", "catalog-ready",
+                        "count=" + allEntries.size() + " elapsedMs="
+                                + (SystemClock.uptimeMillis() - started));
             });
         });
     }
@@ -285,6 +306,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         List<ResolveInfo> resolved = pm.queryIntentActivities(query, PackageManager.MATCH_ALL);
         Set<String> seenPackages = new HashSet<>();
         for (ResolveInfo info : resolved) {
+            if (Thread.currentThread().isInterrupted() || destroyed) break;
             if (info.activityInfo == null) continue;
             String packageName = info.activityInfo.packageName;
             if (activity.getPackageName().equals(packageName) || seenPackages.contains(packageName)) continue;
