@@ -27,20 +27,29 @@ final class RootShell {
     private RootShell() {}
 
     static Result run(String command, long timeoutSeconds) {
-        if (command == null || command.isEmpty() || timeoutSeconds <= 0) {
-            return new Result(false, -1, "invalid root command");
+        if (timeoutSeconds <= 0) return new Result(false, -1, "invalid root command");
+        return runInternal(command, timeoutSeconds, TimeUnit.SECONDS.toMillis(timeoutSeconds + 3));
+    }
+
+    static Result runMillis(String command, long timeoutMillis) {
+        if (timeoutMillis <= 0) return new Result(false, -1, "invalid root command");
+        long shellSeconds = Math.max(1L, (timeoutMillis + 999L) / 1000L);
+        return runInternal(command, shellSeconds, timeoutMillis + 1500L);
+    }
+
+    private static Result runInternal(String command, long shellTimeoutSeconds, long waitMillis) {
+        if (command == null || command.isEmpty()) {
+            return traced(command, new Result(false, -1, "invalid root command"));
         }
 
+        String commandClass = commandClass(command);
+        MediaEventTrace.record("root", "request", commandClass);
         Process process = null;
         StringBuilder output = new StringBuilder();
         Thread drainer = null;
         try {
-            // Keep the destructive/long-running boundary inside the root shell as well as
-            // around the Java process. Android 10 ships toybox; if this exact unit lacks
-            // its timeout applet the command fails closed and Settings opens the public
-            // HOME selection path instead.
             String wrapped = "exec /system/bin/toybox timeout -k 1 "
-                    + timeoutSeconds
+                    + shellTimeoutSeconds
                     + " /system/bin/sh -c "
                     + shellQuote(command);
             process = new ProcessBuilder("su", "-c", wrapped)
@@ -52,28 +61,47 @@ final class RootShell {
             drainer.setDaemon(true);
             drainer.start();
 
-            boolean completed = process.waitFor(timeoutSeconds + 3, TimeUnit.SECONDS);
+            boolean completed = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
             if (!completed) {
                 process.destroy();
                 if (!process.waitFor(500, TimeUnit.MILLISECONDS)) {
                     process.destroyForcibly();
                 }
                 joinQuietly(drainer, 1000);
-                return new Result(false, -1, appendStatus(output, "root command timed out"));
+                return traced(command,
+                        new Result(false, -1, appendStatus(output, "root command timed out")));
             }
 
             joinQuietly(drainer, 1000);
-            return new Result(true, process.exitValue(), output.toString());
+            return traced(command, new Result(true, process.exitValue(), output.toString()));
         } catch (IOException e) {
-            return new Result(false, -1, e.getClass().getSimpleName() + ": " + e.getMessage());
+            return traced(command,
+                    new Result(false, -1, e.getClass().getSimpleName() + ": " + e.getMessage()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new Result(false, -1, "interrupted");
+            return traced(command, new Result(false, -1, "interrupted"));
         } finally {
             if (process != null && process.isAlive()) {
                 process.destroyForcibly();
             }
         }
+    }
+
+    private static Result traced(String command, Result result) {
+        String outcome = result.success() ? "accepted"
+                : result.completed ? "rejected" : "unavailable-or-timeout";
+        MediaEventTrace.record("root", outcome,
+                commandClass(command) + " exit=" + result.exitCode);
+        return result;
+    }
+
+    private static String commandClass(String command) {
+        if (command == null || command.isEmpty()) return "invalid";
+        if (command.contains("com.tw.media")) return "media:com.tw.media";
+        if (command.contains("com.navimods.radio")) return "media:com.navimods.radio";
+        if (command.contains("set-home-activity")) return "home-selection";
+        if (command.contains("windowingMode") || command.contains("am stack")) return "navigation-window";
+        return "other";
     }
 
     private static void drain(Process process, StringBuilder output) {
