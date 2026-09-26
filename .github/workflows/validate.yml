@@ -18,6 +18,9 @@ jobs:
     name: Source, workflow and Android builds
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      SOURCE_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -51,11 +54,14 @@ jobs:
           python3 tools/ts18_theme.py validate
           python3 -m unittest discover -s tests -v
           bash -n tools/*.sh scripts/ci/*.sh scripts/termux/*.sh scripts/termux/lib/*.sh
-          sh -n scripts/magisk/*.sh
+          sh -n scripts/magisk/*.sh launcher/src/main/assets/nav/nav-window.sh
           python3 -m py_compile tools/launcher_apk_check.py
           shellcheck tools/*.sh scripts/ci/*.sh
           shellcheck -x -P scripts/termux scripts/termux/*.sh scripts/termux/lib/*.sh
           shellcheck -s sh scripts/magisk/*.sh
+          # nav-window.sh deliberately stores literal AWK programs in single-quoted shell strings;
+          # SC2016 is therefore disabled only for this one helper, not repository-wide.
+          shellcheck -s sh -e SC2016 launcher/src/main/assets/nav/nav-window.sh
           git diff --check
 
       - name: Fetch pinned RePlugin compatibility library
@@ -73,14 +79,19 @@ jobs:
             exit 1
           fi
 
-      - name: Build legacy-theme debug APK and Android lint
+      - name: Build debug APKs, tests and Android lint
         shell: bash
         run: |
           set -euo pipefail
-          if ! gradle --no-daemon --stacktrace :theme:lintDebug :theme:assembleDebug; then
+          if ! gradle --no-daemon --stacktrace \
+              :theme:lintDebug :theme:assembleDebug \
+              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug; then
             theme_report="theme/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
-            if [[ -f "$theme_report" ]]; then cat "$theme_report"; fi
-            find theme/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
+            launcher_report="launcher/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+            for report in "$theme_report" "$launcher_report"; do
+              if [[ -f "$report" ]]; then cat "$report"; fi
+            done
+            find theme/build launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
             exit 1
           fi
 
@@ -132,3 +143,7 @@ jobs:
           test -s "$RUNNER_TEMP/testing-input/launcher-release.apk"
           grep -Fxq 'testing_version_name=0.0.0-testing' "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
           grep -Fxq 'testing_version_code=999999' "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
+          SOURCE_SHA="$TESTING_SOURCE_SHA"
+          validate_run_id=$GITHUB_RUN_ID
+          grep -Fxq "source_sha=$SOURCE_SHA" "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
+          grep -Fxq "build_run_id=$validate_run_id" "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"

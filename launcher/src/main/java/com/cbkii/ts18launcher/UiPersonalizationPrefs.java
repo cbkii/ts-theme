@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 /** Optional UI-personalisation preferences layered over the core launcher contract. */
 final class UiPersonalizationPrefs {
     static final String KEY_MEDIA_STARTUP_WARMUP = "media.startup.warmup";
+    static final String KEY_NAV_ROOT_PERMISSION_GRANT = "navigation.permissions.root_grant";
     static final String KEY_ACCENT_HUE = "ui.accent.hue";
     static final String KEY_HOME_SHORTCUTS_ENABLED = "ui.home.shortcuts.enabled";
     static final String KEY_QUICK_ICON_1 = "ui.quick.icon.1";
@@ -36,6 +37,13 @@ final class UiPersonalizationPrefs {
     }
     static void setMediaStartupWarmup(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(KEY_MEDIA_STARTUP_WARMUP, enabled).apply();
+    }
+
+    static boolean navigationRootPermissionGrant(Context context) {
+        return prefs(context).getBoolean(KEY_NAV_ROOT_PERMISSION_GRANT, false);
+    }
+    static void setNavigationRootPermissionGrant(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_NAV_ROOT_PERMISSION_GRANT, enabled).apply();
     }
 
     static boolean homeShortcutsEnabled(Context context) {

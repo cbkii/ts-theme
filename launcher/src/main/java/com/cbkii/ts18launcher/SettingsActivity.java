@@ -163,9 +163,29 @@ public final class SettingsActivity extends Activity {
                         new String[] {LauncherPrefs.RAIL_LEFT, LauncherPrefs.RAIL_RIGHT},
                         LauncherPrefs.radioOnRight(this) ? LauncherPrefs.RAIL_RIGHT : LauncherPrefs.RAIL_LEFT,
                         value -> { LauncherPrefs.setRadioSide(this, value); render(); }));
+        addChoiceRow(R.drawable.ic_navigation, "Navigation display",
+                HomeNavigationSurfacePolicy.label(HomeNavigationSurfacePolicy.mode(this)),
+                v -> choose("Navigation display",
+                        new String[] {"Native navigation window · TESTING",
+                                "Fullscreen only · safe fallback",
+                                "Legacy online map fallback · Internet required"},
+                        new String[] {HomeNavigationSurfacePolicy.NATIVE_WINDOW,
+                                HomeNavigationSurfacePolicy.FULLSCREEN,
+                                HomeNavigationSurfacePolicy.LEAFLET},
+                        HomeNavigationSurfacePolicy.mode(this), value -> {
+                            HomeNavigationSurfacePolicy.setMode(this, value); recreate();
+                        }));
 
         addSection("Home widget apps");
         addPickerRow(R.drawable.ic_navigation, "Navigation", LauncherPrefs.KEY_NAV);
+        String navigationPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
+        if (navigationPackage.isEmpty()
+                && NavigationProvider.hasLauncherActivity(this, NavigationProvider.ORGANIC_MAPS_INCAR)) {
+            navigationPackage = NavigationProvider.ORGANIC_MAPS_INCAR;
+        }
+        addInfoRow(R.drawable.ic_navigation, "Navigation compatibility",
+                NavigationCompatibilityPolicy.settingsMessage(
+                        navigationPackage, HomeNavigationSurfacePolicy.mode(this)));
         addPickerRow(R.drawable.ic_music, "Music", LauncherPrefs.KEY_MUSIC);
         addPickerRow(R.drawable.ic_radio, "Radio", LauncherPrefs.KEY_RADIO);
         addPickerRow(R.drawable.ic_bluetooth, "Bluetooth", LauncherPrefs.KEY_BLUETOOTH);
@@ -264,14 +284,19 @@ public final class SettingsActivity extends Activity {
     }
 
     private void renderAdvanced() {
+        addSection("Navigation access");
+        addSwitchRow(R.drawable.ic_my_location, "Pre-grant navigation location permissions (root)",
+                "Optional. Grants declared location access to the selected navigation app before launch.",
+                UiPersonalizationPrefs.navigationRootPermissionGrant(this), checked -> {
+                    UiPersonalizationPrefs.setNavigationRootPermissionGrant(this, checked);
+                    if (checked) NavigationPermissionBootstrapper.ensureEarly(this, result ->
+                            Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show());
+                });
+
         addSection("Experimental map");
         boolean mapEnabled = ExperimentalMapPolicy.enabled(this);
-        addSwitchRow(R.drawable.ic_map, "Experimental Home map",
-                "Test map for on-device evaluation.",
-                mapEnabled, checked -> {
-                    ExperimentalMapPolicy.setEnabled(this, checked);
-                    render();
-                });
+        addInfoRow(R.drawable.ic_map, "Experimental Home map",
+                mapEnabled ? "Enabled as the legacy navigation display." : "Off");
         if (mapEnabled) {
             addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom and follow controls.",
                     LauncherPrefs.mapControlsEnabled(this),
@@ -431,7 +456,11 @@ public final class SettingsActivity extends Activity {
                 configurationMessage(applied
                         ? (reset ? "Settings reset" : "Settings imported")
                         : "Settings were not changed");
-                if (applied) { MediaListenerService.refreshActiveSessions(); recreate(); }
+                if (applied) {
+                    MediaListenerService.refreshActiveSessions();
+                    if (!reset) NavigationPermissionBootstrapper.ensureEarly(this);
+                    recreate();
+                }
             });
         });
     }

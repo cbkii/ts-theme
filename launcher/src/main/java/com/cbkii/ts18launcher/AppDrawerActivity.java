@@ -172,6 +172,10 @@ public final class AppDrawerActivity extends Activity {
     private void onEntry(Entry entry) {
         if (pickKey != null && !pickKey.isEmpty()) {
             LauncherPrefs.setPackage(this, pickKey, entry.packageName);
+            if (LauncherPrefs.KEY_NAV.equals(pickKey)
+                    && UiPersonalizationPrefs.navigationRootPermissionGrant(this)) {
+                NavigationPermissionBootstrapper.ensureEarly(this);
+            }
             if (LauncherPrefs.KEY_MUSIC.equals(pickKey)) {
                 LauncherPrefs.rememberMusic(this, entry.packageName);
                 LauncherPrefs.selectSource(this, MediaSelection.MUSIC);

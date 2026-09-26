@@ -15,10 +15,13 @@ public class ConfigurationCodecTest {
         values.put(LauncherPrefs.KEY_QUICK_COUNT, 5);
         values.put(LauncherPrefs.KEY_QUICK_1, "com.example.player");
         values.put(LauncherPrefs.KEY_MAP_ENABLED, true);
+        values.put(UiPersonalizationPrefs.KEY_NAV_ROOT_PERMISSION_GRANT, true);
         values.put(LauncherPrefs.KEY_APPEARANCE_MODE, LauncherPrefs.APPEARANCE_NIGHT);
         String json = ConfigurationCodec.encode(values);
         ConfigurationCodec.Preview preview = ConfigurationCodec.decode(json, name -> false);
-        assertEquals(3, preview.values.size());
+        assertEquals(4, preview.values.size());
+        assertEquals(Boolean.TRUE,
+                preview.values.get(UiPersonalizationPrefs.KEY_NAV_ROOT_PERMISSION_GRANT));
         assertEquals(1, preview.unavailable.size());
         assertTrue(preview.summary().contains("com.example.player"));
     }

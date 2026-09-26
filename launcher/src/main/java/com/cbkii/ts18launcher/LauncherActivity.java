@@ -22,6 +22,7 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @SuppressLint("SetTextI18n")
 public class LauncherActivity extends Activity implements MediaListenerService.Observer {
@@ -29,6 +30,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private static final int MAX_QUICK_SLOTS = 6;
     private static final long MEDIA_STATUS_MS = 1800L;
     private static final long MEDIA_READY_RECONCILE_DELAY_MS = 250L;
+    private static final AtomicBoolean STARTUP_BOOTSTRAP_CLAIMED = new AtomicBoolean();
 
     private FrameLayout root;
     private LinearLayout rail;
@@ -52,12 +54,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private final FrameLayout[] quickCells = new FrameLayout[MAX_QUICK_SLOTS];
     private final Handler mediaRefreshHandler = new Handler(Looper.getMainLooper());
     private final Runnable mediaReadyReconcile = this::runMediaReadiness;
+    private NativeNavigationPanel nativeNavigationPanel;
+    private NavigationWindowController navigationWindowController;
     private MapPanel mapPanel;
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
     private StartupBootstrapCoordinator startupBootstrap;
     private boolean launchedAsHome;
+    private boolean redirectingToHome;
     private boolean locationPermissionRequested;
     private boolean mediaStatusActive;
     private int mediaStatusGeneration;
@@ -68,7 +73,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        boolean coldProcessStart = state == null;
+        if (redirectToCanonicalHome()) return;
+        boolean coldProcessStart = STARTUP_BOOTSTRAP_CLAIMED.compareAndSet(false, true);
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
@@ -78,6 +84,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         setContentView(root);
+
+        // The launcher owns only this placeholder's geometry/status. The selected navigation app
+        // remains a real external Android task whose window is managed by NavigationWindowController.
+        nativeNavigationPanel = new NativeNavigationPanel(this);
+        root.addView(nativeNavigationPanel);
+        navigationWindowController = new NavigationWindowController(this, nativeNavigationPanel);
+
         buildRail();
         buildRadioPanel();
         buildMusicPanel();
@@ -87,12 +100,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaText.setLongClickable(false);
         root.addView(mediaText);
         buildDate();
-        appDrawerPanel = new AppDrawerPanel(this, () -> {
-            if (mapPanel != null && ExperimentalMapPolicy.enabled(this)) {
-                requestMapLocationIfNeeded();
-                mapPanel.resumeWebView();
-            }
-        });
+        appDrawerPanel = new AppDrawerPanel(this, () -> root.post(this::updateMapVisibility));
         root.addView(appDrawerPanel);
         appDrawerPanel.preload();
         updateMediaPresentation();
@@ -110,25 +118,29 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (redirectingToHome || root == null) return;
         launchedAsHome = intent != null && intent.hasCategory(Intent.CATEGORY_HOME);
         if (launchedAsHome) {
+            if (navigationWindowController != null) navigationWindowController.cancelLauncherOverlay();
             if (appDrawerPanel != null) appDrawerPanel.restoreDashboardRoot();
             root.clearFocus();
             appsButton.requestFocus();
             root.bringToFront();
-            if (mapPanel != null && ExperimentalMapPolicy.enabled(this)) mapPanel.resumeWebView();
+            root.post(this::updateMapVisibility);
             scheduleMediaReadiness();
         }
     }
 
     @Override protected void onResume() {
         super.onResume();
+        if (redirectingToHome || root == null) return;
         scheduleMediaReadiness();
     }
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && (launchedAsHome || HomeMode.isDefaultHome(this))) {
+        if (root != null && hasFocus && !redirectingToHome
+                && (launchedAsHome || HomeMode.isDefaultHome(this))) {
             scheduleMediaReadiness();
         }
     }
@@ -147,12 +159,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         AutomotiveUi.styleRailButton(this, navigationButton, true);
         for (ImageButton button : quickButtons) AutomotiveUi.styleRailButton(this, button);
         applyRailConfiguration();
+        if (nativeNavigationPanel != null) nativeNavigationPanel.applyAppearance(this);
         if (appDrawerPanel != null) appDrawerPanel.applyAppearance();
         if (mapPanel != null) mapPanel.applyAppearance();
     }
 
     @Override protected void onStart() {
         super.onStart();
+        if (redirectingToHome || redirectToCanonicalHome()) return;
         reconcileMediaConfiguration();
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
@@ -165,6 +179,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onStop() {
+        if (root == null) { super.onStop(); return; }
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
         boolean controlledPrime = startupBootstrap != null && startupBootstrap.isRunning();
@@ -177,6 +192,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (mapPanel != null) mapPanel.stop();
+        if (navigationWindowController != null) navigationWindowController.onHomeStopped();
         super.onStop();
     }
 
@@ -186,6 +202,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();
         if (appDrawerPanel != null) appDrawerPanel.destroy();
         if (mapPanel != null) mapPanel.destroy();
+        if (navigationWindowController != null) navigationWindowController.destroy();
         super.onDestroy();
     }
 
@@ -474,20 +491,34 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void updateMapVisibility() {
-        if (!ExperimentalMapPolicy.enabled(this)) {
-            if (mapPanel != null) { mapPanel.stop(); mapPanel.setVisibility(View.GONE); }
+        if (redirectingToHome || isFinishing()) return;
+        boolean experimentalLeaflet = ExperimentalMapPolicy.enabled(this);
+        if (experimentalLeaflet) {
+            nativeNavigationPanel.setVisibility(View.GONE);
+            navigationWindowController.suspendForExperimentalMap();
+            if (mapPanel == null) {
+                mapPanel = new MapPanel(this);
+                root.addView(mapPanel);
+                applyGeometry(root.getWidth(), root.getHeight());
+            }
+            mapPanel.applyPreferences();
+            mapPanel.setVisibility(View.VISIBLE);
+            if (appDrawerPanel != null && appDrawerPanel.isOpen()) { mapPanel.stop(); return; }
+            requestMapLocationIfNeeded();
+            mapPanel.resumeWebView();
             return;
         }
-        if (mapPanel == null) {
-            mapPanel = new MapPanel(this);
-            root.addView(mapPanel);
-            applyGeometry(root.getWidth(), root.getHeight());
+
+        if (mapPanel != null) {
+            mapPanel.stop();
+            mapPanel.setVisibility(View.GONE);
         }
-        mapPanel.applyPreferences();
-        mapPanel.setVisibility(View.VISIBLE);
-        if (appDrawerPanel != null && appDrawerPanel.isOpen()) { mapPanel.stop(); return; }
-        requestMapLocationIfNeeded();
-        mapPanel.resumeWebView();
+        nativeNavigationPanel.setVisibility(View.VISIBLE);
+        if (appDrawerPanel != null && appDrawerPanel.isOpen()) {
+            navigationWindowController.onLauncherOverlayOpened();
+            return;
+        }
+        navigationWindowController.onHomeVisible();
     }
 
     private void requestMapLocationIfNeeded() {
@@ -506,6 +537,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         place(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);
         place(mediaText, g.metadataX(), g.top, g.metadataWidth(), g.stripHeight);
         placeCard(dateView, g.dateX(), g.top, g.dateWidth(), g.stripHeight);
+        if (nativeNavigationPanel != null)
+            place(nativeNavigationPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (appDrawerPanel != null) place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
     }
@@ -586,9 +619,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openQuick(int index) {
-        if (!ShortcutSlot.launch(this, LauncherPrefs.QUICK_KEYS[index])) openPicker(LauncherPrefs.QUICK_KEYS[index]);
-        mediaSelection.select(LauncherPrefs.lastSource(this));
-        updateLabels();
+        launchAfterNavigation(() -> {
+            if (!ShortcutSlot.launch(this, LauncherPrefs.QUICK_KEYS[index])) openPicker(LauncherPrefs.QUICK_KEYS[index]);
+            mediaSelection.select(LauncherPrefs.lastSource(this));
+            updateLabels();
+        });
     }
 
     private void toggleAppDrawer() {
@@ -596,7 +631,32 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         else {
             MediaEventTrace.record("drawer", "open-request");
             if (mapPanel != null) mapPanel.stop();
-            appDrawerPanel.showPanel();
+            Runnable show = () -> {
+                if (isFinishing() || isDestroyed()) return;
+                appDrawerPanel.showPanel();
+            };
+            if (!ExperimentalMapPolicy.enabled(this)) navigationWindowController.openLauncherOverlay(show);
+            else show.run();
+        }
+    }
+
+    private boolean redirectToCanonicalHome() {
+        // The ordinary app entry and HOME alias otherwise create distinct tasks,
+        // each with a controller for the same external map. Keep preview mode
+        // while another launcher is HOME, but use only the alias once selected.
+        if (getComponentName().getClassName().endsWith(".HomeAlias")
+                || !HomeMode.isDefaultHome(this)) return false;
+        try {
+            startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                    .setClassName(this, getPackageName() + ".HomeAlias")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));
+            redirectingToHome = true;
+            if (navigationWindowController != null) navigationWindowController.destroy();
+            finish();
+            return true;
+        } catch (RuntimeException e) {
+            android.util.Log.w("TS18Nav", "HOME redirect unavailable", e);
+            return false;
         }
     }
 
@@ -614,11 +674,23 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openNavigation(Location location) {
+        if (!ExperimentalMapPolicy.enabled(this)
+                && navigationWindowController != null
+                && navigationWindowController.openFullscreen(location)) return;
         String pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
         if (!NavigationProvider.open(this, pkg, location)) openPicker(LauncherPrefs.KEY_NAV);
     }
 
     private void openConfigured(String key) {
+        launchAfterNavigation(() -> openConfiguredNow(key));
+    }
+
+    private void launchAfterNavigation(Runnable launch) {
+        if (ExperimentalMapPolicy.enabled(this) || navigationWindowController == null) launch.run();
+        else navigationWindowController.launchAfterSuspension(launch);
+    }
+
+    private void openConfiguredNow(String key) {
         if (LauncherPrefs.KEY_RADIO.equals(key)) selectSource(MediaSelection.RADIO);
         else if (LauncherPrefs.KEY_MUSIC.equals(key)) selectSource(MediaSelection.MUSIC);
         String pkg;

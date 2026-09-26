@@ -32,6 +32,36 @@ bash scripts/termux/install-standalone-launcher.sh --rollback-home
 
 `measure-standalone-launcher.sh` captures bounded launcher CPU/RAM/frame/runtime evidence. It does not convert a green build into physical proof.
 
+For drawer, fullscreen and media latency, use the low-overhead trace during one bounded
+physical action. It samples only selected process `/proc` counters every half second and
+launcher event logs from the current logcat boundary; it neither starts a persistent service
+nor runs `dumpsys`, `gfxinfo`, SurfaceFlinger or screenshots in its sampling loop.
+
+```bash
+bash scripts/termux/trace-home-performance.sh 60
+```
+
+The output is under `/storage/emulated/0/Download/ts-theme/home-trace-*`. Compare
+`drawer/open-request`, `drawer/visible`, `drawer/first-draw` and `drawer/catalog-ready`
+events with the process counters. When an exact task/window mismatch needs investigation,
+take a separate short state snapshot using the navigation collector below. Historical
+captures from the earlier heavy monitor are evidence of behaviour, not a clean latency
+baseline.
+
+After the physical action, capture one read-only final state snapshot:
+
+```bash
+bash scripts/termux/collect-final-qualification.sh
+```
+
+The final collector uses the Android command PATH in child shells, records an exit status
+for every capture, keeps required failures separate from root or user dependent blocked
+checks, and verifies its manifest and ZIP under `/storage/emulated/0/Download/ts-theme/`.
+It does not install a boot service or repeatedly sample ActivityManager, gfxinfo or
+SurfaceFlinger. Use `--no-root` if a root probe is inappropriate; it is labelled BLOCKED.
+The three earlier off-repository collector runs returned exit 127 on required Android
+commands and should not be interpreted as evidence that those Android services are absent.
+
 ```bash
 bash scripts/termux/measure-standalone-launcher.sh
 ```
@@ -70,6 +100,20 @@ bash scripts/termux/collect-media-lifecycle-evidence.sh 120
 
 The collector correlates uptime/power, tasks, processes, MediaSessions, storage and filtered vendor events. Display/screen-on alone is not classified as ACC.
 
+## Native navigation-window qualification
+
+Use the event-driven collector with `docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md`. It does not mutate task/window/input/settings/package/Topway state. Start it on HOME, perform the ordinary UI actions at your own pace, then press Ctrl-C once.
+
+```bash
+bash scripts/termux/collect-navigation-window-evidence.sh --expect-package app.organicmaps.incar
+```
+
+Use the probe and playbook from the exact source SHA recorded in the rolling TESTING asset group's `BUILD_INFO` file. This keeps the APK and evidence protocol revision-matched even though the trusted draft publisher currently accepts only its established APK/provenance/signature/checksum envelope.
+
+It has two deliberately separate layers. During the physical actions it checkpoints full ActivityTaskManager, WindowManager and InputDispatcher state plus relevant SurfaceFlinger state and screenshots whenever the combined signature changes. After Ctrl-C it performs a broader read-only discovery capture covering framework features/help/settings, service and Binder surfaces, package declarations, DoFun/RePlugin metadata, Topway correlations, process/SELinux context, alternative task-embedding/virtual-display/PiP anchors and bounded exact framework/APK bytes. Do not commit device exports, logs or proprietary binaries.
+
+The broad phase runs by default because the current implementation is not physically qualified and the exact TS18 may expose a different viable route. Use `--skip-discovery` only for a deliberate focused rerun after a complete broad archive already exists.
+
 ## Window/media evidence collector
 
 `collect-window-media-evidence.sh` is a **read-only** targeted evidence bundle for media bootstrap validation and the separate future DoFun/Organic Maps windowing investigation.
@@ -83,7 +127,7 @@ For the best windowing evidence, run it while **DoFun is visibly displaying Orga
 The collector uses bounded commands to capture:
 
 - `wm size`, `wm density` and display state;
-- freeform/PiP feature and global-setting reads;
+- freeform feature and global-setting reads;
 - launcher/DoFun/Organic Maps/NavRadio+/music package state;
 - task/window/SurfaceFlinger names and bounds where exposed;
 - exported `MediaBrowserService` discovery and active MediaSession/actions;
@@ -92,6 +136,6 @@ The collector uses bounded commands to capture:
 
 It **does not** start/stop tasks, change settings, send playback/key input, alter packages or manipulate windows. Missing permissions, timed-out captures and unavailable root are recorded as blocked/unknown evidence rather than absence.
 
-Substantial outputs are written under `/storage/emulated/0/Download/`; transient work remains private where applicable. The helpers never clear DoFun application data, set SELinux permissive, broadly change ownership/mode, write protected partitions, or modify the `com.dofun.variety` APK outside the explicitly guarded legacy donor workflow.
+Substantial outputs are written under `/storage/emulated/0/Download/`; transient work remains private where applicable. The helpers never clear DoFun application data, set SELinux permissive, broadly change ownership/mode, write `/system` or `/vendor`, or modify the `com.dofun.variety` APK outside the explicitly guarded legacy donor workflow.
 
 See `docs/INSTALL_TS18.md`, `docs/STANDALONE_LAUNCHER.md` and `docs/MEDIA_BACKGROUND_READINESS.md` for the associated installation and physical-validation procedures.
