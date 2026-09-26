@@ -73,7 +73,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
         mediaBootstrapper = new MediaSourceBootstrapper(this);
-        startupBootstrap = new StartupBootstrapCoordinator(this, mediaBootstrapper);
+        startupBootstrap = new StartupBootstrapCoordinator(this);
         rememberMediaConfiguration();
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
