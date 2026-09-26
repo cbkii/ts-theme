@@ -291,7 +291,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertNotIn("ActivityOptions", self.controller)
         self.assertNotIn("startActivity(", self.controller)
         self.assertNotIn("POST_LAUNCH_RECONCILE", self.controller)
-        self.assertNotIn("postDelayed", self.controller)
+        self.assertNotIn("POST_LAUNCH_RECONCILE", self.controller)
+        self.assertIn("park-timeout", self.controller)
 
     def test_home_stop_preserves_inflight_transaction_and_backend(self):
         stop_body = self.controller.split("void onHomeStopped()", 1)[1].split(

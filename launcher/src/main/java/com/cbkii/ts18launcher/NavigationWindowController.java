@@ -22,6 +22,7 @@ final class NavigationWindowController {
     private String backendMode = "";
     private State state = State.IDLE;
     private boolean needsValidation = true;
+    private boolean needsPresentation = true;
     private boolean pendingReconcile;
     private String pendingSuspendReason = "";
     private boolean fullscreenRequested;
@@ -58,7 +59,7 @@ final class NavigationWindowController {
 
     void onHomeStopped() {
         if (state == State.DESTROYED) return;
-        uiState.onHomeStopped(); overlayGate.onStopped(); needsValidation = true;
+        uiState.onHomeStopped(); overlayGate.onStopped(); needsValidation = true; needsPresentation = true;
         if (activeOperationId != 0) Log.i(TAG, "HOME stopped during bounded transaction; transaction retained id=" + activeOperationId);
         else Log.i(TAG, "HOME stopped; task authority retained without relaunch");
     }
@@ -73,7 +74,7 @@ final class NavigationWindowController {
         if (state == State.DESTROYED || !uiState.onLauncherOverlayOpened()) return;
         overlayGate.cancel(); if (show != null) show.run();
         if (activity.hasWindowFocus()) {
-            pendingSuspendReason = ""; state = State.SUSPENDED; needsValidation = true;
+            pendingSuspendReason = ""; state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
             Log.i(TAG, "launcher overlay visible with HOME already focused; root parking skipped");
             MediaEventTrace.record("drawer", "home-focus-already-owned"); return;
         }
@@ -84,9 +85,25 @@ final class NavigationWindowController {
     void cancelLauncherOverlay() { overlayGate.cancel(); pendingSuspendReason = ""; }
 
     void launchAfterSuspension(Runnable launch) {
-        cancelLauncherOverlay();
-        if (state == State.DESTROYED || !overlayGate.request(launch)) return;
-        uiState.onLauncherOverlayOpened(); suspendForLauncherSurface("external app launch");
+        if (state == State.DESTROYED) return;
+        MediaEventTrace.record("external-launch", "request");
+        boolean first = !overlayGate.isPending();
+        overlayGate.request(() -> {
+            MediaEventTrace.record("external-launch", "dispatched");
+            launch.run();
+        });
+        if (first) {
+            uiState.onLauncherOverlayOpened();
+            MediaEventTrace.record("external-launch", "park-start");
+            suspendForLauncherSurface("external app launch");
+            // Root may stall or refuse parking. The requested app still gets one dispatch.
+            activity.getWindow().getDecorView().postDelayed(() -> {
+                if (overlayGate.isPending()) {
+                    MediaEventTrace.record("external-launch", "park-timeout");
+                    overlayGate.onSettled();
+                }
+            }, 3500L);
+        }
     }
 
     void suspendForExperimentalMap() { if (state != State.DESTROYED) { uiState.onLauncherOverlayOpened(); suspendForLauncherSurface("legacy online map fallback active"); } }
@@ -103,7 +120,7 @@ final class NavigationWindowController {
 
     private void onBoundsChanged(NavigationWindowBounds next) {
         if (state == State.DESTROYED || next.equals(bounds)) return;
-        bounds = next; needsValidation = true;
+        bounds = next; needsValidation = true; needsPresentation = true;
         if (activeOperationId != 0) pendingReconcile = true; else if (uiState.canPresentNavigation()) reconcile(false);
     }
 
@@ -124,7 +141,7 @@ final class NavigationWindowController {
         String component = resolveLaunchComponent(configuredPackage); if (component.isEmpty()) { latchFailure(configuredPackage, configuredMode, "No exported launcher Activity"); return; }
         NavigationWindowBounds target = bounds;
         if (activeTaskId > 0) {
-            if (!force && !needsValidation && State.WINDOWED == state && target.equals(appliedBounds)) { showWindowedStatus(configuredPackage, activeTaskId, target); return; }
+            if (!force && !needsValidation && !needsPresentation && State.WINDOWED == state && target.equals(appliedBounds)) { showWindowedStatus(configuredPackage, activeTaskId, target); return; }
             // Known tasks are read-only verified before any repair transaction.
             startVerify(configuredPackage, component, target, activeTaskId);
         } else startPresent(configuredPackage, component, target, -1);
@@ -132,7 +149,7 @@ final class NavigationWindowController {
 
     private void adoptAuthority(String mode, String packageName) {
         boolean packageChanged = !packageName.equals(configuredPackage);
-        configuredMode = mode; configuredPackage = packageName; authorityGeneration++; acquisitionAttemptGeneration = -1; clearFailureLatch(); needsValidation = true; appliedBounds = null;
+        configuredMode = mode; configuredPackage = packageName; authorityGeneration++; acquisitionAttemptGeneration = -1; clearFailureLatch(); needsValidation = true; needsPresentation = true; appliedBounds = null;
         if (packageChanged) { activePackage = packageName; activeTaskId = -1; }
         if (!HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(mode) && activeTaskId <= 0) { backendMode = ""; destroyBackendInstance(); }
     }
@@ -142,9 +159,37 @@ final class NavigationWindowController {
         panel.showStarting(label(pkg), "Verifying task " + taskId + " at HOME bounds");
         backend.verify(pkg, target, taskId, result -> {
             if (!finishOperation(operation)) return; retainObservedTask(result, pkg);
-            if (acceptWindowedResult(result, pkg, target, taskId)) { markWindowed(result, pkg, target); drainPendingWork(); return; }
+            if (acceptWindowedResult(result, pkg, target, taskId)) {
+                if (needsPresentation) startResume(pkg, component, target, taskId);
+                else { markWindowed(result, pkg, target); drainPendingWork(); }
+                return;
+            }
             if ("TASK_NOT_FOUND".equals(result.code)) { activeTaskId = -1; latchFailure(pkg, configuredMode, "Navigation app closed · use Retry"); drainPendingWork(); return; }
             if ("TASK_AMBIGUOUS".equals(result.code) || "COMPONENT_MISMATCH".equals(result.code)) { latchFailure(pkg, configuredMode, result.code); drainPendingWork(); return; }
+            startPresent(pkg, component, currentTarget(target), taskId);
+        });
+    }
+
+    private void startResume(String pkg, String component, NavigationWindowBounds target, int taskId) {
+        if (!uiState.canPresentNavigation()) { needsPresentation = true; drainPendingWork(); return; }
+        int operation = beginOperation(); if (operation == 0) return;
+        state = State.PRESENTING;
+        backend.resume(pkg, target, taskId, activity.getTaskId(), result -> {
+            if (!finishOperation(operation)) return;
+            retainObservedTask(result, pkg);
+            if ("RESUMED_NATIVE".equals(result.code)
+                    && acceptWindowedResult(result, pkg, target, taskId)) {
+                markWindowed(result, pkg, target); drainPendingWork(); return;
+            }
+            if ("FOREGROUND_CHANGED".equals(result.code)) {
+                needsPresentation = true; drainPendingWork(); return;
+            }
+            if ("TASK_NOT_FOUND".equals(result.code)) {
+                activeTaskId = -1;
+                latchFailure(pkg, configuredMode, "Navigation app closed · use Retry");
+                drainPendingWork(); return;
+            }
+            // One active repair transaction before exposing manual Retry.
             startPresent(pkg, component, currentTarget(target), taskId);
         });
     }
@@ -165,7 +210,7 @@ final class NavigationWindowController {
         });
     }
 
-    private void beginReacquisitionGeneration() { authorityGeneration++; acquisitionAttemptGeneration = -1; clearFailureLatch(); needsValidation = true; }
+    private void beginReacquisitionGeneration() { authorityGeneration++; acquisitionAttemptGeneration = -1; clearFailureLatch(); needsValidation = true; needsPresentation = true; }
 
     private void transitionManagedTask(String nextMode, String nextPackage) {
         if (activeOperationId != 0) { pendingReconcile = true; return; }
@@ -189,7 +234,7 @@ final class NavigationWindowController {
             if ("TASK_NOT_FOUND".equals(result.code)) activeTaskId = -1;
             else if (acceptIdentity(result, pkg, task) && result.windowingMode == 5) activeTaskId = result.taskId;
             else latchFailure(pkg, configuredMode, "Could not suspend navigation · " + result.code);
-            state = State.SUSPENDED; needsValidation = true; Log.i(TAG, "suspended navigation reason=" + reason + " task=" + task); pendingSuspendReason = ""; overlayGate.onSettled(); drainPendingWork();
+            state = State.SUSPENDED; needsValidation = true; needsPresentation = true; Log.i(TAG, "suspended navigation reason=" + reason + " task=" + task); pendingSuspendReason = ""; overlayGate.onSettled(); drainPendingWork();
         });
     }
 
@@ -199,7 +244,10 @@ final class NavigationWindowController {
         backend.fullscreen(pkg, task, result -> {
             if (!finishOperation(operation)) return; retainObservedTask(result, pkg);
             if (acceptIdentity(result, pkg, task) && result.windowingMode == 1) { activeTaskId = result.taskId; needsValidation = true; Log.i(TAG, "fullscreen task=" + task + " package=" + pkg + " verifiedBounds=" + result.bounds); if (location != null && !NavigationProvider.open(activity, pkg, location)) Log.w(TAG, "location handoff failed after fullscreen transition package=" + pkg); }
-            else { Log.w(TAG, "fullscreen helper failed code=" + result.code + " raw=" + result.raw); if ("TASK_NOT_FOUND".equals(result.code)) activeTaskId = -1; latchFailure(pkg, configuredMode, "Fullscreen unavailable · " + (result.code == null ? "UNKNOWN" : result.code)); }
+            else { Log.w(TAG, "fullscreen helper failed code=" + result.code + " raw=" + result.raw); if ("TASK_NOT_FOUND".equals(result.code)) activeTaskId = -1;
+                if (!NavigationProvider.open(activity, pkg, location)) latchFailure(pkg, configuredMode, "Fullscreen unavailable · " + result.code);
+                else { needsValidation = true; needsPresentation = true; }
+            }
             drainPendingWork();
         }); return true;
     }
@@ -217,7 +265,7 @@ final class NavigationWindowController {
     private static boolean acceptIdentity(NavigationHelperResult result, String pkg, int expectedTask) { if (!result.success || result.userId != AndroidUserId.current() || result.taskId <= 0 || !pkg.equals(result.packageName)) return false; if (expectedTask > 0 && result.taskId != expectedTask) return false; return componentMatches(result.component, pkg); }
     private static boolean componentMatches(String component, String pkg) { return component != null && !component.isEmpty() && !"unknown".equals(component) && component.startsWith(pkg + "/"); }
     private void retainObservedTask(NavigationHelperResult result, String pkg) { if (result.userId == AndroidUserId.current() && result.taskId > 0 && pkg.equals(result.packageName) && componentMatches(result.component, pkg)) { activePackage = pkg; activeTaskId = result.taskId; } }
-    private void markWindowed(NavigationHelperResult result, String pkg, NavigationWindowBounds target) { activePackage = pkg; activeTaskId = result.taskId; backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW; state = State.WINDOWED; appliedBounds = target; needsValidation = false; clearFailureLatch(); if (uiState.canPresentNavigation()) showWindowedStatus(pkg, result.taskId, target); Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack=" + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds + " launched=" + result.launched + " transaction=" + result.transactionId); }
+    private void markWindowed(NavigationHelperResult result, String pkg, NavigationWindowBounds target) { activePackage = pkg; activeTaskId = result.taskId; backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW; state = State.WINDOWED; appliedBounds = target; needsValidation = false; needsPresentation = false; clearFailureLatch(); if (uiState.canPresentNavigation()) showWindowedStatus(pkg, result.taskId, target); Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack=" + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds + " launched=" + result.launched + " transaction=" + result.transactionId); }
     private static void logCapabilityEvidence(NavigationHelperResult result) { if (!result.success) Log.w(TAG, "helper failure: " + result.raw); if (result.helpExit < 0 && result.launchExit < 0) return; Log.i(TAG, "native launch evidence code=" + result.code + " helpExit=" + result.helpExit + " helpWindowingMode=" + result.helpWindowingMode + " helpDisplay=" + result.helpDisplay + " launchExit=" + result.launchExit); }
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) { // Physical visibility and touch are not inferred from Android task identity/bounds alone; exact-device qualification remains required.
         panel.showConfigured("", () -> openFullscreen(null)); }

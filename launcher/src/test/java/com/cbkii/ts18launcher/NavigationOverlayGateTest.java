@@ -9,15 +9,15 @@ public class NavigationOverlayGateTest {
         int[] shown = {0};
         gate.onVisible();
         assertTrue(gate.request(() -> shown[0]++));
-        assertFalse(gate.request(() -> shown[0] += 100));
+        assertTrue(gate.request(() -> shown[0] += 100));
         gate.onStopped();
         gate.onSettled();
         assertEquals(0, shown[0]);
         gate.onVisible();
-        assertEquals(1, shown[0]);
+        assertEquals(101, shown[0]);
         gate.onSettled();
         gate.onVisible();
-        assertEquals(1, shown[0]);
+        assertEquals(101, shown[0]);
     }
 
     @Test public void homeBeforeCompletionStillCannotExposeLaunchButtons() {

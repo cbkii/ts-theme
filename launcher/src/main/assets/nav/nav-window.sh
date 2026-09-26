@@ -596,6 +596,30 @@ case "$action" in
     emit_protocol OK VERIFIED_NATIVE
     ;;
 
+  resume-windowed)
+    PKG="${3:-}"
+    left="${4:-}"
+    top="${5:-}"
+    right="${6:-}"
+    bottom="${7:-}"
+    hint="${8:-0}"
+    home_task="${9:-0}"
+    valid_package "$PKG" || fail BAD_PACKAGE
+    valid_uint "$hint" && [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
+    valid_uint "$home_task" && [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
+    validate_bounds "$left" "$top" "$right" "$bottom" || fail BAD_BOUNDS
+    expected="$left,$top,$right,$bottom"
+    require_task "$PKG" "$hint" 1
+    verify_state 5 "$expected"
+    require_handoff_foreground "$home_task" "$hint"
+    am task focus "$hint" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
+    require_foreground_task "$hint" NATIVE_NOT_FOREGROUND
+    require_task "$PKG" "$hint" 1
+    verify_state 5 "$expected"
+    TRANSACTION=1
+    emit_protocol OK RESUMED_NATIVE
+    ;;
+
   fullscreen)
     PKG="${3:-}"
     hint="${4:-0}"

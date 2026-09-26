@@ -34,11 +34,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                         Integer.toString(bounds.left), Integer.toString(bounds.top),
                         Integer.toString(bounds.right), Integer.toString(bounds.bottom),
                         Integer.toString(taskId));
-                if (verified.success) {
-                    android.util.Log.i("TS18Nav", "present skipped; task already matches HOME bounds task="
-                            + taskId);
-                    return verified;
-                }
+                // Geometry alone does not establish presentation after parking.
                 if ("TASK_NOT_FOUND".equals(verified.code)
                         || "TASK_AMBIGUOUS".equals(verified.code)
                         || "COMPONENT_MISMATCH".equals(verified.code)) return verified;
@@ -60,6 +56,19 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     Integer.toString(bounds.left), Integer.toString(bounds.top),
                     Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId));
         }, callback);
+    }
+
+    @Override public void resume(String packageName, NavigationWindowBounds bounds,
+            int taskId, int homeTaskId, Callback callback) {
+        if (taskId <= 0 || homeTaskId <= 0) {
+            if (callback != null) callback.onResult(
+                    NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
+            return;
+        }
+        submit(() -> helper.run("resume-windowed", packageName,
+                Integer.toString(bounds.left), Integer.toString(bounds.top),
+                Integer.toString(bounds.right), Integer.toString(bounds.bottom),
+                Integer.toString(taskId), Integer.toString(homeTaskId)), callback);
     }
 
     @Override public void status(String packageName, int taskId, Callback callback) {
