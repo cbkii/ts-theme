@@ -25,7 +25,6 @@ final class NavigationRootHelper {
     private static final String ROOT_HELPER = ROOT_DIR + "/nav-window.sh";
     private static final long INSTALL_TIMEOUT_MS = 4000L;
     private static final long COMMAND_TIMEOUT_MS = 12000L;
-    private static final long HOME_FOCUS_TIMEOUT_MS = 1800L;
 
     private final Context context;
     private boolean installedThisProcess;
@@ -60,9 +59,9 @@ final class NavigationRootHelper {
 
     /**
      * Parks an already-windowed navigation task behind HOME without re-delivering its Activity.
-     * Routine drawer parking deliberately performs only status -> HOME focus -> status. Exact top
-     * Activity component equality is not an ownership invariant: one package/task may legitimately
-     * transition between startup and map Activities while this handoff is occurring.
+     * The shell helper performs one guarded transaction: it refuses to steal foreground from an
+     * unrelated task, focuses the known HOME task, then verifies the same navigation task/package/
+     * user/display/mode/bounds. The top Activity component is observation only and may change.
      */
     synchronized NavigationHelperResult parkWindowedTask(String packageName, int taskId,
             String homePackage, int homeTaskId) {
@@ -71,35 +70,8 @@ final class NavigationRootHelper {
                 || taskId <= 0 || homeTaskId <= 0) {
             return NavigationHelperResult.failure("BAD_ARGUMENT", "");
         }
-
-        NavigationHelperResult before = run("status", packageName, Integer.toString(taskId));
-        if (!before.success) return before;
-        if (before.taskId != taskId || before.displayId != 0 || before.windowingMode != 5) {
-            return NavigationHelperResult.failure("SUSPEND_STATE_MISMATCH", before.raw);
-        }
-
-        ProcessResult focus = executeRoot(homeFocusCommand(homeTaskId), HOME_FOCUS_TIMEOUT_MS);
-        if (focus.timedOut) return NavigationHelperResult.failure("HOME_FOCUS_TIMEOUT", focus.output);
-        if (focus.exitCode != 0) return NavigationHelperResult.failure("HOME_FOCUS_FAILED", focus.output);
-
-        NavigationHelperResult after = run("status", packageName, Integer.toString(taskId));
-        if (!after.success) return after;
-        if (after.taskId != before.taskId || after.userId != before.userId
-                || after.displayId != before.displayId || after.windowingMode != 5
-                || !safeEquals(after.packageName, before.packageName)
-                || !safeEquals(after.bounds, before.bounds)) {
-            return NavigationHelperResult.failure("SUSPEND_STATE_CHANGED", after.raw);
-        }
-        return after;
-    }
-
-    static String homeFocusCommand(int homeTaskId) {
-        return "PATH=/system/bin:/system/xbin:/vendor/bin; export PATH; "
-                + "exec /system/bin/am task focus " + homeTaskId;
-    }
-
-    private static boolean safeEquals(String first, String second) {
-        return first == null ? second == null : first.equals(second);
+        return run("park-windowed", packageName, Integer.toString(taskId),
+                homePackage, Integer.toString(homeTaskId));
     }
 
     private NavigationHelperResult ensureInstalled() {
