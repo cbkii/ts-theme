@@ -9,24 +9,24 @@ SHELL_HELPER = ROOT / "launcher/src/main/assets/nav/nav-window.sh"
 
 
 class NavigationPermissionRegressionTests(unittest.TestCase):
-    def test_warm_suspend_focuses_home_without_restarting_navigation(self):
+    def test_warm_suspend_uses_guarded_home_focus_without_restarting_navigation(self):
         helper = ROOT_HELPER.read_text(encoding="utf-8")
         park = helper.split("NavigationHelperResult parkWindowedTask", 1)[1].split(
-            "static String homeFocusCommand", 1
+            "private NavigationHelperResult ensureInstalled", 1
         )[0]
+        shell = SHELL_HELPER.read_text(encoding="utf-8")
+        shell_park = shell.split("  park-windowed)", 1)[1].split("  *) fail BAD_ACTION", 1)[0]
 
-        self.assertIn('run("status", packageName, Integer.toString(taskId))', park)
-        self.assertIn("homeFocusCommand(homeTaskId)", park)
-        self.assertIn('run("status", packageName, Integer.toString(taskId))', park)
-        self.assertIn("SUSPEND_STATE_CHANGED", park)
-        self.assertIn("after.windowingMode != 5", park)
-        self.assertIn("after.taskId != before.taskId", park)
-        self.assertIn("!safeEquals(after.bounds, before.bounds)", park)
-        self.assertNotIn("component", park.lower())
-        self.assertNotIn("am start", park)
-        self.assertNotIn("pm grant", park)
-        self.assertNotIn("settings put", park)
-        self.assertNotIn('run("park-windowed"', park)
+        self.assertIn('run("park-windowed", packageName, Integer.toString(taskId)', park)
+        self.assertIn("require_handoff_foreground", shell_park)
+        self.assertIn('am task focus "$home_task"', shell_park)
+        self.assertIn("SUSPEND_STATE_CHANGED", shell_park)
+        self.assertIn('[ "$WINDOWING_MODE" = 5 ]', shell_park)
+        self.assertIn('[ "$TASK_BOUNDS" = "$navigation_bounds" ]', shell_park)
+        self.assertNotIn("navigation_component", shell_park)
+        self.assertNotIn("am start", shell_park)
+        self.assertNotIn("pm grant", shell_park)
+        self.assertNotIn("settings put", shell_park)
 
     def test_home_stop_retains_existing_navigation_task_authority(self):
         controller = CONTROLLER.read_text(encoding="utf-8")
