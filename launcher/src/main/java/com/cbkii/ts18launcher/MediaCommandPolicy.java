@@ -5,7 +5,8 @@ import android.media.session.PlaybackState;
 /** Pure command/readiness rules shared by the Android media coordinator and JVM tests. */
 final class MediaCommandPolicy {
     enum Desired { PLAY, PAUSE, PREVIOUS, NEXT }
-    enum Phase { UNAVAILABLE, IDLE, STARTING, CONNECTED, READY, PLAYING, BLOCKED, FAILED }
+    enum Phase { UNAVAILABLE, IDLE, STARTING, CONNECTED, READY, PLAYING,
+        DISPATCHED_UNCONFIRMED, BLOCKED, FAILED }
 
     private MediaCommandPolicy() {}
 

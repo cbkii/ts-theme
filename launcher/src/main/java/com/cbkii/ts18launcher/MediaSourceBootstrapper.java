@@ -137,6 +137,10 @@ final class MediaSourceBootstrapper {
         return isPlaying(controllerForPackage(packageName));
     }
 
+    boolean hasUsableController(String packageName) {
+        return controllerReadyForPlay(controllerForPackage(packageName));
+    }
+
     Status status(String packageName) {
         Status status = statuses.get(packageName);
         return status == null
@@ -643,8 +647,10 @@ final class MediaSourceBootstrapper {
         }
         long now = SystemClock.uptimeMillis();
         if (now >= pending.ackDeadlineMs) {
-            mark(pending.packageName, MediaCommandPolicy.Phase.FAILED,
-                    "Command was accepted but playback acknowledgement timed out");
+            MediaEventTrace.record("command", "dispatched-unconfirmed",
+                    pending.packageName + " desired=" + pending.desired + " state=" + state);
+            mark(pending.packageName, MediaCommandPolicy.Phase.DISPATCHED_UNCONFIRMED,
+                    "Command was sent once; playback state unconfirmed");
             finish(pending, false, pending.sourceLabel
                     + " command sent, but playback was not confirmed");
             return;

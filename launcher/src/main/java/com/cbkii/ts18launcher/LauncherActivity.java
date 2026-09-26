@@ -110,7 +110,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             applyGeometry(root.getWidth(), root.getHeight());
             if (coldProcessStart && (launchedAsHome || HomeMode.isDefaultHome(this))
                     && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-                startupBootstrap.start();
+                if (HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                        HomeNavigationSurfacePolicy.mode(this))) {
+                    afterMediaBootstrapHomeRestored(restored -> {
+                        if (restored && !isFinishing() && !isDestroyed()) startupBootstrap.start();
+                    });
+                } else startupBootstrap.start();
             }
         });
     }
@@ -407,23 +412,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
                 ? "Preparing " + label + "…" : label, appLabel);
 
-        if (command == MediaListenerService.Command.PLAY_PAUSE
-                && !snapshotSupports(packageName, command)
-                && startupBootstrap != null && !startupBootstrap.isRunning()) {
-            MediaEventTrace.record("readiness", "interactive-prime-request", packageName);
-            startupBootstrap.primeForCommand(packageName, (ready, detail) -> {
-                if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
-                MediaEventTrace.record("readiness", ready ? "interactive-prime-ready" : "interactive-prime-fallback",
-                        packageName + " · " + detail);
-                dispatchSourceCommand(label, packageName, command, generation);
-            });
-            return;
-        }
-        dispatchSourceCommand(label, packageName, command, generation);
+        dispatchSourceCommand(label, packageName, command, generation, true);
     }
 
     private void dispatchSourceCommand(String label, String packageName,
-                                       MediaListenerService.Command command, int generation) {
+                                       MediaListenerService.Command command, int generation,
+                                       boolean allowColdPrime) {
         mediaBootstrapper.command(label, packageName, command, (success, message) -> {
             if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
             MediaListenerService.refreshActiveSessions();
@@ -431,18 +425,37 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 mediaStatusActive = false;
                 updateLabels();
             } else {
-                if (command == MediaListenerService.Command.PLAY_PAUSE) {
-                    mediaSelection.reconcileAfterFailedSwitch(
-                            radioSnapshot.playing, genericSnapshot.playing);
+                if (allowColdPrime && command == MediaListenerService.Command.PLAY_PAUSE
+                        && !mediaBootstrapper.hasUsableController(packageName)
+                        && startupBootstrap != null && !startupBootstrap.isRunning()) {
+                    MediaEventTrace.record("readiness", "cold-foreground-prime-request", packageName);
+                    startupBootstrap.primeForCommand(packageName, (ready, detail) -> {
+                        if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
+                        MediaEventTrace.record("readiness", ready ? "cold-prime-ready" : "cold-prime-failed",
+                                packageName + " · " + detail);
+                        if (ready) dispatchSourceCommand(label, packageName, command,
+                                generation, false);
+                        else settleSourceCommandFailure(label, packageName, command,
+                                generation, detail);
+                    });
+                    return;
                 }
-                mediaText.setMetadata(label, message);
-                mediaRefreshHandler.postDelayed(() -> {
-                    if (generation != mediaStatusGeneration) return;
-                    mediaStatusActive = false;
-                    updateLabels();
-                }, MEDIA_STATUS_MS);
+                settleSourceCommandFailure(label, packageName, command, generation, message);
             }
         });
+    }
+
+    private void settleSourceCommandFailure(String label, String packageName,
+            MediaListenerService.Command command, int generation, String message) {
+        if (command == MediaListenerService.Command.PLAY_PAUSE)
+            mediaSelection.reconcileAfterFailedSwitch(radioSnapshot.playing, genericSnapshot.playing);
+        MediaEventTrace.record("command", "failed", packageName + " · " + message);
+        mediaText.setMetadata(label, message);
+        mediaRefreshHandler.postDelayed(() -> {
+            if (generation != mediaStatusGeneration) return;
+            mediaStatusActive = false;
+            updateLabels();
+        }, MEDIA_STATUS_MS);
     }
 
     private void buildDate() {
@@ -688,6 +701,21 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void launchAfterNavigation(Runnable launch) {
         if (ExperimentalMapPolicy.enabled(this) || navigationWindowController == null) launch.run();
         else navigationWindowController.launchAfterSuspension(launch);
+    }
+
+    void launchMediaBootstrap(String packageName, java.util.function.Consumer<Boolean> callback) {
+        launchAfterNavigation(() -> callback.accept(
+                AppResolver.launchPackageQuietly(this, packageName)));
+    }
+
+    void afterMediaBootstrapHomeRestored(java.util.function.Consumer<Boolean> callback) {
+        if (isFinishing() || isDestroyed()) { callback.accept(false); return; }
+        root.post(() -> {
+            updateMapVisibility();
+            if (ExperimentalMapPolicy.enabled(this)
+                    || navigationWindowController == null) callback.accept(true);
+            else navigationWindowController.whenHomePresented(callback);
+        });
     }
 
     private void openConfiguredNow(String key) {

@@ -58,7 +58,20 @@ class Pr11ReconciliationTests(unittest.TestCase):
         )[0]
         self.assertLess(present.index('helper.run("verify-native"'),
                         present.index('helper.run("present-native"'))
-        self.assertIn("present skipped; task already matches HOME bounds", present)
+        self.assertNotIn("present skipped; task already matches HOME bounds", present)
+        self.assertIn("Geometry alone does not establish presentation", present)
+
+    def test_parked_known_task_is_focused_before_reporting_windowed(self):
+        controller = self.read("launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowController.java")
+        helper = self.read("launcher/src/main/assets/nav/nav-window.sh")
+        resume = helper.split("  resume-windowed)", 1)[1].split("  fullscreen)", 1)[0]
+        self.assertLess(resume.index('verify_state 5 "$expected"'),
+                        resume.index('am task focus "$hint"'))
+        self.assertIn('require_handoff_foreground "$home_task" "$hint"', resume)
+        self.assertIn('require_foreground_task "$hint" NATIVE_NOT_FOREGROUND', resume)
+        self.assertIn('emit_protocol OK RESUMED_NATIVE', resume)
+        self.assertIn('backend.resume(pkg, target, taskId, activity.getTaskId()', controller)
+        self.assertIn('startPresent(pkg, component, currentTarget(target), taskId)', controller)
 
 
 if __name__ == "__main__":

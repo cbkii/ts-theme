@@ -484,11 +484,23 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     static Snapshot applyRadioFallback(Snapshot snapshot, String title, String text) {
-        if (snapshot == null || snapshot.packageName.isEmpty() || snapshot.hasMetadata()) return snapshot;
+        if (snapshot == null || snapshot.packageName.isEmpty()) return snapshot;
         String cleanTitle = normalise(title);
         String cleanText = normalise(text);
-        if (cleanTitle.isEmpty() && cleanText.isEmpty()) return snapshot;
-        return new Snapshot(snapshot.packageName, cleanTitle, cleanText,
+        String primary = snapshot.title;
+        String secondary = snapshot.artist;
+        boolean placeholder = primary.equalsIgnoreCase("NavRadio+")
+                || primary.equalsIgnoreCase("Radio");
+        if (placeholder) primary = "";
+        if (primary.isEmpty()) primary = cleanTitle;
+        if (primary.equalsIgnoreCase("NavRadio+") || primary.equalsIgnoreCase("Radio")) {
+            primary = cleanText;
+            cleanText = "";
+        }
+        if (secondary.isEmpty() && !cleanText.isEmpty()
+                && !cleanText.equalsIgnoreCase(primary)) secondary = cleanText;
+        if (primary.equals(snapshot.title) && secondary.equals(snapshot.artist)) return snapshot;
+        return new Snapshot(snapshot.packageName, primary, secondary,
                 snapshot.state, snapshot.actions, snapshot.sessionIdentity);
     }
 

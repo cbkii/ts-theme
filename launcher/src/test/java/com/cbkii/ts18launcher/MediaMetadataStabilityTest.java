@@ -60,4 +60,34 @@ public final class MediaMetadataStabilityTest {
         assertEquals("Session station", enriched.title);
         assertEquals("Session detail", enriched.artist);
     }
+
+    @Test public void stationSessionGainsMissingFrequencyFromNotification() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "ABC Classic", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        MediaListenerService.Snapshot merged = MediaListenerService.applyRadioFallback(
+                session, "ABC Classic", "105.9 FM");
+        assertEquals("ABC Classic", merged.title);
+        assertEquals("105.9 FM", merged.artist);
+    }
+
+    @Test public void sourceLabelIsReplacedWithStationAndChannel() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "NavRadio+", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        MediaListenerService.Snapshot merged = MediaListenerService.applyRadioFallback(
+                session, "2CA", "1053 AM");
+        assertEquals("2CA", merged.title);
+        assertEquals("1053 AM", merged.artist);
+    }
+
+    @Test public void duplicateNotificationTextDoesNotCreateDuplicateSecondary() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "ABC Classic", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        MediaListenerService.Snapshot merged = MediaListenerService.applyRadioFallback(
+                session, "ABC Classic", "ABC Classic");
+        assertEquals("ABC Classic", merged.title);
+        assertEquals("", merged.artist);
+    }
 }

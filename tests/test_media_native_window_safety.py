@@ -8,18 +8,21 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
-    def test_masked_foreground_prime_is_blocked_before_overlay_for_native_navigation(self):
+    def test_native_foreground_prime_uses_guarded_navigation_handoff(self):
         mask = self.read(
             "launcher/src/main/java/com/cbkii/ts18launcher/StartupMaskController.java")
         show = mask.split("boolean show()", 1)[1].split(
             "boolean coversExternalActivities()", 1)[0]
-        self.assertIn("HomeNavigationSurfacePolicy.NATIVE_WINDOW", show)
-        self.assertIn("native navigation window active; external task ordering unsafe", show)
-        self.assertLess(show.index("HomeNavigationSurfacePolicy.NATIVE_WINDOW"),
-                        show.index("windowManager.addView"))
-        native_guard = show.split("HomeNavigationSurfacePolicy.NATIVE_WINDOW", 1)[1].split(
-            "FrameLayout root", 1)[0]
-        self.assertIn("return false;", native_guard)
+        coordinator = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java")
+        launcher = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        self.assertIn("hasOverlayAccess(activity)", show)
+        self.assertIn("launchMediaBootstrap(packageName", coordinator)
+        self.assertIn("afterMediaBootstrapHomeRestored(restored", coordinator)
+        self.assertIn("navigationWindowController.launchAfterSuspension(launch)", launcher)
+        self.assertLess(coordinator.index("if (!canMaskExternal)"),
+                        coordinator.index("private void primeNext()"))
 
     def test_failed_mask_capability_skips_external_activity_prime(self):
         coordinator = self.read(
@@ -39,6 +42,25 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("mediaBootstrapper.warmConfiguredSources()", launcher)
         self.assertIn("MediaBrowser", bootstrapper)
         self.assertIn("prepareExplicitService", bootstrapper)
+
+    def test_cold_fallback_cannot_double_dispatch_a_warm_command(self):
+        launcher = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        method = launcher.split("private void dispatchSourceCommand(", 1)[1].split(
+            "private void settleSourceCommandFailure", 1)[0]
+        self.assertIn("if (success)", method)
+        self.assertIn("allowColdPrime && command == MediaListenerService.Command.PLAY_PAUSE", method)
+        self.assertIn("!mediaBootstrapper.hasUsableController(packageName)", method)
+        self.assertIn("generation, false", method)
+
+    def test_unconfirmed_pause_is_recorded_without_second_transport_dispatch(self):
+        bootstrapper = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceBootstrapper.java")
+        ack = bootstrapper.split("private void awaitAcknowledgement", 1)[1].split(
+            "private void completeAcknowledged", 1)[0]
+        self.assertIn('"dispatched-unconfirmed"', ack)
+        self.assertIn("Phase.DISPATCHED_UNCONFIRMED", ack)
+        self.assertNotIn("sendDesired(", ack)
 
 
 if __name__ == "__main__":

@@ -14,9 +14,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * Bounded exact-source foreground preparation for optional cold HOME startup only.
- * Interactive transport commands never foreground-launch a source Activity; they fall through to
- * the normal MediaController/MediaBrowser/service command path instead.
+ * Bounded exact-source foreground preparation after background readiness has failed, or when
+ * the user explicitly enabled cold HOME warm-up. Native-window launches use navigation handoff.
  */
 final class StartupBootstrapCoordinator implements MediaListenerService.Observer {
     interface PrimeCallback { void onResult(boolean ready, String detail); }
@@ -48,6 +47,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private long sourceDeadline;
     private String currentPackage = "";
     private PrimeCallback interactiveCallback;
+    private final java.util.Set<String> interactiveAttempts = new java.util.HashSet<>();
 
     StartupBootstrapCoordinator(Activity activity, MediaSourceBootstrapper ignoredBootstrapper) {
         this.activity = activity;
@@ -97,11 +97,30 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
             return;
         }
 
-        // Normal media controls should behave like Android SystemUI: command the existing
-        // MediaController, or let the background MediaBrowser/service adapter establish one.
-        // Foreground Activity launch is deliberately not a transport-control fallback.
-        MediaEventTrace.record("startup", "interactive-foreground-prime-disabled", packageName);
-        callback.onResult(false, "Continue with background media controller path");
+        if (!qualified(packageName) || running || !interactiveAttempts.add(packageName)) {
+            callback.onResult(false, "Cold source preparation already attempted or unavailable");
+            return;
+        }
+        interactive = true;
+        interactiveCallback = callback;
+        sources.clear();
+        index = 0;
+        if (HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                HomeNavigationSurfacePolicy.mode(activity)) && activity instanceof LauncherActivity) {
+            ((LauncherActivity) activity).afterMediaBootstrapHomeRestored(restored -> {
+                if (!restored || destroyed) {
+                    completeInteractive(false, "HOME navigation is not ready");
+                    return;
+                }
+                beginInteractive(packageName);
+            });
+        } else beginInteractive(packageName);
+    }
+
+    private void beginInteractive(String packageName) {
+        if (destroyed) { completeInteractive(false, "Launcher unavailable"); return; }
+        begin(GLOBAL_TIMEOUT_MS, "interactive");
+        if (running) { sources.add(packageName); primeNext(); }
     }
 
     private void begin(long timeoutMs, String mode) {
@@ -167,7 +186,20 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
             }
             return;
         }
-        if (!AppResolver.launchPackageQuietly(activity, packageName)) {
+        if (HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                HomeNavigationSurfacePolicy.mode(activity)) && activity instanceof LauncherActivity) {
+            ((LauncherActivity) activity).launchMediaBootstrap(packageName,
+                    launched -> onSourceLaunched(packageName, generation, launched));
+        } else {
+            onSourceLaunched(packageName, generation,
+                    AppResolver.launchPackageQuietly(activity, packageName));
+        }
+    }
+
+    private void onSourceLaunched(String packageName, int generation, boolean launched) {
+        if (!running || destroyed || generation != sourceGeneration
+                || !packageName.equals(currentPackage)) return;
+        if (!launched) {
             MediaEventTrace.record("startup", "source-launch-failed", packageName);
             if (interactive) completeInteractive(false, "Source launch failed");
             else {
@@ -245,8 +277,26 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         MediaEventTrace.record("startup", "home-returned", currentPackage);
         boolean ready = currentReady;
         currentPackage = "";
+        if (interactive && activity instanceof LauncherActivity
+                && HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                        HomeNavigationSurfacePolicy.mode(activity))) {
+            ((LauncherActivity) activity).afterMediaBootstrapHomeRestored(restored ->
+                    completeInteractive(ready && restored,
+                            !restored ? "HOME navigation did not restore" :
+                            ready ? "Controller ready" : "Source did not become ready"));
+            return;
+        }
         if (interactive) {
             completeInteractive(ready, ready ? "Controller ready" : "Source did not become ready");
+            return;
+        }
+        if (activity instanceof LauncherActivity && HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                HomeNavigationSurfacePolicy.mode(activity))) {
+            ((LauncherActivity) activity).afterMediaBootstrapHomeRestored(restored -> {
+                if (!running || destroyed) return;
+                if (!restored || SystemClock.uptimeMillis() >= globalDeadline) finishCold();
+                else primeNext();
+            });
             return;
         }
         if (SystemClock.uptimeMillis() >= globalDeadline) finishCold();
@@ -256,7 +306,6 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private void finishCold() {
         if (!running) return;
         cleanupRun();
-        HomeMode.bringLauncherToFront(activity);
         MediaListenerService.refreshActiveSessions();
         MediaEventTrace.record("startup", "complete", "mode=cold");
     }
@@ -264,7 +313,6 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private void completeInteractive(boolean ready, String detail) {
         PrimeCallback callback = interactiveCallback;
         cleanupRun();
-        HomeMode.bringLauncherToFront(activity);
         MediaListenerService.refreshActiveSessions();
         MediaEventTrace.record("startup", "complete",
                 "mode=interactive ready=" + ready + " detail=" + detail);
