@@ -29,8 +29,20 @@ class NavigationFinalHardeningTest(unittest.TestCase):
 
     def test_routine_parking_does_not_require_same_top_activity_component(self):
         park = HELPER.split("  park-windowed)", 1)[1].split("  *) fail BAD_ACTION", 1)[0]
-        self.assertNotIn('TASK_COMPONENT" = "$navigation_component', park)
-        self.assertIn("same package/task may legitimately change top Activity", park)
+        self.assertNotIn("navigation_component", park)
+        self.assertIn("top Activity", park)
+        self.assertIn("same package", park)
+
+    def test_known_task_verifies_before_repair(self):
+        reconcile = CONTROLLER.split("private void reconcile(boolean force)", 1)[1].split(
+            "private void adoptAuthority", 1
+        )[0]
+        verify = CONTROLLER.split("private void startVerify", 1)[1].split(
+            "private void startPresent", 1
+        )[0]
+        self.assertIn("startVerify(configuredPackage, component, target, activeTaskId)", reconcile)
+        self.assertNotIn("startPresent(configuredPackage, component, target, activeTaskId)", reconcile)
+        self.assertIn("startPresent(pkg, component, currentTarget(target), taskId)", verify)
 
     def test_fullscreen_does_not_reapply_non_null_task_bounds(self):
         fullscreen = HELPER.split("move_task_fullscreen()", 1)[1].split(
