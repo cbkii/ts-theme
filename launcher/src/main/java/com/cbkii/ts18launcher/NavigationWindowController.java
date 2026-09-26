@@ -196,7 +196,7 @@ final class NavigationWindowController {
         if (!uiState.canPresentNavigation()) { needsPresentation = true; drainPendingWork(); return; }
         int operation = beginOperation(); if (operation == 0) return;
         state = State.PRESENTING;
-        backend.resume(pkg, target, taskId, activity.getTaskId(), result -> {
+        backend.resume(pkg, target, taskId, activity.getPackageName(), activity.getTaskId(), result -> {
             if (!finishOperation(operation)) return;
             retainObservedTask(result, pkg);
             if ("RESUMED_NATIVE".equals(result.code)

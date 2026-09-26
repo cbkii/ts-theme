@@ -67,10 +67,11 @@ class Pr11ReconciliationTests(unittest.TestCase):
         resume = helper.split("  resume-windowed)", 1)[1].split("  fullscreen)", 1)[0]
         self.assertLess(resume.index('verify_state 5 "$expected"'),
                         resume.index('am task focus "$hint"'))
+        self.assertIn('require_task "$home_pkg" "$home_task"', resume)
         self.assertIn('require_handoff_foreground "$home_task" "$hint"', resume)
         self.assertIn('require_foreground_task "$hint" NATIVE_NOT_FOREGROUND', resume)
         self.assertIn('emit_protocol OK RESUMED_NATIVE', resume)
-        self.assertIn('backend.resume(pkg, target, taskId, activity.getTaskId()', controller)
+        self.assertIn('backend.resume(pkg, target, taskId, activity.getPackageName(), activity.getTaskId()', controller)
         self.assertIn('startPresent(pkg, component, currentTarget(target), taskId)', controller)
 
 

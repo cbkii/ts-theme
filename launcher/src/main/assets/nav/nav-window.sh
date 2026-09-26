@@ -603,8 +603,10 @@ case "$action" in
     right="${6:-}"
     bottom="${7:-}"
     hint="${8:-0}"
-    home_task="${9:-0}"
+    home_pkg="${9:-}"
+    home_task="${10:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
+    valid_package "$home_pkg" || fail BAD_HOME_PACKAGE
     valid_uint "$hint" || fail TASK_AUTHORITY_REQUIRED
     [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
     valid_uint "$home_task" || fail HOME_TASK_AUTHORITY_REQUIRED
@@ -613,7 +615,13 @@ case "$action" in
     expected="$left,$top,$right,$bottom"
     require_task "$PKG" "$hint" 1
     verify_state 5 "$expected"
+    require_task "$home_pkg" "$home_task" 1
+    [ "$DISPLAY_ID" = 0 ] || fail HOME_DISPLAY_MISMATCH
+    [ "$WINDOWING_MODE" = 1 ] || fail HOME_MODE_MISMATCH
     require_handoff_foreground "$home_task" "$hint"
+    PKG="${3:-}"
+    require_task "$PKG" "$hint" 1
+    verify_state 5 "$expected"
     am task focus "$hint" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
     require_foreground_task "$hint" NATIVE_NOT_FOREGROUND
     require_task "$PKG" "$hint" 1
