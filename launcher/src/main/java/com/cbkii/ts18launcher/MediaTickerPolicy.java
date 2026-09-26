@@ -22,6 +22,7 @@ final class MediaTickerPolicy {
         if (isSourcePlaceholder(primary, label, selectedSource)) {
             primary = secondary;
             secondary = "";
+            if (!label.isEmpty() && label.equalsIgnoreCase(primary)) primary = "";
         } else if (!label.isEmpty() && label.equalsIgnoreCase(secondary)) {
             secondary = "";
         }
