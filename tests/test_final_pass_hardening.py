@@ -17,11 +17,16 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertNotIn("new StartupBootstrapCoordinator(this, mediaBootstrapper)", LAUNCHER)
 
     def test_auxio_root_startservice_route_stays_removed(self):
-        auxio = ADAPTER.split("if (AUXIO_PACKAGE.equals(packageName))", 1)[1].split(
-            "if (NAVRADIO_PACKAGE.equals(packageName))", 1
-        )[0]
-        self.assertIn("false, false, true", auxio)
-        self.assertNotIn("rootPrime = true", auxio)
+        browser = ADAPTER.split(
+            "ComponentName browser = findExportedService(context, packageName, MEDIA_BROWSER_ACTION);", 1
+        )[1].split("return sessionOnly(packageName", 1)[0]
+        self.assertIn("known-ineffective mutation", browser)
+        self.assertIn(
+            "new MediaSourceAdapter(packageName, Kind.MEDIA_BROWSER, browser,\n"
+            "                    MEDIA_BROWSER_ACTION, false, false, true, \"\")",
+            browser,
+        )
+        self.assertNotIn("MEDIA_BROWSER_ACTION, true, false, true", browser)
         self.assertIn("must not retry the rejected Auxio root `startservice` route", AGENTS)
         self.assertNotIn("Auxio-TS may use bounded Magisk-root service priming", AGENTS)
 
