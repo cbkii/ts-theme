@@ -176,6 +176,15 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         currentPackage = packageName;
         currentReady = false;
         int generation = ++sourceGeneration;
+        // Passive startup preparation must not steal audio from the already playing source.
+        if (!interactive && ((MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName)
+                && genericSnapshot.playing) || (MediaSourceAdapter.AUXIO_PACKAGE.equals(packageName)
+                && radioSnapshot.playing))) {
+            MediaEventTrace.record("startup", "opposite-playing-skip", packageName);
+            currentPackage = "";
+            primeNext();
+            return;
+        }
         if (isUsable(packageName)) {
             MediaEventTrace.record("startup", "source-already-ready", packageName);
             currentReady = true;

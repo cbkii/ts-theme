@@ -62,6 +62,16 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("Phase.DISPATCHED_UNCONFIRMED", ack)
         self.assertNotIn("sendDesired(", ack)
 
+    def test_passive_cold_prime_cannot_interrupt_a_playing_opposite_source(self):
+        coordinator = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java")
+        prime = coordinator.split("private void primeNext()", 1)[1].split(
+            "private void onSourceLaunched", 1)[0]
+        self.assertIn("!interactive", prime)
+        self.assertIn("genericSnapshot.playing", prime)
+        self.assertIn("radioSnapshot.playing", prime)
+        self.assertIn('"opposite-playing-skip"', prime)
+
 
 if __name__ == "__main__":
     unittest.main()
