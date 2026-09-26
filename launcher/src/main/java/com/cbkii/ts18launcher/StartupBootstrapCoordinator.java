@@ -36,6 +36,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private MediaListenerService.Snapshot radioSnapshot =
             new MediaListenerService.Snapshot("", "", "", false);
     private boolean running;
+    private boolean preflight;
     private boolean destroyed;
     private boolean observerRegistered;
     private boolean waitingForHome;
@@ -60,10 +61,10 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         if (observer.isAlive()) observer.addOnWindowFocusChangeListener(focusListener);
     }
 
-    boolean isRunning() { return running; }
+    boolean isRunning() { return running || preflight; }
 
     void start() {
-        if (running || destroyed) return;
+        if (isRunning() || destroyed) return;
         interactive = false;
         interactiveCallback = null;
         sources.clear();
@@ -97,11 +98,12 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
             return;
         }
 
-        if (!qualified(packageName) || running || !interactiveAttempts.add(packageName)) {
+        if (!qualified(packageName) || isRunning() || !interactiveAttempts.add(packageName)) {
             callback.onResult(false, "Cold source preparation already attempted or unavailable");
             return;
         }
         interactive = true;
+        preflight = true;
         interactiveCallback = callback;
         sources.clear();
         index = 0;
@@ -119,6 +121,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
 
     private void beginInteractive(String packageName) {
         if (destroyed) { completeInteractive(false, "Launcher unavailable"); return; }
+        preflight = false;
         begin(GLOBAL_TIMEOUT_MS, "interactive");
         if (running) { sources.add(packageName); primeNext(); }
     }
@@ -330,6 +333,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
 
     private void cleanupRun() {
         running = false;
+        preflight = false;
         waitingForHome = false;
         currentPackage = "";
         currentReady = false;

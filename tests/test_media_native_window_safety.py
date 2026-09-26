@@ -72,6 +72,14 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("radioSnapshot.playing", prime)
         self.assertIn('"opposite-playing-skip"', prime)
 
+    def test_cold_preflight_owns_one_pending_request_before_root_handoff(self):
+        coordinator = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java")
+        self.assertIn("return running || preflight", coordinator)
+        self.assertIn("preflight = true", coordinator)
+        self.assertIn("preflight = false", coordinator)
+        self.assertIn("isRunning() || !interactiveAttempts.add(packageName)", coordinator)
+
 
 if __name__ == "__main__":
     unittest.main()
