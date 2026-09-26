@@ -236,11 +236,9 @@ final class NavigationWindowController {
                 showWindowedStatus(configuredPackage, activeTaskId, target);
                 return;
             }
-            if (needsValidation) {
-                startPresent(configuredPackage, component, target, activeTaskId);
-            } else {
-                startVerify(configuredPackage, component, target, activeTaskId);
-            }
+            // A known task is always inspected read-only first. Repair is entered only from the
+            // verification callback after a proven state mismatch.
+            startVerify(configuredPackage, component, target, activeTaskId);
         } else {
             startPresent(configuredPackage, component, target, -1);
         }
@@ -329,13 +327,6 @@ final class NavigationWindowController {
             }
             drainPendingWork();
         });
-    }
-
-    private void beginReacquisitionGeneration() {
-        authorityGeneration++;
-        acquisitionAttemptGeneration = -1;
-        clearFailureLatch();
-        needsValidation = true;
     }
 
     private void transitionManagedTask(String nextMode, String nextPackage) {
@@ -542,6 +533,8 @@ final class NavigationWindowController {
     }
 
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) {
+        // Physical visibility and touch are not inferred from Android task identity/bounds alone;
+        // those remain exact-device qualification observations even after helper success.
         panel.showConfigured("", () -> openFullscreen(null));
     }
 
