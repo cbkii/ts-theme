@@ -91,22 +91,17 @@ final class MediaMetadataView extends LinearLayout implements MediaListenerServi
         MediaListenerService.Snapshot snapshot = MediaSelection.RADIO.equals(selected)
                 ? radioSnapshot : genericSnapshot;
         String sourceIdentity = sourceIdentity(snapshot);
-        String title = snapshot == null ? "" : clean(snapshot.title);
-        String artist = snapshot == null ? "" : clean(snapshot.artist);
-
         String appLabel = snapshot == null || snapshot.packageName.isEmpty()
-                ? "" : clean(AppResolver.labelFor(getContext(), snapshot.packageName, ""));
-        if (isSourcePlaceholder(title, appLabel, selected)) {
-            // Some radio notifications/sessions put the app label in TITLE and the actual station
-            // in the secondary field. Never show the app label as now-playing metadata.
-            title = artist;
-            artist = "";
-        } else if (!appLabel.isEmpty() && appLabel.equalsIgnoreCase(artist)) {
-            artist = "";
-        }
+                ? "" : AppResolver.labelFor(getContext(), snapshot.packageName, "");
+        MediaTickerPolicy.Display display = MediaTickerPolicy.resolve(
+                snapshot == null ? "" : snapshot.title,
+                snapshot == null ? "" : snapshot.artist,
+                appLabel,
+                selected);
 
         MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
-                lastPrimary, lastSecondary, lastSourceIdentity, sourceIdentity, title, artist);
+                lastPrimary, lastSecondary, lastSourceIdentity, sourceIdentity,
+                display.primary, display.secondary);
         lastSourceIdentity = sourceIdentity;
         if (change.primaryChanged) {
             lastPrimary = change.primary;
@@ -133,18 +128,5 @@ final class MediaMetadataView extends LinearLayout implements MediaListenerServi
             }
         }
         return selected + ":" + packageName;
-    }
-
-    private static boolean isSourcePlaceholder(String title, String appLabel, String selected) {
-        if (title.isEmpty()) return false;
-        if (!appLabel.isEmpty() && title.equalsIgnoreCase(appLabel)) return true;
-        if (MediaSelection.RADIO.equals(selected)) {
-            return "radio".equalsIgnoreCase(title) || "navradio+".equalsIgnoreCase(title);
-        }
-        return "music".equalsIgnoreCase(title) || "auxio".equalsIgnoreCase(title);
-    }
-
-    private static String clean(String value) {
-        return value == null ? "" : value.trim();
     }
 }
