@@ -21,6 +21,7 @@ printf 'surface\tstatus\tdetail\n' >"$status"
 printf 'elapsed_ms\tpackage\tpid\tstart_ticks\tutime_ticks\tstime_ticks\trss_kib\tthreads\tfd_count\tread_bytes\twrite_bytes\n' >"$out/process.tsv"
 log_pid=''
 samples=0
+blocked_proc=0
 
 finish() {
   local result=$?
@@ -29,9 +30,14 @@ finish() {
     kill -TERM "$log_pid" 2>/dev/null || true
     wait "$log_pid" 2>/dev/null || true
   fi
-  if (( samples == 0 )); then
-    printf 'process\tFAIL\tno samples\n' >>"$status"
+  if (( samples == 0 && blocked_proc > 0 )); then
+    printf 'process\tBLOCKED\t/proc access denied for %s observed target process samples\n' "$blocked_proc" >>"$status"
     result=1
+  elif (( samples == 0 )); then
+    printf 'process\tFAIL\tno target process samples observed\n' >>"$status"
+    result=1
+  elif (( blocked_proc > 0 )); then
+    printf 'process\tWARN\tsamples=%s proc_access_blocked=%s\n' "$samples" "$blocked_proc" >>"$status"
   else
     printf 'process\tPASS\tsamples=%s\n' "$samples" >>"$status"
   fi
@@ -66,16 +72,24 @@ while (( SECONDS - start < duration )); do
   for package in "${packages[@]}"; do
     pid="$(pidof -s "$package" 2>/dev/null || true)"
     [[ "$pid" =~ ^[0-9]+$ ]] || continue
-    [[ -r "/proc/$pid/stat" && -r "/proc/$pid/status" ]] || continue
+    if [[ ! -r "/proc/$pid/stat" || ! -r "/proc/$pid/status" ]]; then
+      blocked_proc=$((blocked_proc + 1))
+      continue
+    fi
     # Strip the parenthesised process name; its spaces must not shift /proc/stat fields.
-    stat="$(cat "/proc/$pid/stat" 2>/dev/null)" || continue
+    stat="$(cat "/proc/$pid/stat" 2>/dev/null)" || { blocked_proc=$((blocked_proc + 1)); continue; }
     fields="${stat#*) }"
     read -r -a parts <<<"$fields"
     (( ${#parts[@]} >= 22 )) || continue
     rss="$(awk '/^VmRSS:/ {print $2; exit}' "/proc/$pid/status" 2>/dev/null)"
     threads="$(awk '/^Threads:/ {print $2; exit}' "/proc/$pid/status" 2>/dev/null)"
-    fds=(/proc/"$pid"/fd/*)
-    [[ -e "${fds[0]}" ]] && fd_count=${#fds[@]} || fd_count=0
+    fd_count=unknown
+    if [[ -r "/proc/$pid/fd" && -x "/proc/$pid/fd" ]]; then
+      shopt -s nullglob
+      fds=(/proc/"$pid"/fd/*)
+      shopt -u nullglob
+      fd_count=${#fds[@]}
+    fi
     read_bytes="$(awk '/^read_bytes:/ {print $2; exit}' "/proc/$pid/io" 2>/dev/null)"
     write_bytes="$(awk '/^write_bytes:/ {print $2; exit}' "/proc/$pid/io" 2>/dev/null)"
     # The first field after (comm) is stat field 3; utime/stime are fields 14/15.
