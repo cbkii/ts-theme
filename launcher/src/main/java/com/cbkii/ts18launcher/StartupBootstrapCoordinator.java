@@ -14,14 +14,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * Bounded exact-source foreground preparation. One owner serialises cold-start or explicit-user
- * re-prime behind the launcher mask; it never races a second background warm-up for the same source.
+ * Bounded exact-source foreground preparation for optional cold HOME startup only.
+ * Interactive transport commands never foreground-launch a source Activity; they fall through to
+ * the normal MediaController/MediaBrowser/service command path instead.
  */
 final class StartupBootstrapCoordinator implements MediaListenerService.Observer {
     interface PrimeCallback { void onResult(boolean ready, String detail); }
 
     private static final long GLOBAL_TIMEOUT_MS = 11000L;
-    private static final long INTERACTIVE_TIMEOUT_MS = 6000L;
     private static final long SOURCE_TIMEOUT_MS = 5000L;
     private static final long HOME_RETURN_TIMEOUT_MS = 1200L;
 
@@ -96,21 +96,12 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
             callback.onResult(true, "Controller already ready");
             return;
         }
-        if (running) {
-            callback.onResult(false, "Source preparation already in progress");
-            return;
-        }
-        if (!qualified(packageName)) {
-            callback.onResult(false, "Source is not qualified for masked foreground preparation");
-            return;
-        }
-        interactive = true;
-        interactiveCallback = callback;
-        sources.clear();
-        sources.add(packageName);
-        index = 0;
-        begin(INTERACTIVE_TIMEOUT_MS, "interactive");
-        if (running) primeNext();
+
+        // Normal media controls should behave like Android SystemUI: command the existing
+        // MediaController, or let the background MediaBrowser/service adapter establish one.
+        // Foreground Activity launch is deliberately not a transport-control fallback.
+        MediaEventTrace.record("startup", "interactive-foreground-prime-disabled", packageName);
+        callback.onResult(false, "Continue with background media controller path");
     }
 
     private void begin(long timeoutMs, String mode) {
