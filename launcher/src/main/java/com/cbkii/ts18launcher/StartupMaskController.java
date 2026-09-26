@@ -30,6 +30,21 @@ final class StartupMaskController {
 
     boolean show() {
         if (overlay != null) return externalCover;
+
+        // Exact TS18 physical evidence showed that foreground-launching a media app while the
+        // managed navigation task remains in freeform mode can leave that media Activity in the
+        // desktop/freeform layer above HOME. The launcher mask can hide the transition but cannot
+        // make the resulting task ordering safe; even the device HOME key may then expose the
+        // media Activity behind the map instead of the launcher rails. Fail closed here and let
+        // MediaSourceBootstrapper use only its background MediaBrowser/service paths. Explicit
+        // source-icon launches already suspend navigation before handing off to another app.
+        if (HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                HomeNavigationSurfacePolicy.mode(activity))) {
+            MediaEventTrace.record("startup", "foreground-prime-skipped",
+                    "native navigation window active; external task ordering unsafe");
+            return false;
+        }
+
         FrameLayout root = new FrameLayout(activity);
         root.setBackgroundColor(0xFF050505);
         root.setClickable(true);
