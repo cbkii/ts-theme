@@ -32,4 +32,16 @@ public class MediaTickerPolicyTest {
         assertEquals("Cannonball", display.primary);
         assertEquals("", display.secondary);
     }
+
+    @Test public void duplicateAppLabelInBothFieldsBecomesBlank() {
+        MediaTickerPolicy.Display radio = MediaTickerPolicy.resolve(
+                "NavRadio+", "NavRadio+", "NavRadio+", MediaSelection.RADIO);
+        assertEquals("", radio.primary);
+        assertEquals("", radio.secondary);
+
+        MediaTickerPolicy.Display music = MediaTickerPolicy.resolve(
+                "Auxio", "Auxio", "Auxio", MediaSelection.MUSIC);
+        assertEquals("", music.primary);
+        assertEquals("", music.secondary);
+    }
 }
