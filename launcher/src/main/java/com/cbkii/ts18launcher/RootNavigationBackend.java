@@ -59,7 +59,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     }
 
     @Override public void resume(String packageName, NavigationWindowBounds bounds,
-            int taskId, int homeTaskId, Callback callback) {
+            int taskId, String homePackage, int homeTaskId, Callback callback) {
         if (taskId <= 0 || homeTaskId <= 0) {
             if (callback != null) callback.onResult(
                     NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
@@ -68,7 +68,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
         submit(() -> helper.run("resume-windowed", packageName,
                 Integer.toString(bounds.left), Integer.toString(bounds.top),
                 Integer.toString(bounds.right), Integer.toString(bounds.bottom),
-                Integer.toString(taskId), Integer.toString(homeTaskId)), callback);
+                Integer.toString(taskId), homePackage, Integer.toString(homeTaskId)), callback);
     }
 
     @Override public void status(String packageName, int taskId, Callback callback) {
