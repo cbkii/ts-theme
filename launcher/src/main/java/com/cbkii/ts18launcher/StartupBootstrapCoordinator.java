@@ -14,14 +14,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * Bounded exact-source foreground preparation. One owner serialises cold-start or explicit-user
- * re-prime behind the launcher mask; it never races a second background warm-up for the same source.
+ * Bounded exact-source foreground preparation after background readiness has failed, or when
+ * the user explicitly enabled cold HOME warm-up. Native-window launches use navigation handoff.
  */
 final class StartupBootstrapCoordinator implements MediaListenerService.Observer {
     interface PrimeCallback { void onResult(boolean ready, String detail); }
 
     private static final long GLOBAL_TIMEOUT_MS = 11000L;
-    private static final long INTERACTIVE_TIMEOUT_MS = 6000L;
     private static final long SOURCE_TIMEOUT_MS = 5000L;
     private static final long HOME_RETURN_TIMEOUT_MS = 1200L;
 
@@ -37,6 +36,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private MediaListenerService.Snapshot radioSnapshot =
             new MediaListenerService.Snapshot("", "", "", false);
     private boolean running;
+    private boolean preflight;
     private boolean destroyed;
     private boolean observerRegistered;
     private boolean waitingForHome;
@@ -48,6 +48,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private long sourceDeadline;
     private String currentPackage = "";
     private PrimeCallback interactiveCallback;
+    private final java.util.Set<String> interactiveAttempts = new java.util.HashSet<>();
 
     StartupBootstrapCoordinator(Activity activity, MediaSourceBootstrapper ignoredBootstrapper) {
         this.activity = activity;
@@ -60,10 +61,10 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         if (observer.isAlive()) observer.addOnWindowFocusChangeListener(focusListener);
     }
 
-    boolean isRunning() { return running; }
+    boolean isRunning() { return running || preflight; }
 
     void start() {
-        if (running || destroyed) return;
+        if (isRunning() || destroyed) return;
         interactive = false;
         interactiveCallback = null;
         sources.clear();
@@ -96,21 +97,33 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
             callback.onResult(true, "Controller already ready");
             return;
         }
-        if (running) {
-            callback.onResult(false, "Source preparation already in progress");
-            return;
-        }
-        if (!qualified(packageName)) {
-            callback.onResult(false, "Source is not qualified for masked foreground preparation");
+
+        if (!qualified(packageName) || isRunning() || !interactiveAttempts.add(packageName)) {
+            callback.onResult(false, "Cold source preparation already attempted or unavailable");
             return;
         }
         interactive = true;
+        preflight = true;
         interactiveCallback = callback;
         sources.clear();
-        sources.add(packageName);
         index = 0;
-        begin(INTERACTIVE_TIMEOUT_MS, "interactive");
-        if (running) primeNext();
+        if (HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                HomeNavigationSurfacePolicy.mode(activity)) && activity instanceof LauncherActivity) {
+            ((LauncherActivity) activity).afterMediaBootstrapHomeRestored(restored -> {
+                if (!restored || destroyed) {
+                    completeInteractive(false, "HOME navigation is not ready");
+                    return;
+                }
+                beginInteractive(packageName);
+            });
+        } else beginInteractive(packageName);
+    }
+
+    private void beginInteractive(String packageName) {
+        if (destroyed) { completeInteractive(false, "Launcher unavailable"); return; }
+        preflight = false;
+        begin(GLOBAL_TIMEOUT_MS, "interactive");
+        if (running) { sources.add(packageName); primeNext(); }
     }
 
     private void begin(long timeoutMs, String mode) {
@@ -166,6 +179,15 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         currentPackage = packageName;
         currentReady = false;
         int generation = ++sourceGeneration;
+        // Passive startup preparation must not steal audio from the already playing source.
+        if (!interactive && ((MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName)
+                && genericSnapshot.playing) || (MediaSourceAdapter.AUXIO_PACKAGE.equals(packageName)
+                && radioSnapshot.playing))) {
+            MediaEventTrace.record("startup", "opposite-playing-skip", packageName);
+            currentPackage = "";
+            primeNext();
+            return;
+        }
         if (isUsable(packageName)) {
             MediaEventTrace.record("startup", "source-already-ready", packageName);
             currentReady = true;
@@ -176,7 +198,20 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
             }
             return;
         }
-        if (!AppResolver.launchPackageQuietly(activity, packageName)) {
+        if (HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                HomeNavigationSurfacePolicy.mode(activity)) && activity instanceof LauncherActivity) {
+            ((LauncherActivity) activity).launchMediaBootstrap(packageName,
+                    launched -> onSourceLaunched(packageName, generation, launched));
+        } else {
+            onSourceLaunched(packageName, generation,
+                    AppResolver.launchPackageQuietly(activity, packageName));
+        }
+    }
+
+    private void onSourceLaunched(String packageName, int generation, boolean launched) {
+        if (!running || destroyed || generation != sourceGeneration
+                || !packageName.equals(currentPackage)) return;
+        if (!launched) {
             MediaEventTrace.record("startup", "source-launch-failed", packageName);
             if (interactive) completeInteractive(false, "Source launch failed");
             else {
@@ -254,8 +289,26 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
         MediaEventTrace.record("startup", "home-returned", currentPackage);
         boolean ready = currentReady;
         currentPackage = "";
+        if (interactive && activity instanceof LauncherActivity
+                && HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                        HomeNavigationSurfacePolicy.mode(activity))) {
+            ((LauncherActivity) activity).afterMediaBootstrapHomeRestored(restored ->
+                    completeInteractive(ready && restored,
+                            !restored ? "HOME navigation did not restore" :
+                            ready ? "Controller ready" : "Source did not become ready"));
+            return;
+        }
         if (interactive) {
             completeInteractive(ready, ready ? "Controller ready" : "Source did not become ready");
+            return;
+        }
+        if (activity instanceof LauncherActivity && HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
+                HomeNavigationSurfacePolicy.mode(activity))) {
+            ((LauncherActivity) activity).afterMediaBootstrapHomeRestored(restored -> {
+                if (!running || destroyed) return;
+                if (!restored || SystemClock.uptimeMillis() >= globalDeadline) finishCold();
+                else primeNext();
+            });
             return;
         }
         if (SystemClock.uptimeMillis() >= globalDeadline) finishCold();
@@ -265,7 +318,6 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private void finishCold() {
         if (!running) return;
         cleanupRun();
-        HomeMode.bringLauncherToFront(activity);
         MediaListenerService.refreshActiveSessions();
         MediaEventTrace.record("startup", "complete", "mode=cold");
     }
@@ -273,7 +325,6 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private void completeInteractive(boolean ready, String detail) {
         PrimeCallback callback = interactiveCallback;
         cleanupRun();
-        HomeMode.bringLauncherToFront(activity);
         MediaListenerService.refreshActiveSessions();
         MediaEventTrace.record("startup", "complete",
                 "mode=interactive ready=" + ready + " detail=" + detail);
@@ -282,6 +333,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
 
     private void cleanupRun() {
         running = false;
+        preflight = false;
         waitingForHome = false;
         currentPackage = "";
         currentReady = false;

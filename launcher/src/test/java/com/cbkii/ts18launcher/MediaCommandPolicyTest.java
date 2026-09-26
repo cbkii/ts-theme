@@ -36,6 +36,17 @@ public class MediaCommandPolicyTest {
                 PlaybackState.STATE_PLAYING));
     }
 
+    @Test public void skipCommandsAreNeverPreAcknowledged() {
+        assertFalse(MediaCommandPolicy.acknowledged(MediaCommandPolicy.Desired.PREVIOUS,
+                PlaybackState.STATE_PLAYING));
+        assertFalse(MediaCommandPolicy.acknowledged(MediaCommandPolicy.Desired.PREVIOUS,
+                PlaybackState.STATE_PAUSED));
+        assertFalse(MediaCommandPolicy.acknowledged(MediaCommandPolicy.Desired.NEXT,
+                PlaybackState.STATE_PLAYING));
+        assertFalse(MediaCommandPolicy.acknowledged(MediaCommandPolicy.Desired.NEXT,
+                PlaybackState.STATE_NONE));
+    }
+
     @Test public void readinessDoesNotEquateAnySessionWithPlayable() {
         assertEquals(MediaCommandPolicy.Phase.CONNECTED,
                 MediaCommandPolicy.phaseForController(PlaybackState.STATE_NONE, 0L));
