@@ -605,8 +605,10 @@ case "$action" in
     hint="${8:-0}"
     home_task="${9:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
-    valid_uint "$hint" && [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
-    valid_uint "$home_task" && [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
+    valid_uint "$hint" || fail TASK_AUTHORITY_REQUIRED
+    [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
+    valid_uint "$home_task" || fail HOME_TASK_AUTHORITY_REQUIRED
+    [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
     validate_bounds "$left" "$top" "$right" "$bottom" || fail BAD_BOUNDS
     expected="$left,$top,$right,$bottom"
     require_task "$PKG" "$hint" 1
