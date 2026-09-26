@@ -70,9 +70,6 @@ final class NavigationWindowController {
         }
         overlayGate.onVisible();
         uiState.onHomeVisible();
-        // HOME reaches this callback only after LauncherActivity has confirmed that its
-        // in-HOME overlay is closed. Cancel an obsolete queued suspension from a quick
-        // drawer open/close while another helper transaction was still in flight.
         pendingSuspendReason = "";
         if (state == State.FULLSCREEN_HANDOFF) {
             state = State.IDLE;
@@ -102,14 +99,25 @@ final class NavigationWindowController {
     }
 
     /**
-     * The drawer is a launcher recovery/control surface. Show it immediately and repair/verify the
-     * parked navigation task asynchronously; do not put visible Apps response behind root dumpsys.
+     * The drawer is a launcher recovery/control surface. Show it first. If the launcher's own
+     * window already has focus, Android has already completed the user-driven HOME handoff and a
+     * second root focus transaction would only add latency; defer read-only validation until the
+     * drawer closes. Otherwise use the guarded navigation parking transaction, which refuses to
+     * steal foreground from an unrelated app.
      */
     void openLauncherOverlay(Runnable show) {
         if (state == State.DESTROYED || !uiState.onLauncherOverlayOpened()) return;
         overlayGate.cancel();
         if (show != null) show.run();
-        Log.i(TAG, "launcher overlay visible before navigation suspension verification");
+        if (activity.hasWindowFocus()) {
+            pendingSuspendReason = "";
+            state = State.SUSPENDED;
+            needsValidation = true;
+            Log.i(TAG, "launcher overlay visible with HOME already focused; root parking skipped");
+            MediaEventTrace.record("drawer", "home-focus-already-owned");
+            return;
+        }
+        Log.i(TAG, "launcher overlay visible; guarded navigation parking required");
         suspendForLauncherSurface("launcher overlay");
     }
 
@@ -119,8 +127,6 @@ final class NavigationWindowController {
     }
 
     void launchAfterSuspension(Runnable launch) {
-        // Deliberately launching another app still waits for the navigation handoff. This is
-        // distinct from merely showing the in-HOME drawer.
         cancelLauncherOverlay();
         if (state == State.DESTROYED || !overlayGate.request(launch)) return;
         uiState.onLauncherOverlayOpened();
@@ -536,8 +542,6 @@ final class NavigationWindowController {
     }
 
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) {
-        // Physical visibility and touch are not inferred from Android task identity/bounds alone;
-        // those remain exact-device qualification observations even after this helper succeeds.
         panel.showConfigured("", () -> openFullscreen(null));
     }
 
