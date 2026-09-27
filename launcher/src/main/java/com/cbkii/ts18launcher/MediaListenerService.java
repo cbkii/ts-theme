@@ -116,6 +116,7 @@ public final class MediaListenerService extends NotificationListenerService {
     private String radioNotificationKey = "";
     private String radioNotificationTitle = "";
     private String radioNotificationText = "";
+    private String radioNotificationStation = "";
 
     private final MediaController.Callback callback = new MediaController.Callback() {
         @Override public void onMetadataChanged(MediaMetadata metadata) { refresh(); }
@@ -188,6 +189,11 @@ public final class MediaListenerService extends NotificationListenerService {
         radioNotificationKey = sbn.getKey() == null ? "" : sbn.getKey();
         radioNotificationTitle = title;
         radioNotificationText = text;
+        Snapshot currentRadio = snapshotOf(findRadioController());
+        radioNotificationStation = meaningfulRadioTitle(currentRadio);
+        if (radioNotificationStation.isEmpty() && !isRadioPlaceholder(title)) {
+            radioNotificationStation = normalise(title);
+        }
         MediaEventTrace.record("metadata", "radio-notification", sbn.getPackageName());
         refresh();
     }
@@ -198,6 +204,7 @@ public final class MediaListenerService extends NotificationListenerService {
         radioNotificationKey = "";
         radioNotificationTitle = "";
         radioNotificationText = "";
+        radioNotificationStation = "";
         MediaEventTrace.record("metadata", "radio-notification-removed", sbn.getPackageName());
         refresh();
     }
@@ -260,10 +267,20 @@ public final class MediaListenerService extends NotificationListenerService {
 
         Snapshot previousGeneric = lastGeneric;
         Snapshot previousRadio = lastRadio;
+        Snapshot rawRadio = snapshotOf(radioController);
+        boolean notificationMatches = notificationMatchesRadioSnapshot(
+                radioNotificationStation, rawRadio);
+        if (!notificationMatches
+                && (!radioNotificationTitle.isEmpty() || !radioNotificationText.isEmpty())) {
+            MediaEventTrace.record("metadata", "radio-notification-mismatch",
+                    "notificationStation=" + radioNotificationStation
+                            + " sessionStation=" + meaningfulRadioTitle(rawRadio));
+        }
         Snapshot nextGeneric = stabiliseSnapshot(previousGeneric, snapshotOf(genericController));
         Snapshot nextRadio = stabiliseSnapshot(previousRadio,
-                applyRadioFallback(snapshotOf(radioController),
-                        radioNotificationTitle, radioNotificationText));
+                applyRadioFallback(rawRadio,
+                        notificationMatches ? radioNotificationTitle : "",
+                        notificationMatches ? radioNotificationText : ""));
         boolean genericChanged = !sameSnapshot(previousGeneric, nextGeneric);
         boolean radioChanged = !sameSnapshot(previousRadio, nextRadio);
         lastGeneric = nextGeneric;
@@ -483,22 +500,45 @@ public final class MediaListenerService extends NotificationListenerService {
         return value == null ? "" : value.trim();
     }
 
+    private static boolean isRadioPlaceholder(String value) {
+        String clean = normalise(value);
+        return clean.equalsIgnoreCase("NavRadio+") || clean.equalsIgnoreCase("Radio");
+    }
+
+    static String meaningfulRadioTitle(Snapshot snapshot) {
+        if (snapshot == null) return "";
+        String title = normalise(snapshot.title);
+        return title.isEmpty() || isRadioPlaceholder(title) ? "" : title;
+    }
+
+    static boolean notificationMatchesRadioSnapshot(String associatedStation, Snapshot snapshot) {
+        String currentStation = meaningfulRadioTitle(snapshot);
+        String associated = normalise(associatedStation);
+        if (currentStation.isEmpty()) return true;
+        return !associated.isEmpty() && associated.equalsIgnoreCase(currentStation);
+    }
+
     static Snapshot applyRadioFallback(Snapshot snapshot, String title, String text) {
         if (snapshot == null || snapshot.packageName.isEmpty()) return snapshot;
         String cleanTitle = normalise(title);
         String cleanText = normalise(text);
         String primary = snapshot.title;
         String secondary = snapshot.artist;
-        boolean placeholder = primary.equalsIgnoreCase("NavRadio+")
-                || primary.equalsIgnoreCase("Radio");
-        if (placeholder) primary = "";
-        if (primary.isEmpty()) primary = cleanTitle;
-        if (primary.equalsIgnoreCase("NavRadio+") || primary.equalsIgnoreCase("Radio")) {
-            primary = cleanText;
-            cleanText = "";
+        boolean placeholder = isRadioPlaceholder(primary);
+        if (placeholder && cleanTitle.isEmpty() && cleanText.isEmpty()
+                && !secondary.isEmpty() && !isRadioPlaceholder(secondary)) {
+            primary = secondary;
+            secondary = "";
+        } else {
+            if (placeholder) primary = "";
+            if (primary.isEmpty()) primary = cleanTitle;
+            if (isRadioPlaceholder(primary)) {
+                primary = cleanText;
+                cleanText = "";
+            }
+            if (secondary.isEmpty() && !cleanText.isEmpty()
+                    && !cleanText.equalsIgnoreCase(primary)) secondary = cleanText;
         }
-        if (secondary.isEmpty() && !cleanText.isEmpty()
-                && !cleanText.equalsIgnoreCase(primary)) secondary = cleanText;
         if (primary.equals(snapshot.title) && secondary.equals(snapshot.artist)) return snapshot;
         return new Snapshot(snapshot.packageName, primary, secondary,
                 snapshot.state, snapshot.actions, snapshot.sessionIdentity);

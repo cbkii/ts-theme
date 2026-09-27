@@ -124,13 +124,17 @@ final class NavigationWindowController {
         if (state == State.WINDOWED && !needsPresentation && uiState.canPresentNavigation()) {
             callback.accept(true); return;
         }
-        if (state == State.DESTROYED || state == State.FAILED) {
+        if (state == State.DESTROYED) {
             callback.accept(false); return;
+        }
+        if (state == State.FAILED) {
+            callback.accept(!hasManagedNativeTask()); return;
         }
         finishPresentationCallback(false);
         pendingPresentationCallback = callback;
         activity.getWindow().getDecorView().postDelayed(() -> {
-            if (pendingPresentationCallback == callback) finishPresentationCallback(false);
+            if (pendingPresentationCallback == callback)
+                finishPresentationCallback(!hasManagedNativeTask());
         }, 6000L);
     }
 

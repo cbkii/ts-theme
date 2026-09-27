@@ -1,6 +1,8 @@
 package com.cbkii.ts18launcher;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import android.media.session.PlaybackState;
 
@@ -89,5 +91,30 @@ public final class MediaMetadataStabilityTest {
                 session, "ABC Classic", "ABC Classic");
         assertEquals("ABC Classic", merged.title);
         assertEquals("", merged.artist);
+    }
+
+    @Test public void radioArtistBecomesPrimaryWhenTitleIsOnlySourceLabel() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "NavRadio+", "2CA 1053 AM",
+                PlaybackState.STATE_PLAYING, PlaybackState.ACTION_PAUSE, new Object());
+        MediaListenerService.Snapshot merged =
+                MediaListenerService.applyRadioFallback(session, "", "");
+        assertEquals("2CA 1053 AM", merged.title);
+        assertEquals("", merged.artist);
+    }
+
+    @Test public void notificationFallbackIsRejectedForDifferentSessionStation() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "2CA", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        assertFalse(MediaListenerService.notificationMatchesRadioSnapshot("ABC Classic", session));
+        assertTrue(MediaListenerService.notificationMatchesRadioSnapshot("2CA", session));
+    }
+
+    @Test public void unassociatedNotificationIsNotMergedIntoKnownStation() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "2CA", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        assertFalse(MediaListenerService.notificationMatchesRadioSnapshot("", session));
     }
 }

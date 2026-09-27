@@ -48,7 +48,6 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private long sourceDeadline;
     private String currentPackage = "";
     private PrimeCallback interactiveCallback;
-    private final java.util.Set<String> interactiveAttempts = new java.util.HashSet<>();
 
     StartupBootstrapCoordinator(Activity activity, MediaSourceBootstrapper ignoredBootstrapper) {
         this.activity = activity;
@@ -98,8 +97,8 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
             return;
         }
 
-        if (!qualified(packageName) || isRunning() || !interactiveAttempts.add(packageName)) {
-            callback.onResult(false, "Cold source preparation already attempted or unavailable");
+        if (!qualified(packageName) || isRunning()) {
+            callback.onResult(false, "Cold source preparation unavailable");
             return;
         }
         interactive = true;

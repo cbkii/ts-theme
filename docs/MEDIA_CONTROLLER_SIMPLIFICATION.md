@@ -20,13 +20,18 @@ longer replace normal transport control or the now-playing surface.
 - Previous/Next are edge-triggered commands. They must never be considered acknowledged before the
   transport call is sent. The old policy did exactly that on reconnect paths, so a command could
   report success without invoking `skipToPrevious()`/`skipToNext()`.
-- Interactive Play no longer foreground-launches Auxio or NavRadio+ as a readiness fallback. It
-  falls through to the existing MediaController/MediaBrowser/service path. Optional cold HOME
-  startup preparation remains separately controlled.
+- Warm interactive Play/Pause uses the existing controller and does not foreground-launch Auxio or
+  NavRadio+ as a readiness fallback. A cold explicit Play with no usable controller first uses the
+  MediaController/MediaBrowser/service preparation path; if that still cannot produce a controller,
+  the exact configured Auxio/NavRadio source may use one bounded, masked foreground preparation and
+  return HOME before the pending Play is dispatched.
 - The ticker renders media snapshots only. Launcher readiness messages, command failures and source
   app labels are not now-playing metadata and cannot overwrite it.
 - If a radio notification/session supplies the app label as primary text and useful station/channel
   text as secondary metadata, the useful text is promoted and the app label is discarded.
+- Radio notification fallback is associated with the station observed when the notification is
+  received. Once the session reports a different station, the old notification metadata is not
+  merged into that session.
 
 ## Physical qualification
 
