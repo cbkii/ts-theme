@@ -190,10 +190,7 @@ public final class MediaListenerService extends NotificationListenerService {
         radioNotificationTitle = title;
         radioNotificationText = text;
         Snapshot currentRadio = snapshotOf(findRadioController());
-        radioNotificationStation = meaningfulRadioTitle(currentRadio);
-        if (radioNotificationStation.isEmpty() && !isRadioPlaceholder(title)) {
-            radioNotificationStation = normalise(title);
-        }
+        radioNotificationStation = notificationStation(title, currentRadio);
         MediaEventTrace.record("metadata", "radio-notification", sbn.getPackageName());
         refresh();
     }
@@ -509,6 +506,14 @@ public final class MediaListenerService extends NotificationListenerService {
         if (snapshot == null) return "";
         String title = normalise(snapshot.title);
         return title.isEmpty() || isRadioPlaceholder(title) ? "" : title;
+    }
+
+    static String notificationStation(String notificationTitle, Snapshot currentRadio) {
+        String title = normalise(notificationTitle);
+        // Notifications can arrive before the MediaSession advances to the new station.
+        // Associate their details with the notification's station, not the old session.
+        return title.isEmpty() || isRadioPlaceholder(title)
+                ? meaningfulRadioTitle(currentRadio) : title;
     }
 
     static boolean notificationMatchesRadioSnapshot(String associatedStation, Snapshot snapshot) {

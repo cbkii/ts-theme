@@ -352,7 +352,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     void destroy() {
         destroyed = true;
         PrimeCallback callback = interactiveCallback;
-        boolean wasInteractive = interactive && running;
+        boolean wasInteractive = interactive && (running || preflight);
         cleanupRun();
         if (wasInteractive && callback != null) callback.onResult(false, "Launcher unavailable");
         ViewTreeObserver observer = decor.getViewTreeObserver();

@@ -117,4 +117,17 @@ public final class MediaMetadataStabilityTest {
                 PlaybackState.ACTION_PAUSE, new Object());
         assertFalse(MediaListenerService.notificationMatchesRadioSnapshot("", session));
     }
+
+    @Test public void newStationNotificationWaitsForSessionTransition() {
+        MediaListenerService.Snapshot oldStation = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "2CA", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        String associatedStation = MediaListenerService.notificationStation("ABC Classic", oldStation);
+        assertEquals("ABC Classic", associatedStation);
+        assertFalse(MediaListenerService.notificationMatchesRadioSnapshot(associatedStation, oldStation));
+        MediaListenerService.Snapshot newStation = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "ABC Classic", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, oldStation.sessionIdentity);
+        assertTrue(MediaListenerService.notificationMatchesRadioSnapshot(associatedStation, newStation));
+    }
 }
