@@ -89,6 +89,9 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("state == State.FAILED", method)
         self.assertIn("callback.accept(!hasManagedNativeTask())", method)
         self.assertIn("finishPresentationCallback(!hasManagedNativeTask())", method)
+        failure = controller.split("private void latchFailure", 1)[1].split(
+            "private boolean isFailureLatched", 1)[0]
+        self.assertIn("finishPresentationCallback(!hasManagedNativeTask())", failure)
 
 
 if __name__ == "__main__":
