@@ -63,6 +63,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             loadGeneration++;
             loaded = false;
             loading = false;
+            quickSignature = "";
             allEntries.clear();
             filter(search.getText() == null ? "" : search.getText().toString());
             if (isOpen()) ensureLoaded();
@@ -71,6 +72,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private boolean loaded;
     private boolean loading;
     private boolean preloadScheduled;
+    private String quickSignature = "";
     private volatile boolean destroyed;
     private volatile int loadGeneration;
 
@@ -265,6 +267,9 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     }
 
     void refreshPreferences() {
+        String signature = quickPreferenceSignature();
+        if (signature.equals(quickSignature)) return;
+        quickSignature = signature;
         quickRow.removeAllViews();
         List<View> focus = new ArrayList<>();
         int target = AutomotiveUi.dimen(activity, R.dimen.driver_target_min);
@@ -292,6 +297,18 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             focus.add(button);
         }
         AutomotiveUi.linkHorizontal(focus);
+    }
+
+    private String quickPreferenceSignature() {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < LauncherPrefs.DRAWER_QUICK_KEYS.length; i++) {
+            String key = LauncherPrefs.DRAWER_QUICK_KEYS[i];
+            out.append(i).append(':')
+                    .append(LauncherPrefs.drawerQuickRole(activity, i)).append(':')
+                    .append(LauncherPrefs.packageFor(activity, key)).append(':')
+                    .append(ShortcutSlot.iconAppearance(activity, key)).append(';');
+        }
+        return out.toString();
     }
 
     private ImageButton iconButton(int res, String description) {
