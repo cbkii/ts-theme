@@ -165,6 +165,10 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         grid.setAdapter(adapter);
         grid.setOnItemClickListener((parent, view, position, id) -> launch(visibleEntries.get(position)));
+        grid.setOnItemLongClickListener((parent, view, position, id) -> {
+            openAppInfo(visibleEntries.get(position));
+            return true;
+        });
         root.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         setVisibility(View.GONE);
     }
@@ -416,6 +420,19 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         Intent intent = new Intent(activity, AppDrawerActivity.class);
         intent.putExtra(AppDrawerActivity.EXTRA_PICK_KEY, key);
         activity.startActivity(intent);
+    }
+
+    private void openAppInfo(Entry entry) {
+        if (entry == null || entry.packageName.isEmpty()) return;
+        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.parse("package:" + entry.packageName));
+        try {
+            activity.startActivity(intent);
+            dismissKeyboard();
+            setVisibility(View.GONE);
+        } catch (RuntimeException ignored) {
+            Toast.makeText(activity, "App info unavailable", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void launch(Entry entry) {
