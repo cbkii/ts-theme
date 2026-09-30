@@ -1,6 +1,10 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Read-only final TS18 snapshot. Run after the physical action being qualified.
 # Use trace-home-performance.sh during the action for low-overhead timing evidence.
+#
+# Root identity is explicit. This collector never invokes raw su. Run it normally for the Termux
+# app-UID lane; when root evidence is required, enter through the TS18 Termux Kit `s`/`st` route and
+# run the script again. This preserves UID/SELinux/namespace authority instead of nesting transports.
 
 set -u
 umask 077
@@ -13,6 +17,7 @@ while (( $# )); do
     --no-root) probe_root=0; shift ;;
     -h|--help)
       printf 'Usage: %s [--out-base ABSOLUTE_DIR] [--no-root]\n' "$0"
+      printf 'Run normally for Termux UID evidence; use TS18 Termux Kit s/st before this script for root evidence.\n'
       exit 0 ;;
     *) printf 'Unknown argument: %s\n' "$1" >&2; exit 64 ;;
   esac
@@ -103,7 +108,9 @@ else
   record identity/android-user.txt REQUIRED BLOCKED 1
 fi
 
-capture display/wm-size.txt REQUIRED 6 wm size
+# `wm` can be unavailable/hang in the ordinary Termux app domain even when Activity/Window dumpsys
+# is usable. It is useful geometry context, not a product acceptance gate.
+capture display/wm-size.txt OPTIONAL 6 wm size
 capture display/wm-density.txt OPTIONAL 6 wm density
 capture window/activity.txt REQUIRED 10 dumpsys activity activities
 capture window/wm.txt REQUIRED 10 dumpsys window windows
@@ -112,26 +119,24 @@ capture media/audio.txt OPTIONAL 10 dumpsys audio
 capture storage/mounts.txt REQUIRED 4 cat /proc/mounts
 capture logs/launcher.txt OPTIONAL 8 logcat -d -t 800 -v threadtime -s TS18Media:I TS18Nav:I TS18Launcher:I '*:S'
 
-if [[ -n "$user" ]]; then
-  for package in com.cbkii.ts18launcher app.organicmaps.incar com.tw.media com.navimods.radio com.tw.radio; do
-    capture "packages/$package.txt" OPTIONAL 8 dumpsys package "$package"
-  done
-else
-  printf 'Package queries require a valid Android user identity\n' >"$out/packages-BLOCKED.txt"
-  record packages-BLOCKED.txt OPTIONAL BLOCKED 1
-fi
+for package in com.cbkii.ts18launcher app.organicmaps.incar com.tw.media com.navimods.radio com.tw.radio; do
+  capture "packages/$package.txt" OPTIONAL 8 dumpsys package "$package"
+done
 
 if (( probe_root )); then
-  if command -v su >/dev/null 2>&1; then
-    capture identity/root.txt OPTIONAL 5 su -c \
+  if [[ "$(id -u 2>/dev/null)" == 0 ]]; then
+    capture identity/root.txt OPTIONAL 5 bash -c \
       "PATH=$android_path; export PATH; id; id -Z; readlink /proc/self/ns/mnt"
     if [[ "$(tail -n 1 "$out/identity/root.txt")" == '# exit_status=0' ]] \
         && ! grep -Eq '^uid=0([[:space:]]|$)' "$out/identity/root.txt"; then
       record identity/root-authority.txt OPTIONAL BLOCKED 1
     fi
   else
-    printf 'Root transport unavailable\n' >"$out/identity/root.txt"
-    record identity/root.txt OPTIONAL BLOCKED 127
+    printf '%s\n' \
+      'Root lane not entered. Raw su is intentionally not used.' \
+      'For root evidence, enter through the TS18 Termux Kit s/st route and rerun this collector.' \
+      >"$out/identity/root.txt"
+    record identity/root.txt OPTIONAL BLOCKED 0
   fi
 else
   printf 'Root probe explicitly skipped\n' >"$out/identity/root.txt"
