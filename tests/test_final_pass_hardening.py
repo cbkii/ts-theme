@@ -39,6 +39,14 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertIn("ShortcutSlot.iconAppearance(activity, key)", DRAWER)
         self.assertIn('quickSignature = "";', DRAWER)
 
+    def test_drawer_grid_long_press_opens_android_app_info(self):
+        self.assertIn("grid.setOnItemLongClickListener", DRAWER)
+        self.assertIn("android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS", DRAWER)
+        self.assertIn('android.net.Uri.parse("package:" + entry.packageName)', DRAWER)
+        self.assertIn("openAppInfo(visibleEntries.get(position))", DRAWER)
+        # Configurable quick slots keep their existing edit/reassign long-press contract.
+        self.assertIn("button.setOnLongClickListener(v -> { openPicker(", DRAWER)
+
 
 if __name__ == "__main__":
     unittest.main()
