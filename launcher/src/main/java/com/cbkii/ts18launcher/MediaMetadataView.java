@@ -8,13 +8,23 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** Two-level glanceable media metadata: moving primary title, static secondary context. */
-final class MediaMetadataView extends LinearLayout {
+/**
+ * Two-level glanceable now-playing metadata.
+ *
+ * This view deliberately renders MediaSession/notification-derived snapshots only. Launcher command
+ * status, readiness messages and app labels are diagnostics, not now-playing metadata, and therefore
+ * never replace the ticker contents.
+ */
+final class MediaMetadataView extends LinearLayout implements MediaListenerService.Observer {
     private final SlowMarqueeTextView primary;
     private final TextView secondary;
     private String lastPrimary;
     private String lastSecondary;
     private String lastSourceIdentity;
+    private MediaListenerService.Snapshot genericSnapshot =
+            new MediaListenerService.Snapshot("", "", "", false);
+    private MediaListenerService.Snapshot radioSnapshot =
+            new MediaListenerService.Snapshot("", "", "", false);
 
     MediaMetadataView(Context context) {
         super(context);
@@ -42,15 +52,56 @@ final class MediaMetadataView extends LinearLayout {
         addView(secondary, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.85f));
     }
 
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        MediaListenerService.addObserver(this);
+        renderCurrentSnapshot();
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        MediaListenerService.removeObserver(this);
+        super.onDetachedFromWindow();
+    }
+
+    @Override public void onMediaStateChanged(MediaListenerService.Snapshot genericMedia,
+                                               MediaListenerService.Snapshot radio) {
+        genericSnapshot = genericMedia == null
+                ? new MediaListenerService.Snapshot("", "", "", false) : genericMedia;
+        radioSnapshot = radio == null
+                ? new MediaListenerService.Snapshot("", "", "", false) : radio;
+        post(this::renderCurrentSnapshot);
+    }
+
     void applyAppearance() {
         primary.setTextColor(AutomotiveUi.color(getContext(), R.color.ui_text));
         secondary.setTextColor(AutomotiveUi.color(getContext(), R.color.ui_text_secondary));
     }
 
-    void setMetadata(String title, String context) {
-        String sourceIdentity = sourceIdentity();
+    /**
+     * LauncherActivity historically used this method for command/readiness status as well as real
+     * metadata. Keep the call surface for compatibility, but ignore those supplied strings and
+     * re-render from the authoritative media snapshot instead.
+     */
+    void setMetadata(String ignoredTitle, String ignoredContext) {
+        renderCurrentSnapshot();
+    }
+
+    private void renderCurrentSnapshot() {
+        String selected = LauncherPrefs.lastSource(getContext());
+        MediaListenerService.Snapshot snapshot = MediaSelection.RADIO.equals(selected)
+                ? radioSnapshot : genericSnapshot;
+        String sourceIdentity = sourceIdentity(snapshot);
+        String appLabel = snapshot == null || snapshot.packageName.isEmpty()
+                ? "" : AppResolver.labelFor(getContext(), snapshot.packageName, "");
+        MediaTickerPolicy.Display display = MediaTickerPolicy.resolve(
+                snapshot == null ? "" : snapshot.title,
+                snapshot == null ? "" : snapshot.artist,
+                appLabel,
+                selected);
+
         MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
-                lastPrimary, lastSecondary, lastSourceIdentity, sourceIdentity, title, context);
+                lastPrimary, lastSecondary, lastSourceIdentity, sourceIdentity,
+                display.primary, display.secondary);
         lastSourceIdentity = sourceIdentity;
         if (change.primaryChanged) {
             lastPrimary = change.primary;
@@ -63,15 +114,19 @@ final class MediaMetadataView extends LinearLayout {
         }
     }
 
-    private String sourceIdentity() {
+    private String sourceIdentity(MediaListenerService.Snapshot snapshot) {
         String selected = LauncherPrefs.lastSource(getContext());
-        if (MediaSelection.RADIO.equals(selected)) {
-            return "radio:" + RadioProvider.resolvePackage(getContext());
-        }
-        String packageName = LauncherPrefs.lastMusicPackage(getContext());
+        String packageName = snapshot == null ? "" : snapshot.packageName;
         if (packageName.isEmpty()) {
-            packageName = LauncherPrefs.packageFor(getContext(), LauncherPrefs.KEY_MUSIC);
+            if (MediaSelection.RADIO.equals(selected)) {
+                packageName = RadioProvider.resolvePackage(getContext());
+            } else {
+                packageName = LauncherPrefs.lastMusicPackage(getContext());
+                if (packageName.isEmpty()) {
+                    packageName = LauncherPrefs.packageFor(getContext(), LauncherPrefs.KEY_MUSIC);
+                }
+            }
         }
-        return "music:" + packageName;
+        return selected + ":" + packageName;
     }
 }

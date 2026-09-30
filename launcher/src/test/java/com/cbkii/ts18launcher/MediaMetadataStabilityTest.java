@@ -1,6 +1,8 @@
 package com.cbkii.ts18launcher;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import android.media.session.PlaybackState;
 
@@ -59,5 +61,73 @@ public final class MediaMetadataStabilityTest {
                 MediaListenerService.applyRadioFallback(session, "Notification", "Fallback");
         assertEquals("Session station", enriched.title);
         assertEquals("Session detail", enriched.artist);
+    }
+
+    @Test public void stationSessionGainsMissingFrequencyFromNotification() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "ABC Classic", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        MediaListenerService.Snapshot merged = MediaListenerService.applyRadioFallback(
+                session, "ABC Classic", "105.9 FM");
+        assertEquals("ABC Classic", merged.title);
+        assertEquals("105.9 FM", merged.artist);
+    }
+
+    @Test public void sourceLabelIsReplacedWithStationAndChannel() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "NavRadio+", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        MediaListenerService.Snapshot merged = MediaListenerService.applyRadioFallback(
+                session, "2CA", "1053 AM");
+        assertEquals("2CA", merged.title);
+        assertEquals("1053 AM", merged.artist);
+    }
+
+    @Test public void duplicateNotificationTextDoesNotCreateDuplicateSecondary() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "ABC Classic", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        MediaListenerService.Snapshot merged = MediaListenerService.applyRadioFallback(
+                session, "ABC Classic", "ABC Classic");
+        assertEquals("ABC Classic", merged.title);
+        assertEquals("", merged.artist);
+    }
+
+    @Test public void radioArtistBecomesPrimaryWhenTitleIsOnlySourceLabel() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "NavRadio+", "2CA 1053 AM",
+                PlaybackState.STATE_PLAYING, PlaybackState.ACTION_PAUSE, new Object());
+        MediaListenerService.Snapshot merged =
+                MediaListenerService.applyRadioFallback(session, "", "");
+        assertEquals("2CA 1053 AM", merged.title);
+        assertEquals("", merged.artist);
+    }
+
+    @Test public void notificationFallbackIsRejectedForDifferentSessionStation() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "2CA", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        assertFalse(MediaListenerService.notificationMatchesRadioSnapshot("ABC Classic", session));
+        assertTrue(MediaListenerService.notificationMatchesRadioSnapshot("2CA", session));
+    }
+
+    @Test public void unassociatedNotificationIsNotMergedIntoKnownStation() {
+        MediaListenerService.Snapshot session = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "2CA", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        assertFalse(MediaListenerService.notificationMatchesRadioSnapshot("", session));
+    }
+
+    @Test public void newStationNotificationWaitsForSessionTransition() {
+        MediaListenerService.Snapshot oldStation = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "2CA", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, new Object());
+        String associatedStation = MediaListenerService.notificationStation("ABC Classic", oldStation);
+        assertEquals("ABC Classic", associatedStation);
+        assertFalse(MediaListenerService.notificationMatchesRadioSnapshot(associatedStation, oldStation));
+        MediaListenerService.Snapshot newStation = new MediaListenerService.Snapshot(
+                "com.navimods.radio", "ABC Classic", "", PlaybackState.STATE_PLAYING,
+                PlaybackState.ACTION_PAUSE, oldStation.sessionIdentity);
+        assertTrue(MediaListenerService.notificationMatchesRadioSnapshot(associatedStation, newStation));
     }
 }

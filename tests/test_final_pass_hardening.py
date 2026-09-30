@@ -10,14 +10,11 @@ AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
 
 class FinalPassHardeningTest(unittest.TestCase):
-    def test_startup_prime_has_one_owner_without_bootstrap_coupling(self):
-        # The stacked navigation branch may retain the historical compatibility parameter until
-        # the top media branch removes it, but it must remain completely unused here. This checks
-        # behaviour rather than requiring every intermediate stacked branch to have the same
-        # constructor spelling as PR #10.
-        self.assertIn("StartupBootstrapCoordinator(Activity activity", STARTUP)
-        self.assertLessEqual(STARTUP.count("ignoredBootstrapper"), 1)
-        self.assertIn("startupBootstrap = new StartupBootstrapCoordinator", LAUNCHER)
+    def test_startup_prime_has_one_owner_without_dead_bootstrap_dependency(self):
+        self.assertIn("StartupBootstrapCoordinator(Activity activity)", STARTUP)
+        self.assertNotIn("ignoredBootstrapper", STARTUP)
+        self.assertIn("new StartupBootstrapCoordinator(this)", LAUNCHER)
+        self.assertNotIn("new StartupBootstrapCoordinator(this, mediaBootstrapper)", LAUNCHER)
 
     def test_auxio_root_startservice_route_stays_removed(self):
         browser = ADAPTER.split(

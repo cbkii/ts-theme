@@ -50,25 +50,28 @@ class FinalCollectorTest(unittest.TestCase):
     def test_pass_keeps_optional_root_block_separate_and_verifies_archive(self):
         result, rows, archive_ok, verified, archive_verify, archived_names = self.collect()
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("display/wm-size.txt\tREQUIRED\tPASS\t0", rows)
+        self.assertIn("display/wm-size.txt\tOPTIONAL\tPASS\t0", rows)
         self.assertIn("identity/root.txt\tOPTIONAL\tBLOCKED\t0", rows)
         self.assertTrue(archive_ok)
         self.assertIn("OK", verified)
         self.assertIn("No errors detected", archive_verify)
         self.assertFalse(any(name.endswith("ARCHIVE_VERIFY.txt") for name in archived_names))
 
-    def test_required_command_not_found_cannot_pass(self):
+    def test_wm_unavailable_is_diagnostic_warning_not_product_failure(self):
         result, rows, archive_ok, _, _, _ = self.collect(wm_status=127)
-        self.assertNotEqual(0, result.returncode)
-        self.assertIn("display/wm-size.txt\tREQUIRED\tFAIL\t127", rows)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("display/wm-size.txt\tOPTIONAL\tWARN\t127", rows)
         self.assertTrue(archive_ok)
 
-    def test_ambiguous_android_user_blocks_dependent_evidence(self):
-        result, rows, archive_ok, _, _, _ = self.collect(user="Current user: 0\nuser: 10")
+    def test_ambiguous_android_user_blocks_identity_but_not_independent_package_dumps(self):
+        result, rows, archive_ok, _, _, archived_names = self.collect(
+            user="Current user: 0\nuser: 10")
         self.assertNotEqual(0, result.returncode)
         self.assertIn("identity/android-user.txt\tREQUIRED\tBLOCKED\t1", rows)
-        self.assertIn("packages-BLOCKED.txt\tOPTIONAL\tBLOCKED\t1", rows)
-        self.assertIn("display/wm-size.txt\tREQUIRED\tPASS\t0", rows)
+        self.assertNotIn("packages-BLOCKED.txt", rows)
+        self.assertIn("display/wm-size.txt\tOPTIONAL\tPASS\t0", rows)
+        self.assertTrue(any(name.endswith("packages/com.cbkii.ts18launcher.txt")
+                            for name in archived_names))
         self.assertTrue(archive_ok)
 
     def test_truncated_required_output_is_reported_as_failure(self):
@@ -76,6 +79,12 @@ class FinalCollectorTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("window/activity.txt\tREQUIRED\tFAIL\t0;TRUNCATED", rows)
         self.assertTrue(archive_ok)
+
+    def test_collector_never_invokes_raw_su(self):
+        text = COLLECTOR.read_text(encoding="utf-8")
+        self.assertNotIn("su -c", text)
+        self.assertNotIn("command -v su", text)
+        self.assertIn("TS18 Termux Kit `s`/`st` route", text)
 
 
 if __name__ == "__main__":
