@@ -9,6 +9,8 @@ import java.util.concurrent.Executors;
 
 /** Shared bounded executor for one root-backed navigation experiment. */
 abstract class RootNavigationBackend implements NavigationSurfaceBackend {
+    private static final long KNOWN_TASK_RECHECK_DELAY_MS = 180L;
+
     private final Context context;
     private final NavigationRootHelper helper;
     private final ExecutorService executor;
@@ -30,10 +32,11 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
         submit(() -> {
             ensureNavigationPermissions(packageName);
             if (taskId > 0) {
-                NavigationHelperResult verified = helper.run("verify-native", packageName,
-                        Integer.toString(bounds.left), Integer.toString(bounds.top),
-                        Integer.toString(bounds.right), Integer.toString(bounds.bottom),
-                        Integer.toString(taskId));
+                NavigationHelperResult verified = retryKnownTaskMiss(packageName, taskId,
+                        "pre-present verify", () -> helper.run("verify-native", packageName,
+                                Integer.toString(bounds.left), Integer.toString(bounds.top),
+                                Integer.toString(bounds.right), Integer.toString(bounds.bottom),
+                                Integer.toString(taskId)));
                 // Geometry alone does not establish presentation after parking.
                 if ("TASK_NOT_FOUND".equals(verified.code)
                         || "TASK_AMBIGUOUS".equals(verified.code)
@@ -52,9 +55,11 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
             int taskId, Callback callback) {
         submit(() -> {
             ensureNavigationPermissions(packageName);
-            return helper.run("verify-native", packageName,
-                    Integer.toString(bounds.left), Integer.toString(bounds.top),
-                    Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId));
+            return retryKnownTaskMiss(packageName, taskId, "verify", () ->
+                    helper.run("verify-native", packageName,
+                            Integer.toString(bounds.left), Integer.toString(bounds.top),
+                            Integer.toString(bounds.right), Integer.toString(bounds.bottom),
+                            taskHint(taskId)));
         }, callback);
     }
 
@@ -65,14 +70,16 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
             return;
         }
-        submit(() -> helper.run("resume-windowed", packageName,
-                Integer.toString(bounds.left), Integer.toString(bounds.top),
-                Integer.toString(bounds.right), Integer.toString(bounds.bottom),
-                Integer.toString(taskId), homePackage, Integer.toString(homeTaskId)), callback);
+        submit(() -> retryKnownTaskMiss(packageName, taskId, "resume", () ->
+                helper.run("resume-windowed", packageName,
+                        Integer.toString(bounds.left), Integer.toString(bounds.top),
+                        Integer.toString(bounds.right), Integer.toString(bounds.bottom),
+                        Integer.toString(taskId), homePackage, Integer.toString(homeTaskId))), callback);
     }
 
     @Override public void status(String packageName, int taskId, Callback callback) {
-        submit(() -> helper.run("status", packageName, taskHint(taskId)), callback);
+        submit(() -> retryKnownTaskMiss(packageName, taskId, "status",
+                () -> helper.run("status", packageName, taskHint(taskId))), callback);
     }
 
     @Override public void fullscreen(String packageName, int taskId, Callback callback) {
@@ -121,6 +128,31 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     "permission mitigation failed open package=" + packageName
                             + " detail=" + result.detail);
         }
+    }
+
+    /**
+     * Exact TS18 evidence showed one dumpsys snapshot could report TASK_NOT_FOUND while the known
+     * Organic Maps task remained alive with the same task id, process, freeform mode and bounds.
+     * A known task therefore gets one short read-only recheck before absence is returned upstream.
+     * The controller still fails closed if the second independent snapshot also cannot find it.
+     */
+    private NavigationHelperResult retryKnownTaskMiss(
+            String packageName, int taskId, String phase, Operation operation) {
+        NavigationHelperResult first = operation.run();
+        if (taskId <= 0 || !"TASK_NOT_FOUND".equals(first.code) || destroyed) return first;
+        android.util.Log.w("TS18Nav", "transient TASK_NOT_FOUND phase=" + phase
+                + " package=" + packageName + " task=" + taskId + " · rechecking once");
+        try {
+            Thread.sleep(KNOWN_TASK_RECHECK_DELAY_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return first;
+        }
+        if (destroyed) return first;
+        NavigationHelperResult second = operation.run();
+        android.util.Log.i("TS18Nav", "known-task recheck phase=" + phase
+                + " package=" + packageName + " task=" + taskId + " code=" + second.code);
+        return second;
     }
 
     private static String taskHint(int taskId) {
