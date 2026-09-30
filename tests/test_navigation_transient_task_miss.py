@@ -12,7 +12,7 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
         self.assertIn("retryKnownTaskMiss", BACKEND)
         self.assertIn('"TASK_NOT_FOUND".equals(first.code)', BACKEND)
         self.assertIn("Thread.sleep(KNOWN_TASK_RECHECK_DELAY_MS)", BACKEND)
-        self.assertIn('"transient TASK_NOT_FOUND"', BACKEND)
+        self.assertIn("transient TASK_NOT_FOUND", BACKEND)
         # Controller still fails closed if the bounded backend recheck also reports absence.
         self.assertIn('if ("TASK_NOT_FOUND".equals(result.code))', CONTROLLER)
         self.assertIn('activeTaskId = -1', CONTROLLER)
