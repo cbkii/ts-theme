@@ -40,6 +40,10 @@ final class MediaSourceBootstrapper {
     private static final long ACK_RETRY_MS = 100L;
     private static final long SERVICE_RETRY_GUARD_MS = 2500L;
     private static final long ROOT_START_TIMEOUT_MS = 900L;
+    // Exact 2026-09-29 TS18 evidence: NavRadio's first cold controller appeared and accepted Play
+    // before its startup audio-focus/routing transition had settled, producing silence. Delay the
+    // one user Play until after that boundary; never synthesize a second Play.
+    private static final long NAVRADIO_COLD_PLAY_NOT_BEFORE_MS = 3200L;
 
     static final class Status {
         final MediaCommandPolicy.Phase phase;
@@ -570,11 +574,29 @@ final class MediaSourceBootstrapper {
         MediaController controller = controllerForPackage(pending.packageName);
         if (controller != null) {
             markController(pending.packageName, controller);
-            if (MediaCommandPolicy.acknowledged(pending.desired, stateOf(controller))) {
+            long notBefore = coldPlayNotBeforeMs(pending);
+            if (notBefore > now && (supports(controller, pending.desired)
+                    || MediaCommandPolicy.acknowledged(pending.desired, stateOf(controller)))) {
+                pending.coldPlayGuarded = true;
+                if (!pending.coldPlayGuardLogged) {
+                    pending.coldPlayGuardLogged = true;
+                    MediaEventTrace.record("service", "cold-play-guard",
+                            pending.packageName + " notBefore=" + notBefore);
+                    mark(pending.packageName, MediaCommandPolicy.Phase.STARTING,
+                            "Cold radio service settling before one Play dispatch");
+                }
+                handler.postDelayed(() -> retryExact(pending),
+                        Math.max(1L, MediaCommandPolicy.boundedDelay(
+                                now, pending.deadlineMs, notBefore - now)));
+                return;
+            }
+            if (!(pending.coldPlayGuarded && !pending.dispatched)
+                    && MediaCommandPolicy.acknowledged(pending.desired, stateOf(controller))) {
                 completeAcknowledged(controller, pending);
                 return;
             }
-            if (supports(controller, pending.desired) && !pending.dispatched) {
+            if ((supports(controller, pending.desired) || pending.coldPlayGuarded)
+                    && !pending.dispatched) {
                 dispatchToController(controller, pending);
                 return;
             }
@@ -584,14 +606,40 @@ final class MediaSourceBootstrapper {
                         now, pending.deadlineMs, COMMAND_RETRY_MS)));
     }
 
+    private long coldPlayNotBeforeMs(Pending pending) {
+        if (pending == null || pending.dispatched
+                || pending.desired != MediaCommandPolicy.Desired.PLAY
+                || !MediaSourceAdapter.NAVRADIO_PACKAGE.equals(pending.packageName)) return 0L;
+        ServiceStart start = serviceStarts.get(pending.packageName);
+        if (start == null || start.lastAttemptMs <= 0L) return 0L;
+        long notBefore = start.lastAttemptMs + NAVRADIO_COLD_PLAY_NOT_BEFORE_MS;
+        return notBefore < pending.deadlineMs ? notBefore : 0L;
+    }
+
     private void dispatchToController(MediaController controller, Pending pending) {
         if (destroyed || pending.settled) return;
+        long now = SystemClock.uptimeMillis();
+        long notBefore = coldPlayNotBeforeMs(pending);
+        if (notBefore > now) {
+            pending.coldPlayGuarded = true;
+            if (!pending.coldPlayGuardLogged) {
+                pending.coldPlayGuardLogged = true;
+                MediaEventTrace.record("service", "cold-play-guard",
+                        pending.packageName + " notBefore=" + notBefore);
+            }
+            handler.postDelayed(() -> dispatchToController(controller, pending),
+                    Math.max(1L, MediaCommandPolicy.boundedDelay(
+                            now, pending.deadlineMs, notBefore - now)));
+            return;
+        }
         int state = stateOf(controller);
-        if (MediaCommandPolicy.acknowledged(pending.desired, state)) {
+        boolean guardedColdPlay = pending.coldPlayGuarded
+                && pending.desired == MediaCommandPolicy.Desired.PLAY && !pending.dispatched;
+        if (!guardedColdPlay && MediaCommandPolicy.acknowledged(pending.desired, state)) {
             completeAcknowledged(controller, pending);
             return;
         }
-        if (!supports(controller, pending.desired)) {
+        if (!guardedColdPlay && !supports(controller, pending.desired)) {
             retryExact(pending);
             return;
         }
@@ -608,6 +656,7 @@ final class MediaSourceBootstrapper {
             return;
         }
         pending.dispatched = true;
+        pending.coldPlayGuarded = false;
         MediaEventTrace.record("command", "dispatched",
                 pending.packageName + " desired=" + pending.desired);
         MediaListenerService.refreshActiveSessions();
@@ -867,6 +916,8 @@ final class MediaSourceBootstrapper {
         final long deadlineMs;
         boolean dispatched;
         boolean settled;
+        boolean coldPlayGuarded;
+        boolean coldPlayGuardLogged;
         long ackDeadlineMs;
         String pauseOnPlayPackage = "";
 
