@@ -9,6 +9,13 @@ final class AppResolver {
     private AppResolver() {}
 
     static boolean launchPackage(Context context, String packageName) {
+        boolean launched = launchPackageQuietly(context, packageName);
+        if (launched) MediaListenerService.noteExplicitLaunch(context, packageName);
+        return launched;
+    }
+
+    /** Startup preparation must not change the user's selected media source merely by launching it. */
+    static boolean launchPackageQuietly(Context context, String packageName) {
         if (packageName == null || packageName.isEmpty()) return false;
         Intent intent = context.getPackageManager().getLaunchIntentForPackage(packageName);
         if (intent == null) return false;
@@ -30,6 +37,7 @@ final class AppResolver {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             context.startActivity(intent);
+            MediaListenerService.noteExplicitLaunch(context, packageName);
             return true;
         } catch (RuntimeException ignored) {
             return false;

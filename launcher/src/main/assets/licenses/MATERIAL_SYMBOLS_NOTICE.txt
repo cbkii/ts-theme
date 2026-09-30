@@ -1,0 +1,11 @@
+Material Symbols Rounded
+Source: https://github.com/google/material-design-icons
+Pinned revision: 40a7a292a79d9394157e1ea24f83d52d5e17c556
+License: Apache License 2.0 (see repository root LICENSE)
+
+Local modifications to vendored Android vectors:
+- intrinsic width/height changed from 24dp to 36dp for this fixed automotive launcher UI;
+- upstream theme-level android:tint attributes removed because runtime tint/state is applied by the launcher views;
+- file names mapped to the launcher's existing ic_* resource names.
+
+Upstream vector path geometry is otherwise retained.

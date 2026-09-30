@@ -39,9 +39,16 @@ final class TileBroker {
     private final AtomicInteger staleHits = new AtomicInteger();
     private final AtomicInteger failures = new AtomicInteger();
     private final AtomicInteger writes = new AtomicInteger();
-    private volatile String lastFailure = "";
+    interface OfflineCheck { boolean definitelyOffline(); }
+    private final OfflineCheck offline;
+    private final TileState recentState = new TileState();
 
     TileBroker(File applicationCacheDir, String userAgent) {
+        this(applicationCacheDir, userAgent, () -> false);
+    }
+
+    TileBroker(File applicationCacheDir, String userAgent, OfflineCheck offline) {
+        this.offline = offline;
         this.cacheRoot = new File(applicationCacheDir, "ts18-map-tiles");
         this.userAgent = userAgent;
         for (int i = 0; i < requestLocks.length; i++) requestLocks[i] = new Object();
@@ -57,6 +64,8 @@ final class TileBroker {
     WebResourceResponse intercept(Uri uri) {
         TileKey key = parseKey(uri);
         if (key == null) return error(400, "Bad tile request");
+        // Avoid even waiting for an in-flight HTTP request on a striped lock while offline.
+        if (offline.definitelyOffline()) return offlineResponse(key);
         int stripe = (key.z * 31 * 31 + key.x * 31 + key.y) & (requestLocks.length - 1);
         synchronized (requestLocks[stripe]) {
             return interceptLocked(uri, key);
@@ -74,6 +83,7 @@ final class TileBroker {
         }
 
         boolean staleAvailable = tile.isFile() && tile.length() > 0L;
+        if (offline.definitelyOffline()) return staleOrError(tile, staleAvailable, "no network");
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(uri.toString()).openConnection();
@@ -95,7 +105,6 @@ final class TileBroker {
             if (code == HttpURLConnection.HTTP_NOT_MODIFIED && staleAvailable) {
                 writeMeta(metadata, CacheMeta.fromResponse(connection, meta, now));
                 cacheHits.incrementAndGet();
-                lastFailure = "";
                 return fileResponse(tile, "REVALIDATED");
             }
             if (code != HttpURLConnection.HTTP_OK) {
@@ -118,14 +127,12 @@ final class TileBroker {
                 if (tile.isFile()) tile.delete();
                 if (metadata.isFile()) metadata.delete();
                 networkLoads.incrementAndGet();
-                lastFailure = "";
                 return bytesResponse(bytes, "BYPASS");
             }
 
             writeTile(tile, bytes);
             writeMeta(metadata, CacheMeta.fromResponse(connection, null, now));
             networkLoads.incrementAndGet();
-            lastFailure = "";
             if ((writes.incrementAndGet() & 31) == 0) trimCache();
             return bytesResponse(bytes, "MISS");
         } catch (SSLHandshakeException e) {
@@ -137,23 +144,42 @@ final class TileBroker {
         }
     }
 
-    String lastFailure() { return lastFailure; }
+    TileState.Snapshot recentState() { return recentState.snapshot(); }
+
+    private WebResourceResponse offlineResponse(TileKey key) {
+        File tile = tileFile(key);
+        if (tile.isFile() && tile.length() > 0L) {
+            if (isFresh(tile, readMeta(metadataFile(tile)), System.currentTimeMillis())) {
+                cacheHits.incrementAndGet();
+                return fileResponse(tile, "HIT");
+            }
+            staleHits.incrementAndGet();
+            return fileResponse(tile, "STALE");
+        }
+        failures.incrementAndGet();
+        record(TileState.Kind.FAILED);
+        return error(503, "No network or cached tile");
+    }
+
+    private void record(TileState.Kind kind) {
+        recentState.record(kind, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime()));
+    }
 
     String diagnosticSummary() {
         return "cache=" + cacheHits.get()
                 + " network=" + networkLoads.get()
                 + " stale=" + staleHits.get()
                 + " failures=" + failures.get()
-                + (lastFailure.isEmpty() ? "" : " last=" + lastFailure);
+                + " recent=" + (recentState.snapshot() == null ? "none" : recentState.snapshot().kind);
     }
 
     private WebResourceResponse staleOrError(File tile, boolean staleAvailable, String reason) {
-        lastFailure = reason;
         failures.incrementAndGet();
         if (staleAvailable) {
             staleHits.incrementAndGet();
             return fileResponse(tile, "STALE");
         }
+        record(TileState.Kind.FAILED);
         return error(502, "Tile unavailable");
     }
 
@@ -176,6 +202,8 @@ final class TileBroker {
 
     private static TileKey parseKey(Uri uri) {
         if (uri == null || !"https".equals(uri.getScheme()) || !TILE_HOST.equals(uri.getHost())) return null;
+        if ((uri.getPort() != -1 && uri.getPort() != 443) || uri.getUserInfo() != null
+                || uri.getQuery() != null || uri.getFragment() != null) return null;
         Matcher match = TILE_PATH.matcher(uri.getPath() == null ? "" : uri.getPath());
         if (!match.matches()) return null;
         try {
@@ -201,16 +229,19 @@ final class TileBroker {
 
     private WebResourceResponse fileResponse(File file, String cacheState) {
         try {
+            FileInputStream input = new FileInputStream(file);
+            record("STALE".equals(cacheState) ? TileState.Kind.CACHE_STALE : TileState.Kind.CACHE_FRESH);
             return new WebResourceResponse("image/png", null, 200, "OK",
-                    Collections.singletonMap("X-TS18-Map-Cache", cacheState), new FileInputStream(file));
+                    Collections.singletonMap("X-TS18-Map-Cache", cacheState), input);
         } catch (IOException e) {
-            lastFailure = e.getClass().getSimpleName();
+            record(TileState.Kind.FAILED);
             failures.incrementAndGet();
             return error(502, "Tile cache read failed");
         }
     }
 
-    private static WebResourceResponse bytesResponse(byte[] bytes, String cacheState) {
+    private WebResourceResponse bytesResponse(byte[] bytes, String cacheState) {
+        record(TileState.Kind.NETWORK_OK);
         return new WebResourceResponse("image/png", null, 200, "OK",
                 Collections.singletonMap("X-TS18-Map-Cache", cacheState), new ByteArrayInputStream(bytes));
     }

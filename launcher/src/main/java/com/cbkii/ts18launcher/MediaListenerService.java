@@ -1,5 +1,6 @@
 package com.cbkii.ts18launcher;
 
+import android.app.Notification;
 import android.content.ComponentName;
 import android.content.Context;
 import android.media.MediaMetadata;
@@ -7,8 +8,11 @@ import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
+import android.os.Bundle;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.service.notification.NotificationListenerService;
+import android.service.notification.StatusBarNotification;
 
 import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
@@ -16,12 +20,15 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class MediaListenerService extends NotificationListenerService {
     public enum Command { PREVIOUS, PLAY_PAUSE, NEXT }
+
+    private static final long DEFENSIVE_REFRESH_INTERVAL_MS = 15000L;
 
     public static final class Snapshot {
         public final String packageName;
@@ -30,24 +37,35 @@ public final class MediaListenerService extends NotificationListenerService {
         public final boolean playing;
         public final int state;
         public final long actions;
+        final Object sessionIdentity;
 
         Snapshot(String packageName, String title, String artist, boolean playing) {
             this(packageName, title, artist,
                     playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_NONE,
-                    0L);
+                    0L, null);
         }
 
         Snapshot(String packageName, String title, String artist, int state, long actions) {
+            this(packageName, title, artist, state, actions, null);
+        }
+
+        Snapshot(String packageName, String title, String artist, int state, long actions,
+                 Object sessionIdentity) {
             this.packageName = packageName == null ? "" : packageName;
-            this.title = title == null ? "" : title;
-            this.artist = artist == null ? "" : artist;
+            this.title = normalise(title);
+            this.artist = normalise(artist);
             this.state = state;
             this.actions = actions;
+            this.sessionIdentity = sessionIdentity;
             this.playing = usesPauseAction(state);
         }
 
         public boolean isEmpty() {
             return packageName.isEmpty() && title.isEmpty() && artist.isEmpty();
+        }
+
+        public boolean hasMetadata() {
+            return !title.isEmpty() || !artist.isEmpty();
         }
 
         public String displayText() {
@@ -61,9 +79,11 @@ public final class MediaListenerService extends NotificationListenerService {
             if (command == null || packageName.isEmpty()) return false;
             switch (command) {
                 case PREVIOUS:
-                    return (actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L;
+                    return (actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L
+                            || MediaSourceAdapter.allowsUnadvertisedSkip(packageName);
                 case NEXT:
-                    return (actions & PlaybackState.ACTION_SKIP_TO_NEXT) != 0L;
+                    return (actions & PlaybackState.ACTION_SKIP_TO_NEXT) != 0L
+                            || MediaSourceAdapter.allowsUnadvertisedSkip(packageName);
                 case PLAY_PAUSE:
                     long direct = playing ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY;
                     return (actions & direct) != 0L
@@ -80,13 +100,22 @@ public final class MediaListenerService extends NotificationListenerService {
 
     private static final CopyOnWriteArrayList<WeakReference<Observer>> OBSERVERS =
             new CopyOnWriteArrayList<>();
+    private static final Object EXTERNAL_REGISTRY_LOCK = new Object();
+    private static final Map<MediaSession.Token, MediaController> REGISTERED_EXTERNAL =
+            new HashMap<>();
     private static volatile MediaListenerService instance;
     private static volatile Snapshot lastGeneric = new Snapshot("", "", "", false);
     private static volatile Snapshot lastRadio = new Snapshot("", "", "", false);
+    private static volatile long lastDefensiveRefreshUptimeMs;
 
     private final Map<MediaSession.Token, MediaController> watched = new HashMap<>();
+    private final Map<MediaSession.Token, MediaController> external = new HashMap<>();
+    private final Map<MediaSession.Token, MediaController.Callback> externalCallbacks = new HashMap<>();
     private MediaSessionManager sessionManager;
     private ComponentName listenerComponent;
+    private String radioNotificationKey = "";
+    private String radioNotificationTitle = "";
+    private String radioNotificationText = "";
 
     private final MediaController.Callback callback = new MediaController.Callback() {
         @Override public void onMetadataChanged(MediaMetadata metadata) { refresh(); }
@@ -98,18 +127,19 @@ public final class MediaListenerService extends NotificationListenerService {
     private final MediaSessionManager.OnActiveSessionsChangedListener sessionsChangedListener =
             controllers -> reconcile(controllers == null ? new ArrayList<>() : controllers);
 
-    @Override
-    public void onCreate() {
+    @Override public void onCreate() {
         super.onCreate();
         sessionManager = (MediaSessionManager) getSystemService(MEDIA_SESSION_SERVICE);
         listenerComponent = new ComponentName(this, MediaListenerService.class);
+        MediaEventTrace.record("listener", "created");
     }
 
-    @Override
-    public void onListenerConnected() {
+    @Override public void onListenerConnected() {
         super.onListenerConnected();
         instance = this;
+        MediaEventTrace.record("listener", "connected");
         if (sessionManager == null) {
+            MediaEventTrace.record("listener", "manager-unavailable");
             publishEmpty();
             return;
         }
@@ -117,29 +147,59 @@ public final class MediaListenerService extends NotificationListenerService {
             sessionManager.addOnActiveSessionsChangedListener(
                     sessionsChangedListener, listenerComponent);
         } catch (SecurityException ignored) {
+            MediaEventTrace.record("listener", "session-access-denied");
             publishEmpty();
             return;
         }
+        attachRegisteredExternalControllers();
         refresh();
     }
 
-    @Override
-    public void onListenerDisconnected() {
+    @Override public void onListenerDisconnected() {
+        MediaEventTrace.record("listener", "disconnected", "requesting framework rebind");
         releaseAll();
         detachSessionListener();
         instance = null;
-        publishEmpty();
+        notifyObservers();
         super.onListenerDisconnected();
         if (listenerComponent != null) requestRebind(listenerComponent);
     }
 
-    @Override
-    public void onDestroy() {
+    @Override public void onDestroy() {
+        MediaEventTrace.record("listener", "destroyed");
         releaseAll();
         detachSessionListener();
         if (instance == this) instance = null;
-        publishEmpty();
+        notifyObservers();
         super.onDestroy();
+    }
+
+    @Override public void onNotificationPosted(StatusBarNotification sbn) {
+        if (sbn == null || !RadioProvider.resolvePackage(this).equals(sbn.getPackageName())) return;
+        Notification notification = sbn.getNotification();
+        if (notification == null || (notification.flags & Notification.FLAG_ONGOING_EVENT) == 0) return;
+        Bundle extras = notification.extras;
+        if (extras == null) return;
+        String title = firstNotificationText(extras, Notification.EXTRA_TITLE,
+                Notification.EXTRA_TITLE_BIG);
+        String text = firstNotificationText(extras, Notification.EXTRA_TEXT,
+                Notification.EXTRA_BIG_TEXT, Notification.EXTRA_SUB_TEXT);
+        if (title.isEmpty() && text.isEmpty()) return;
+        radioNotificationKey = sbn.getKey() == null ? "" : sbn.getKey();
+        radioNotificationTitle = title;
+        radioNotificationText = text;
+        MediaEventTrace.record("metadata", "radio-notification", sbn.getPackageName());
+        refresh();
+    }
+
+    @Override public void onNotificationRemoved(StatusBarNotification sbn) {
+        if (sbn == null || radioNotificationKey.isEmpty() || sbn.getKey() == null
+                || !radioNotificationKey.equals(sbn.getKey())) return;
+        radioNotificationKey = "";
+        radioNotificationTitle = "";
+        radioNotificationText = "";
+        MediaEventTrace.record("metadata", "radio-notification-removed", sbn.getPackageName());
+        refresh();
     }
 
     private void detachSessionListener() {
@@ -159,16 +219,20 @@ public final class MediaListenerService extends NotificationListenerService {
         try {
             reconcile(sessionManager.getActiveSessions(listenerComponent));
         } catch (SecurityException ignored) {
+            MediaEventTrace.record("listener", "refresh-access-denied");
             publishEmpty();
         }
     }
 
-    private void reconcile(List<MediaController> controllers) {
+    private void reconcile(List<MediaController> activeControllers) {
+        List<MediaController> active = activeControllers == null
+                ? new ArrayList<>() : activeControllers;
         Map<MediaSession.Token, MediaController> next = new HashMap<>();
-        for (MediaController controller : controllers) {
-            if (controller == null || controller.getSessionToken() == null) continue;
-            next.put(controller.getSessionToken(), controller);
-            if (!watched.containsKey(controller.getSessionToken())) {
+        for (MediaController controller : active) {
+            MediaSession.Token token = tokenOf(controller);
+            if (controller == null || token == null) continue;
+            next.put(token, controller);
+            if (!watched.containsKey(token)) {
                 try {
                     controller.registerCallback(callback);
                 } catch (RuntimeException ignored) {
@@ -189,13 +253,120 @@ public final class MediaListenerService extends NotificationListenerService {
         watched.clear();
         watched.putAll(next);
 
+        List<MediaController> controllers = mergedControllers(active);
         MediaController genericController = selectGenericController(controllers);
         MediaController radioController = pickExactPackage(
                 controllers, RadioProvider.resolvePackage(this));
 
-        lastGeneric = snapshotOf(genericController);
-        lastRadio = snapshotOf(radioController);
-        notifyObservers();
+        Snapshot previousGeneric = lastGeneric;
+        Snapshot previousRadio = lastRadio;
+        Snapshot nextGeneric = stabiliseSnapshot(previousGeneric, snapshotOf(genericController));
+        Snapshot nextRadio = stabiliseSnapshot(previousRadio,
+                applyRadioFallback(snapshotOf(radioController),
+                        radioNotificationTitle, radioNotificationText));
+        boolean genericChanged = !sameSnapshot(previousGeneric, nextGeneric);
+        boolean radioChanged = !sameSnapshot(previousRadio, nextRadio);
+        lastGeneric = nextGeneric;
+        lastRadio = nextRadio;
+        if (genericChanged) MediaEventTrace.record("session", "music-state", snapshotTrace(nextGeneric));
+        if (radioChanged) MediaEventTrace.record("session", "radio-state", snapshotTrace(nextRadio));
+        if (genericChanged || radioChanged) notifyObservers();
+    }
+
+    private List<MediaController> mergedControllers(List<MediaController> active) {
+        LinkedHashMap<MediaSession.Token, MediaController> merged = new LinkedHashMap<>();
+        if (active != null) {
+            for (MediaController controller : active) {
+                MediaSession.Token token = tokenOf(controller);
+                if (controller != null && token != null) merged.put(token, controller);
+            }
+        }
+        for (Map.Entry<MediaSession.Token, MediaController> entry : external.entrySet()) {
+            if (!merged.containsKey(entry.getKey())) merged.put(entry.getKey(), entry.getValue());
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    static void observeExternalController(MediaController controller) {
+        MediaSession.Token token = tokenOf(controller);
+        if (controller == null || token == null) return;
+        synchronized (EXTERNAL_REGISTRY_LOCK) {
+            REGISTERED_EXTERNAL.put(token, controller);
+        }
+        MediaEventTrace.record("listener", "external-registered", controller.getPackageName());
+        MediaListenerService service = instance;
+        if (service != null) service.addExternalController(controller);
+    }
+
+    static void forgetExternalController(MediaController controller) {
+        MediaSession.Token token = tokenOf(controller);
+        if (token == null) return;
+        MediaEventTrace.record("listener", "external-forgotten",
+                controller == null ? "unknown" : controller.getPackageName());
+        forgetRegisteredExternalController(token, controller);
+        MediaListenerService service = instance;
+        if (service != null) service.removeExternalController(token);
+    }
+
+    private static void forgetRegisteredExternalController(
+            MediaSession.Token token, MediaController expectedController) {
+        if (token == null) return;
+        synchronized (EXTERNAL_REGISTRY_LOCK) {
+            MediaController registered = REGISTERED_EXTERNAL.get(token);
+            if (expectedController == null || registered == expectedController) {
+                REGISTERED_EXTERNAL.remove(token);
+            }
+        }
+    }
+
+    private void attachRegisteredExternalControllers() {
+        List<MediaController> registered;
+        synchronized (EXTERNAL_REGISTRY_LOCK) {
+            registered = new ArrayList<>(REGISTERED_EXTERNAL.values());
+        }
+        if (!registered.isEmpty()) {
+            MediaEventTrace.record("listener", "external-reattach", "count=" + registered.size());
+        }
+        for (MediaController controller : registered) addExternalController(controller);
+    }
+
+    private void addExternalController(MediaController controller) {
+        MediaSession.Token token = tokenOf(controller);
+        if (controller == null || token == null || external.containsKey(token)) return;
+        MediaController.Callback observer = new MediaController.Callback() {
+            @Override public void onMetadataChanged(MediaMetadata metadata) { refresh(); }
+            @Override public void onPlaybackStateChanged(PlaybackState state) { refresh(); }
+            @Override public void onQueueChanged(List<MediaSession.QueueItem> queue) { refresh(); }
+            @Override public void onSessionDestroyed() {
+                MediaEventTrace.record("session", "external-destroyed", controller.getPackageName());
+                forgetExternalController(controller);
+            }
+        };
+        try {
+            controller.registerCallback(observer);
+        } catch (RuntimeException ignored) {
+            forgetRegisteredExternalController(token, controller);
+            return;
+        }
+        external.put(token, controller);
+        externalCallbacks.put(token, observer);
+        MediaEventTrace.record("listener", "external-attached", controller.getPackageName());
+        refresh();
+    }
+
+    private void removeExternalController(MediaSession.Token token) {
+        if (token == null) return;
+        MediaController controller = external.remove(token);
+        MediaController.Callback observer = externalCallbacks.remove(token);
+        if (controller != null && observer != null) {
+            try {
+                controller.unregisterCallback(observer);
+            } catch (RuntimeException ignored) {
+                // Session may already be destroyed.
+            }
+            MediaEventTrace.record("listener", "external-detached", controller.getPackageName());
+        }
+        refresh();
     }
 
     private MediaController selectGenericController(List<MediaController> controllers) {
@@ -203,7 +374,12 @@ public final class MediaListenerService extends NotificationListenerService {
         String preferredPackage = preferredMusicPackage();
         boolean preferConfigured = LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(
                 LauncherPrefs.mediaMode(this));
-        return pickPrimary(controllers, radioPackage, preferredPackage, preferConfigured);
+        if (preferConfigured) {
+            MediaController configured = pickExactPackage(controllers, preferredPackage);
+            if (configured != null && !excludedFromGenericMedia(configured, radioPackage)) return configured;
+        }
+        return pickPrimary(controllers, radioPackage, preferredPackage, preferConfigured,
+                LauncherPrefs.lastMusicPackage(this));
     }
 
     private String preferredMusicPackage() {
@@ -215,41 +391,25 @@ public final class MediaListenerService extends NotificationListenerService {
             List<MediaController> controllers,
             String excludedPackage,
             String preferredPackage,
-            boolean preferConfigured) {
-        if (preferConfigured && preferredPackage != null && !preferredPackage.isEmpty()
-                && !preferredPackage.equals(excludedPackage)) {
-            MediaController preferred = pickExactPackage(controllers, preferredPackage);
-            if (preferred != null) return preferred;
-        }
-
-        MediaController fallback = null;
+            boolean preferConfigured, String rememberedPackage) {
+        List<MediaSelection.Candidate> candidates = new ArrayList<>();
         for (MediaController controller : controllers) {
-            if (controller == null || excludedFromGenericMedia(controller, excludedPackage)) continue;
-            PlaybackState state = controller.getPlaybackState();
+            PlaybackState state = playbackState(controller);
             int value = state == null ? PlaybackState.STATE_NONE : state.getState();
-            if (usesPauseAction(value)) return controller;
-            if (fallback == null && (value == PlaybackState.STATE_PAUSED
-                    || value == PlaybackState.STATE_STOPPED)) {
-                fallback = controller;
-            }
+            candidates.add(new MediaSelection.Candidate(controller == null ? "" : controller.getPackageName(),
+                    controller != null && !excludedFromGenericMedia(controller, excludedPackage),
+                    state != null && value != PlaybackState.STATE_NONE && value != PlaybackState.STATE_ERROR,
+                    usesPauseAction(value), value == PlaybackState.STATE_PAUSED || value == PlaybackState.STATE_STOPPED));
         }
-        if (fallback != null) return fallback;
-        for (MediaController controller : controllers) {
-            if (controller != null && !excludedFromGenericMedia(controller, excludedPackage)) {
-                return controller;
-            }
-        }
-        return null;
+        int selected = MediaSelection.pick(candidates, preferredPackage, preferConfigured, rememberedPackage);
+        return selected < 0 ? null : controllers.get(selected);
     }
 
     private static boolean excludedFromGenericMedia(
             MediaController controller, String configuredRadioPackage) {
         String packageName = controller.getPackageName();
         if (configuredRadioPackage != null && !configuredRadioPackage.isEmpty()
-                && configuredRadioPackage.equals(packageName)) {
-            return true;
-        }
-        // Bluetooth media remains eligible; only radio and call/telecom sessions are excluded.
+                && configuredRadioPackage.equals(packageName)) return true;
         return "com.android.server.telecom".equals(packageName)
                 || "com.android.dialer".equals(packageName)
                 || "com.google.android.dialer".equals(packageName)
@@ -261,7 +421,7 @@ public final class MediaListenerService extends NotificationListenerService {
         MediaController fallback = null;
         for (MediaController controller : controllers) {
             if (controller == null || !packageName.equals(controller.getPackageName())) continue;
-            PlaybackState state = controller.getPlaybackState();
+            PlaybackState state = playbackState(controller);
             int value = state == null ? PlaybackState.STATE_NONE : state.getState();
             if (usesPauseAction(value)) return controller;
             if (fallback == null) fallback = controller;
@@ -277,27 +437,110 @@ public final class MediaListenerService extends NotificationListenerService {
 
     private static Snapshot snapshotOf(MediaController controller) {
         if (controller == null) return new Snapshot("", "", "", false);
-        MediaMetadata metadata = controller.getMetadata();
-        CharSequence title = metadata == null ? null : metadata.getText(MediaMetadata.METADATA_KEY_TITLE);
-        if (title == null && metadata != null) {
-            title = metadata.getText(MediaMetadata.METADATA_KEY_DISPLAY_TITLE);
+        MediaMetadata metadata;
+        PlaybackState playbackState;
+        MediaSession.Token token = tokenOf(controller);
+        try {
+            metadata = controller.getMetadata();
+            playbackState = controller.getPlaybackState();
+        } catch (RuntimeException ignored) {
+            return new Snapshot(controller.getPackageName(), "", "",
+                    PlaybackState.STATE_NONE, 0L, token);
         }
-        CharSequence artist = metadata == null ? null : metadata.getText(MediaMetadata.METADATA_KEY_ARTIST);
-        if (artist == null && metadata != null) {
-            artist = metadata.getText(MediaMetadata.METADATA_KEY_ALBUM_ARTIST);
-        }
-        if (artist == null && metadata != null) {
-            artist = metadata.getText(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE);
-        }
-        PlaybackState playbackState = controller.getPlaybackState();
+        String title = firstNonBlank(metadata,
+                MediaMetadata.METADATA_KEY_TITLE,
+                MediaMetadata.METADATA_KEY_DISPLAY_TITLE);
+        String artist = firstNonBlank(metadata,
+                MediaMetadata.METADATA_KEY_ARTIST,
+                MediaMetadata.METADATA_KEY_ALBUM_ARTIST,
+                MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE);
         int state = playbackState == null ? PlaybackState.STATE_NONE : playbackState.getState();
         long actions = playbackState == null ? 0L : playbackState.getActions();
-        return new Snapshot(
-                controller.getPackageName(),
-                title == null ? "" : title.toString(),
-                artist == null ? "" : artist.toString(),
-                state,
-                actions);
+        return new Snapshot(controller.getPackageName(), title, artist, state, actions, token);
+    }
+
+    private static String firstNonBlank(MediaMetadata metadata, String... keys) {
+        if (metadata == null) return "";
+        for (String key : keys) {
+            CharSequence value = metadata.getText(key);
+            String text = value == null ? "" : value.toString().trim();
+            if (!text.isEmpty()) return text;
+        }
+        return "";
+    }
+
+    private static String firstNotificationText(Bundle extras, String... keys) {
+        if (extras == null) return "";
+        for (String key : keys) {
+            CharSequence value = extras.getCharSequence(key);
+            String text = value == null ? "" : value.toString().trim();
+            if (!text.isEmpty()) return text;
+        }
+        return "";
+    }
+
+    private static String normalise(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    static Snapshot applyRadioFallback(Snapshot snapshot, String title, String text) {
+        if (snapshot == null || snapshot.packageName.isEmpty() || snapshot.hasMetadata()) return snapshot;
+        String cleanTitle = normalise(title);
+        String cleanText = normalise(text);
+        if (cleanTitle.isEmpty() && cleanText.isEmpty()) return snapshot;
+        return new Snapshot(snapshot.packageName, cleanTitle, cleanText,
+                snapshot.state, snapshot.actions, snapshot.sessionIdentity);
+    }
+
+    static Snapshot stabiliseSnapshot(Snapshot previous, Snapshot next) {
+        if (next == null) return new Snapshot("", "", "", false);
+        boolean sameSession = previous != null && previous.sessionIdentity != null
+                && next.sessionIdentity != null
+                && previous.sessionIdentity.equals(next.sessionIdentity);
+        if (!sameSession || next.packageName.isEmpty()
+                || !next.packageName.equals(previous.packageName)
+                || next.hasMetadata() || !previous.hasMetadata()) return next;
+        MediaEventTrace.record("metadata", "retain-valid-same-token",
+                next.packageName + " state=" + stateName(next.state));
+        return new Snapshot(next.packageName, previous.title, previous.artist,
+                next.state, next.actions, next.sessionIdentity);
+    }
+
+    private static boolean sameSnapshot(Snapshot first, Snapshot second) {
+        if (first == second) return true;
+        if (first == null || second == null) return false;
+        boolean sameIdentity = first.sessionIdentity == second.sessionIdentity
+                || (first.sessionIdentity != null && first.sessionIdentity.equals(second.sessionIdentity));
+        return sameIdentity
+                && first.packageName.equals(second.packageName)
+                && first.title.equals(second.title)
+                && first.artist.equals(second.artist)
+                && first.state == second.state
+                && first.actions == second.actions;
+    }
+
+    private static String snapshotTrace(Snapshot snapshot) {
+        if (snapshot == null || snapshot.packageName.isEmpty()) return "none";
+        return snapshot.packageName + " state=" + stateName(snapshot.state)
+                + " actions=" + snapshot.actions;
+    }
+
+    private static PlaybackState playbackState(MediaController controller) {
+        if (controller == null) return null;
+        try {
+            return controller.getPlaybackState();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static MediaSession.Token tokenOf(MediaController controller) {
+        if (controller == null) return null;
+        try {
+            return controller.getSessionToken();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private void releaseAll() {
@@ -309,22 +552,34 @@ public final class MediaListenerService extends NotificationListenerService {
             }
         }
         watched.clear();
+        for (Map.Entry<MediaSession.Token, MediaController> entry : external.entrySet()) {
+            MediaController.Callback observer = externalCallbacks.get(entry.getKey());
+            if (observer == null) continue;
+            try {
+                entry.getValue().unregisterCallback(observer);
+            } catch (RuntimeException ignored) {
+                // Best-effort cleanup.
+            }
+        }
+        external.clear();
+        externalCallbacks.clear();
     }
 
     private static void publishEmpty() {
+        boolean changed = !lastGeneric.isEmpty() || !lastRadio.isEmpty();
         lastGeneric = new Snapshot("", "", "", false);
         lastRadio = new Snapshot("", "", "", false);
-        notifyObservers();
+        if (changed) {
+            MediaEventTrace.record("session", "published-empty");
+            notifyObservers();
+        }
     }
 
     private static void notifyObservers() {
         for (WeakReference<Observer> reference : OBSERVERS) {
             Observer observer = reference.get();
-            if (observer == null) {
-                OBSERVERS.remove(reference);
-            } else {
-                observer.onMediaStateChanged(lastGeneric, lastRadio);
-            }
+            if (observer == null) OBSERVERS.remove(reference);
+            else observer.onMediaStateChanged(lastGeneric, lastRadio);
         }
     }
 
@@ -348,39 +603,80 @@ public final class MediaListenerService extends NotificationListenerService {
 
     public static void refreshActiveSessions() {
         MediaListenerService service = instance;
-        if (service != null) service.refresh();
+        if (service == null) return;
+        long now = SystemClock.uptimeMillis();
+        if (now - lastDefensiveRefreshUptimeMs < DEFENSIVE_REFRESH_INTERVAL_MS) return;
+        lastDefensiveRefreshUptimeMs = now;
+        service.refresh();
+    }
+
+    static boolean hasObservableSession(String packageName) {
+        MediaListenerService service = instance;
+        if (service == null || packageName == null || packageName.isEmpty()) return false;
+        for (MediaController controller : service.activeAndExternalControllers()) {
+            if (controller != null && packageName.equals(controller.getPackageName())) return true;
+        }
+        return false;
+    }
+
+    static void noteExplicitLaunch(Context context, String pkg) {
+        if (pkg == null || pkg.isEmpty()) return;
+        if (pkg.equals(RadioProvider.resolvePackage(context))) {
+            LauncherPrefs.selectSource(context, MediaSelection.RADIO);
+            return;
+        }
+        MediaListenerService service = instance;
+        boolean music = pkg.equals(LauncherPrefs.packageFor(context, LauncherPrefs.KEY_MUSIC))
+                || pkg.equals(TopwayAdapter.defaultMusicPackage(context));
+        if (service != null) {
+            for (MediaController controller : service.mergedControllers(
+                    new ArrayList<>(service.watched.values()))) {
+                if (pkg.equals(controller.getPackageName())
+                        && !excludedFromGenericMedia(controller, RadioProvider.resolvePackage(context))) {
+                    music = true;
+                }
+            }
+        }
+        if (music) {
+            LauncherPrefs.rememberMusic(context, pkg);
+            LauncherPrefs.selectSource(context, MediaSelection.MUSIC);
+        }
     }
 
     public static boolean sendGeneric(Command command) {
         MediaListenerService service = instance;
         if (service == null) return false;
-        return service.sendToController(service.findGenericController(), command);
+        MediaController selected = service.findGenericController();
+        if (selected != null) LauncherPrefs.rememberMusic(service, selected.getPackageName());
+        LauncherPrefs.selectSource(service, MediaSelection.MUSIC);
+        return service.sendToController(selected, command);
     }
 
     public static boolean sendRadio(Command command) {
         MediaListenerService service = instance;
         if (service == null) return false;
+        LauncherPrefs.selectSource(service, MediaSelection.RADIO);
         return service.sendToController(service.findRadioController(), command);
     }
 
-    private MediaController findGenericController() {
-        if (sessionManager == null) return null;
-        try {
-            return selectGenericController(sessionManager.getActiveSessions(listenerComponent));
-        } catch (RuntimeException e) {
-            return null;
+    private List<MediaController> activeAndExternalControllers() {
+        List<MediaController> active = new ArrayList<>();
+        if (sessionManager != null) {
+            try {
+                active = sessionManager.getActiveSessions(listenerComponent);
+            } catch (RuntimeException ignored) {
+                // External controllers can still remain observable.
+            }
         }
+        return mergedControllers(active);
+    }
+
+    private MediaController findGenericController() {
+        return selectGenericController(activeAndExternalControllers());
     }
 
     private MediaController findRadioController() {
-        if (sessionManager == null) return null;
-        try {
-            return pickExactPackage(
-                    sessionManager.getActiveSessions(listenerComponent),
-                    RadioProvider.resolvePackage(this));
-        } catch (RuntimeException e) {
-            return null;
-        }
+        return pickExactPackage(activeAndExternalControllers(), RadioProvider.resolvePackage(this));
     }
 
     private boolean sendToController(MediaController controller, Command command) {
@@ -391,28 +687,37 @@ public final class MediaListenerService extends NotificationListenerService {
             boolean pauseSide = state != null && usesPauseAction(state.getState());
             switch (command) {
                 case PREVIOUS:
-                    if ((actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) == 0L) return false;
+                    if ((actions & PlaybackState.ACTION_SKIP_TO_PREVIOUS) == 0L
+                            && !MediaSourceAdapter.allowsUnadvertisedSkip(controller.getPackageName())) return false;
                     controller.getTransportControls().skipToPrevious();
                     break;
                 case NEXT:
-                    if ((actions & PlaybackState.ACTION_SKIP_TO_NEXT) == 0L) return false;
+                    if ((actions & PlaybackState.ACTION_SKIP_TO_NEXT) == 0L
+                            && !MediaSourceAdapter.allowsUnadvertisedSkip(controller.getPackageName())) return false;
                     controller.getTransportControls().skipToNext();
                     break;
                 case PLAY_PAUSE:
                     long directAction = pauseSide
                             ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY;
                     if ((actions & directAction) == 0L
-                            && (actions & PlaybackState.ACTION_PLAY_PAUSE) == 0L) {
-                        return false;
-                    }
+                            && (actions & PlaybackState.ACTION_PLAY_PAUSE) == 0L) return false;
                     if (pauseSide) controller.getTransportControls().pause();
                     else controller.getTransportControls().play();
                     break;
                 default:
                     return false;
             }
+            MediaEventTrace.record("listener-command", "dispatched",
+                    controller.getPackageName() + " command=" + command);
+            if ((command == Command.PREVIOUS || command == Command.NEXT)
+                    && MediaSourceAdapter.allowsUnadvertisedSkip(controller.getPackageName())) {
+                MediaEventTrace.record("listener-command", "exact-skip-compat",
+                        controller.getPackageName() + " command=" + command);
+            }
             return true;
         } catch (RuntimeException e) {
+            MediaEventTrace.record("listener-command", "failed",
+                    controller.getPackageName() + " command=" + command);
             return false;
         }
     }
@@ -426,13 +731,7 @@ public final class MediaListenerService extends NotificationListenerService {
 
     private String buildSessionDiagnostics() {
         if (sessionManager == null) return "MediaSessionManager unavailable.";
-        final List<MediaController> controllers;
-        try {
-            controllers = sessionManager.getActiveSessions(listenerComponent);
-        } catch (RuntimeException e) {
-            return "Active sessions unavailable: " + e.getClass().getSimpleName();
-        }
-
+        List<MediaController> controllers = activeAndExternalControllers();
         String radioPackage = RadioProvider.resolvePackage(this);
         String preferredPackage = preferredMusicPackage();
         String mode = LauncherPrefs.mediaMode(this);
@@ -447,10 +746,10 @@ public final class MediaListenerService extends NotificationListenerService {
         out.append("Preferred music: ").append(emptyAsNone(preferredPackage)).append('\n');
         out.append("Radio: ").append(emptyAsNone(radioPackage));
         if (RadioProvider.isAutoDetectedNavRadio(this)) out.append(" (NavRadio+ auto-detected)");
-        out.append("\n\n");
+        out.append("\nBound MediaBrowser controllers: ").append(external.size()).append("\n\n");
 
-        if (controllers == null || controllers.isEmpty()) {
-            out.append("No active media sessions.");
+        if (controllers.isEmpty()) {
+            out.append("No observable media sessions.");
             return out.toString();
         }
 
@@ -463,6 +762,7 @@ public final class MediaListenerService extends NotificationListenerService {
             out.append(++index).append(". ").append(controller.getPackageName());
             if (genericSelected) out.append(" [music]");
             if (radioSelected) out.append(" [radio]");
+            if (external.containsKey(tokenOf(controller))) out.append(" [bound]");
             out.append('\n');
             out.append("   state=").append(stateName(snapshot.state));
             out.append(" actions=").append(actionSummary(snapshot.actions, snapshot.playing));
@@ -474,9 +774,8 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     private static boolean sameSession(MediaController first, MediaController second) {
-        if (first == null || second == null) return false;
-        MediaSession.Token firstToken = first.getSessionToken();
-        MediaSession.Token secondToken = second.getSessionToken();
+        MediaSession.Token firstToken = tokenOf(first);
+        MediaSession.Token secondToken = tokenOf(second);
         return firstToken != null && firstToken.equals(secondToken);
     }
 
