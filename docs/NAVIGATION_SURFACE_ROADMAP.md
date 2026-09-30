@@ -91,20 +91,22 @@ Qualify one run per app:
 
 For each, record exported launcher component, bootstrap Activity changes, task reuse/new-task behaviour, resizeability, mode/bounds, rendering, touch, fullscreen/HOME restoration and process death. A donor app's different valid lifecycle must not be normalised to Organic Maps.
 
-## Phase 5 - lifecycle and vehicle boundaries
+## Phase 5 - post-merge lifecycle and vehicle boundaries
 
-Status: blocked on at least one fully working navigator.
+Status: deferred from the current merge gate by explicit project decision; resume after the current launcher/media/navigation stack is merged and at least one navigator passes the immediate core gate.
 
 - [ ] launcher recreation and process death;
 - [ ] navigator process death and task disappearance;
 - [ ] reverse-camera takeover and return;
+- [ ] phone-call UI/audio takeover and return;
 - [ ] Android reboot;
 - [ ] full cold boot/power removal;
 - [ ] ACC sleep/wake;
 - [ ] SystemUI/sidebar state transitions that are actually supported on this unit;
+- [ ] removable-media/USB late insert and removal while HOME is active;
 - [ ] network loss/reconnect without degrading offline-capable navigation.
 
-Report runtime, physical and lifecycle evidence separately. A green build or immediate run cannot pass these rows.
+These rows are roadmap qualification, not blockers for the current PR #10 -> #11 -> #13 merge sequence. Report runtime, physical and lifecycle evidence separately. A green build or immediate run cannot pass these rows.
 
 ## Phase 6 - production hardening
 
