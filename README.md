@@ -81,23 +81,39 @@ Apps opens an in-HOME overlay. The drawer has Settings and Close actions, five c
 
 This launcher is not a generic resizable/split-screen HOME. Responsive work is limited to known TS18 landscape states: the physical 1280x720 panel, the decor-fitted surface, and exact right-sidebar shown/hidden geometry when runtime evidence supports it. The known 1225 px safe-right remains the default full-panel authority while the Topway right sidebar is present. Do not generalise to phone/tablet/split-screen breakpoints.
 
-### Experimental HOME map
+### HOME navigation surfaces
 
-The Leaflet/WebView implementation remains **only an experimental physical-test comparator and is OFF by default on a clean install**. Existing explicit map preference is preserved on upgrade. No further Leaflet visual expansion belongs in PR #10.
+Settings has one authoritative **HOME navigation surface** preference with three mutually exclusive modes:
 
-When enabled it retains pinned Leaflet 1.9.4, restricted OSM raster requests through the native TileBroker, bounded cache/revalidation, renderer recovery, process-local state, no arbitrary browsing and no JS bridge. The duplicate map Navigation action is removed; zoom/follow controls remain opposite the side rail and may be hidden together.
+- **Native navigation window - TESTING** - primary path: one real external navigation task on display 0 in Android freeform `windowingMode=5`, bounded to the launcher navigation rectangle.
+- **Fullscreen only** - explicit safe fallback.
+- **Legacy online map fallback** - launcher-owned Leaflet/WebView surface; online-only, last-resort, never automatic.
 
-The raster cache is not an Organic Maps/OsmAnd/Google/Yandex offline database. A polished `Map unavailable`/retry placeholder may be reconsidered later **only if physical testing proves the experimental WebView approach worth retaining**; otherwise replacement/windowing belongs to the separate navigation architecture work.
+For upgrades, a previously explicit `map.enabled=true` is consulted only when the new surface preference has never been written, and historical `raw_freeform` is migrated to `native_window`. Once `navigation.surface.mode` exists it is the sole surface authority; an invalid stored mode fails safe to fullscreen. Standard Android PiP is no longer a selectable or automatic navigation path.
+
+Exact TS18 evidence from a known-good DoFun/Organic Maps launch establishes a real external navigation task on display 0 in freeform mode 5, alongside Topway `isPipLauncher ... :navi` policy. The launcher therefore treats package + task ID + current top component + display + windowing mode + task bounds as the machine-state authority. It does **not** claim that raw `am task resize` reproduces DoFun's full private Topway navigation policy.
+
+The mode-5 path is root-assisted but bounded. Java resolves the configured package's ordinary exported launcher Activity and derives the Android user from the launcher process UID (the application UID itself is not used as a user ID). One helper transaction first adopts exactly one same-user, same-package task with a known matching component; only if none exists does it launch that component once with explicit display 0 and mode 5, then acquire, resize and verify the exact task. Ambiguous tasks fail closed. HOME stops do not cancel an in-flight transaction, callbacks coalesce behind one operation, and a failure latch keeps HOME usable until explicit Retry or Open fullscreen.
+
+Physical testing of `PR11-5aea8bc` proved visible bounded Organic Maps rendering on standalone HOME but also exposed unreliable warm lifecycle/app handoff and permission/settings UI after launcher-driven task handling. Current code no longer restarts a warm navigation Activity merely to park it: one atomic helper transaction validates the same-user Organic Maps and canonical HOME tasks, focuses HOME, then revalidates the unchanged mode-5 task, component and bounds. Cold acquisition remains the ordinary direct MAIN/LAUNCHER start. Explicit fullscreen/freeform mode changes remain a separate Android-Q transaction and may use `am start --task` because the captured TS18 behaviour rejects resize until the existing task is first established in mode 5. These changes are repository-verified but still require exact-device retest; inside-map touch, warm recovery and vehicle lifecycle remain physical gates.
+
+The Leaflet/WebView implementation remains **OFF by default on a clean install**. When selected it retains pinned Leaflet 1.9.4, restricted OSM raster requests through the native TileBroker, bounded cache/revalidation, renderer recovery, process-local state, no arbitrary browsing and no JS bridge. The raster cache is not an Organic Maps/OsmAnd/Google/Yandex offline database.
+
+Machine-state success is not physical HOME success. Mode 5 still requires exact-device qualification of visible composition, map touch inside the rectangle, launcher touch outside it, app-drawer round trips, fullscreen/HOME transitions, unrelated-task isolation, navigator switching, process recreation, reverse return, reboot, cold boot and ACC sleep/wake.
+
+See [native HOME navigation window](docs/NATIVE_NAVIGATION_WINDOW.md), the [physical playbook](docs/NAVIGATION_WINDOW_PHYSICAL_PLAYBOOK.md), the [roadmap](docs/NAVIGATION_SURFACE_ROADMAP.md) and [Topway desktop-window contracts](docs/TOPWAY_DESKTOP_WINDOW_CONTRACT.md).
 
 ## Configuration and diagnostics
 
-Versioned SAF JSON export/import is whitelisted and transactional. It includes app/role assignments, HOME shortcut visibility/count, rail and Radio/Music sides, map settings, media mode, startup media warm-up, accent hue, icon overrides and appearance schedule. It does not export secrets, caches or location history.
+Versioned SAF JSON export/import is whitelisted and transactional. It includes app/role assignments, HOME shortcut visibility/count, rail and Radio/Music sides, navigation-surface/map settings, media mode, startup media warm-up, accent hue, icon overrides and appearance schedule. It does not export secrets, caches or location history.
 
 Read-only physical evidence helpers:
 
 - `scripts/termux/measure-standalone-launcher.sh` - CPU/RAM/frame measurements;
-- `scripts/termux/collect-window-media-evidence.sh` - bounded task/window/freeform/PiP, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture;
-- `scripts/termux/collect-fast-media-evidence.sh` - bounded source/user/root-domain/service/session readiness capture and a generated physical fast-media playbook under `/storage/emulated/0/Download/ts-theme/`.
+- `scripts/termux/collect-window-media-evidence.sh` - bounded task/window, package/service, MediaBrowser/MediaSession, display-density and relevant-log capture;
+- `scripts/termux/collect-fast-media-evidence.sh` - bounded source/user/root-domain/service/session readiness capture and a generated physical fast-media playbook under `/storage/emulated/0/Download/ts-theme/`;
+- `scripts/termux/collect-navigation-window-evidence.sh` - read-only focused activity/window/input/surface checkpoints plus bounded broader platform/Topway/DoFun discovery;
+- `scripts/termux/collect-topway-window-policy-evidence.sh` - read-only bounded exact-device collection for unresolved Topway/DoFun navigation policy.
 
 These diagnostics do not mutate protected state. Permission/time-out/root gaps are BLOCKED/UNVERIFIED rather than evidence of absence.
 
@@ -107,7 +123,7 @@ These diagnostics do not mutate protected state. Permission/time-out/root gaps a
 
 Before any further typography, icon-size or touch-target redesign, capture and validate the actual device's `wm size`, `wm density`, `densityDpi` and relevant display metrics. Do not convert proven SystemUI boundaries away from raw pixels merely for stylistic consistency.
 
-Physical validation is still required for the selected/inactive media hierarchy and gradients, 128 px date, adaptive rail spacing and shortcut-disable state, actual app-icon Settings preview, colour-circle accent selector, installed-source media readiness, appearance modes and exact sidebar/decor-fitted geometry. Fast-media qualification separately covers launcher/player restart, cold boot, repeated HOME returns, root unavailable, Auxio USB late/unavailable, opposite-source playback, reboot and ACC sleep/wake. Audible onset remains a physical observation rather than a CI claim.
+Physical validation is still required for the selected/inactive media hierarchy and gradients, 128 px date, adaptive rail spacing and shortcut-disable state, actual app-icon Settings preview, colour-circle accent selector, installed-source media readiness, appearance modes and exact sidebar/decor-fitted geometry. Fast-media qualification separately covers launcher/player restart, cold boot, repeated HOME returns, root unavailable, Auxio USB late/unavailable, opposite-source playback, reboot and ACC sleep/wake. Audible onset remains a physical observation rather than a CI claim. Native navigation qualification separately covers stable warm task reuse, map touch, drawer/app transitions, fullscreen/HOME return and lifecycle transitions without spurious permission/settings prompts or task/process churn.
 
 ## Safe HOME rollout
 

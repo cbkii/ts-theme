@@ -1,5 +1,4 @@
 import os
-import re
 import subprocess
 import tempfile
 import unittest
@@ -15,12 +14,18 @@ class TermuxToolkitTests(unittest.TestCase):
             result=subprocess.run(["bash","-n",str(path)],capture_output=True,text=True); self.assertEqual(0,result.returncode,result.stderr)
     def test_no_destructive_escape_hatches(self):
         text="\n".join(path.read_text(encoding="utf-8") for path in SCRIPTS.rglob("*.sh"))
-        # Read-only diagnostics may explicitly expose Android executable search paths to a child/root
-        # shell. Ignore only that declaration while continuing to reject protected-path operations
-        # everywhere else in the toolkit.
-        protected_check=re.sub(r"^ANDROID_ROOT_PATH=.*$","",text,flags=re.MULTILINE)
-        for forbidden in ("setenforce 0","chmod 777","pm clear com.dofun.variety","/system/","/vendor/"):
-            self.assertNotIn(forbidden,protected_check)
+        # Read-only collectors legitimately execute binaries and inspect files below /system and
+        # /vendor. Reject mutation primitives instead of treating protected-path reads as writes.
+        for forbidden in (
+            "setenforce 0",
+            "chmod 777",
+            "pm clear com.dofun.variety",
+            "mount -o rw,remount /system",
+            "mount -o rw,remount /vendor",
+            "> /system/",
+            "> /vendor/",
+        ):
+            self.assertNotIn(forbidden,text)
         self.assertNotIn("> '$app_pa/p.l'",text)
     def test_no_root_preflight_is_graceful(self):
         with tempfile.TemporaryDirectory() as td:

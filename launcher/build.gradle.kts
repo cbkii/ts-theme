@@ -4,6 +4,8 @@ plugins {
 
 val versionCodeAuthority = providers.gradleProperty("VERSION_CODE").get().toInt()
 val versionNameAuthority = providers.gradleProperty("VERSION_NAME").get()
+val sourceRevision = providers.environmentVariable("SOURCE_REVISION").orElse("unknown").get()
+val sourceRef = providers.environmentVariable("SOURCE_REF").orElse("local").get()
 
 val signingValues = mapOf(
     "TS_THEME_KEYSTORE_FILE" to providers.environmentVariable("TS_THEME_KEYSTORE_FILE").orNull,
@@ -23,6 +25,8 @@ android {
         targetSdk = 29
         versionCode = versionCodeAuthority
         versionName = versionNameAuthority
+        resValue("string", "build_source_revision", sourceRevision)
+        resValue("string", "build_source_ref", sourceRef)
     }
 
     signingConfigs {
@@ -58,6 +62,7 @@ android {
 
     buildFeatures {
         buildConfig = false
+        resValues = true
     }
 
     compileOptions {

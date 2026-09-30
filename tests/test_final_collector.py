@@ -1,0 +1,82 @@
+"""Exercise collector status and archive behaviour with controlled Android commands."""
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+import zipfile
+
+
+ROOT = Path(__file__).resolve().parents[1]
+COLLECTOR = ROOT / "scripts/termux/collect-final-qualification.sh"
+
+
+class FinalCollectorTest(unittest.TestCase):
+    def collect(self, user="0", wm_status=0, large_activity=False):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            binaries = base / "bin"
+            binaries.mkdir()
+            for name in ("cmd", "am", "getprop", "wm", "dumpsys", "logcat"):
+                command = binaries / name
+                command.write_text("#!/bin/sh\n"
+                    "case \"${0##*/}\" in\n"
+                    "cmd|am) printf '%s\\n' \"$TEST_ANDROID_USER\" ;;\n"
+                    "wm) if [ \"$1\" = size ] && [ \"$TEST_WM_STATUS\" != 0 ]; "
+                    "then exit \"$TEST_WM_STATUS\"; fi; echo 'Physical size: 1280x720' ;;\n"
+                    "getprop) echo 'test.build' ;;\n"
+                    "dumpsys) if [ \"$1\" = activity ] && [ \"$TEST_LARGE_ACTIVITY\" = 1 ]; "
+                    "then head -c 4400000 /dev/zero | tr '\\000' x; "
+                    "else echo 'test snapshot'; fi ;;\n"
+                    "logcat) echo 'test event' ;;\n"
+                    "esac\n")
+                command.chmod(0o700)
+            env = {**os.environ, "TS18_TERMUX_BIN": str(binaries),
+                   "TS18_ANDROID_PATH": "/usr/bin:/bin", "TEST_ANDROID_USER": user,
+                   "TEST_WM_STATUS": str(wm_status),
+                   "TEST_LARGE_ACTIVITY": str(int(large_activity))}
+            result = subprocess.run(["bash", str(COLLECTOR), "--no-root", "--out-base", str(base)],
+                                    env=env, capture_output=True, text=True, timeout=25)
+            exported = next(base.glob("final-*/STATUS.tsv"))
+            rows = exported.read_text()
+            archive = next(base.glob("final-*.zip"))
+            with zipfile.ZipFile(archive) as z:
+                archive_ok = z.testzip() is None
+                archived_names = set(z.namelist())
+            verified = (exported.parent / "MANIFEST_VERIFY.txt").read_text()
+            archive_verify = Path(str(archive) + ".verify.txt")
+            return result, rows, archive_ok, verified, archive_verify.read_text(), archived_names
+
+    def test_pass_keeps_optional_root_block_separate_and_verifies_archive(self):
+        result, rows, archive_ok, verified, archive_verify, archived_names = self.collect()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("display/wm-size.txt\tREQUIRED\tPASS\t0", rows)
+        self.assertIn("identity/root.txt\tOPTIONAL\tBLOCKED\t0", rows)
+        self.assertTrue(archive_ok)
+        self.assertIn("OK", verified)
+        self.assertIn("No errors detected", archive_verify)
+        self.assertFalse(any(name.endswith("ARCHIVE_VERIFY.txt") for name in archived_names))
+
+    def test_required_command_not_found_cannot_pass(self):
+        result, rows, archive_ok, _, _, _ = self.collect(wm_status=127)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("display/wm-size.txt\tREQUIRED\tFAIL\t127", rows)
+        self.assertTrue(archive_ok)
+
+    def test_ambiguous_android_user_blocks_dependent_evidence(self):
+        result, rows, archive_ok, _, _, _ = self.collect(user="Current user: 0\nuser: 10")
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("identity/android-user.txt\tREQUIRED\tBLOCKED\t1", rows)
+        self.assertIn("packages-BLOCKED.txt\tOPTIONAL\tBLOCKED\t1", rows)
+        self.assertIn("display/wm-size.txt\tREQUIRED\tPASS\t0", rows)
+        self.assertTrue(archive_ok)
+
+    def test_truncated_required_output_is_reported_as_failure(self):
+        result, rows, archive_ok, _, _, _ = self.collect(large_activity=True)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("window/activity.txt\tREQUIRED\tFAIL\t0;TRUNCATED", rows)
+        self.assertTrue(archive_ok)
+
+
+if __name__ == "__main__":
+    unittest.main()

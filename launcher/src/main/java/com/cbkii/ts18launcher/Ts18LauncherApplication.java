@@ -14,7 +14,7 @@ import android.os.SystemClock;
 import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
 /**
- * Process-level launcher lifecycle and removable-media reconciliation.
+ * Process-level launcher lifecycle, navigation bootstrap and removable-media reconciliation.
  *
  * Storage broadcasts are observations only. A successful mount may trigger one bounded background
  * music warm-up while HOME is resumed; it never scans media, owns the queue, auto-plays or replays
@@ -45,6 +45,7 @@ public final class Ts18LauncherApplication extends Application
 
     @Override public void onCreate() {
         super.onCreate();
+        NavigationPermissionBootstrapper.ensureEarly(this);
         registerActivityLifecycleCallbacks(this);
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_MEDIA_MOUNTED);

@@ -1,0 +1,18 @@
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #0 (activities from top to bottom):
+  Stack #7: type=standard mode=freeform
+  mBounds=Rect(100, 100 - 600, 500)
+    Task id #1001
+    mBounds=Rect(100, 100 - 600, 500)
+    * TaskRecord{fixture #1001 A=app.organicmaps.incar U=0 StackId=7 sz=1}
+      mSupportsPictureInPicture=false isResizeable=true
+      * Hist #0: ActivityRecord{fixture u0 app.organicmaps.incar/app.organicmaps.MwmActivity t1001}
+          mActivityComponent=app.organicmaps.incar/app.organicmaps.MwmActivity
+  Stack #8: type=standard mode=freeform
+  mBounds=Rect(200, 120 - 700, 520)
+    Task id #1002
+    mBounds=Rect(200, 120 - 700, 520)
+    * TaskRecord{fixture #1002 A=app.organicmaps.incar U=0 StackId=8 sz=1}
+      mSupportsPictureInPicture=false isResizeable=true
+      * Hist #0: ActivityRecord{fixture u0 app.organicmaps.incar/app.organicmaps.MwmActivity t1002}
+          mActivityComponent=app.organicmaps.incar/app.organicmaps.MwmActivity

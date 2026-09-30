@@ -49,7 +49,7 @@ final class StartupBootstrapCoordinator implements MediaListenerService.Observer
     private String currentPackage = "";
     private PrimeCallback interactiveCallback;
 
-    StartupBootstrapCoordinator(Activity activity) {
+    StartupBootstrapCoordinator(Activity activity, MediaSourceBootstrapper ignoredBootstrapper) {
         this.activity = activity;
         this.mask = new StartupMaskController(activity);
         this.decor = activity.getWindow().getDecorView();
