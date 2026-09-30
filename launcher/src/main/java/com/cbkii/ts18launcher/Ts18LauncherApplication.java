@@ -46,6 +46,7 @@ public final class Ts18LauncherApplication extends Application
     @Override public void onCreate() {
         super.onCreate();
         NavigationPermissionBootstrapper.ensureEarly(this);
+        MediaNotificationAccessBootstrapper.ensureEarly(this);
         registerActivityLifecycleCallbacks(this);
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_MEDIA_MOUNTED);
