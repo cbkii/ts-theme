@@ -10,7 +10,7 @@ import java.util.concurrent.Executors;
 /** Shared bounded executor for one root-backed navigation experiment. */
 abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private static final long KNOWN_TASK_RECHECK_DELAY_MS = 180L;
-    private static final long CORROBORATION_TIMEOUT_MS = 1200L;
+    private static final long CORROBORATION_TIMEOUT_MS = 350L;
 
     private enum AbsenceEvidence { PRESENT_IN_RECENTS, PROCESS_ALIVE, ABSENT, UNKNOWN }
 
@@ -19,7 +19,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private final ExecutorService executor;
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean destroyed;
-    private NavigationHelperResult lastKnownTaskObservation;
+    private volatile NavigationHelperResult lastKnownTaskObservation;
 
     RootNavigationBackend(Context context, String threadName) {
         this.context = context.getApplicationContext();
@@ -43,7 +43,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                                 Integer.toString(taskId)));
                 if ("TASK_OBSERVATION_UNCERTAIN".equals(verified.code)) {
                     android.util.Log.w("TS18Nav", "known task observation uncertain before repair; "
-                            + "retaining authority without present-native task=" + taskId);
+                            + "retaining authority without launching task=" + taskId);
                     return verified;
                 }
                 if ("TASK_NOT_FOUND".equals(verified.code)
@@ -56,7 +56,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     Integer.toString(bounds.left), Integer.toString(bounds.top),
                     Integer.toString(bounds.right), Integer.toString(bounds.bottom), taskHint(taskId),
                     Integer.toString(transactionId));
-            rememberKnownTask(result, packageName, result.taskId);
+            rememberKnownTask(result, packageName, taskId);
             return result;
         }, callback);
     }
@@ -104,7 +104,6 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     helper.run("fullscreen", packageName, Integer.toString(taskId));
             if (!transitioned.success || transitioned.taskId != taskId
                     || transitioned.windowingMode != 1) return transitioned;
-            rememberKnownTask(transitioned, packageName, taskId);
             android.util.Log.i("TS18Nav", "fullscreen mode verified task=" + taskId
                     + " bounds=" + transitioned.bounds + " (WindowManager-owned)");
             return transitioned;
@@ -147,8 +146,8 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
      * A second miss from the same dumpsys/activity parser is not independent evidence of task
      * removal. After the short parser recheck, corroborate through ActivityManager recents plus
      * process existence. Only a clean recents miss with no package process proves absence. When
-     * contrary/ambiguous evidence remains, retain the last successfully observed task instead of
-     * launching or repairing it.
+     * contrary/ambiguous evidence remains, retain the last successfully observed windowed task
+     * identity without treating it as a fresh successful verification.
      */
     private NavigationHelperResult retryKnownTaskMiss(
             String packageName, int taskId, String phase, Operation operation) {
@@ -194,9 +193,12 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
 
     private AbsenceEvidence corroborateKnownTask(String packageName, int taskId) {
         if (!safePackage(packageName) || taskId <= 0) return AbsenceEvidence.UNKNOWN;
+        String prefix = "#" + taskId + " A=" + packageName;
         String command = "snapshot=\"$(dumpsys activity recents 2>/dev/null)\" || exit 3; "
-                + "printf '%s\\n' \"$snapshot\" | grep -F '#" + taskId + " A="
-                + packageName + " ' >/dev/null && exit 0; "
+                + "printf '%s\\n' \"$snapshot\" | grep -F '" + prefix
+                + " ' >/dev/null && exit 0; "
+                + "printf '%s\\n' \"$snapshot\" | grep -F '" + prefix
+                + "}' >/dev/null && exit 0; "
                 + "pidof " + packageName + " >/dev/null 2>&1 && exit 2; exit 1";
         RootShell.Result result = RootShell.runMillis(command, CORROBORATION_TIMEOUT_MS);
         if (!result.completed) return AbsenceEvidence.UNKNOWN;
@@ -213,7 +215,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
 
     private void rememberKnownTask(NavigationHelperResult result, String packageName, int taskId) {
         if (result == null || !result.success || result.taskId <= 0
-                || !packageName.equals(result.packageName)) return;
+                || result.windowingMode != 5 || !packageName.equals(result.packageName)) return;
         if (taskId > 0 && result.taskId != taskId) return;
         lastKnownTaskObservation = result;
     }
@@ -221,7 +223,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private NavigationHelperResult cachedKnownTask(String packageName, int taskId) {
         NavigationHelperResult cached = lastKnownTaskObservation;
         if (cached == null || !cached.success || cached.taskId != taskId
-                || !packageName.equals(cached.packageName)) return null;
+                || cached.windowingMode != 5 || !packageName.equals(cached.packageName)) return null;
         return cached;
     }
 
