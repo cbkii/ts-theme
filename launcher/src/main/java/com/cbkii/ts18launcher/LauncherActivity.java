@@ -22,15 +22,14 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @SuppressLint("SetTextI18n")
-public class LauncherActivity extends Activity implements MediaListenerService.Observer {
+public class LauncherActivity extends Activity implements MediaListenerService.Observer,
+        ProcessMediaSessionMonitor.Observer {
     private static final int REQUEST_LOCATION = 4101;
     private static final int MAX_QUICK_SLOTS = 6;
     private static final long MEDIA_STATUS_MS = 1800L;
     private static final long MEDIA_READY_RECONCILE_DELAY_MS = 250L;
-    private static final AtomicBoolean STARTUP_BOOTSTRAP_CLAIMED = new AtomicBoolean();
 
     private FrameLayout root;
     private LinearLayout rail;
@@ -60,7 +59,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
-    private StartupBootstrapCoordinator startupBootstrap;
     private boolean launchedAsHome;
     private boolean redirectingToHome;
     private boolean locationPermissionRequested;
@@ -68,25 +66,25 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private int mediaStatusGeneration;
     private String mediaRadioPackage = "";
     private String mediaMusicPackage = "";
-    private MediaListenerService.Snapshot genericSnapshot = new MediaListenerService.Snapshot("", "", "", false);
-    private MediaListenerService.Snapshot radioSnapshot = new MediaListenerService.Snapshot("", "", "", false);
+    private MediaListenerService.Snapshot listenerGenericSnapshot = emptyMediaSnapshot();
+    private MediaListenerService.Snapshot listenerRadioSnapshot = emptyMediaSnapshot();
+    private MediaListenerService.Snapshot processGenericSnapshot = emptyMediaSnapshot();
+    private MediaListenerService.Snapshot processRadioSnapshot = emptyMediaSnapshot();
+    private MediaListenerService.Snapshot genericSnapshot = emptyMediaSnapshot();
+    private MediaListenerService.Snapshot radioSnapshot = emptyMediaSnapshot();
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         if (redirectToCanonicalHome()) return;
-        boolean coldProcessStart = STARTUP_BOOTSTRAP_CLAIMED.compareAndSet(false, true);
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
         mediaBootstrapper = new MediaSourceBootstrapper(this);
-        startupBootstrap = new StartupBootstrapCoordinator(this);
         rememberMediaConfiguration();
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         setContentView(root);
 
-        // The launcher owns only this placeholder's geometry/status. The selected navigation app
-        // remains a real external Android task whose window is managed by NavigationWindowController.
         nativeNavigationPanel = new NativeNavigationPanel(this);
         root.addView(nativeNavigationPanel);
         navigationWindowController = new NavigationWindowController(this, nativeNavigationPanel);
@@ -106,18 +104,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         updateMediaPresentation();
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 applyGeometry(right - left, bottom - top));
-        root.post(() -> {
-            applyGeometry(root.getWidth(), root.getHeight());
-            if (coldProcessStart && (launchedAsHome || HomeMode.isDefaultHome(this))
-                    && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-                if (HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(
-                        HomeNavigationSurfacePolicy.mode(this))) {
-                    afterMediaBootstrapHomeRestored(restored -> {
-                        if (restored && !isFinishing() && !isDestroyed()) startupBootstrap.start();
-                    });
-                } else startupBootstrap.start();
-            }
-        });
+        root.post(() -> applyGeometry(root.getWidth(), root.getHeight()));
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -132,6 +119,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             appsButton.requestFocus();
             root.bringToFront();
             root.post(this::updateMapVisibility);
+            ProcessMediaSessionMonitor.refresh(this);
             scheduleMediaReadiness();
         }
     }
@@ -139,6 +127,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override protected void onResume() {
         super.onResume();
         if (redirectingToHome || root == null) return;
+        ProcessMediaSessionMonitor.refresh(this);
         scheduleMediaReadiness();
     }
 
@@ -146,6 +135,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onWindowFocusChanged(hasFocus);
         if (root != null && hasFocus && !redirectingToHome
                 && (launchedAsHome || HomeMode.isDefaultHome(this))) {
+            ProcessMediaSessionMonitor.refresh(this);
             scheduleMediaReadiness();
         }
     }
@@ -175,7 +165,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         reconcileMediaConfiguration();
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
+        ProcessMediaSessionMonitor.addObserver(this, this);
         MediaListenerService.addObserver(this);
+        ProcessMediaSessionMonitor.refresh(this);
         MediaListenerService.refreshActiveSessions();
         applyRailConfiguration();
         scheduleMediaReadiness();
@@ -187,13 +179,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (root == null) { super.onStop(); return; }
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        boolean controlledPrime = startupBootstrap != null && startupBootstrap.isRunning();
-        if (!controlledPrime) {
-            boolean commandPending = mediaStatusActive;
-            mediaStatusGeneration++;
-            mediaStatusActive = false;
-            if (commandPending) resetMediaBootstrapper();
-        }
+        boolean commandPending = mediaStatusActive;
+        mediaStatusGeneration++;
+        mediaStatusActive = false;
+        if (commandPending) resetMediaBootstrapper();
+        ProcessMediaSessionMonitor.removeObserver(this);
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (mapPanel != null) mapPanel.stop();
@@ -203,7 +193,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onDestroy() {
         mediaRefreshHandler.removeCallbacksAndMessages(null);
-        if (startupBootstrap != null) startupBootstrap.destroy();
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();
         if (appDrawerPanel != null) appDrawerPanel.destroy();
         if (mapPanel != null) mapPanel.destroy();
@@ -218,7 +207,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void runMediaReadiness() {
-        if (startupBootstrap != null && startupBootstrap.isRunning()) return;
         if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
             mediaBootstrapper.warmConfiguredSources();
         }
@@ -411,31 +399,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         String appLabel = AppResolver.labelFor(this, packageName, label);
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
                 ? "Preparing " + label + "…" : label, appLabel);
-
-        dispatchSourceCommand(label, packageName, command, generation, true);
+        dispatchSourceCommand(label, packageName, command, generation);
     }
 
     private void dispatchSourceCommand(String label, String packageName,
-                                       MediaListenerService.Command command, int generation,
-                                       boolean allowColdPrime) {
+                                       MediaListenerService.Command command, int generation) {
         mediaBootstrapper.command(label, packageName, command, (success, message) -> {
             if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
+            ProcessMediaSessionMonitor.refresh(this);
             MediaListenerService.refreshActiveSessions();
             if (success) {
                 mediaStatusActive = false;
                 updateLabels();
             } else {
-                if (allowColdPrime && command == MediaListenerService.Command.PLAY_PAUSE
-                        && !mediaBootstrapper.hasUsableController(packageName)
-                        && startupBootstrap != null && !startupBootstrap.isRunning()) {
-                    MediaEventTrace.record("readiness", "cold-background-only-prime-unavailable", packageName);
-                    startupBootstrap.primeForCommand(packageName, (ready, detail) -> {
-                        if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
-                        settleSourceCommandFailure(label, packageName, command,
-                                generation, detail);
-                    });
-                    return;
-                }
+                MediaEventTrace.record("readiness", "background-only-command-failed", packageName);
                 settleSourceCommandFailure(label, packageName, command, generation, message);
             }
         });
@@ -663,9 +640,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private boolean redirectToCanonicalHome() {
-        // The ordinary app entry and HOME alias otherwise create distinct tasks,
-        // each with a controller for the same external map. Keep preview mode
-        // while another launcher is HOME, but use only the alias once selected.
         if (getComponentName().getClassName().endsWith(".HomeAlias")
                 || !HomeMode.isDefaultHome(this)) return false;
         try {
@@ -684,15 +658,48 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override public void onMediaStateChanged(MediaListenerService.Snapshot genericMedia,
                                                 MediaListenerService.Snapshot radio) {
-        genericSnapshot = genericMedia == null
-                ? new MediaListenerService.Snapshot("", "", "", false) : genericMedia;
-        radioSnapshot = radio == null
-                ? new MediaListenerService.Snapshot("", "", "", false) : radio;
+        listenerGenericSnapshot = normaliseSnapshot(genericMedia);
+        listenerRadioSnapshot = normaliseSnapshot(radio);
+        applyEffectiveMediaState();
+    }
+
+    @Override public void onProcessMediaStateChanged(MediaListenerService.Snapshot genericMedia,
+                                                      MediaListenerService.Snapshot radio) {
+        processGenericSnapshot = normaliseSnapshot(genericMedia);
+        processRadioSnapshot = normaliseSnapshot(radio);
+        applyEffectiveMediaState();
+    }
+
+    private void applyEffectiveMediaState() {
+        genericSnapshot = mergeSessionSnapshot(processGenericSnapshot, listenerGenericSnapshot);
+        radioSnapshot = mergeSessionSnapshot(processRadioSnapshot, listenerRadioSnapshot);
         runOnUiThread(() -> {
             mediaSelection.reconcile(radioSnapshot.state == android.media.session.PlaybackState.STATE_PLAYING,
                     genericSnapshot.state == android.media.session.PlaybackState.STATE_PLAYING);
             updateLabels();
         });
+    }
+
+    private static MediaListenerService.Snapshot normaliseSnapshot(MediaListenerService.Snapshot value) {
+        return value == null ? emptyMediaSnapshot() : value;
+    }
+
+    private static MediaListenerService.Snapshot mergeSessionSnapshot(
+            MediaListenerService.Snapshot core, MediaListenerService.Snapshot enriched) {
+        MediaListenerService.Snapshot primary = normaliseSnapshot(core);
+        MediaListenerService.Snapshot secondary = normaliseSnapshot(enriched);
+        if (primary.packageName.isEmpty()) return secondary;
+        if (secondary.packageName.isEmpty() || !primary.packageName.equals(secondary.packageName)) {
+            return primary;
+        }
+        String title = secondary.title.isEmpty() ? primary.title : secondary.title;
+        String artist = secondary.artist.isEmpty() ? primary.artist : secondary.artist;
+        return new MediaListenerService.Snapshot(primary.packageName, title, artist,
+                primary.state, primary.actions, primary.sessionIdentity);
+    }
+
+    private static MediaListenerService.Snapshot emptyMediaSnapshot() {
+        return new MediaListenerService.Snapshot("", "", "", false);
     }
 
     private void openNavigation(Location location) {
@@ -710,21 +717,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void launchAfterNavigation(Runnable launch) {
         if (ExperimentalMapPolicy.enabled(this) || navigationWindowController == null) launch.run();
         else navigationWindowController.launchAfterSuspension(launch);
-    }
-
-    void launchMediaBootstrap(String packageName, java.util.function.Consumer<Boolean> callback) {
-        launchAfterNavigation(() -> callback.accept(
-                AppResolver.launchPackageQuietly(this, packageName)));
-    }
-
-    void afterMediaBootstrapHomeRestored(java.util.function.Consumer<Boolean> callback) {
-        if (isFinishing() || isDestroyed()) { callback.accept(false); return; }
-        root.post(() -> {
-            updateMapVisibility();
-            if (ExperimentalMapPolicy.enabled(this)
-                    || navigationWindowController == null) callback.accept(true);
-            else navigationWindowController.whenHomePresented(callback);
-        });
     }
 
     private void openConfiguredNow(String key) {
