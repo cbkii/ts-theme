@@ -66,10 +66,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private int mediaStatusGeneration;
     private String mediaRadioPackage = "";
     private String mediaMusicPackage = "";
-    private MediaListenerService.Snapshot listenerGenericSnapshot = emptyMediaSnapshot();
-    private MediaListenerService.Snapshot listenerRadioSnapshot = emptyMediaSnapshot();
-    private MediaListenerService.Snapshot processGenericSnapshot = emptyMediaSnapshot();
-    private MediaListenerService.Snapshot processRadioSnapshot = emptyMediaSnapshot();
+    private volatile MediaListenerService.Snapshot listenerGenericSnapshot = emptyMediaSnapshot();
+    private volatile MediaListenerService.Snapshot listenerRadioSnapshot = emptyMediaSnapshot();
+    private volatile MediaListenerService.Snapshot processGenericSnapshot = emptyMediaSnapshot();
+    private volatile MediaListenerService.Snapshot processRadioSnapshot = emptyMediaSnapshot();
+    private volatile boolean processSnapshotAuthoritative;
     private MediaListenerService.Snapshot genericSnapshot = emptyMediaSnapshot();
     private MediaListenerService.Snapshot radioSnapshot = emptyMediaSnapshot();
 
@@ -664,18 +665,21 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override public void onProcessMediaStateChanged(MediaListenerService.Snapshot genericMedia,
-                                                      MediaListenerService.Snapshot radio) {
+                                                      MediaListenerService.Snapshot radio,
+                                                      boolean authoritative) {
         processGenericSnapshot = normaliseSnapshot(genericMedia);
         processRadioSnapshot = normaliseSnapshot(radio);
+        processSnapshotAuthoritative = authoritative;
         applyEffectiveMediaState();
     }
 
     private void applyEffectiveMediaState() {
-        genericSnapshot = mergeSessionSnapshot(processGenericSnapshot, listenerGenericSnapshot);
-        radioSnapshot = mergeSessionSnapshot(processRadioSnapshot, listenerRadioSnapshot);
         runOnUiThread(() -> {
-            mediaSelection.reconcile(radioSnapshot.state == android.media.session.PlaybackState.STATE_PLAYING,
-                    genericSnapshot.state == android.media.session.PlaybackState.STATE_PLAYING);
+            genericSnapshot = mergeSessionSnapshot(
+                    processGenericSnapshot, listenerGenericSnapshot, processSnapshotAuthoritative);
+            radioSnapshot = mergeSessionSnapshot(
+                    processRadioSnapshot, listenerRadioSnapshot, processSnapshotAuthoritative);
+            mediaSelection.reconcile(radioSnapshot.playing, genericSnapshot.playing);
             updateLabels();
         });
     }
@@ -685,11 +689,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private static MediaListenerService.Snapshot mergeSessionSnapshot(
-            MediaListenerService.Snapshot core, MediaListenerService.Snapshot enriched) {
-        MediaListenerService.Snapshot primary = normaliseSnapshot(core);
+            MediaListenerService.Snapshot core, MediaListenerService.Snapshot enriched,
+            boolean coreAuthoritative) {
         MediaListenerService.Snapshot secondary = normaliseSnapshot(enriched);
-        if (primary.packageName.isEmpty()) return secondary;
+        if (!coreAuthoritative) return secondary;
+        MediaListenerService.Snapshot primary = normaliseSnapshot(core);
+        if (primary.packageName.isEmpty()) return primary;
         if (secondary.packageName.isEmpty() || !primary.packageName.equals(secondary.packageName)) {
+            return primary;
+        }
+        if (primary.sessionIdentity != null && secondary.sessionIdentity != null
+                && !primary.sessionIdentity.equals(secondary.sessionIdentity)) {
             return primary;
         }
         String title = secondary.title.isEmpty() ? primary.title : secondary.title;
