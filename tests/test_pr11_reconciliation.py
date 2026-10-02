@@ -58,13 +58,18 @@ class Pr11ReconciliationTests(unittest.TestCase):
         present = backend.split("@Override public void present", 1)[1].split(
             "@Override public void verify", 1
         )[0]
+        corroborate = backend.split("private AbsenceEvidence corroborateKnownTask", 1)[1].split(
+            "private static boolean safePackage", 1
+        )[0]
         self.assertLess(present.index('helper.run("verify-native"'),
                         present.index('helper.run("present-native"'))
         self.assertIn("retryKnownTaskMiss", present)
         self.assertIn("TASK_OBSERVATION_UNCERTAIN", present)
         self.assertIn("return verified", present)
-        self.assertIn("dumpsys activity recents", backend)
-        self.assertIn("pidof", backend)
+        self.assertIn("dumpsys activity recents 2>/dev/null", corroborate)
+        self.assertIn('"pidof " + packageName', corroborate)
+        self.assertIn("+ \" ' >/dev/null && exit 0; \"", corroborate)
+        self.assertIn("+ \"}' >/dev/null && exit 0; \"", corroborate)
 
     def test_parked_known_task_is_focused_before_reporting_windowed(self):
         controller = self.read("launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowController.java")
