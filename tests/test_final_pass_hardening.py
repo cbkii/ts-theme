@@ -3,22 +3,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DRAWER = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerPanel.java").read_text(encoding="utf-8")
-STARTUP = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java").read_text(encoding="utf-8")
 LAUNCHER = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java").read_text(encoding="utf-8")
 ADAPTER = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceAdapter.java").read_text(encoding="utf-8")
+PROCESS_MONITOR = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/ProcessMediaSessionMonitor.java").read_text(encoding="utf-8")
 AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
 
 class FinalPassHardeningTest(unittest.TestCase):
-    def test_startup_bootstrap_is_background_only_and_cannot_launch_sources(self):
-        self.assertIn("StartupBootstrapCoordinator(Activity activity)", STARTUP)
-        self.assertIn('"foreground-prime-disabled"', STARTUP)
-        self.assertIn("background-session-readiness-only", STARTUP)
-        self.assertNotIn("AppResolver.launchPackage", STARTUP)
-        self.assertNotIn("launchMediaBootstrap", STARTUP)
-        self.assertNotIn("StartupMaskController", STARTUP)
-        self.assertNotIn("startActivity(", STARTUP)
+    def test_foreground_startup_bootstrap_is_removed(self):
+        self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java").exists())
+        self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupMaskController.java").exists())
+        self.assertNotIn("launchMediaBootstrap", LAUNCHER)
+        self.assertNotIn("cold-foreground-prime", LAUNCHER)
         self.assertIn("mediaBootstrapper.warmConfiguredSources()", LAUNCHER)
+
+    def test_process_media_session_monitor_is_primary_cold_boot_observer(self):
+        self.assertIn("ProcessMediaSessionMonitor.Observer", LAUNCHER)
+        self.assertIn("ProcessMediaSessionMonitor.addObserver(this, this)", LAUNCHER)
+        self.assertIn("onProcessMediaStateChanged", LAUNCHER)
+        self.assertIn("addOnActiveSessionsChangedListener", PROCESS_MONITOR)
+        self.assertIn("getActiveSessions(listenerComponent)", PROCESS_MONITOR)
+        self.assertIn("listener service receiving onListenerConnected", PROCESS_MONITOR)
 
     def test_geometry_application_is_idempotent(self):
         place = LAUNCHER.split("private void place(View view", 1)[1].split(
