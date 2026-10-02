@@ -44,7 +44,9 @@ final class NavigationHelperResult {
         if (source == null) return failure(code, rawSuffix);
         String raw = source.raw == null ? "" : source.raw;
         if (rawSuffix != null && !rawSuffix.isEmpty()) raw = raw + "\n" + rawSuffix;
-        return new NavigationHelperResult(source.success, code, source.userId, source.taskId,
+        // Retain the last observed identity as diagnostic authority, but an uncertainty result is
+        // never a fresh successful verification and must not pass success-gated controller checks.
+        return new NavigationHelperResult(false, code, source.userId, source.taskId,
                 source.stackId, source.displayId, source.windowingMode, source.supportsPip,
                 source.launched, source.transactionId, source.helpExit, source.helpWindowingMode,
                 source.helpDisplay, source.launchExit, source.packageName, source.component,
