@@ -23,18 +23,21 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertIn("onProcessMediaStateChanged", LAUNCHER)
         self.assertIn("addOnActiveSessionsChangedListener", PROCESS_MONITOR)
         self.assertIn("getActiveSessions(listenerComponent)", PROCESS_MONITOR)
-        self.assertIn("listener service receiving onListenerConnected", PROCESS_MONITOR)
+        self.assertIn("scheduleRefresh()", PROCESS_MONITOR)
+        self.assertIn("MediaSelection.pick(candidates, preferred, preferConfigured, remembered)", PROCESS_MONITOR)
 
     def test_geometry_application_is_idempotent(self):
         place = LAUNCHER.split("private void place(View view", 1)[1].split(
             "private void placeCard", 1
         )[0]
-        self.assertIn("view.getLayoutParams()", place)
-        self.assertIn("current.width == desiredWidth", place)
+        comparison = place.index("current.width == desiredWidth")
+        guarded_return = place.index("return;", comparison)
+        set_params = place.index("view.setLayoutParams(lp)")
         self.assertIn("current.height == desiredHeight", place)
         self.assertIn("current.leftMargin == desiredLeft", place)
         self.assertIn("current.topMargin == desiredTop", place)
-        self.assertLess(place.index("return;"), place.index("view.setLayoutParams(lp)"))
+        self.assertLess(comparison, guarded_return)
+        self.assertLess(guarded_return, set_params)
 
     def test_auxio_root_startservice_route_stays_removed(self):
         browser = ADAPTER.split(
