@@ -22,9 +22,23 @@ class NotificationAccessBootstrapTest(unittest.TestCase):
         self.assertIn("ProcessMediaSessionMonitor.refresh(this);", APP)
 
     def test_grant_refreshes_sessions_without_waiting_for_listener_connection(self):
-        self.assertIn("ProcessMediaSessionMonitor.refresh(app);", BOOT)
+        self.assertEqual(2, BOOT.count("ProcessMediaSessionMonitor.refresh(app);"))
+        verified = BOOT.split('MediaEventTrace.record("listener-access", "root-grant-verified"', 1)[1]
+        verified = verified.split("});\n    }", 1)[0]
+        self.assertIn("MAIN.post", verified)
+        self.assertIn("ProcessMediaSessionMonitor.refresh(app);", verified)
         self.assertIn("addOnActiveSessionsChangedListener", MONITOR)
         self.assertIn("getActiveSessions(listenerComponent)", MONITOR)
+
+    def test_process_monitor_clears_authority_when_access_is_lost(self):
+        self.assertIn('markUnavailable("access-not-granted", true)', MONITOR)
+        unavailable = MONITOR.split("private void markUnavailable", 1)[1].split(
+            "private void detachSessionListener", 1
+        )[0]
+        self.assertIn("authoritative = false", unavailable)
+        self.assertIn("lastGeneric = empty()", unavailable)
+        self.assertIn("lastRadio = empty()", unavailable)
+        self.assertIn("notifyObservers()", unavailable)
 
 
 if __name__ == "__main__":
