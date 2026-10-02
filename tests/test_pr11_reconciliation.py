@@ -8,26 +8,28 @@ class Pr11ReconciliationTests(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
-    def test_launcher_keeps_cold_bootstrap_drawer_preload_and_direct_settings_access(self):
+    def test_launcher_keeps_drawer_preload_direct_settings_and_background_readiness(self):
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
-        self.assertIn("STARTUP_BOOTSTRAP_CLAIMED", launcher)
-        self.assertIn("compareAndSet(false, true)", launcher)
-        self.assertIn("new StartupBootstrapCoordinator", launcher)
         self.assertIn("appDrawerPanel.preload()", launcher)
         self.assertIn("appsButton.setOnLongClickListener", launcher)
         self.assertIn("new Intent(this, SettingsActivity.class)", launcher)
+        self.assertIn("mediaBootstrapper.warmConfiguredSources()", launcher)
+        self.assertNotIn("STARTUP_BOOTSTRAP_CLAIMED", launcher)
+        self.assertNotIn("StartupBootstrapCoordinator", launcher)
+        self.assertNotIn("launchMediaBootstrap", launcher)
         self.assertNotIn("MEDIA_REFRESH_INTERVAL_MS", launcher)
         self.assertNotIn("mediaRefreshPoll", launcher)
 
-    def test_settings_keep_startup_overlay_and_non_blocking_navigation_warning(self):
+    def test_settings_keep_background_media_access_and_non_blocking_navigation_warning(self):
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
         compatibility = self.read(
             "launcher/src/main/java/com/cbkii/ts18launcher/NavigationCompatibilityPolicy.java")
-        self.assertIn("StartupMaskController.hasOverlayAccess(this)", settings)
-        self.assertIn("Settings.ACTION_MANAGE_OVERLAY_PERMISSION", settings)
+        self.assertIn("Notification access", settings)
         self.assertIn("NavigationCompatibilityPolicy.settingsMessage", settings)
         self.assertIn("UNQUALIFIED", compatibility)
         self.assertNotIn("throw", compatibility)
+        self.assertNotIn("Startup splash overlay", settings)
+        self.assertNotIn("StartupMaskController", settings)
 
     def test_drawer_is_visible_before_navigation_suspension_finishes(self):
         controller = self.read(
@@ -51,15 +53,18 @@ class Pr11ReconciliationTests(unittest.TestCase):
         self.assertIn('wait_state "$pkg" "$wanted_task" 1 any', fullscreen)
         self.assertNotIn("am task resize ", fullscreen)
 
-    def test_known_navigation_task_is_verified_before_repair(self):
+    def test_known_navigation_task_is_verified_and_corroborated_before_repair(self):
         backend = self.read("launcher/src/main/java/com/cbkii/ts18launcher/RootNavigationBackend.java")
         present = backend.split("@Override public void present", 1)[1].split(
             "@Override public void verify", 1
         )[0]
         self.assertLess(present.index('helper.run("verify-native"'),
                         present.index('helper.run("present-native"'))
-        self.assertNotIn("present skipped; task already matches HOME bounds", present)
-        self.assertIn("Geometry alone does not establish presentation", present)
+        self.assertIn("retryKnownTaskMiss", present)
+        self.assertIn("TASK_OBSERVATION_UNCERTAIN", present)
+        self.assertIn("return verified", present)
+        self.assertIn("dumpsys activity recents", backend)
+        self.assertIn("pidof", backend)
 
     def test_parked_known_task_is_focused_before_reporting_windowed(self):
         controller = self.read("launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowController.java")
