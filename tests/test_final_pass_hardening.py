@@ -10,11 +10,26 @@ AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
 
 class FinalPassHardeningTest(unittest.TestCase):
-    def test_startup_prime_has_one_owner_without_dead_bootstrap_dependency(self):
+    def test_startup_bootstrap_is_background_only_and_cannot_launch_sources(self):
         self.assertIn("StartupBootstrapCoordinator(Activity activity)", STARTUP)
-        self.assertNotIn("ignoredBootstrapper", STARTUP)
-        self.assertIn("new StartupBootstrapCoordinator(this)", LAUNCHER)
-        self.assertNotIn("new StartupBootstrapCoordinator(this, mediaBootstrapper)", LAUNCHER)
+        self.assertIn('"foreground-prime-disabled"', STARTUP)
+        self.assertIn("background-session-readiness-only", STARTUP)
+        self.assertNotIn("AppResolver.launchPackage", STARTUP)
+        self.assertNotIn("launchMediaBootstrap", STARTUP)
+        self.assertNotIn("StartupMaskController", STARTUP)
+        self.assertNotIn("startActivity(", STARTUP)
+        self.assertIn("mediaBootstrapper.warmConfiguredSources()", LAUNCHER)
+
+    def test_geometry_application_is_idempotent(self):
+        place = LAUNCHER.split("private void place(View view", 1)[1].split(
+            "private void placeCard", 1
+        )[0]
+        self.assertIn("view.getLayoutParams()", place)
+        self.assertIn("current.width == desiredWidth", place)
+        self.assertIn("current.height == desiredHeight", place)
+        self.assertIn("current.leftMargin == desiredLeft", place)
+        self.assertIn("current.topMargin == desiredTop", place)
+        self.assertLess(place.index("return;"), place.index("view.setLayoutParams(lp)"))
 
     def test_auxio_root_startservice_route_stays_removed(self):
         browser = ADAPTER.split(
@@ -44,7 +59,6 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertIn("android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS", DRAWER)
         self.assertIn('android.net.Uri.parse("package:" + entry.packageName)', DRAWER)
         self.assertIn("openAppInfo(visibleEntries.get(position))", DRAWER)
-        # Configurable quick slots keep their existing edit/reassign long-press contract.
         self.assertIn("button.setOnLongClickListener(v -> { openPicker(", DRAWER)
 
 
