@@ -185,6 +185,7 @@ final class NavigationWindowController {
         panel.showStarting(label(pkg), "Verifying task " + taskId + " at HOME bounds");
         backend.verify(pkg, target, taskId, result -> {
             if (!finishOperation(operation)) return; retainObservedTask(result, pkg);
+            if (deferUncertainTaskObservation(result, pkg, "verify")) { drainPendingWork(); return; }
             if (acceptWindowedResult(result, pkg, target, taskId)) {
                 if (needsPresentation) startResume(pkg, component, target, taskId);
                 else { markWindowed(result, pkg, target); drainPendingWork(); }
@@ -229,6 +230,7 @@ final class NavigationWindowController {
         panel.showStarting(label(pkg), acquisition ? "Acquiring one configured task · transaction " + operation : "Repairing task " + taskHint + " · transaction " + operation);
         backend.present(pkg, component, target, taskHint, operation, result -> {
             if (!finishOperation(operation)) return; logCapabilityEvidence(result); retainObservedTask(result, pkg);
+            if (deferUncertainTaskObservation(result, pkg, "pre-present")) { drainPendingWork(); return; }
             if (acceptWindowedResult(result, pkg, target, taskHint)) markWindowed(result, pkg, target);
             else if (taskHint > 0 && "TASK_NOT_FOUND".equals(result.code)) { activeTaskId = -1; latchFailure(pkg, configuredMode, "Navigation app closed · use Retry"); }
             else latchFailure(pkg, configuredMode, result.code);
@@ -278,6 +280,17 @@ final class NavigationWindowController {
         }); return true;
     }
 
+    private boolean deferUncertainTaskObservation(NavigationHelperResult result, String pkg, String phase) {
+        if (result == null || !"TASK_OBSERVATION_UNCERTAIN".equals(result.code)) return false;
+        needsValidation = true;
+        needsPresentation = true;
+        state = State.SUSPENDED;
+        panel.showStarting(label(pkg), "Navigation task state uncertain · retaining existing task");
+        finishPresentationCallback(false);
+        Log.w(TAG, "navigation task observation uncertain phase=" + phase + " task=" + activeTaskId);
+        return true;
+    }
+
     private int beginOperation() { if (activeOperationId != 0 || state == State.DESTROYED) { pendingReconcile = true; return 0; } activeOperationId = ++nextTransactionId; return activeOperationId; }
     private boolean finishOperation(int operation) { if (state == State.DESTROYED || operation != activeOperationId) return false; activeOperationId = 0; return true; }
     private void drainPendingWork() {
@@ -290,7 +303,7 @@ final class NavigationWindowController {
     private boolean acceptWindowedResult(NavigationHelperResult result, String pkg, NavigationWindowBounds target, int expectedTask) { return acceptIdentity(result, pkg, expectedTask) && result.displayId == 0 && result.windowingMode == 5 && target.toString().equals(result.bounds); }
     private static boolean acceptIdentity(NavigationHelperResult result, String pkg, int expectedTask) { if (!result.success || result.userId != AndroidUserId.current() || result.taskId <= 0 || !pkg.equals(result.packageName)) return false; if (expectedTask > 0 && result.taskId != expectedTask) return false; return componentMatches(result.component, pkg); }
     private static boolean componentMatches(String component, String pkg) { return component != null && !component.isEmpty() && !"unknown".equals(component) && component.startsWith(pkg + "/"); }
-    private void retainObservedTask(NavigationHelperResult result, String pkg) { if (result.userId == AndroidUserId.current() && result.taskId > 0 && pkg.equals(result.packageName) && componentMatches(result.component, pkg)) { activePackage = pkg; activeTaskId = result.taskId; } }
+    private void retainObservedTask(NavigationHelperResult result, String pkg) { if (result == null || (!result.success && !"TASK_OBSERVATION_UNCERTAIN".equals(result.code))) return; if (result.userId == AndroidUserId.current() && result.taskId > 0 && pkg.equals(result.packageName) && componentMatches(result.component, pkg)) { activePackage = pkg; activeTaskId = result.taskId; } }
     private void markWindowed(NavigationHelperResult result, String pkg, NavigationWindowBounds target) { activePackage = pkg; activeTaskId = result.taskId; backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW; state = State.WINDOWED; appliedBounds = target; needsValidation = false; needsPresentation = false; clearFailureLatch(); if (uiState.canPresentNavigation()) { showWindowedStatus(pkg, result.taskId, target); finishPresentationCallback(true); } Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack=" + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds + " launched=" + result.launched + " transaction=" + result.transactionId); }
     private static void logCapabilityEvidence(NavigationHelperResult result) { if (!result.success) Log.w(TAG, "helper failure: " + result.raw); if (result.helpExit < 0 && result.launchExit < 0) return; Log.i(TAG, "native launch evidence code=" + result.code + " helpExit=" + result.helpExit + " helpWindowingMode=" + result.helpWindowingMode + " helpDisplay=" + result.helpDisplay + " launchExit=" + result.launchExit); }
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) { // Physical visibility and touch are not inferred from Android task identity/bounds alone; exact-device qualification remains required.
