@@ -428,14 +428,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 if (allowColdPrime && command == MediaListenerService.Command.PLAY_PAUSE
                         && !mediaBootstrapper.hasUsableController(packageName)
                         && startupBootstrap != null && !startupBootstrap.isRunning()) {
-                    MediaEventTrace.record("readiness", "cold-foreground-prime-request", packageName);
+                    MediaEventTrace.record("readiness", "cold-background-only-prime-unavailable", packageName);
                     startupBootstrap.primeForCommand(packageName, (ready, detail) -> {
                         if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
-                        MediaEventTrace.record("readiness", ready ? "cold-prime-ready" : "cold-prime-failed",
-                                packageName + " · " + detail);
-                        if (ready) dispatchSourceCommand(label, packageName, command,
-                                generation, false);
-                        else settleSourceCommandFailure(label, packageName, command,
+                        settleSourceCommandFailure(label, packageName, command,
                                 generation, detail);
                     });
                     return;
@@ -557,9 +553,22 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void place(View view, int x, int y, int width, int height) {
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Math.max(1, width), Math.max(1, height));
-        lp.leftMargin = Math.max(0, x);
-        lp.topMargin = Math.max(0, y);
+        if (view == null) return;
+        int desiredWidth = Math.max(1, width);
+        int desiredHeight = Math.max(1, height);
+        int desiredLeft = Math.max(0, x);
+        int desiredTop = Math.max(0, y);
+        android.view.ViewGroup.LayoutParams existing = view.getLayoutParams();
+        if (existing instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams current = (FrameLayout.LayoutParams) existing;
+            if (current.width == desiredWidth && current.height == desiredHeight
+                    && current.leftMargin == desiredLeft && current.topMargin == desiredTop) {
+                return;
+            }
+        }
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(desiredWidth, desiredHeight);
+        lp.leftMargin = desiredLeft;
+        lp.topMargin = desiredTop;
         view.setLayoutParams(lp);
     }
 
