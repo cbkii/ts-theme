@@ -69,8 +69,11 @@ capture() {
   fi
   printf '\n# exit_status=%s\n' "$rc" >>"$out/$name"
   if (( truncated )); then
-    [[ "$class" == REQUIRED ]] && record "$name" "$class" FAIL "$rc;TRUNCATED" \
-      || record "$name" "$class" WARN "$rc;TRUNCATED"
+    if [[ "$class" == REQUIRED ]]; then
+      record "$name" "$class" FAIL "$rc;TRUNCATED"
+    else
+      record "$name" "$class" WARN "$rc;TRUNCATED"
+    fi
   elif (( rc == 0 )); then
     record "$name" "$class" PASS 0
   elif [[ "$class" == REQUIRED ]]; then
