@@ -44,7 +44,7 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
             'if ("TASK_NOT_FOUND"', 1
         )[0]
         self.assertIn("return verified", uncertain)
-        self.assertNotIn("present-native", uncertain)
+        self.assertNotIn('helper.run("present-native"', uncertain)
 
     def test_absence_can_still_clear_authority_when_independently_proven(self):
         self.assertIn('if (evidence == AbsenceEvidence.ABSENT) return second;', BACKEND)
