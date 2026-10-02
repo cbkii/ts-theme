@@ -13,6 +13,10 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
             "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java").exists())
         self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupMaskController.java").exists())
+        for source in (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher").glob("*.java"):
+            text = source.read_text(encoding="utf-8")
+            self.assertNotIn("StartupBootstrapCoordinator", text, source.name)
+            self.assertNotIn("StartupMaskController", text, source.name)
         self.assertNotIn("launchMediaBootstrap", launcher)
         self.assertNotIn("cold-foreground-prime", launcher)
 
@@ -45,7 +49,8 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("onProcessMediaStateChanged", launcher)
         self.assertIn("MediaSessionManager.OnActiveSessionsChangedListener", monitor)
         self.assertIn("getActiveSessions(listenerComponent)", monitor)
-        self.assertNotIn("onListenerConnected", monitor.split("class ProcessMediaSessionMonitor", 1)[1])
+        self.assertIn("boolean authoritative", monitor)
+        self.assertIn("main.post(() -> reconcile", monitor)
 
     def test_geometry_does_not_reapply_identical_layout_params(self):
         launcher = self.read(
@@ -53,11 +58,31 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         place = launcher.split("private void place(View view", 1)[1].split(
             "private void placeCard", 1
         )[0]
-        self.assertIn("view.getLayoutParams()", place)
-        self.assertIn("current.width == desiredWidth", place)
-        self.assertIn("current.height == desiredHeight", place)
-        self.assertIn("current.leftMargin == desiredLeft", place)
-        self.assertIn("current.topMargin == desiredTop", place)
+        comparison = place.index("current.width == desiredWidth")
+        guarded_return = place.index("return;", comparison)
+        set_params = place.index("view.setLayoutParams(lp)")
+        self.assertLess(comparison, guarded_return)
+        self.assertLess(guarded_return, set_params)
+
+    def test_process_and_listener_media_contracts_are_aligned(self):
+        monitor = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/ProcessMediaSessionMonitor.java")
+        launcher = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        self.assertIn('"com.android.server.telecom"', monitor)
+        self.assertIn('"com.android.dialer"', monitor)
+        self.assertIn("MediaSelection.pick(candidates, preferred, preferConfigured, remembered)", monitor)
+        self.assertIn("PlaybackState.STATE_BUFFERING", monitor)
+        self.assertIn("PlaybackState.STATE_CONNECTING", monitor)
+        self.assertIn("MediaListenerService.stabiliseSnapshot", monitor)
+        self.assertIn("left.sessionIdentity", monitor)
+        merge = launcher.split("private static MediaListenerService.Snapshot mergeSessionSnapshot", 1)[1].split(
+            "private static MediaListenerService.Snapshot emptyMediaSnapshot", 1
+        )[0]
+        self.assertIn("if (!coreAuthoritative) return secondary;", merge)
+        self.assertIn("if (primary.packageName.isEmpty()) return primary;", merge)
+        self.assertIn("primary.sessionIdentity", merge)
+        self.assertIn("secondary.sessionIdentity", merge)
 
     def test_unconfirmed_pause_is_recorded_without_second_transport_dispatch(self):
         bootstrapper = self.read(
