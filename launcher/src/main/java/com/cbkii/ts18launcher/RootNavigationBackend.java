@@ -212,7 +212,8 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                 + "printf '%s\\n' \"$stack\" | grep -q 'Stack id=' || exit 3; "
                 + "printf '%s\\n' \"$stack\" | grep -F '" + packageName + "' >/dev/null && exit 2; "
                 + "command -v pidof >/dev/null || exit 3; "
-                + "pidof " + packageName + " >/dev/null 2>&1 && exit 2; exit 1";
+                + "pidof " + packageName + " >/dev/null 2>&1; rc=$?; "
+                + "[ \"$rc\" = 0 ] && exit 2; [ \"$rc\" = 1 ] && exit 1; exit 3";
         RootShell.Result result = RootShell.runMillis(command, CORROBORATION_TIMEOUT_MS);
         if (!result.completed) return AbsenceEvidence.UNKNOWN;
         if (result.exitCode == 0) return AbsenceEvidence.PRESENT_IN_RECENTS;
