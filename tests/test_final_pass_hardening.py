@@ -3,18 +3,41 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DRAWER = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerPanel.java").read_text(encoding="utf-8")
-STARTUP = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java").read_text(encoding="utf-8")
 LAUNCHER = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java").read_text(encoding="utf-8")
 ADAPTER = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceAdapter.java").read_text(encoding="utf-8")
+PROCESS_MONITOR = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/ProcessMediaSessionMonitor.java").read_text(encoding="utf-8")
 AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
 
 class FinalPassHardeningTest(unittest.TestCase):
-    def test_startup_prime_has_one_owner_without_dead_bootstrap_dependency(self):
-        self.assertIn("StartupBootstrapCoordinator(Activity activity)", STARTUP)
-        self.assertNotIn("ignoredBootstrapper", STARTUP)
-        self.assertIn("new StartupBootstrapCoordinator(this)", LAUNCHER)
-        self.assertNotIn("new StartupBootstrapCoordinator(this, mediaBootstrapper)", LAUNCHER)
+    def test_foreground_startup_bootstrap_is_removed(self):
+        self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java").exists())
+        self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupMaskController.java").exists())
+        self.assertNotIn("launchMediaBootstrap", LAUNCHER)
+        self.assertNotIn("cold-foreground-prime", LAUNCHER)
+        self.assertIn("mediaBootstrapper.warmConfiguredSources()", LAUNCHER)
+
+    def test_process_media_session_monitor_is_primary_cold_boot_observer(self):
+        self.assertIn("ProcessMediaSessionMonitor.Observer", LAUNCHER)
+        self.assertIn("ProcessMediaSessionMonitor.addObserver(this, this)", LAUNCHER)
+        self.assertIn("onProcessMediaStateChanged", LAUNCHER)
+        self.assertIn("addOnActiveSessionsChangedListener", PROCESS_MONITOR)
+        self.assertIn("getActiveSessions(listenerComponent)", PROCESS_MONITOR)
+        self.assertIn("scheduleRefresh()", PROCESS_MONITOR)
+        self.assertIn("MediaSelection.pick(candidates, preferred, preferConfigured, remembered)", PROCESS_MONITOR)
+
+    def test_geometry_application_is_idempotent(self):
+        place = LAUNCHER.split("private void place(View view", 1)[1].split(
+            "private void placeCard", 1
+        )[0]
+        comparison = place.index("current.width == desiredWidth")
+        guarded_return = place.index("return;", comparison)
+        set_params = place.index("view.setLayoutParams(lp)")
+        self.assertIn("current.height == desiredHeight", place)
+        self.assertIn("current.leftMargin == desiredLeft", place)
+        self.assertIn("current.topMargin == desiredTop", place)
+        self.assertLess(comparison, guarded_return)
+        self.assertLess(guarded_return, set_params)
 
     def test_auxio_root_startservice_route_stays_removed(self):
         browser = ADAPTER.split(
@@ -44,7 +67,6 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertIn("android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS", DRAWER)
         self.assertIn('android.net.Uri.parse("package:" + entry.packageName)', DRAWER)
         self.assertIn("openAppInfo(visibleEntries.get(position))", DRAWER)
-        # Configurable quick slots keep their existing edit/reassign long-press contract.
         self.assertIn("button.setOnLongClickListener(v -> { openPicker(", DRAWER)
 
 

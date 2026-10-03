@@ -35,6 +35,7 @@ public final class Ts18LauncherApplication extends Application
             if (event == RemovableMediaPolicy.Event.IGNORE) return;
             String detail = intent.getData() == null ? "" : intent.getData().toString();
             MediaEventTrace.record("storage", event.name().toLowerCase(java.util.Locale.ROOT), detail);
+            ProcessMediaSessionMonitor.refresh(Ts18LauncherApplication.this);
             MediaListenerService.refreshActiveSessions();
             if (RemovableMediaPolicy.shouldWarm(event, launcherResumed,
                     UiPersonalizationPrefs.mediaStartupWarmup(Ts18LauncherApplication.this))) {
@@ -47,6 +48,7 @@ public final class Ts18LauncherApplication extends Application
         super.onCreate();
         NavigationPermissionBootstrapper.ensureEarly(this);
         MediaNotificationAccessBootstrapper.ensureEarly(this);
+        ProcessMediaSessionMonitor.start(this);
         registerActivityLifecycleCallbacks(this);
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_MEDIA_MOUNTED);
@@ -79,6 +81,7 @@ public final class Ts18LauncherApplication extends Application
         bootstrapper.warm(target);
         handler.postDelayed(() -> {
             bootstrapper.destroy();
+            ProcessMediaSessionMonitor.refresh(Ts18LauncherApplication.this);
             MediaEventTrace.record("storage", "warm-window-finished", target);
         }, MediaSourceBootstrapper.PREPARE_TIMEOUT_MS + 750L);
     }
@@ -98,6 +101,7 @@ public final class Ts18LauncherApplication extends Application
     @Override public void onActivityResumed(Activity activity) {
         if (!isLauncher(activity)) return;
         launcherResumed = true;
+        ProcessMediaSessionMonitor.refresh(this);
         MediaEventTrace.record("home", "resumed");
     }
 
@@ -130,6 +134,7 @@ public final class Ts18LauncherApplication extends Application
         }
         unregisterActivityLifecycleCallbacks(this);
         handler.removeCallbacksAndMessages(null);
+        ProcessMediaSessionMonitor.stop();
         MediaEventTrace.record("process", "terminated");
         super.onTerminate();
     }

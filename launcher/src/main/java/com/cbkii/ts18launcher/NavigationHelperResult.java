@@ -40,6 +40,18 @@ final class NavigationHelperResult {
                 safe(values.get("package")),safe(values.get("component")),safe(values.get("bounds")),safe(values.get("pinnedPackage")),raw);
     }
     static NavigationHelperResult failure(String code,String raw){ return new NavigationHelperResult(false,code,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,"","","","",raw==null?"":raw); }
+    static NavigationHelperResult withCode(NavigationHelperResult source, String code, String rawSuffix) {
+        if (source == null) return failure(code, rawSuffix);
+        String raw = source.raw == null ? "" : source.raw;
+        if (rawSuffix != null && !rawSuffix.isEmpty()) raw = raw + "\n" + rawSuffix;
+        // Retain the last observed identity as diagnostic authority, but an uncertainty result is
+        // never a fresh successful verification and must not pass success-gated controller checks.
+        return new NavigationHelperResult(false, code, source.userId, source.taskId,
+                source.stackId, source.displayId, source.windowingMode, source.supportsPip,
+                source.launched, source.transactionId, source.helpExit, source.helpWindowingMode,
+                source.helpDisplay, source.launchExit, source.packageName, source.component,
+                source.bounds, source.pinnedPackage, raw);
+    }
     private static String lastProtocolLine(String raw){
         if(raw==null||raw.isEmpty()) return ""; String[] lines=raw.split("\\r?\\n");
         for(int i=lines.length-1;i>=0;i--){ String line=lines[i].trim(); if(line.startsWith("OK ")||line.equals("OK")||line.startsWith("FAIL ")||line.equals("FAIL")) return line; }

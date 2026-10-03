@@ -2,5 +2,4 @@
 <resources>
     <string name="app_name">TS18 Launcher</string>
     <string name="media_listener_label">TS18 Launcher media access</string>
-    <string name="starting_launcher">Starting…</string>
 </resources>
