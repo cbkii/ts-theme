@@ -59,7 +59,14 @@ final class ProcessMediaSessionMonitor {
     };
 
     private final MediaSessionManager.OnActiveSessionsChangedListener activeSessionsChanged =
-            controllers -> main.post(() -> reconcile(controllers == null ? new ArrayList<>() : controllers));
+            controllers -> main.post(() -> {
+                if (destroyed || !sessionListenerRegistered) return;
+                if (!MediaListenerService.hasNotificationAccess(context)) {
+                    markUnavailable("active-callback-access-lost", true);
+                    return;
+                }
+                reconcile(controllers == null ? new ArrayList<>() : new ArrayList<>(controllers));
+            });
 
     private ProcessMediaSessionMonitor(Context context) {
         this.context = context.getApplicationContext();
