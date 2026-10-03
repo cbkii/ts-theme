@@ -1,4 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
+# shellcheck disable=SC2016
+# SC2016 is intentionally disabled for this collector: capture_shell receives literal single-quoted
+# bash programs whose $variables must expand inside the child shell, not in this parent script.
 # Read-only TS18 PR14 cold-start/runtime collector.
 #
 # This script never invokes raw su and never mutates HOME, tasks, package state, media state,
