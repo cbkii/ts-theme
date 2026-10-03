@@ -110,7 +110,10 @@ logger_owner="$(quote "$work/logger-owner")"
 : >"$work/logger-owner"
 : >"$out/live-logcat.txt"
 root_capture logger-start.txt 4 "bb=/data/adb/magisk/busybox; test -x \"\$bb\" || exit 127; \"\$bb\" setsid /system/bin/sh -c 'echo \"\$\$\" >\"\$1\"; exec /system/bin/toybox timeout -k 1 $((duration + 60)) /system/bin/logcat -v threadtime -T 1 -s TS18Nav:V ActivityTaskManager:I WindowManager:I Configuration:I AndroidRuntime:E' sh $logger_owner >$logger_out 2>&1 </dev/null &"
-[[ -s "$work/logger-owner" ]] && logger_started=1
+for ((attempt=0; attempt<40; attempt++)); do
+  [[ -s "$work/logger-owner" ]] && { logger_started=1; break; }
+  sleep 0.1
+done
 printf 'OBSERVATION READY. Switch HOME, another app, Maps/fullscreen and Recents at your own pace.\n'
 printf 'Repeats are supported. Do not press Retry until the failure has been visible for a few seconds.\n'
 printf 'Return here and press Ctrl-C once when finished; automatic duration limit is %ss.\n' "$duration"
@@ -131,7 +134,7 @@ while (( !stop && SECONDS < deadline && count < 40 )); do
   sleep 2
 done
 
-if (( logger_started )); then
+if (( logger_started )) || [[ -s "$work/logger-owner" ]]; then
   logger_pid="$(cat "$work/logger-owner")"
   if [[ "$logger_pid" =~ ^[0-9]+$ ]]; then
     root_capture logger-stop.txt 4 " /data/adb/magisk/busybox kill -TERM -- '-$logger_pid' 2>/dev/null; /data/adb/magisk/busybox sleep 0.2; /data/adb/magisk/busybox kill -KILL -- '-$logger_pid' 2>/dev/null; exit 0"
@@ -147,19 +150,26 @@ root_capture surfaces-final.txt 6 'dumpsys SurfaceFlinger'
 root_capture vendor-after.txt 5 'getprop persist.tw.forcepip; getprop sys.tw.forcepip; cat /data/tw/navi_name /data/tw/custom_pip_app_name'
 root_capture task-miss-final.txt 4 'cat /data/adb/ts18-launcher/task-miss-latest.txt'
 printf 'Collector complete. Warnings describe missing observations, not target failure.\nPhysical qualification is NOT inferred from archive creation.\n' >"$out/README.txt"
-(cd "$out" && find . -type f ! -name MANIFEST.sha256 ! -name MANIFEST_VERIFY.txt -print0 | sort -z | xargs -0 sha256sum) >"$out/MANIFEST.sha256"
-(cd "$out" && sha256sum -c MANIFEST.sha256) >"$out/MANIFEST_VERIFY.txt" 2>&1
-archive="$out.zip"
-if command -v zip >/dev/null 2>&1; then
-  (cd "$work" && zip -qr "$archive" "${out##*/}")
-else
-  archive="$out.tar.gz"
-  tar -czf "$archive" -C "$work" "${out##*/}"
+sealed=0
+archive="$out.tar.gz"
+if (set -o pipefail; cd "$out" && find . -type f ! -name MANIFEST.sha256 ! -name MANIFEST_VERIFY.txt -print0 | sort -z | xargs -0 sha256sum) >"$out/MANIFEST.sha256" \
+    && (cd "$out" && sha256sum -c MANIFEST.sha256) >"$out/MANIFEST_VERIFY.txt" 2>&1; then
+  if command -v zip >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1; then
+    archive="$out.zip"
+    if (cd "$work" && zip -qr "$archive" "${out##*/}") && unzip -tq "$archive" >"$work/archive-verify.txt" 2>&1; then sealed=1; fi
+  elif tar -czf "$archive" -C "$work" "${out##*/}" && tar -tzf "$archive" >"$work/archive-verify.txt" 2>&1; then
+    sealed=1
+  fi
 fi
-if [[ -s "$archive" ]] && mkdir -p "$out_base" && cp -- "$archive" "$out_base/"; then
+if (( sealed )) && [[ -s "$archive" ]] && mkdir -p "$out_base" && cp -- "$archive" "$out_base/"; then
   final="$out_base/${archive##*/}"
-  sha256sum "$final" >"$final.sha256"
-  printf 'Saved: %s\n%s.sha256\n' "$final" "$final"
+  source_hash="$(sha256sum "$archive")"; source_hash="${source_hash%% *}"
+  final_hash="$(sha256sum "$final")"; final_hash="${final_hash%% *}"
+  if [[ -n "$source_hash" && "$source_hash" == "$final_hash" ]] && sha256sum "$final" >"$final.sha256"; then
+    printf 'Saved verified archive: %s\n%s.sha256\n' "$final" "$final"
+  else
+    printf 'WARN export verification failed; evidence preserved at %s\n' "$out"
+  fi
 else
   printf 'WARN export/archive unavailable; evidence preserved at %s\n' "$out"
 fi

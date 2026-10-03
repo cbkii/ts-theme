@@ -10,7 +10,8 @@ app switching. That task reaches mode 1 and later returns to HOME mode 5. The
 historical repeated TASK_NOT_FOUND results therefore do not prove task death.
 
 The helper now tries the rich activities dump and an independent API-29 ATM
-stack query. Successful recents/stack inspection and no package process are all
+stack query. Successful recents/stack inspection and an exact-package `pidof`
+exit status of 1 (no matching main process) are all
 required before returning TASK_NOT_FOUND or cold-launching. Unreadable or
 contradictory evidence remains TASK_OBSERVATION_UNCERTAIN. A bounded raw dump is
 retained at `/data/adb/ts18-launcher/task-miss-latest.txt` on a parser miss.
@@ -50,7 +51,8 @@ bash "$HOME/collect-nav-task-lifecycle.sh" --probe-mode --seconds 600
 ```
 
 `--probe-mode` performs a same-current-mode Binder capability exercise with
-`toTop=false`. It does not launch/focus an Activity or write vendor/system state.
+`toTop=false`. It invokes the system task-mode API, without launching/focusing an
+Activity or changing vendor properties or protected files.
 Omit this option for an entirely read-only run. Identity/SHA mismatches, optional
 command failures and missing root evidence are recorded, not admission gates.
 Invalid arguments or inability to create private output are fatal.

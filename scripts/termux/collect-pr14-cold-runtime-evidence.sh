@@ -179,7 +179,7 @@ capture_shell summary/media-task-lines.txt OPTIONAL 6 \
   "$out/activity/activities.txt" "$out/activity/recents.txt" "$out/media/sessions.txt"
 
 if [[ "$(id -u 2>/dev/null)" == 0 ]]; then
-  capture identity/root-context.txt OPTIONAL 5 env PATH="$android_path" bash -c \
+  capture identity/root-context.txt OPTIONAL 5 env PATH="$android_path" "$termux_bin/bash" -c \
     'id; id -Z; readlink /proc/self/ns/mnt'
 else
   printf '%s\n' \

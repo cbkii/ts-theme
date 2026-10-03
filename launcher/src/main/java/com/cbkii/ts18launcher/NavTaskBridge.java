@@ -1,5 +1,6 @@
 package com.cbkii.ts18launcher;
 
+import android.annotation.SuppressLint;
 import android.content.ComponentName;
 import android.content.res.Configuration;
 import android.graphics.Rect;
@@ -14,6 +15,9 @@ import java.util.List;
 public final class NavTaskBridge {
     private NavTaskBridge() { }
 
+    // This method runs only in root app_process, never in the launcher app UID.
+    // API-29 hidden-service access is intentional; runtime refusal stays UNKNOWN.
+    @SuppressLint({"BlockedPrivateApi", "PrivateApi"})
     public static void main(String[] args) {
         try {
             if (Build.VERSION.SDK_INT != 29 || Process.myUid() != 0)

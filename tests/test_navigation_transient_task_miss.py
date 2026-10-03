@@ -67,7 +67,7 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
         self.assertIn('"TASK_OBSERVATION_UNCERTAIN".equals(result.code)', helper)
         self.assertIn("needsValidation = true", helper)
         self.assertIn("needsPresentation = true", helper)
-        self.assertIn('panel.showFailure("Navigation task state uncertain", this::retry', helper)
+        self.assertIn('panel.showFailure("Navigation task state uncertain", this::retry, () -> openFullscreen(null))', helper)
         self.assertNotIn("activeTaskId = -1", helper)
         self.assertNotIn("latchFailure", helper)
         self.assertNotIn("startPresent(", helper)

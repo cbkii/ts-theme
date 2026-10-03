@@ -26,6 +26,8 @@ final class NavigationWindowController {
     private boolean pendingReconcile;
     private boolean pendingDeparture;
     private boolean departureExternalOnly;
+    private String departurePackage = "";
+    private int departureTaskId = -1;
     private int focusGeneration;
     private String pendingSuspendReason = "";
     private boolean fullscreenRequested;
@@ -83,16 +85,25 @@ final class NavigationWindowController {
     private void requestDeparture(boolean externalOnly) {
         if (state == State.DESTROYED || !hasManagedNativeTask()) return;
         // onStop has stronger lifecycle evidence than a focus-only check.
-        departureExternalOnly = pendingDeparture ? departureExternalOnly && externalOnly : externalOnly;
+        boolean sameRequest = pendingDeparture && activePackage.equals(departurePackage)
+                && activeTaskId == departureTaskId;
+        departureExternalOnly = sameRequest ? departureExternalOnly && externalOnly : externalOnly;
+        departurePackage = activePackage;
+        departureTaskId = activeTaskId;
         pendingDeparture = true;
         drainPendingWork();
     }
 
     private void restoreBackgroundFullscreen() {
-        final String pkg = activePackage;
-        final int task = activeTaskId;
+        final String pkg = departurePackage;
+        final int task = departureTaskId;
         final boolean externalOnly = departureExternalOnly;
         pendingDeparture = false;
+        if (!hasManagedNativeTask() || !pkg.equals(activePackage) || task != activeTaskId) {
+            Log.i(TAG, "Discarded HOME departure after task authority changed");
+            drainPendingWork();
+            return;
+        }
         int operation = beginOperation();
         if (operation == 0) { pendingDeparture = true; return; }
         backend.backgroundFullscreen(pkg, task, activity.getPackageName(), activity.getTaskId(),

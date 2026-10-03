@@ -12,6 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavTaskBridge.java"
 STUBS = {
+    "android/annotation/SuppressLint.java": "package android.annotation; public @interface SuppressLint { String[] value(); }",
     "android/os/Build.java": "package android.os; public class Build { public static class VERSION { public static int SDK_INT=29; }}",
     "android/os/Process.java": "package android.os; public class Process { public static int myUid(){return 0;} }",
     "android/graphics/Rect.java": "package android.graphics; public class Rect { public int left=0,top=141,right=1131,bottom=702; }",
@@ -78,7 +79,7 @@ class NavTaskBridgeTest(unittest.TestCase):
             file.write_text(text)
             files.append(str(file))
         # Use the JDK compiler module: also works where javac's wrapper is not installed.
-        subprocess.run(["java", "com.sun.tools.javac.Main", "-d", str(cls.work),
+        subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "-d", str(cls.work),
                         *files, str(SOURCE)], check=True, capture_output=True, text=True)
 
     @classmethod
@@ -139,4 +140,3 @@ class NavTaskBridgeTest(unittest.TestCase):
         result = self.run_bridge(hint="0", scenario="ambiguous")
         self.assertIn("TASK_AMBIGUOUS", result.stdout)
         self.assertNotIn("CALL", result.stdout)
-
