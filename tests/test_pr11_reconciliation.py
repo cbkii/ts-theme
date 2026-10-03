@@ -42,7 +42,8 @@ class Pr11ReconciliationTests(unittest.TestCase):
     def test_fullscreen_uses_same_task_without_reapplying_non_null_bounds(self):
         backend = self.read("launcher/src/main/java/com/cbkii/ts18launcher/RootNavigationBackend.java")
         helper = self.read("launcher/src/main/assets/nav/nav-window.sh")
-        self.assertIn('helper.run("fullscreen", packageName, Integer.toString(taskId))', backend)
+        self.assertIn('helper.run("fullscreen", packageName,', backend)
+        self.assertIn('taskHint(selected), launchComponent', backend)
         self.assertIn("WindowManager-owned", backend)
         self.assertNotIn("fullscreenResizeCommand", backend)
         self.assertNotIn('"am task resize " + taskId + " 0 0', backend)
@@ -77,8 +78,8 @@ class Pr11ReconciliationTests(unittest.TestCase):
         resume = helper.split("  resume-windowed)", 1)[1].split("  fullscreen)", 1)[0]
         self.assertLess(resume.index('verify_state 5 "$expected"'),
                         resume.index('am task focus "$hint"'))
-        self.assertIn('require_task "$home_pkg" "$home_task"', resume)
-        self.assertIn('require_handoff_foreground "$home_task" "$hint"', resume)
+        self.assertIn('parse_task_snapshot "$home_pkg" "$home_task"', resume)
+        self.assertIn('[ "$foreground_task" = "$home_task" ] || [ "$foreground_task" = "$hint" ]', resume)
         self.assertIn('require_foreground_task "$hint" NATIVE_NOT_FOREGROUND', resume)
         self.assertIn('emit_protocol OK RESUMED_NATIVE', resume)
         self.assertIn('backend.resume(pkg, target, taskId, activity.getPackageName(), activity.getTaskId()', controller)

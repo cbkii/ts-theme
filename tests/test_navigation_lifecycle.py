@@ -19,10 +19,15 @@ cmd = Path(sys.argv[0]).name
 a = sys.argv[1:]
 if cmd == 'id': print(0)
 elif cmd == 'dumpsys':
+    if a[1] == 'recents':
+        print('ACTIVITY MANAGER RECENT TASKS (dumpsys activity recents)')
+        if s.get('nav_alive', True): print('TaskRecord{fake #42 A=app.organicmaps.incar U=0 StackId=4}')
+        sys.exit(0)
     print('Display #0')
     for task, pkg, component, mode, stack, bounds in [
         (42, 'app.organicmaps.incar', s.get('nav_component', 'app.organicmaps.MwmActivity'), s['mode'], 4, s['bounds']),
         (7, 'com.cbkii.ts18launcher', s.get('home_component', 'com.cbkii.ts18launcher/.HomeAlias'), 1, 0, [0,0,0,0])]:
+        if task == 42 and (not s.get('nav_alive', True) or s.get('activities_miss')): continue
         if '/' not in component: component = pkg + '/' + component
         print('  Stack #%s: type=standard mode=%s' % (stack, 'freeform' if mode == 5 else 'fullscreen'))
         if not s.get('unknown_bounds'): print('  mBounds=Rect(0, 0 - 0, 0)')
@@ -34,7 +39,32 @@ elif cmd == 'dumpsys':
     print('  mResumedActivity: ActivityRecord{fake u0 %s t%s}' % (pkg, s['focus']))
     if 'top_focus' in s:
         print('  topResumedActivity=ActivityRecord{fake u0 %s t%s}' % (pkg, s['top_focus']))
+elif cmd == 'pidof':
+    if s.get('nav_alive', True): print('4889')
+    else: sys.exit(1)
+elif cmd == 'pm': print('package:' + str(p))
+elif cmd == 'app_process':
+    a=a[a.index('com.cbkii.ts18launcher.NavTaskBridge')+1:]
+    if not s.get('bridge_available'):
+        print('UNKNOWN SecurityException permission_denied'); sys.exit(1)
+    if s.get('ambiguous') and a[3] == '0':
+        print('UNKNOWN IllegalStateException TASK_AMBIGUOUS'); sys.exit(1)
+    if not s.get('nav_alive', True): print('NONE'); sys.exit(0)
+    if a[0] != 'status':
+        if s.get('foreign_top'):
+            print('UNKNOWN IllegalStateException LEGITIMATE_FOREIGN_ACTIVITY'); sys.exit(1)
+        if s.get('shared_stack'):
+            print('UNKNOWN IllegalStateException TASK_STACK_NOT_EXCLUSIVE'); sys.exit(1)
+        s['commands'].append(['bridge', *a])
+        s['mode'] = int(a[4]) if a[0] == 'mode' else s['mode']
+        if a[5] == '1': s['focus'] = 42
+        p.write_text(json.dumps(s))
+    print('FOUND 42 4 0 %s %s app.organicmaps.incar/app.organicmaps.MwmActivity unknown' % (s['mode'], ','.join(map(str,s['bounds']))))
 elif cmd == 'am':
+    if a[:2] == ['stack', 'list']:
+        print('Stack id=4 bounds=[0,0][1280,720] displayId=0 userId=0')
+        if s.get('nav_alive', True): print('taskId=42: app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity')
+        sys.exit(0)
     s['commands'].append(a)
     p.write_text(json.dumps(s))
     if a[0] == 'start':
@@ -60,9 +90,9 @@ class NavigationLifecycleTest(unittest.TestCase):
             work = Path(tmp)
             bin_dir = work / 'bin'
             bin_dir.mkdir()
-            for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3'):
+            for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout'):
                 (bin_dir / name).symlink_to(shutil.which(name))
-            for name in ('id', 'getprop', 'dumpsys', 'am'):
+            for name in ('id', 'getprop', 'dumpsys', 'am', 'pm', 'pidof', 'app_process'):
                 path = bin_dir / name
                 path.write_text(ANDROID)
                 path.chmod(0o700)
@@ -71,6 +101,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             state_path = work / 'state.json'
             state_path.write_text(json.dumps(state))
             source = HELPER.read_text().replace('PATH=/system/bin:/system/xbin:/vendor/bin', f'PATH={bin_dir}', 1)
+            source = source.replace('/system/bin/toybox timeout -k 1 3', 'timeout -k 1 3')
             source = source.replace('ROOT_DIR=/data/adb/ts18-launcher', f'ROOT_DIR={work}', 1)
             script = work / 'helper.sh'
             script.write_text(source)
@@ -142,7 +173,7 @@ class NavigationLifecycleTest(unittest.TestCase):
 
     def test_existing_fullscreen_task_enters_mode5_before_resize(self):
         result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
-            'app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity', '0', '141', '1131', '702', '42', '1'], mode=1)
+            'app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity', '0', '141', '1131', '702', '42', '1'], mode=1, focus=7)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual('start', state['commands'][0][0])
         self.assertEqual(1, sum(c[0] == 'start' for c in state['commands']))
@@ -169,3 +200,74 @@ class NavigationLifecycleTest(unittest.TestCase):
             'app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity', '0', '141', '1131', '702', '42', '1'],
             reject_resize=True, long_error=True)
         self.assertIn('FAIL code=RESIZE_FAILED', '\n'.join(result.stdout.splitlines()[:48]))
+
+    def test_activities_miss_recovers_via_structured_atm(self):
+        result, state = self.run_helper(['status','0','app.organicmaps.incar','42'], activities_miss=True, bridge_available=True)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('task=42', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_same_parser_miss_with_live_task_stays_uncertain(self):
+        result, state = self.run_helper(['status','0','app.organicmaps.incar','42'], activities_miss=True)
+        self.assertIn('TASK_OBSERVATION_UNCERTAIN', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_only_confirmed_absence_returns_not_found(self):
+        result, state = self.run_helper(['status','0','app.organicmaps.incar','42'], nav_alive=False)
+        self.assertIn('TASK_NOT_FOUND', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_fullscreen_reacquires_warm_task_without_launcher_activity(self):
+        result, state = self.run_helper(['fullscreen','0','app.organicmaps.incar','0',
+             'app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity'], bridge_available=True)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(1, state['mode'])
+        self.assertEqual(42, state['focus'])
+        self.assertFalse(any(c[0]=='start' for c in state['commands']))
+
+    def test_departure_preserves_unrelated_foreground(self):
+        result, state = self.run_helper(['background-fullscreen','0','app.organicmaps.incar','42',
+             'com.cbkii.ts18launcher','7','0'], bridge_available=True, focus=99)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(1, state['mode'])
+        self.assertEqual(99, state['focus'])
+        self.assertEqual('0', state['commands'][0][-1])
+        self.assertFalse(any(c[0]=='start' or c[:2]==['task','focus'] for c in state['commands']))
+
+    def test_home_return_cancels_stale_departure(self):
+        result, state = self.run_helper(['background-fullscreen','0','app.organicmaps.incar','42',
+             'com.cbkii.ts18launcher','7','0'], bridge_available=True, focus=7)
+        self.assertIn('FOREGROUND_CHANGED', result.stdout)
+        self.assertEqual(5, state['mode'])
+        self.assertEqual([], state['commands'])
+
+    def test_native_focus_loss_is_not_home_departure(self):
+        result, state = self.run_helper(['background-fullscreen','0','app.organicmaps.incar','42',
+             'com.cbkii.ts18launcher','7','1'], bridge_available=True, focus=42)
+        self.assertIn('FOREGROUND_CHANGED', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_unsupported_background_mode_has_no_focus_or_activity_fallback(self):
+        result, state = self.run_helper(['background-fullscreen','0','app.organicmaps.incar','42',
+             'com.cbkii.ts18launcher','7','0'], focus=99)
+        self.assertIn('BACKGROUND_MODE_UNSUPPORTED', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_fullscreen_does_not_redeliver_over_foreign_permission_flow(self):
+        result, state = self.run_helper(['fullscreen','0','app.organicmaps.incar','42',
+             'app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity'], bridge_available=True, foreign_top=True)
+        self.assertIn('FULLSCREEN_POLICY_BLOCKED', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_transient_home_visibility_cannot_rewindow_foreground_fullscreen_maps(self):
+        result, state = self.run_helper(['present-native','0','app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity','0','141','1131','702','42','1'], mode=1, focus=42)
+        self.assertIn('FOREGROUND_CHANGED', result.stdout)
+        self.assertEqual(1, state['mode'])
+        self.assertEqual([], state['commands'])
+
+    def test_present_refuses_foreground_theft_from_external_app(self):
+        result, state = self.run_helper(['present-native','0','app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity','0','141','1131','702','42','1'], focus=99)
+        self.assertIn('FOREGROUND_CHANGED', result.stdout)
+        self.assertEqual([], state['commands'])

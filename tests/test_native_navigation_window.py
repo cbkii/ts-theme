@@ -81,7 +81,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         return completed.stdout.strip()
 
     def run_helper(self, args, *, help_text, help_exit, start_output="", start_exit=0,
-                   activity_text="Display #0\n  Stack #0: type=home mode=fullscreen\n"):
+                   activity_text="Display #0\n  Stack #0: type=home mode=fullscreen\n    Task id #7\n    * TaskRecord{home #7 A=com.cbkii.ts18launcher U=0 StackId=0 sz=1}\n    Hist #0: ActivityRecord{home u0 com.cbkii.ts18launcher/.HomeAlias t7}\n  mResumedActivity: ActivityRecord{home u0 com.cbkii.ts18launcher/.HomeAlias t7}\n"):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             bin_dir = root / "bin"
@@ -98,19 +98,21 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             activity = root / "activity.txt"
             activity.write_text(activity_text, encoding="utf-8")
             (bin_dir / "dumpsys").write_text(
-                "#!/bin/sh\ncat \"$FAKE_ACTIVITY_FILE\"\n", encoding="utf-8"
+                "#!/bin/sh\ncase \"$2\" in recents) echo 'ACTIVITY MANAGER RECENT TASKS' ;; *) cat \"$FAKE_ACTIVITY_FILE\" ;; esac\n", encoding="utf-8"
             )
             (bin_dir / "am").write_text(
                 "#!/bin/sh\n"
                 "case \"${1:-}\" in\n"
                 "  help) printf '%s\\n' \"$FAKE_AM_HELP\"; exit \"$FAKE_AM_HELP_EXIT\" ;;\n"
+                "  stack) printf 'Stack id=0 bounds=[0,0][1280,720] displayId=0 userId=0\\n'; exit 0 ;;\n"
                 "  start) printf '%s\\n' \"$FAKE_AM_START_OUTPUT\"; "
                 "exit \"$FAKE_AM_START_EXIT\" ;;\n"
                 "  *) exit 0 ;;\n"
                 "esac\n",
                 encoding="utf-8",
             )
-            for fake in ("id", "getprop", "dumpsys", "am"):
+            (bin_dir / "pidof").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            for fake in ("id", "getprop", "dumpsys", "am", "pidof"):
                 (bin_dir / fake).chmod(0o700)
 
             test_helper = root / "nav-window.sh"
@@ -216,7 +218,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("logCapabilityEvidence(result)", self.controller)
         self.assertRegex(
             present,
-            r"0\) validate_observed_component ;;\s*1\)\s*launch_freeform_once",
+            r"0\) validate_observed_component ;;\s*1\)\s*require_home_presentation 0\s*launch_freeform_once",
         )
         self.assertEqual(1, present.count('launch_freeform_once "$launch_component"'))
         self.assertRegex(present, r"2\) fail TASK_AMBIGUOUS.*;;")
@@ -350,7 +352,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertNotIn("showReady", self.controller + self.panel)
 
     def test_fullscreen_handoff_and_home_return_preserve_task_authority(self):
-        self.assertIn("backend.fullscreen(pkg, task", self.controller)
+        self.assertIn("backend.fullscreen(pkg, component, task", self.controller)
         self.assertIn("activeTaskId = result.taskId", self.controller)
         self.assertIn("if (state == State.FULLSCREEN_HANDOFF)", self.controller)
         self.assertIn("needsValidation = true", self.controller)

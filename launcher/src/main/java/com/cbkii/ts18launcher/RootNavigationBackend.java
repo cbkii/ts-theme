@@ -10,7 +10,7 @@ import java.util.concurrent.Executors;
 /** Shared bounded executor for one root-backed navigation experiment. */
 abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private static final long KNOWN_TASK_RECHECK_DELAY_MS = 180L;
-    private static final long CORROBORATION_TIMEOUT_MS = 350L;
+    private static final long CORROBORATION_TIMEOUT_MS = 4000L;
 
     private enum AbsenceEvidence { PRESENT_IN_RECENTS, PROCESS_ALIVE, ABSENT, UNKNOWN }
 
@@ -92,22 +92,29 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                 () -> helper.run("status", packageName, taskHint(taskId))), callback);
     }
 
-    @Override public void fullscreen(String packageName, int taskId, Callback callback) {
-        if (taskId <= 0) {
-            if (callback != null) callback.onResult(
-                    NavigationHelperResult.failure("TASK_AUTHORITY_REQUIRED", ""));
-            return;
-        }
+    @Override public void fullscreen(String packageName, String launchComponent, int taskId, Callback callback) {
         submit(() -> {
             ensureNavigationPermissions(packageName);
-            NavigationHelperResult transitioned =
-                    helper.run("fullscreen", packageName, Integer.toString(taskId));
-            if (!transitioned.success || transitioned.taskId != taskId
-                    || transitioned.windowingMode != 1) return transitioned;
-            android.util.Log.i("TS18Nav", "fullscreen mode verified task=" + taskId
+            // Hint 0 means bounded read-only reacquisition, NOT ordinary package launch.
+            NavigationHelperResult resolved = helper.run("status", packageName, taskHint(taskId));
+            if (!resolved.success && taskId > 0 && ("TASK_NOT_FOUND".equals(resolved.code)
+                    || "TASK_OBSERVATION_UNCERTAIN".equals(resolved.code)))
+                resolved = helper.run("status", packageName, "0");
+            if (!resolved.success && !"TASK_NOT_FOUND".equals(resolved.code)) return resolved;
+            int selected = resolved.success ? resolved.taskId : 0;
+            NavigationHelperResult transitioned = helper.run("fullscreen", packageName,
+                    taskHint(selected), launchComponent);
+            if (!transitioned.success || transitioned.windowingMode != 1) return transitioned;
+            android.util.Log.i("TS18Nav", "fullscreen mode verified task=" + transitioned.taskId
                     + " bounds=" + transitioned.bounds + " (WindowManager-owned)");
             return transitioned;
         }, callback);
+    }
+
+    @Override public void backgroundFullscreen(String packageName, int taskId,
+            String homePackage, int homeTaskId, boolean externalOnly, Callback callback) {
+        submit(() -> helper.run("background-fullscreen", packageName, taskHint(taskId),
+                homePackage, Integer.toString(homeTaskId), externalOnly ? "1" : "0"), callback);
     }
 
     @Override public void suspend(String packageName, int taskId, String homePackage,
@@ -195,10 +202,16 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
         if (!safePackage(packageName) || taskId <= 0) return AbsenceEvidence.UNKNOWN;
         String prefix = "#" + taskId + " A=" + packageName;
         String command = "snapshot=\"$(dumpsys activity recents 2>/dev/null)\" || exit 3; "
+                + "printf '%s\\n' \"$snapshot\" | grep -q 'ACTIVITY MANAGER RECENT TASKS' || exit 3; "
                 + "printf '%s\\n' \"$snapshot\" | grep -F '" + prefix
                 + " ' >/dev/null && exit 0; "
                 + "printf '%s\\n' \"$snapshot\" | grep -F '" + prefix
                 + "}' >/dev/null && exit 0; "
+                + "printf '%s\\n' \"$snapshot\" | grep -F '" + packageName + "' >/dev/null && exit 3; "
+                + "stack=\"$(am stack list 2>/dev/null)\" || exit 3; "
+                + "printf '%s\\n' \"$stack\" | grep -q 'Stack id=' || exit 3; "
+                + "printf '%s\\n' \"$stack\" | grep -F '" + packageName + "' >/dev/null && exit 2; "
+                + "command -v pidof >/dev/null || exit 3; "
                 + "pidof " + packageName + " >/dev/null 2>&1 && exit 2; exit 1";
         RootShell.Result result = RootShell.runMillis(command, CORROBORATION_TIMEOUT_MS);
         if (!result.completed) return AbsenceEvidence.UNKNOWN;

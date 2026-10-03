@@ -134,6 +134,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus && navigationWindowController != null)
+            navigationWindowController.onHomeFocusLost();
         if (root != null && hasFocus && !redirectingToHome
                 && (launchedAsHome || HomeMode.isDefaultHome(this))) {
             ProcessMediaSessionMonitor.refresh(this);

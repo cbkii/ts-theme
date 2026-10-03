@@ -11,7 +11,9 @@ ROOT_DIR=/data/adb/ts18-launcher
 SNAPSHOT="$ROOT_DIR/.activity.$$"
 START_HELP="$ROOT_DIR/.am-help.$$"
 LAUNCH_OUTPUT="$ROOT_DIR/.am-start.$$"
-trap 'rm -f "$SNAPSHOT" "$START_HELP" "$LAUNCH_OUTPUT"' EXIT HUP INT TERM
+RECENTS="$ROOT_DIR/.recents.$$"
+STACKS="$ROOT_DIR/.stacks.$$"
+trap 'rm -f "$SNAPSHOT" "$START_HELP" "$LAUNCH_OUTPUT" "$RECENTS" "$STACKS"' EXIT HUP INT TERM
 
 TASK_SNAPSHOT_AWK='
 function digits_after_hash(line, value) {
@@ -104,7 +106,9 @@ in_task && !matched && /mBounds=Rect\(/ {
   next
 }
 in_task && !matched && /^[[:space:]]*\* TaskRecord\{/ && (index($0, " A=" pkg " ") || index($0, " A=" pkg "}")) && index($0, " U=" target_user " ") {
-  if (hint != "0" && task != hint) next
+  record_task=digits_after_hash($0)
+  if (record_task == "" || (hint != "0" && record_task != hint)) next
+  task=record_task
   matched=1
   hist0=0
   task_stack=current_stack
@@ -306,41 +310,77 @@ parse_foreground_task_snapshot() {
   awk "$FOREGROUND_TASK_AWK" "$SNAPSHOT"
 }
 
-read_task_once() {
-  pkg="$1"
-  hint="$2"
-  capture_activity || return 3
-  record="$(parse_task_snapshot "$pkg" "$hint")"
-  kind=""
-  value1=""
-  value2=""
-  value3=""
-  value4=""
-  value5=""
-  value6=""
-  value7=""
+# Independent structured API surface, loaded from the active launcher APK. No transaction IDs.
+run_bridge() {
+  bridge_action="$1"
+  shift
+  command -v app_process >/dev/null 2>&1 || return 3
+  bridge_apk="$(pm path --user "$ANDROID_USER" com.cbkii.ts18launcher 2>/dev/null | head -n 1)"
+  bridge_apk="${bridge_apk#package:}"
+  [ -r "$bridge_apk" ] || return 3
+  CLASSPATH="$bridge_apk" /system/bin/toybox timeout -k 1 3 app_process /system/bin \
+    com.cbkii.ts18launcher.NavTaskBridge "$bridge_action" "$ANDROID_USER" "$@"
+}
+
+# A rich dump miss is never task death by itself. Contrary package evidence on any surface
+# conservatively prevents a cold launch; unavailable/malformed producers remain UNKNOWN.
+corroborate_absence() {
+  absence_pkg="$1"
+  dumpsys activity recents >"$RECENTS" 2>&1 || return 3
+  grep -q 'ACTIVITY MANAGER RECENT TASKS' "$RECENTS" || return 3
+  grep -F "$absence_pkg" "$RECENTS" >/dev/null && return 3
+  am stack list >"$STACKS" 2>&1 || return 3
+  grep -q 'Stack id=' "$STACKS" || return 3
+  grep -F "$absence_pkg" "$STACKS" >/dev/null && return 3
+  command -v pidof >/dev/null 2>&1 || return 3
+  pidof "$absence_pkg" >/dev/null 2>&1
+  process_rc=$?
+  [ "$process_rc" = 1 ] || return 3
+  return 1
+}
+
+parse_task_record() {
+  record="$1"
+  kind=""; value1=""; value2=""; value3=""; value4=""; value5=""; value6=""; value7=""
   read -r kind value1 value2 value3 value4 value5 value6 value7 <<EOF_RECORD
 $record
 EOF_RECORD
   case "$kind" in
     NONE) return 1 ;;
-    AMBIGUOUS)
-      TASK_COUNT="${value1:-unknown}"
-      return 2
-      ;;
+    AMBIGUOUS) TASK_COUNT="${value1:-unknown}"; return 2 ;;
     FOUND)
-      TASK_ID="$value1"
-      STACK_ID="${value2:-unknown}"
-      DISPLAY_ID="${value3:-unknown}"
-      WINDOWING_MODE="${value4:-unknown}"
-      TASK_BOUNDS="${value5:-unknown}"
-      TASK_COMPONENT="${value6:-unknown}"
-      SUPPORTS_PIP="${value7:-unknown}"
+      TASK_ID="$value1"; STACK_ID="${value2:-unknown}"; DISPLAY_ID="${value3:-unknown}"
+      WINDOWING_MODE="${value4:-unknown}"; TASK_BOUNDS="${value5:-unknown}"
+      TASK_COMPONENT="${value6:-unknown}"; SUPPORTS_PIP="${value7:-unknown}"
       valid_uint "$TASK_ID" || return 3
-      return 0
-      ;;
+      return 0 ;;
     *) return 3 ;;
   esac
+}
+
+read_task_once() {
+  observed_pkg="$1"
+  observed_hint="$2"
+  if capture_activity; then
+    record="$(parse_task_snapshot "$observed_pkg" "$observed_hint")"
+    parse_task_record "$record"
+    observed_rc=$?
+    case "$observed_rc" in 0|2) return "$observed_rc" ;; esac
+  fi
+  # Preserve bounded parser-miss context locally for the next collector.
+  if [ -s "$SNAPSHOT" ]; then
+    head -c 65536 "$SNAPSHOT" >"$ROOT_DIR/task-miss-latest.txt"
+  fi
+  bridge_record="$(run_bridge status "$observed_pkg" "$observed_hint" 2>/dev/null)"
+  bridge_rc=$?
+  if [ "$bridge_rc" = 0 ]; then
+    parse_task_record "$bridge_record"
+    observed_rc=$?
+    [ "$observed_rc" = 0 ] && { log_event "task resolver recovered package=$observed_pkg task=$TASK_ID via=ATM"; return 0; }
+    [ "$observed_rc" = 2 ] && return 2
+  fi
+  case "$bridge_record" in *TASK_AMBIGUOUS*) return 2 ;; esac
+  corroborate_absence "$observed_pkg"
 }
 
 read_task() {
@@ -379,7 +419,7 @@ require_task() {
     0) ;;
     1) fail TASK_NOT_FOUND ;;
     2) fail TASK_AMBIGUOUS "count=${TASK_COUNT:-unknown}" ;;
-    *) fail TASK_STATE_UNREADABLE ;;
+    *) fail TASK_OBSERVATION_UNCERTAIN ;;
   esac
   validate_observed_component "$pkg"
 }
@@ -433,6 +473,20 @@ require_handoff_foreground() {
   [ "$foreground_task" = "$1" ] || [ "$foreground_task" = "$2" ] || fail FOREGROUND_CHANGED
 }
 
+require_home_presentation() {
+  allowed_navigation="$1"
+  capture_activity || fail TASK_OBSERVATION_UNCERTAIN
+  home_identity="$(parse_task_snapshot com.cbkii.ts18launcher 0)"
+  read -r home_kind home_identity_task _ <<EOF_HOME
+$home_identity
+EOF_HOME
+  [ "$home_kind" = FOUND ] || fail FOREGROUND_CHANGED
+  presentation_foreground="$(parse_foreground_task_snapshot)"
+  [ "$presentation_foreground" = "$home_identity_task" ] && return 0
+  [ "$allowed_navigation" -gt 0 ] && [ "$presentation_foreground" = "$allowed_navigation" ] && return 0
+  fail FOREGROUND_CHANGED
+}
+
 verify_state() {
   expected_mode="$1"
   expected_bounds="$2"
@@ -483,8 +537,15 @@ move_task_fullscreen() {
   component="$TASK_COMPONENT"
   if [ "$WINDOWING_MODE" != 1 ]; then
     [ "$component" != unknown ] || fail COMPONENT_UNKNOWN
-    am start --user "$ANDROID_USER" --display 0 --windowingMode 1 --task "$wanted_task" \
-      -f 0x20000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_FAILED
+    if ! run_bridge mode "$pkg" "$wanted_task" 1 1 >"$LAUNCH_OUTPUT" 2>&1; then
+      # Never redeliver an Activity over a legitimate foreign permission/settings flow.
+      if grep -q -E 'LEGITIMATE_FOREIGN_ACTIVITY|TASK_STACK_NOT_EXCLUSIVE|MODE_NOT_VERIFIED' "$LAUNCH_OUTPUT"; then
+        fail FULLSCREEN_POLICY_BLOCKED
+      fi
+      # Explicit-user fallback only: the already-proven exact-task transition.
+      am start --user "$ANDROID_USER" --display 0 --windowingMode 1 --task "$wanted_task" \
+        -f 0x20000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_FAILED
+    fi
   else
     am task focus "$wanted_task" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
   fi
@@ -544,11 +605,12 @@ case "$action" in
       case "$rc" in
         0) validate_observed_component ;;
         1)
+          require_home_presentation 0
           launch_freeform_once "$launch_component"
           require_task "$PKG" 0 30
           ;;
         2) fail TASK_AMBIGUOUS "count=${TASK_COUNT:-unknown}" ;;
-        *) fail TASK_STATE_UNREADABLE ;;
+        *) fail TASK_OBSERVATION_UNCERTAIN ;;
       esac
     fi
 
@@ -558,11 +620,13 @@ case "$action" in
     # Android Q may reject resizeTask on a fullscreen configuration even when
     # resizeable=2. Establish mode 5 on this exact task before applying bounds.
     if [ "$WINDOWING_MODE" != 5 ]; then
+      require_home_presentation 0
       [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
       am start --user "$ANDROID_USER" --display 0 --windowingMode 5 --task "$wanted_task" \
         -f 0x20000000 -n "$TASK_COMPONENT" >"$LAUNCH_OUTPUT" 2>&1 || fail FREEFORM_TRANSITION_FAILED
       wait_state "$PKG" "$wanted_task" 5 any || fail FREEFORM_TRANSITION_REJECTED
     fi
+    require_home_presentation "$wanted_task"
     am task resizeable "$wanted_task" 2 >"$LAUNCH_OUTPUT" 2>&1 || fail RESIZEABLE_FAILED
     am task resize "$wanted_task" "$left" "$top" "$right" "$bottom" \
       >"$LAUNCH_OUTPUT" 2>&1 || fail RESIZE_FAILED
@@ -572,6 +636,7 @@ case "$action" in
     fi
     require_task "$PKG" "$wanted_task" 1
     verify_state 5 "$expected"
+    require_home_presentation "$wanted_task"
     am task focus "$wanted_task" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
     require_foreground_task "$wanted_task" NATIVE_NOT_FOREGROUND
     require_task "$PKG" "$wanted_task" 1
@@ -615,13 +680,15 @@ case "$action" in
     expected="$left,$top,$right,$bottom"
     require_task "$PKG" "$hint" 1
     verify_state 5 "$expected"
-    require_task "$home_pkg" "$home_task" 1
+    # The navigation/Home/foreground check consumes the SAME pre-operation dump.
+    # Do not multiply snapshots while the server is reparenting/stopping Activities.
+    foreground_task="$(parse_foreground_task_snapshot)"
+    [ "$foreground_task" = "$home_task" ] || [ "$foreground_task" = "$hint" ] || fail FOREGROUND_CHANGED
+    home_record="$(parse_task_snapshot "$home_pkg" "$home_task")"
+    parse_task_record "$home_record" || fail TASK_OBSERVATION_UNCERTAIN
+    validate_observed_component "$home_pkg"
     [ "$DISPLAY_ID" = 0 ] || fail HOME_DISPLAY_MISMATCH
     [ "$WINDOWING_MODE" = 1 ] || fail HOME_MODE_MISMATCH
-    require_handoff_foreground "$home_task" "$hint"
-    PKG="${3:-}"
-    require_task "$PKG" "$hint" 1
-    verify_state 5 "$expected"
     am task focus "$hint" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
     require_foreground_task "$hint" NATIVE_NOT_FOREGROUND
     require_task "$PKG" "$hint" 1
@@ -635,9 +702,63 @@ case "$action" in
     hint="${4:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
-    [ "$hint" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
+    cold_component="${5:-}"
+    read_task_once "$PKG" "$hint"
+    resolve_rc=$?
+    case "$resolve_rc" in
+      0) hint="$TASK_ID" ;;
+      1)
+        # Read-only resolution has proved absence across recents, stacks and process.
+        valid_component "$cold_component" || fail COMPONENT_UNKNOWN
+        case "$cold_component" in "$PKG"/*) ;; *) fail COMPONENT_PACKAGE_MISMATCH ;; esac
+        native_launch_supported || fail FULLSCREEN_LAUNCH_UNSUPPORTED
+        am start --user "$ANDROID_USER" --display 0 --windowingMode 1 \
+          -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+          -f 0x10000000 -n "$cold_component" >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_FAILED
+        LAUNCHED=1
+        require_task "$PKG" 0 30
+        hint="$TASK_ID"
+        ;;
+      2) fail TASK_AMBIGUOUS ;;
+      *) fail TASK_OBSERVATION_UNCERTAIN ;;
+    esac
     move_task_fullscreen "$PKG" "$hint"
     emit_protocol OK FULLSCREEN
+    ;;
+
+  background-fullscreen|probe-task-mode)
+    PKG="${3:-}"
+    hint="${4:-0}"
+    valid_package "$PKG" || fail BAD_PACKAGE
+    valid_uint "$hint" || fail BAD_TASK
+    require_task "$PKG" "$hint" 1
+    wanted_task="$TASK_ID"
+    [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+    if [ "$action" = background-fullscreen ]; then
+      home_pkg="${5:-}"
+      home_task="${6:-0}"
+      external_only="${7:-0}"
+      valid_package "$home_pkg" || fail BAD_HOME_PACKAGE
+      valid_uint "$home_task" || fail BAD_HOME_TASK
+      # Same raw snapshot as task lookup; a HOME return cancels stale departure work.
+      foreground_task="$(parse_foreground_task_snapshot)"
+      valid_uint "$foreground_task" || fail FOREGROUND_CHANGED
+      [ "$foreground_task" != "$home_task" ] || fail FOREGROUND_CHANGED
+      if [ "$external_only" = 1 ] && [ "$foreground_task" = "$wanted_task" ]; then
+        fail FOREGROUND_CHANGED
+      fi
+    fi
+    if [ "$action" = probe-task-mode ]; then
+      run_bridge probe-mode "$PKG" "$wanted_task" "$WINDOWING_MODE" 0 >"$LAUNCH_OUTPUT" 2>&1 || fail BACKGROUND_MODE_UNSUPPORTED
+      emit_protocol OK MODE_CAPABILITY
+    else
+      if [ "$WINDOWING_MODE" != 1 ]; then
+        # There is deliberately no Activity/focus fallback when HOME leaves.
+        run_bridge mode "$PKG" "$wanted_task" 1 0 >"$LAUNCH_OUTPUT" 2>&1 || fail BACKGROUND_MODE_UNSUPPORTED
+      fi
+      wait_state "$PKG" "$wanted_task" 1 any || fail FULLSCREEN_REJECTED
+      emit_protocol OK BACKGROUND_FULLSCREEN
+    fi
     ;;
 
   park-windowed)
