@@ -59,19 +59,21 @@ final class ProcessMediaSessionMonitor {
     };
 
     private final MediaSessionManager.OnActiveSessionsChangedListener activeSessionsChanged =
-            controllers -> main.post(() -> {
-                if (destroyed || !sessionListenerRegistered) return;
-                if (!MediaListenerService.hasNotificationAccess(context)) {
-                    markUnavailable("active-callback-access-lost", true);
-                    return;
-                }
-                reconcile(controllers == null ? new ArrayList<>() : new ArrayList<>(controllers));
-            });
+            controllers -> main.post(() -> handleActiveSessionsChanged(controllers));
 
     private ProcessMediaSessionMonitor(Context context) {
         this.context = context.getApplicationContext();
         this.manager = (MediaSessionManager) this.context.getSystemService(Context.MEDIA_SESSION_SERVICE);
         this.listenerComponent = new ComponentName(this.context, MediaListenerService.class);
+    }
+
+    private void handleActiveSessionsChanged(List<MediaController> controllers) {
+        if (destroyed || !sessionListenerRegistered) return;
+        if (!MediaListenerService.hasNotificationAccess(context)) {
+            markUnavailable("active-callback-access-lost", true);
+            return;
+        }
+        reconcile(controllers == null ? new ArrayList<>() : new ArrayList<>(controllers));
     }
 
     static void start(Context context) {
