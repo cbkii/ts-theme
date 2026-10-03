@@ -285,7 +285,7 @@ final class NavigationWindowController {
         needsValidation = true;
         needsPresentation = true;
         state = State.SUSPENDED;
-        panel.showStarting(label(pkg), "Navigation task state uncertain · retaining existing task");
+        panel.showFailure("Navigation task state uncertain", this::retry, () -> openFullscreen(null));
         finishPresentationCallback(false);
         Log.w(TAG, "navigation task observation uncertain phase=" + phase + " task=" + activeTaskId);
         return true;
