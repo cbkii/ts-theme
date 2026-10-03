@@ -24,6 +24,8 @@ case "$out_base" in *'..'*|*$'\n'*|*$'\r'*) printf 'Unsafe output path\n' >&2; e
 
 termux_bin="${TS18_TERMUX_BIN:-${PREFIX:-/data/data/com.termux/files/usr}/bin}"
 android_path="${TS18_ANDROID_PATH:-/system/bin:/system/xbin:/vendor/bin:/product/bin}"
+case "$termux_bin" in ''|*[!A-Za-z0-9._:/-]*) printf 'Invalid Termux bin path\n' >&2; exit 64 ;; esac
+case "$android_path" in ''|*[!A-Za-z0-9._:/-]*) printf 'Invalid Android PATH\n' >&2; exit 64 ;; esac
 export PATH="$termux_bin:$android_path"
 for tool in bash timeout date mkdir sha256sum zip unzip find sort xargs cat grep head wc mv id; do
   command -v "$tool" >/dev/null 2>&1 || {
@@ -85,7 +87,8 @@ capture() {
 
 capture_shell() {
   local name="$1" class="$2" seconds="$3" script="$4"
-  capture "$name" "$class" "$seconds" bash -c "$script"
+  shift 4
+  capture "$name" "$class" "$seconds" bash -c "$script" _ "$@"
 }
 
 current_user() {
@@ -119,9 +122,15 @@ else
   record identity/android-user.txt REQUIRED BLOCKED 1
 fi
 
-# Resolve current HOME without launching it.
-capture_shell home/resolution.txt REQUIRED 8 \
-  'cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME 2>&1; echo ---; dumpsys activity activities | grep -E "mResumedActivity|mFocusedActivity|topResumedActivity|mCurrentFocus" || true'
+# Resolve current HOME without launching it. Producer failures remain visible; grep no-match is benign.
+capture_shell home/resolution.txt REQUIRED 8 '
+  rc=0
+  cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME 2>&1 || rc=$?
+  echo ---
+  activity="$(dumpsys activity activities 2>&1)" || exit $?
+  printf "%s\n" "$activity" | grep -E "mResumedActivity|mFocusedActivity|topResumedActivity|mCurrentFocus" || true
+  exit "$rc"
+'
 
 # Activity/Window authority. Recents is deliberately separate because PR14 distinguishes a parser
 # miss from independent recents/process evidence.
@@ -134,32 +143,41 @@ capture window/displays.txt OPTIONAL 10 dumpsys window displays
 # Media observation surfaces. These are read-only; no transport command is sent.
 capture media/sessions.txt REQUIRED 12 dumpsys media_session
 capture media/audio.txt OPTIONAL 12 dumpsys audio
-capture_shell media/notification-access.txt REQUIRED 8 \
-  'settings get secure enabled_notification_listeners 2>&1; echo ---; dumpsys notification 2>/dev/null | grep -E "Notification listeners|enabled listeners|com.cbkii.ts18launcher" -A8 -B2 || true'
+capture_shell media/notification-access.txt REQUIRED 8 '
+  rc=0
+  settings get secure enabled_notification_listeners 2>&1 || rc=$?
+  echo ---
+  notification="$(dumpsys notification 2>&1)" || exit $?
+  printf "%s\n" "$notification" | grep -E "Notification listeners|enabled listeners|com.cbkii.ts18launcher" -A8 -B2 || true
+  exit "$rc"
+'
 capture activity/launcher-services.txt OPTIONAL 10 dumpsys activity services com.cbkii.ts18launcher
 
 # Package/process identity for the known TS18 owners. Missing optional packages are not target failure.
 for package in com.cbkii.ts18launcher app.organicmaps.incar com.tw.media com.navimods.radio com.tw.radio; do
   capture "packages/$package.txt" OPTIONAL 10 dumpsys package "$package"
   capture_shell "process/$package.txt" OPTIONAL 5 \
-    "printf 'package=%s\\n' '$package'; pidof '$package' 2>&1 || true; ps -A -o USER,PID,PPID,NAME,ARGS 2>/dev/null | grep -F '$package' | grep -v grep || true"
+    'package="$1"; printf "package=%s\n" "$package"; pidof "$package" 2>&1 || true; ps -A -o USER,PID,PPID,NAME,ARGS 2>/dev/null | grep -F "$package" | grep -v grep || true' \
+    "$package"
 done
 
 # Capture bounded log history after reproduction. Keep raw and focused views separately so collector
 # parsing cannot erase contrary evidence.
 capture logs/logcat-raw.txt OPTIONAL 15 logcat -d -t 12000 -v threadtime
 capture_shell logs/pr14-focused.txt OPTIONAL 15 \
-  "logcat -d -t 20000 -v threadtime 2>&1 | grep -E 'TS18Nav|TS18Media|TS18Launcher|session-monitor|listener-access|ActivityTaskManager|ActivityManager|WindowManager|requestLayout|com\\.tw\\.music\\.MusicActivity|app\\.organicmaps\\.incar|com\\.navimods\\.radio' || true"
+  'logcat -d -t 20000 -v threadtime 2>&1 | grep -E "TS18Nav|TS18Media|TS18Launcher|session-monitor|listener-access|ActivityTaskManager|ActivityManager|WindowManager|requestLayout|com\.tw\.music\.MusicActivity|app\.organicmaps\.incar|com\.navimods\.radio" || true'
 
-# Minimal derived summaries; raw owning dumps remain the authority.
+# Minimal derived summaries; paths are arguments, not shell-interpolated source.
 capture_shell summary/nav-task-lines.txt OPTIONAL 6 \
-  "grep -E 'app\\.organicmaps\\.incar|Task\\{|taskId=|mTaskId=|windowingMode=|bounds=' '$out/activity/activities.txt' '$out/activity/recents.txt' 2>/dev/null || true"
+  'grep -E "app\.organicmaps\.incar|Task\{|taskId=|mTaskId=|windowingMode=|bounds=" "$1" "$2" 2>/dev/null || true' \
+  "$out/activity/activities.txt" "$out/activity/recents.txt"
 capture_shell summary/media-task-lines.txt OPTIONAL 6 \
-  "grep -E 'com\\.tw\\.media|com\\.tw\\.music|com\\.navimods\\.radio|com\\.tw\\.radio' '$out/activity/activities.txt' '$out/activity/recents.txt' '$out/media/sessions.txt' 2>/dev/null || true"
+  'grep -E "com\.tw\.media|com\.tw\.music|com\.navimods\.radio|com\.tw\.radio" "$1" "$2" "$3" 2>/dev/null || true' \
+  "$out/activity/activities.txt" "$out/activity/recents.txt" "$out/media/sessions.txt"
 
 if [[ "$(id -u 2>/dev/null)" == 0 ]]; then
-  capture identity/root-context.txt OPTIONAL 5 bash -c \
-    "PATH=$android_path; export PATH; id; id -Z; readlink /proc/self/ns/mnt"
+  capture identity/root-context.txt OPTIONAL 5 env PATH="$android_path" bash -c \
+    'id; id -Z; readlink /proc/self/ns/mnt'
 else
   printf '%s\n' \
     'BLOCKED: this is the ordinary Termux lane, not UID0.' \
