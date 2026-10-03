@@ -134,7 +134,7 @@ done
 if (( logger_started )); then
   logger_pid="$(cat "$work/logger-owner")"
   if [[ "$logger_pid" =~ ^[0-9]+$ ]]; then
-    root_capture logger-stop.txt 4 "bb=/data/adb/magisk/busybox; "\$bb" kill -TERM -- '-$logger_pid' 2>/dev/null; "\$bb" sleep 0.2; "\$bb" kill -KILL -- '-$logger_pid' 2>/dev/null; exit 0"
+    root_capture logger-stop.txt 4 " /data/adb/magisk/busybox kill -TERM -- '-$logger_pid' 2>/dev/null; /data/adb/magisk/busybox sleep 0.2; /data/adb/magisk/busybox kill -KILL -- '-$logger_pid' 2>/dev/null; exit 0"
   fi
 fi
 # Freeze the file before sealing even if root/logcat shutdown was unobservable.
