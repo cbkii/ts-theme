@@ -40,7 +40,7 @@ final class NativeNavigationPanel extends FrameLayout {
     }
     void showStarting(String label,String backend){status.setText("");setActions(null,null,null,null);}
     void showConfigured(String detail,Runnable openFullscreen){status.setText("");setAction("Open fullscreen",openFullscreen);}
-    void showFailure(String detail,Runnable retry,Runnable openFullscreen){status.setText("Navigation unavailable");setActions("Retry",retry,"Open fullscreen",openFullscreen);}
+    void showFailure(String detail,Runnable retry,Runnable openFullscreen){status.setText(detail==null||detail.isEmpty()?"Navigation unavailable":detail);setActions("Retry",retry,"Open fullscreen",openFullscreen);}
     void showUnavailable(String detail,Runnable openFullscreen){status.setText(detail==null||detail.isEmpty()?"Navigation unavailable":detail);setAction("Open fullscreen",openFullscreen);}
     void showFullscreenOnly(String label,Runnable openFullscreen){String app=label==null||label.isEmpty()?"Navigation":label;status.setText(app+"\nFullscreen mode");setAction("Open navigation",openFullscreen);}
     void applyAppearance(Activity activity){setBackgroundColor(AutomotiveUi.color(activity,R.color.ui_black));status.setTextColor(AutomotiveUi.color(activity,R.color.ui_text));}

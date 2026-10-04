@@ -252,8 +252,8 @@ public final class SettingsActivity extends Activity {
     private void renderMedia() {
         addSection("Playback");
         addSwitchRow(R.drawable.ic_power, "Prepare music and radio at startup",
-                "Keeps music and radio ready. On a true cold start, configured apps may be "
-                        + "briefly initialised behind the startup mask when overlay access is granted.",
+                "Keeps supported media sources ready through background service and MediaSession contracts. "
+                        + "It never opens a media app merely to prepare playback.",
                 UiPersonalizationPrefs.mediaStartupWarmup(this),
                 checked -> UiPersonalizationPrefs.setMediaStartupWarmup(this, checked));
         addChoiceRow(R.drawable.ic_music, "Media control priority", mediaModeLabel(),
@@ -262,24 +262,15 @@ public final class SettingsActivity extends Activity {
                         new String[] {LauncherPrefs.MEDIA_MODE_AUTO, LauncherPrefs.MEDIA_MODE_PREFER_MUSIC},
                         LauncherPrefs.mediaMode(this), value -> {
                             LauncherPrefs.setMediaMode(this, value);
+                            ProcessMediaSessionMonitor.refresh(this);
                             MediaListenerService.refreshActiveSessions(); render();
                         }));
 
         addSection("Access");
-        addSystemRow(R.drawable.ic_apps, "Startup splash overlay",
-                StartupMaskController.hasOverlayAccess(this)
-                        ? "Granted · cold app preparation can stay hidden"
-                        : "Allow Display over other apps for masked cold-start preparation.",
-                v -> {
-                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            android.net.Uri.parse("package:" + getPackageName()));
-                    try { startActivity(intent); }
-                    catch (RuntimeException ignored) {
-                        Toast.makeText(this, "Overlay settings unavailable", Toast.LENGTH_SHORT).show();
-                    }
-                });
         addSystemRow(R.drawable.ic_notifications, "Notification access",
-                MediaListenerService.hasNotificationAccess(this) ? "Granted" : "Allow access for media controls.",
+                MediaListenerService.hasNotificationAccess(this)
+                        ? "Granted · active MediaSessions can be observed"
+                        : "Allow access for active media sessions and notification metadata.",
                 v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
     }
 
@@ -457,6 +448,7 @@ public final class SettingsActivity extends Activity {
                         ? (reset ? "Settings reset" : "Settings imported")
                         : "Settings were not changed");
                 if (applied) {
+                    ProcessMediaSessionMonitor.refresh(this);
                     MediaListenerService.refreshActiveSessions();
                     if (!reset) NavigationPermissionBootstrapper.ensureEarly(this);
                     recreate();
@@ -657,6 +649,7 @@ public final class SettingsActivity extends Activity {
     }
 
     private void showMediaDiagnostics() {
+        ProcessMediaSessionMonitor.refresh(this);
         MediaListenerService.refreshActiveSessions();
         String sessions = MediaListenerService.sessionDiagnostics(this);
         String trace = MediaEventTrace.dump(40);

@@ -8,31 +8,17 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
-    def test_native_foreground_prime_uses_guarded_navigation_handoff(self):
-        mask = self.read(
-            "launcher/src/main/java/com/cbkii/ts18launcher/StartupMaskController.java")
-        show = mask.split("boolean show()", 1)[1].split(
-            "boolean coversExternalActivities()", 1)[0]
-        coordinator = self.read(
-            "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java")
+    def test_foreground_media_readiness_code_is_removed(self):
         launcher = self.read(
             "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
-        self.assertIn("hasOverlayAccess(activity)", show)
-        self.assertIn("launchMediaBootstrap(packageName", coordinator)
-        self.assertIn("afterMediaBootstrapHomeRestored(restored", coordinator)
-        self.assertIn("navigationWindowController.launchAfterSuspension(launch)", launcher)
-        self.assertLess(coordinator.index("if (!canMaskExternal)"),
-                        coordinator.index("private void primeNext()"))
-
-    def test_failed_mask_capability_skips_external_activity_prime(self):
-        coordinator = self.read(
-            "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java")
-        begin = coordinator.split("private void begin", 1)[1].split(
-            "@Override public void onMediaStateChanged", 1)[0]
-        self.assertIn("boolean canMaskExternal = mask.show()", begin)
-        self.assertIn("if (!canMaskExternal)", begin)
-        self.assertIn("foreground-prime-skipped", begin)
-        self.assertTrue("finishCold();" in begin or "completeInteractive" in begin)
+        self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java").exists())
+        self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupMaskController.java").exists())
+        for source in (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher").glob("*.java"):
+            text = source.read_text(encoding="utf-8")
+            self.assertNotIn("StartupBootstrapCoordinator", text, source.name)
+            self.assertNotIn("StartupMaskController", text, source.name)
+        self.assertNotIn("launchMediaBootstrap", launcher)
+        self.assertNotIn("cold-foreground-prime", launcher)
 
     def test_background_readiness_remains_available(self):
         launcher = self.read(
@@ -43,15 +29,60 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("MediaBrowser", bootstrapper)
         self.assertIn("prepareExplicitService", bootstrapper)
 
-    def test_cold_fallback_cannot_double_dispatch_a_warm_command(self):
+    def test_failed_background_readiness_does_not_retry_through_activity_prime(self):
         launcher = self.read(
             "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         method = launcher.split("private void dispatchSourceCommand(", 1)[1].split(
             "private void settleSourceCommandFailure", 1)[0]
         self.assertIn("if (success)", method)
-        self.assertIn("allowColdPrime && command == MediaListenerService.Command.PLAY_PAUSE", method)
-        self.assertIn("!mediaBootstrapper.hasUsableController(packageName)", method)
-        self.assertIn("generation, false", method)
+        self.assertIn('"background-only-command-failed"', method)
+        self.assertIn("settleSourceCommandFailure", method)
+        self.assertNotIn("primeForCommand", method)
+        self.assertNotIn("cold-foreground-prime-request", method)
+
+    def test_process_monitor_updates_home_without_listener_connection_callback(self):
+        launcher = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        monitor = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/ProcessMediaSessionMonitor.java")
+        self.assertIn("ProcessMediaSessionMonitor.Observer", launcher)
+        self.assertIn("onProcessMediaStateChanged", launcher)
+        self.assertIn("MediaSessionManager.OnActiveSessionsChangedListener", monitor)
+        self.assertIn("getActiveSessions(listenerComponent)", monitor)
+        self.assertIn("boolean authoritative", monitor)
+        self.assertIn("main.post(() -> reconcile", monitor)
+
+    def test_geometry_does_not_reapply_identical_layout_params(self):
+        launcher = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        place = launcher.split("private void place(View view", 1)[1].split(
+            "private void placeCard", 1
+        )[0]
+        comparison = place.index("current.width == desiredWidth")
+        guarded_return = place.index("return;", comparison)
+        set_params = place.index("view.setLayoutParams(lp)")
+        self.assertLess(comparison, guarded_return)
+        self.assertLess(guarded_return, set_params)
+
+    def test_process_and_listener_media_contracts_are_aligned(self):
+        monitor = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/ProcessMediaSessionMonitor.java")
+        launcher = self.read(
+            "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
+        self.assertIn('"com.android.server.telecom"', monitor)
+        self.assertIn('"com.android.dialer"', monitor)
+        self.assertIn("MediaSelection.pick(candidates, preferred, preferConfigured, remembered)", monitor)
+        self.assertIn("PlaybackState.STATE_BUFFERING", monitor)
+        self.assertIn("PlaybackState.STATE_CONNECTING", monitor)
+        self.assertIn("MediaListenerService.stabiliseSnapshot", monitor)
+        self.assertIn("left.sessionIdentity", monitor)
+        merge = launcher.split("private static MediaListenerService.Snapshot mergeSessionSnapshot", 1)[1].split(
+            "private static MediaListenerService.Snapshot emptyMediaSnapshot", 1
+        )[0]
+        self.assertIn("if (!coreAuthoritative) return secondary;", merge)
+        self.assertIn("if (primary.packageName.isEmpty()) return primary;", merge)
+        self.assertIn("primary.sessionIdentity", merge)
+        self.assertIn("secondary.sessionIdentity", merge)
 
     def test_unconfirmed_pause_is_recorded_without_second_transport_dispatch(self):
         bootstrapper = self.read(
@@ -62,26 +93,7 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("Phase.DISPATCHED_UNCONFIRMED", ack)
         self.assertNotIn("sendDesired(", ack)
 
-    def test_passive_cold_prime_cannot_interrupt_a_playing_opposite_source(self):
-        coordinator = self.read(
-            "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java")
-        prime = coordinator.split("private void primeNext()", 1)[1].split(
-            "private void onSourceLaunched", 1)[0]
-        self.assertIn("!interactive", prime)
-        self.assertIn("genericSnapshot.playing", prime)
-        self.assertIn("radioSnapshot.playing", prime)
-        self.assertIn('"opposite-playing-skip"', prime)
-
-    def test_cold_preflight_blocks_only_the_inflight_attempt(self):
-        coordinator = self.read(
-            "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootstrapCoordinator.java")
-        self.assertIn("return running || preflight", coordinator)
-        self.assertIn("preflight = true", coordinator)
-        self.assertIn("preflight = false", coordinator)
-        self.assertIn("if (!qualified(packageName) || isRunning())", coordinator)
-        self.assertNotIn("interactiveAttempts", coordinator)
-
-    def test_navigation_failure_without_managed_task_does_not_block_media_prime(self):
+    def test_navigation_failure_without_managed_task_does_not_block_background_readiness(self):
         controller = self.read(
             "launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowController.java")
         method = controller.split("void whenHomePresented", 1)[1].split(
@@ -89,9 +101,6 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("state == State.FAILED", method)
         self.assertIn("callback.accept(!hasManagedNativeTask())", method)
         self.assertIn("finishPresentationCallback(!hasManagedNativeTask())", method)
-        failure = controller.split("private void latchFailure", 1)[1].split(
-            "private boolean isFailureLatched", 1)[0]
-        self.assertIn("finishPresentationCallback(!hasManagedNativeTask())", failure)
 
 
 if __name__ == "__main__":

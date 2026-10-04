@@ -9,7 +9,9 @@ interface NavigationSurfaceBackend {
     void resume(String packageName, NavigationWindowBounds bounds, int taskId,
             String homePackage, int homeTaskId, Callback callback);
     void status(String packageName, int taskId, Callback callback);
-    void fullscreen(String packageName, int taskId, Callback callback);
+    void fullscreen(String packageName, String launchComponent, int taskId, Callback callback);
+    void backgroundFullscreen(String packageName, int taskId, String homePackage,
+            int homeTaskId, boolean externalOnly, Callback callback);
     void suspend(String packageName, int taskId, String homePackage, int homeTaskId, Callback callback);
     void destroy();
 }

@@ -19,7 +19,7 @@ final class NavigationRootHelper {
     private static final Pattern COMPONENT = Pattern.compile(
             "[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+/(?:\\.[A-Za-z0-9_.$]+|[A-Za-z0-9_.$]+(?:\\.[A-Za-z0-9_.$]+)*)");
     private static final Pattern ACTION = Pattern.compile(
-            "probe|status|present-native|verify-native|resume-windowed|fullscreen|park-windowed");
+            "probe|status|present-native|verify-native|resume-windowed|fullscreen|park-windowed|background-fullscreen|probe-task-mode");
     private static final String ASSET = "nav/nav-window.sh";
     private static final String ROOT_DIR = "/data/adb/ts18-launcher";
     private static final String ROOT_HELPER = ROOT_DIR + "/nav-window.sh";
@@ -49,7 +49,7 @@ final class NavigationRootHelper {
                 .append(' ').append(AndroidUserId.current());
         for (String arg : args) command.append(' ').append(singleQuote(arg));
         ProcessResult result = executeRoot(command.toString(), COMMAND_TIMEOUT_MS);
-        if (result.timedOut) return NavigationHelperResult.failure("TIMEOUT", result.output);
+        if (result.timedOut) return NavigationHelperResult.failure("TASK_OBSERVATION_UNCERTAIN", "helper timeout; " + result.output);
         NavigationHelperResult parsed = NavigationHelperResult.parse(result.output);
         if (result.exitCode != 0 && parsed.success) {
             return NavigationHelperResult.failure("HELPER_EXIT_" + result.exitCode, result.output);

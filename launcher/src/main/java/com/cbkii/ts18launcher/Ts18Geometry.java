@@ -48,6 +48,51 @@ final class Ts18Geometry {
         int railHeight() { return safeBottom - top; }
     }
 
+    static final class Inputs {
+        final int width, height, left, top, right, bottom;
+        final boolean railRight, radioRight;
+        Inputs(int width, int height, int left, int top, int right, int bottom,
+               boolean railRight, boolean radioRight) {
+            this.width = width; this.height = height;
+            this.left = left; this.top = top; this.right = right; this.bottom = bottom;
+            this.railRight = railRight; this.radioRight = radioRight;
+        }
+        boolean sameAs(Inputs other) {
+            return other != null && width == other.width && height == other.height
+                    && left == other.left && top == other.top && right == other.right && bottom == other.bottom
+                    && railRight == other.railRight && radioRight == other.radioRight;
+        }
+    }
+
+    static final class ChangeTracker {
+        private Inputs applied;
+        boolean shouldApply(Inputs inputs) {
+            if (inputs.width <= 0 || inputs.height <= 0 || inputs.sameAs(applied)) return false;
+            applied = inputs;
+            return true;
+        }
+        void invalidate() { applied = null; }
+    }
+
+    static int residualStartInset(int inset, int rootStart) {
+        return Math.max(0, inset - rootStart);
+    }
+
+    static int residualEndInset(int inset, int rootStart, int rootSize, int windowSize) {
+        return Math.max(0, rootStart + rootSize - Math.max(0, windowSize - inset));
+    }
+
+    static Layout resolve(Inputs inputs) {
+        Layout base = resolve(inputs.width, inputs.height, inputs.railRight, inputs.radioRight);
+        int top = Math.max(base.top, inputs.top);
+        int safeRight = Math.min(base.safeRight, inputs.width - inputs.right);
+        int bottom = Math.min(base.safeBottom, inputs.height - inputs.bottom);
+        int left = inputs.left + (inputs.railRight ? 0 : HOTSEAT_WIDTH);
+        int right = safeRight - (inputs.railRight ? HOTSEAT_WIDTH : 0);
+        return new Layout(top, inputs.railRight ? right : inputs.left, left, right,
+                safeRight, bottom, inputs.radioRight);
+    }
+
     private Ts18Geometry() {}
     static Layout resolve(int width, int height) { return resolve(width, height, false); }
     static Layout resolve(int viewWidth, int viewHeight, boolean railRight) {

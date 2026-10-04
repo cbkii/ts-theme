@@ -37,6 +37,7 @@ final class MediaNotificationAccessBootstrapper {
         if (MediaListenerService.hasNotificationAccess(app)) {
             MediaEventTrace.record("listener-access", "already-granted");
             requestRebind(listener);
+            ProcessMediaSessionMonitor.refresh(app);
             return;
         }
 
@@ -57,6 +58,7 @@ final class MediaNotificationAccessBootstrapper {
                     "user=" + userId + " component=" + listener.flattenToShortString());
             MAIN.post(() -> {
                 requestRebind(listener);
+                ProcessMediaSessionMonitor.refresh(app);
                 MediaListenerService.refreshActiveSessions();
             });
         });
@@ -66,7 +68,6 @@ final class MediaNotificationAccessBootstrapper {
         if (listener == null || userId < 0) return "exit 1";
         String component = listener.flattenToString();
         if (component == null || component.isEmpty()) return "exit 1";
-        // API 29 NotificationShellCmd: allow_listener COMPONENT [user_id].
         return "/system/bin/cmd notification allow_listener "
                 + shellQuote(component) + " " + userId;
     }
