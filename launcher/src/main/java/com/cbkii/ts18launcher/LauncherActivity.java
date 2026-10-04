@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -32,6 +33,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private static final long MEDIA_READY_RECONCILE_DELAY_MS = 250L;
 
     private FrameLayout root;
+    private final Ts18Geometry.ChangeTracker geometryChanges = new Ts18Geometry.ChangeTracker();
+    private final int[] rootWindowLocation = new int[2];
+    private boolean geometryUpdatePending;
+    private final Runnable geometryUpdate = () -> {
+        geometryUpdatePending = false;
+        if (root != null && !isDestroyed()) applyGeometry(root.getWidth(), root.getHeight());
+    };
     private LinearLayout rail;
     private LinearLayout quickRail;
     private ImageButton appsButton;
@@ -104,8 +112,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         appDrawerPanel.preload();
         updateMediaPresentation();
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                applyGeometry(right - left, bottom - top));
-        root.post(() -> applyGeometry(root.getWidth(), root.getHeight()));
+                scheduleGeometry());
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            scheduleGeometry();
+            return insets;
+        });
+        root.requestApplyInsets();
+        scheduleGeometry();
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -136,6 +149,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onWindowFocusChanged(hasFocus);
         if (!hasFocus && navigationWindowController != null)
             navigationWindowController.onHomeFocusLost();
+        if (root != null && hasFocus) scheduleGeometry();
         if (root != null && hasFocus && !redirectingToHome
                 && (launchedAsHome || HomeMode.isDefaultHome(this))) {
             ProcessMediaSessionMonitor.refresh(this);
@@ -195,6 +209,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onDestroy() {
+        if (root != null) root.removeCallbacks(geometryUpdate);
         mediaRefreshHandler.removeCallbacksAndMessages(null);
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();
         if (appDrawerPanel != null) appDrawerPanel.destroy();
@@ -314,7 +329,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         focus.add(navigationButton);
         AutomotiveUi.styleRailButton(this, navigationButton, true);
         AutomotiveUi.linkVertical(focus);
-        if (root != null) applyGeometry(root.getWidth(), root.getHeight());
+        scheduleGeometry();
         if (mapPanel != null) mapPanel.applyPreferences();
     }
 
@@ -488,7 +503,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             if (mapPanel == null) {
                 mapPanel = new MapPanel(this);
                 root.addView(mapPanel);
-                applyGeometry(root.getWidth(), root.getHeight());
+                geometryChanges.invalidate();
+                scheduleGeometry();
             }
             mapPanel.applyPreferences();
             mapPanel.setVisibility(View.VISIBLE);
@@ -517,10 +533,31 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
     }
 
+    private void scheduleGeometry() {
+        if (root == null || isDestroyed() || geometryUpdatePending) return;
+        geometryUpdatePending = true;
+        root.post(geometryUpdate);
+    }
+
     private void applyGeometry(int width, int height) {
         if (width <= 0 || height <= 0) return;
-        Ts18Geometry.Layout g = Ts18Geometry.resolve(width, height,
-                LauncherPrefs.railOnRight(this), LauncherPrefs.radioOnRight(this));
+        // Insets are in window coordinates; decor-fitted content has already consumed them.
+        // Intersect only the residual inset region with this root, rather than adding bars twice.
+        WindowInsets insets = root.getRootWindowInsets();
+        root.getLocationInWindow(rootWindowLocation);
+        View decor = getWindow().getDecorView();
+        int leftInset = insets == null ? 0 : Ts18Geometry.residualStartInset(
+                insets.getSystemWindowInsetLeft(), rootWindowLocation[0]);
+        int topInset = insets == null ? 0 : Ts18Geometry.residualStartInset(
+                insets.getSystemWindowInsetTop(), rootWindowLocation[1]);
+        int rightInset = insets == null ? 0 : Ts18Geometry.residualEndInset(
+                insets.getSystemWindowInsetRight(), rootWindowLocation[0], width, decor.getWidth());
+        int bottomInset = insets == null ? 0 : Ts18Geometry.residualEndInset(
+                insets.getSystemWindowInsetBottom(), rootWindowLocation[1], height, decor.getHeight());
+        Ts18Geometry.Inputs inputs = new Ts18Geometry.Inputs(width, height, leftInset, topInset,
+                rightInset, bottomInset, LauncherPrefs.railOnRight(this), LauncherPrefs.radioOnRight(this));
+        if (!geometryChanges.shouldApply(inputs)) return;
+        Ts18Geometry.Layout g = Ts18Geometry.resolve(inputs);
         place(rail, g.railX, g.top, g.railWidth(), g.railHeight());
         place(radioPanel, g.radioX(), g.top, g.radioWidth, g.stripHeight);
         place(musicPanel, g.musicX(), g.top, g.musicWidth, g.stripHeight);

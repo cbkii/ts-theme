@@ -92,9 +92,9 @@ Radio and generic Music remain separate authorities. Transport buttons are never
 
 No readiness/transport path launches a source Activity. Settings exposes **Warm media sources on HOME start**. When enabled, HOME reconciles readiness on start/resume/focus only through passively qualified adapters. Exact stock `com.tw.radio` is existing-session/external-route only because its current APK declares no service component. The launcher creates no MediaSession and never requests audio focus.
 
-A Play/Pause intent is resolved once at tap time and retained through preparation. Duplicate in-flight Play/Pause intents are coalesced under one monotonic deadline. Preparing a new source does not stop the currently working opposite source; the opposite source is paused only after the requested source has acknowledged Play. Failed source switches reconcile the displayed source to actual playback rather than leaving a stale selected-source state. Generic Music retains the visible-only one-second reconciliation fallback proven useful in physical Auxio-TS testing.
+A Play/Pause intent is resolved once at tap time and retained through preparation. Duplicate in-flight Play/Pause intents are coalesced under one monotonic deadline. Preparing a new source does not stop the currently working opposite source; the opposite source is paused only after the requested source has acknowledged Play. Failed source switches reconcile the displayed source to actual playback rather than leaving a stale selected-source state. Generic Music retains the visible-only 15-second defensive reconciliation proven useful in physical Auxio-TS testing.
 
-MediaBrowser-acquired controllers feed the same metadata pipeline as active-session controllers and are deduplicated by real `MediaSession.Token`. Empty/whitespace title/artist fields fall through to valid display title/subtitle values. Identical one-second snapshots do not restart the slow marquee's five-second stationary hold.
+MediaBrowser-acquired controllers feed the same metadata pipeline as active-session controllers and are deduplicated by real `MediaSession.Token`. Empty/whitespace title/artist fields fall through to valid display title/subtitle values. Identical snapshots do not restart the slow marquee's five-second stationary hold.
 
 ## Appearance
 
@@ -159,7 +159,7 @@ Keep DoFun as HOME and test the launcher as an ordinary Activity first. Before b
 12. Run `collect-fast-media-evidence.sh`, `MONO_DRIVE_UX_ACCEPTANCE.md` and `measure-standalone-launcher.sh` where applicable.
 13. Only after ordinary-Activity gates pass continue HOME/reboot/cold-boot/ACC qualification.
 
-NavRadio passive warm-up, a stock TW Radio external control route and any masked Activity fallback remain unqualified until exact physical evidence establishes those contracts. Native Topway radio/music, Bluetooth/projection, reverse-camera behaviour and future windowed navigation remain unclaimed unless separately exercised.
+NavRadio passive warm-up and a stock TW Radio external control route remain unqualified until exact physical evidence establishes those contracts. Source-Activity fallbacks are forbidden for readiness and transport. Native Topway radio/music, Bluetooth/projection, reverse-camera behaviour and future windowed navigation remain unclaimed unless separately exercised.
 
 ## Rollback
 
@@ -168,3 +168,5 @@ DoFun remains installed/enabled throughout qualification. Launcher Settings can 
 ```bash
 bash scripts/termux/install-standalone-launcher.sh --rollback-home
 ```
+
+Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; the visible-only defensive reconciliation interval is 15 seconds. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.

@@ -56,7 +56,7 @@ The APK contains MediaBrowser/MediaSession support-library classes, but library 
 
 ## Auxio-TS and removable storage
 
-Current Auxio-TS repository code exposes `com.tw.media/com.tw.music.MusicService` as an exported `android.media.browse.MediaBrowserService` wrapper around the single Auxio playback authority. The launcher may bounded-root-prime that exact service and then bind the real browser/controller; ordinary binding remains the fallback/control path. The launcher does not scan the music library or own Auxio's queue. Saved-queue/USB restoration remains a player-side physical qualification gate.
+Current Auxio-TS repository code exposes `com.tw.media/com.tw.music.MusicService` as an exported `android.media.browse.MediaBrowserService` wrapper around the single Auxio playback authority. The launcher binds that exact exported browser and uses its source-owned Background Ready/PREPARE path; root service priming is disabled after the observed Android rejection. The launcher does not scan the music library or own Auxio's queue. Saved-queue/USB restoration remains a player-side physical qualification gate.
 
 The launcher Application dynamically observes public removable-media availability. `MEDIA_MOUNTED` may request one debounced, bounded warm of the configured music source only while `LauncherActivity` is resumed and startup warm-up is enabled. It does not scan files, change Auxio source membership, mutate the queue, issue Play or replay an expired HOME command. Unmount/eject/removal refreshes session state and records diagnostics but does not claim the committed Auxio library is invalid. Actual `/storage/usbdiskN` visibility, SAF grants and queue usability remain Auxio/device authority.
 
@@ -64,7 +64,7 @@ The launcher Application dynamically observes public removable-media availabilit
 
 | Source | Passive HOME preparation | Interactive Play preparation | Readiness/control |
 | --- | --- | --- | --- |
-| Auxio-TS `com.tw.media` | permitted: bounded root service prime, then exported MediaBrowser bind | same route, normal bind still works when root fails | bound/exact controller; Play action or playing state required |
+| Auxio-TS `com.tw.media` | exported MediaBrowser bind and canonical Background Ready/PREPARE | same browser/session route; no Activity recovery | bound/exact controller; Play action or playing state required |
 | NavRadio+ `com.navimods.radio` | **off until exact-device non-disruption is proven** | bounded root `am start-foreground-service`, then normal FGS fallback | exact observable MediaSession; Play action or acknowledged playing state |
 | Stock TW Radio `com.tw.radio` | unsupported from the Radio APK | existing exact session only; external Topway route unqualified | no invented service/Activity fallback |
 | Other apps | exported standard MediaBrowser when present | same exported standard interface | actual browser token/controller and advertised actions |
@@ -73,11 +73,11 @@ Root service commands run off the UI thread and target the launcher's current An
 
 ## Masked Activity fallback
 
-The implementation contains no source-Activity fallback in its readiness/transport coordinator. A future masked fallback is capability-gated and currently returns unqualified/off. This is deliberate: repository/static evidence does not prove `TYPE_APPLICATION_OVERLAY` permission/app-op availability, source controllability after Activity loss, navigation handoff serialisation, or OEM reverse-camera/call/SystemUI z-order on this TS18. A denied/missing overlay capability must never degrade into an unmasked launch.
+Readiness and transport contain no source-Activity fallback. Cold startup, dead-controller recovery and explicit Play remain background-only; masked priming is not a future fallback under the current product contract. App/source icons are intentional foreground requests.
 
 ## Metadata/ticker
 
-The shared metadata display remains observation-only. Repeated identical snapshots no longer call `setText()` on unchanged primary/secondary content, so the one-second session reconciliation poll does not continually restart the marquee's five-second hold. `SlowMarqueePolicy` makes the semantic reset/overflow decision directly JVM-testable. The marquee cancels when hidden/detached and restarts after real text/width/visibility changes. Metadata fallback treats empty/whitespace TITLE/ARTIST fields as absent and continues to DISPLAY_TITLE/ALBUM_ARTIST/DISPLAY_SUBTITLE when supplied by the real source.
+The shared metadata display remains observation-only. Repeated identical snapshots no longer call `setText()` on unchanged primary/secondary content, so the 15-second defensive session reconciliation does not continually restart the marquee's five-second hold. `SlowMarqueePolicy` makes the semantic reset/overflow decision directly JVM-testable. The marquee cancels when hidden/detached and restarts after real text/width/visibility changes. Metadata fallback treats empty/whitespace TITLE/ARTIST fields as absent and continues to DISPLAY_TITLE/ALBUM_ARTIST/DISPLAY_SUBTITLE when supplied by the real source.
 
 ## Qualification tools
 
@@ -93,3 +93,5 @@ All output is under `/storage/emulated/0/Download/ts-theme/`.
 Physical audible onset, installed NavRadio service side effects, stock TW Radio cold-control authority and ACC lifecycle are not claimed by repository CI. Treat a failed root/source prerequisite as BLOCKED for dependent tests, not as proof that every downstream media contract failed.
 
 For audible-latency work, use the monotonic `TS18Media` events to measure HOME lifecycle, readiness request, root/browser/service result, exact-session observation, command dispatch, playback acknowledgement and metadata render; record physical audible onset separately by observation. For launcher/process death and notification-listener restart, capture the smallest lifecycle scenario rather than using force-stop as a substitute for ordinary process death.
+
+Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; the visible-only defensive reconciliation interval is 15 seconds. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.

@@ -22,9 +22,8 @@ longer replace normal transport control or the now-playing surface.
   report success without invoking `skipToPrevious()`/`skipToNext()`.
 - Warm interactive Play/Pause uses the existing controller and does not foreground-launch Auxio or
   NavRadio+ as a readiness fallback. A cold explicit Play with no usable controller first uses the
-  MediaController/MediaBrowser/service preparation path; if that still cannot produce a controller,
-  the exact configured Auxio/NavRadio source may use one bounded, masked foreground preparation and
-  return HOME before the pending Play is dispatched.
+  MediaController/MediaBrowser/service preparation path; if that cannot produce a controller,
+  it reports a bounded readiness failure. It never launches a source Activity or masks one.
 - The ticker renders media snapshots only. Launcher readiness messages, command failures and source
   app labels are not now-playing metadata and cannot overwrite it.
 - If a radio notification/session supplies the app label as primary text and useful station/channel

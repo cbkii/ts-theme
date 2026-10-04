@@ -75,8 +75,8 @@ final class MediaSourceAdapter {
             // Exact TS18 evidence showed that root `am startservice` for Auxio reaches
             // ActivityManager but is rejected by Android's background-service policy. Do not
             // repeat that known-ineffective mutation. MediaBrowser binding remains valid when the
-            // source service already exists; genuinely cold readiness is owned by the masked
-            // foreground-prime coordinator instead.
+            // source owns cold Background Ready/PREPARE and playback state; binding never
+            // falls back to an Activity launch.
             return new MediaSourceAdapter(packageName, Kind.MEDIA_BROWSER, browser,
                     MEDIA_BROWSER_ACTION, false, false, true, "");
         }
@@ -110,8 +110,8 @@ final class MediaSourceAdapter {
     }
 
     boolean maskedFallbackQualified() {
-        // No supplied/current exact-device evidence establishes safe cross-app overlay ordering,
-        // source survival after Activity loss, and camera/call window precedence. Keep this off.
+        // Readiness and transport are background-only under the current product contract.
+        // This retained compatibility seam must never enable source-Activity priming.
         return false;
     }
 

@@ -17,6 +17,7 @@ This gate applies to `fix/final-startup-runtime-hardening`. It does **not** clai
 - Confirm HOME remains foreground and usable.
 - Confirm neither `com.tw.media/com.tw.music.MusicActivity` nor the configured radio Activity is foregrounded merely to make media ready.
 - Confirm launcher geometry is stable: no visible repeated resizing/re-layout and no sustained `requestLayout()` warning storm.
+- Toggle rail/radio side preferences, return from Settings, and exercise fullscreen/windowed returns. Confirm placement updates once for changed bounds/insets/preferences and remains stable on unchanged callbacks. Decor-fitted content must not acquire a second top/right inset. Newly enabled experimental map views still require placement.
 - Confirm HOME media controls can observe an existing music/radio MediaSession without waiting for the notification-listener service UI to be opened.
 
 ### B. Navigation task retention

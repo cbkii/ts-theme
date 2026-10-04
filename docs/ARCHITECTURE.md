@@ -77,7 +77,7 @@ The app drawer remains an in-HOME overlay covering only the map surface; map GPS
 
 `MediaListenerService` obtains active Android sessions through notification-listener authority. It follows platform-priority sessions, compares tokens, registers metadata/playback callbacks, excludes the resolved radio package and telecom sessions, and dispatches capability-aware previous/play-pause/next exactly once to one selected controller.
 
-A visible-only one-second reconciliation fallback exists because physical TS18 testing showed callback delivery alone did not update Auxio-TS metadata for every track change. It stops outside the visible launcher lifecycle.
+A visible-only 15-second defensive reconciliation exists because physical TS18 testing showed callback delivery alone did not update Auxio-TS metadata for every track change. It stops outside the visible launcher lifecycle.
 
 `MediaMetadataView` owns the single shared two-level presentation: the selected source's primary title/station uses the bounded-speed five-second-hold marquee, while secondary artist/program/source is static and end-ellipsised. Radio and Music retain separate source/transport controls and dispatch paths; only the group positions swap according to the independent Radio/Music sides preference, preserving Previous -> Play/Pause -> Next order on either side.
 
@@ -138,3 +138,5 @@ CI proves source contracts, colour contrast, empty launcher release-runtime depe
 `docs/MONO_DRIVE_UX_ACCEPTANCE.md` defines the explicit 1280 x 720 emulator matrix and physical TS18 metrics for glance time, target accuracy, tap counts, visible-response latency, common-task completion and comparative CPU/PSS/frame evidence. These qualification procedures do not restrict runtime features to parked state.
 
 Current physical evidence proves the prior build's SystemUI geometry, quick slots/drawer/navigation hand-off, generic Auxio-TS/Spotify MediaSession path and third-party NavRadio+ session behaviour. The current Mono Drive HOME, two-level media cards, independent transport-side preference, Leaflet map, appearance automation, voice search, native Topway music/radio, HOME selection/recovery, Bluetooth/projection, reboot/cold boot and ACC sleep/wake remain exact-device checks. Reverse-camera hand-off/return remains a later roadmapped lifecycle check.
+
+Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; the visible-only defensive reconciliation interval is 15 seconds. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
