@@ -77,7 +77,7 @@ The app drawer remains an in-HOME overlay covering only the map surface; map GPS
 
 `MediaListenerService` obtains active Android sessions through notification-listener authority. It follows platform-priority sessions, compares tokens, registers metadata/playback callbacks, excludes the resolved radio package and telecom sessions, and dispatches capability-aware previous/play-pause/next exactly once to one selected controller.
 
-A event-triggered refresh throttled to a 15-second minimum spacing exists because physical TS18 testing showed callback delivery alone did not update Auxio-TS metadata for every track change. It stops outside the visible launcher lifecycle.
+Earlier TS18 testing justified defensive session queries alongside callbacks. Current code throttles explicit refresh requests to a 15-second minimum spacing; it has no periodic timer. HOME lifecycle and storage events can request refresh, including storage events while HOME is hidden. The current cadence still needs physical qualification.
 
 `MediaMetadataView` owns the single shared two-level presentation: the selected source's primary title/station uses the bounded-speed five-second-hold marquee, while secondary artist/program/source is static and end-ellipsised. Radio and Music retain separate source/transport controls and dispatch paths; only the group positions swap according to the independent Radio/Music sides preference, preserving Previous -> Play/Pause -> Next order on either side.
 
