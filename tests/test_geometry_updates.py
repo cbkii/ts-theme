@@ -57,6 +57,9 @@ class GeometryUpdateTests(unittest.TestCase):
     def setUpClass(cls):
         if shutil.which('java') is None:
             raise unittest.SkipTest('Java unavailable: geometry policy NOT_RUN')
+        modules = subprocess.run(['java', '--list-modules'], capture_output=True, text=True, timeout=5)
+        if modules.returncode != 0 or 'jdk.compiler@' not in modules.stdout:
+            raise unittest.SkipTest('Java compiler module unavailable: geometry policy NOT_RUN')
         cls.temp = tempfile.TemporaryDirectory()
         cls.directory = Path(cls.temp.name)
         harness = cls.directory / 'GeometryHarness.java'

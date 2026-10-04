@@ -160,4 +160,4 @@ The separate **Standalone Launcher Candidate** workflow produces an explicitly v
 
 CI proves source/build/release contracts only. It does not prove physical head-unit behaviour.
 
-Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; the visible-only defensive reconciliation interval is 15 seconds. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
+Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; explicit listener refresh requests have a 15-second minimum spacing; no periodic timer is scheduled and storage events can request refresh while HOME is hidden. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.

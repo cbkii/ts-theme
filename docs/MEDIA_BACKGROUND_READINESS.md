@@ -77,7 +77,7 @@ Readiness and transport contain no source-Activity fallback. Cold startup, dead-
 
 ## Metadata/ticker
 
-The shared metadata display remains observation-only. Repeated identical snapshots no longer call `setText()` on unchanged primary/secondary content, so the 15-second defensive session reconciliation does not continually restart the marquee's five-second hold. `SlowMarqueePolicy` makes the semantic reset/overflow decision directly JVM-testable. The marquee cancels when hidden/detached and restarts after real text/width/visibility changes. Metadata fallback treats empty/whitespace TITLE/ARTIST fields as absent and continues to DISPLAY_TITLE/ALBUM_ARTIST/DISPLAY_SUBTITLE when supplied by the real source.
+The shared metadata display remains observation-only. Repeated identical snapshots no longer call `setText()` on unchanged primary/secondary content, so the throttled event-triggered session refresh does not continually restart the marquee's five-second hold. `SlowMarqueePolicy` makes the semantic reset/overflow decision directly JVM-testable. The marquee cancels when hidden/detached and restarts after real text/width/visibility changes. Metadata fallback treats empty/whitespace TITLE/ARTIST fields as absent and continues to DISPLAY_TITLE/ALBUM_ARTIST/DISPLAY_SUBTITLE when supplied by the real source.
 
 ## Qualification tools
 
@@ -94,4 +94,4 @@ Physical audible onset, installed NavRadio service side effects, stock TW Radio 
 
 For audible-latency work, use the monotonic `TS18Media` events to measure HOME lifecycle, readiness request, root/browser/service result, exact-session observation, command dispatch, playback acknowledgement and metadata render; record physical audible onset separately by observation. For launcher/process death and notification-listener restart, capture the smallest lifecycle scenario rather than using force-stop as a substitute for ordinary process death.
 
-Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; the visible-only defensive reconciliation interval is 15 seconds. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
+Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; explicit listener refresh requests have a 15-second minimum spacing; no periodic timer is scheduled and storage events can request refresh while HOME is hidden. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
