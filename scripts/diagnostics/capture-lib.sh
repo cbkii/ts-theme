@@ -1,7 +1,7 @@
 # Bounded producer primitives for TS18 diagnostics 1.3; sourced, no entry point.
 # BB, SELF, OUT and END are set by the collector. No su or device mutations.
 uptime_s() { read -r up rest < /proc/uptime; printf '%s\n' "${up%%.*}"; }
-ticks() { "$BB" sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | "$BB" awk '$1 != "Z" {print $20}'; }
+ticks() { "$BB" sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | "$BB" awk "\$1 != \"Z\" {print \$20}"; }
 same_process() { [ -n "$2" ] && [ "$(ticks "$1")" = "$2" ]; }
 atomic() { printf '%s\n' "$2" > "$1.new" && "$BB" mv "$1.new" "$1"; }
 event() { printf '%s\t%s\n' "$(uptime_s)" "$*" >> "$OUT/events.tsv"; }
@@ -11,7 +11,7 @@ CAPTURE_UNSAFE=${CAPTURE_UNSAFE:-0}
 # before any external producer command is started. The parent owns termination.
 produce() {
     p_dir=$1; shift
-    p_ids=$("$BB" sed 's/.*) //' /proc/$$/stat 2>/dev/null | "$BB" awk '{print $3, $4}')
+    p_ids=$("$BB" sed 's/.*) //' /proc/$$/stat 2>/dev/null | "$BB" awk "{print \$3, \$4}")
     [ "$p_ids" = "$$ $$" ] || exit 70
     p_ticks=$(ticks "$$")
     [ -n "$p_ticks" ] || exit 70
@@ -28,7 +28,7 @@ capture() {
     c_name=$1; c_secs=$2; c_limit=$3; shift 3
     c_start=$(uptime_s)
     [ "$c_start" -lt "$END" ] || { event "BLOCKED $c_name overall_deadline"; return 1; }
-    c_free=$("$BB" df -Pk "$OUT" 2>/dev/null | "$BB" awk 'END {print $4}')
+    c_free=$("$BB" df -Pk "$OUT" 2>/dev/null | "$BB" awk "END {print \$4}")
     case "$c_free" in ''|*[!0-9]*) event "WARN $c_name free-space UNKNOWN" ;;
         *) [ "$c_free" -ge 262144 ] || { event "BLOCKED $c_name low-private-storage"; return 1; } ;; esac
     c_dir=$OUT/commands/$c_name
