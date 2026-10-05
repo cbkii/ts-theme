@@ -4,6 +4,7 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -12,17 +13,19 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / 'scripts/diagnostics'
+if not TOOLS.is_dir():
+    TOOLS = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('diagnostics', TOOLS / 'analyse.py')
 analyser = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(analyser)
 
 
-def sealed(files):
-    files = dict(files, **{'COMPLETE.txt': b'producer=COMPLETE\n'})
+def sealed(files, complete=b'producer=COMPLETE\n', seal=b'PASS\n'):
+    files = dict(files, **{'COMPLETE.txt': complete})
     files['MANIFEST.sha256'] = ''.join(
         f'{hashlib.sha256(data).hexdigest()}  ./{name}\n'
         for name, data in sorted(files.items())).encode()
-    files['SEALED.txt'] = b'PASS\n'
+    files['SEALED.txt'] = seal
     return files
 
 
@@ -52,15 +55,29 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(result['uid_map'], 'UNKNOWN')
         self.assertEqual(result['uids'], {})
 
-    def test_tampering_unlisted_and_forced_seals_fail(self):
-        for name in ('commands/packages-ready-2/output.txt', 'extra', 'FORCED_STOP.txt'):
+    def test_tampering_and_unlisted_fail(self):
+        for name in ('commands/packages-ready-2/output.txt', 'extra'):
             files = self.sample()
             files[name] = b'tampered'
             result = analyser.analyse(files)
             self.assertEqual(result['integrity'], 'FAIL')
             self.assertEqual(result['uid_map'], 'UNKNOWN')
 
-    def test_tar_rejects_traversal_links_and_duplicate(self):
+    def test_forced_marker_fails_even_when_manifested(self):
+        base = self.sample()
+        base.pop('MANIFEST.sha256')
+        base.pop('SEALED.txt')
+        base['FORCED_STOP.txt'] = b'forced\n'
+        files = sealed(base)
+        result = analyser.analyse(files)
+        self.assertEqual(result['integrity'], 'FAIL')
+        self.assertIn('partial/forced run', result['warnings'])
+
+    def test_invalid_completion_and_seal_sentinels_fail(self):
+        self.assertEqual(analyser.analyse(sealed({}, complete=b'producer=FAIL\n'))['integrity'], 'FAIL')
+        self.assertEqual(analyser.analyse(sealed({}, seal=b'FAIL\n'))['integrity'], 'FAIL')
+
+    def test_tar_rejects_traversal_links_devices_and_duplicate(self):
         for name, kind in [('../bad', tarfile.REGTYPE), ('run/link', tarfile.SYMTYPE),
                            ('run/hard', tarfile.LNKTYPE), ('run/dev', tarfile.CHRTYPE)]:
             with tempfile.TemporaryDirectory() as temp:
@@ -71,6 +88,21 @@ class AnalysisTests(unittest.TestCase):
                     archive.addfile(member, io.BytesIO())
                 with self.assertRaises(ValueError):
                     analyser.load(path)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'duplicate.tar.gz'
+            with tarfile.open(path, 'w:gz') as archive:
+                for payload in (b'a', b'b'):
+                    member = tarfile.TarInfo('run/file'); member.size = len(payload)
+                    archive.addfile(member, io.BytesIO(payload))
+            with self.assertRaisesRegex(ValueError, 'duplicate archive member'):
+                analyser.load(path)
+
+    def test_directory_rejects_fifo(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            os.mkfifo(path / 'pipe')
+            with self.assertRaises(ValueError):
+                analyser.load(path)
 
     def test_expansion_budget(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -86,17 +118,65 @@ class AnalysisTests(unittest.TestCase):
             finally:
                 analyser.MAX_BYTES = old
 
+    def test_numeric_marker_order_and_repeated_phase_occurrences(self):
+        files = {
+            'CONTEXT.txt': b'start_epoch=1000\nstart_uptime=0\n',
+            'marker-a.txt': b'10 AUXIO_PLAY\n',
+            'marker-b.txt': b'2 IDLE\n',
+            'marker-c.txt': b'20 AUXIO_PLAY\n',
+            'commands/live-log/output.txt': (
+                b'1003.0 tag get_presentation_position: Operation not permitted\n'
+                b'1011.0 tag get_presentation_position: Operation not permitted\n'
+                b'1021.0 tag get_presentation_position: Operation not permitted\n'),
+        }
+        result = analyser.analyse(sealed(files))
+        self.assertEqual(result['action_markers_uptime'], ['2 IDLE', '10 AUXIO_PLAY', '20 AUXIO_PLAY'])
+        self.assertIn('AUXIO_PLAY#1', result['audio_observed_rates'])
+        self.assertIn('AUXIO_PLAY#2', result['audio_observed_rates'])
+        self.assertEqual(result['audio_position_lines']['AUXIO_PLAY#1'], 1)
+        self.assertEqual(result['audio_position_lines']['AUXIO_PLAY#2'], 1)
+
+
+class BundleTests(unittest.TestCase):
+    def test_bundle_is_reproducible_and_refuses_input_collision(self):
+        with tempfile.TemporaryDirectory() as temp:
+            fixture = Path(temp) / 'diagnostics'
+            shutil.copytree(TOOLS, fixture)
+            first = Path(temp) / 'one.zip'
+            second = Path(temp) / 'two.zip'
+            for output in (first, second):
+                subprocess.run(['python3', str(fixture / 'build-bundle.py'), str(output)], check=True,
+                               capture_output=True, text=True)
+            self.assertEqual(hashlib.sha256(first.read_bytes()).digest(),
+                             hashlib.sha256(second.read_bytes()).digest())
+            readme = fixture / 'README.md'
+            before = readme.read_bytes()
+            collision = subprocess.run(['python3', str(fixture / 'build-bundle.py'), str(readme)],
+                                       capture_output=True, text=True)
+            self.assertNotEqual(collision.returncode, 0)
+            self.assertEqual(readme.read_bytes(), before)
+
+
+class SyntaxTests(unittest.TestCase):
+    def test_shell_syntax(self):
+        for script in TOOLS.glob('*.sh'):
+            subprocess.run(['sh', '-n', str(script)], check=True)
+
 
 @unittest.skipUnless(int(Path('/proc/self/stat').read_text().split()[0]) == os.getpid(),
                      'Host /proc PID namespace mismatch; run process-group tests in canonical Linux CI')
 class CaptureTests(unittest.TestCase):
     def run_capture(self, command, limit=2048, timeout=2):
+        kill = shutil.which('kill')
+        if kill is None:
+            self.skipTest('host kill utility unavailable')
         with tempfile.TemporaryDirectory() as temp:
             p = Path(temp)
             bb = p / 'bb'
-            bb.write_text('#!/bin/sh\nif [ "$1" = kill ]; then shift; exec /bin/kill "$1" -- "$2"; fi\nexec "$@"\n'); bb.chmod(0o700)
-            # Production uses BusyBox ash; this host adapter only emulates argv
-            # dispatch. It does not claim BusyBox/kernel/API29 compatibility.
+            bb.write_text(f'''#!/bin/sh
+if [ "$1" = kill ]; then shift; exec "{kill}" "$1" -- "$2"; fi
+exec "$@"
+'''); bb.chmod(0o700)
             lib = TOOLS / 'capture-lib.sh'
             entry = p / 'entry'
             entry.write_text(f'#!/bin/sh\nBB="{bb}"\n. "{lib}"\nshift\nproduce "$@"\n')
@@ -137,7 +217,3 @@ seal
         self.assertLess(elapsed, 6)
         self.assertEqual(len(files['commands/sample/output.txt']), 1024)
         self.assertEqual(analyser.metadata(files['commands/sample/meta.txt'])['result'], 'WARN_TRUNCATED')
-
-    def test_shell_syntax(self):
-        for script in TOOLS.glob('*.sh'):
-            subprocess.run(['sh', '-n', str(script)], check=True)
