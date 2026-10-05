@@ -12,6 +12,10 @@ args = parser.parse_args()
 root = Path(__file__).resolve().parent
 names = ('ts18-startup-1.3.sh', 'capture-lib.sh', 'install.sh', 'analyse.py',
          'README.md', 'QUALIFICATION.md')
+input_paths = {(root / name).resolve() for name in names}
+output = args.output.resolve()
+if output in input_paths:
+    parser.error('output must not replace a bundle input')
 files = {name: (root / name).read_bytes() for name in names}
 files['example-partial.json'] = (json.dumps({
     'example': 'SYNTHETIC, not device evidence',
@@ -27,10 +31,12 @@ files['example-partial.json'] = (json.dumps({
 }, indent=2) + '\n').encode()
 files['SHA256SUMS'] = ''.join(f'{hashlib.sha256(data).hexdigest()}  {name}\n'
                             for name, data in sorted(files.items())).encode()
-args.output.parent.mkdir(parents=True, exist_ok=True)
-with zipfile.ZipFile(args.output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+output.parent.mkdir(parents=True, exist_ok=True)
+with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_STORED) as archive:
     for name, data in sorted(files.items()):
         item = zipfile.ZipInfo('TS18-diagnostics-1.3/' + name)
+        item.date_time = (1980, 1, 1, 0, 0, 0)
+        item.create_system = 3
         item.external_attr = 0o100600 << 16
-        archive.writestr(item, data, compress_type=zipfile.ZIP_DEFLATED)
-print(hashlib.sha256(args.output.read_bytes()).hexdigest(), args.output)
+        archive.writestr(item, data, compress_type=zipfile.ZIP_STORED)
+print(hashlib.sha256(output.read_bytes()).hexdigest(), output)
