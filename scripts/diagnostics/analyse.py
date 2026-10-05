@@ -13,28 +13,30 @@ import tarfile
 MAX_BYTES = 128 * 1024 * 1024
 MAX_FILES = 4096
 
+
 def safe_name(name):
     p = PurePosixPath(name)
     if p.is_absolute() or '..' in p.parts or '\\' in name:
         raise ValueError('unsafe archive/manifest path')
     return str(p)
 
+
 def load(path):
     files = {}
     total = 0
     if path.is_dir():
-        entries = path.rglob('*')
-        for entry in entries:
+        for entry in path.rglob('*'):
             if entry.is_symlink():
                 raise ValueError('symlinks are not evidence files')
-            if not entry.is_file():
+            if entry.is_dir():
                 continue
+            if not entry.is_file():
+                raise ValueError('links/devices/sockets/fifos are not evidence files')
             total += entry.stat().st_size
             if total > MAX_BYTES or len(files) >= MAX_FILES:
                 raise ValueError('evidence size/file limit exceeded')
             files[entry.relative_to(path).as_posix()] = entry.read_bytes()
     else:
-        # Consume gzip trailer (CRC), bounded before parsing untrusted headers.
         with gzip.open(path, 'rb') as compressed:
             limit = MAX_BYTES + MAX_FILES * 1024
             raw = compressed.read(limit + 1)
@@ -64,17 +66,32 @@ def load(path):
                 if relative in files:
                     raise ValueError('duplicate archive member')
                 stream = archive.extractfile(member)
+                if stream is None:
+                    raise ValueError('unreadable archive member')
                 files[relative] = stream.read(member.size + 1)
                 if len(files[relative]) != member.size:
                     raise ValueError('short archive member')
     return files
 
+
 def metadata(raw):
     return dict(line.split('=', 1) for line in raw.decode(errors='replace').splitlines() if '=' in line)
+
+
+def marker_tuple(raw):
+    parts = raw.strip().split(maxsplit=1)
+    if len(parts) != 2:
+        return None
+    try:
+        return float(parts[0]), parts[1]
+    except ValueError:
+        return None
+
 
 def analyse(files):
     def text(name):
         return files.get(name, b'').decode(errors='replace')
+
     result = {'integrity': 'UNKNOWN', 'qualification': 'NOT_RUN', 'warnings': [],
               'uid_map': 'UNKNOWN', 'uids': {}, 'remount_starts': {},
               'remount_unclassified_lines': 0, 'caller': 'UNKNOWN (target UID is not caller)',
@@ -96,12 +113,17 @@ def analyse(files):
             raise ValueError('unmanifested evidence')
         if 'SEALED.txt' not in files or 'COMPLETE.txt' not in listed:
             raise ValueError('missing completion/seal')
+        if metadata(files['COMPLETE.txt']).get('producer') != 'COMPLETE':
+            raise ValueError('invalid completion sentinel')
+        if not text('SEALED.txt').strip().startswith('PASS'):
+            raise ValueError('invalid seal sentinel')
         if any(x in files for x in ('FORCED_STOP.txt', 'UNSEALED.txt')):
             raise ValueError('partial/forced run')
         result['integrity'] = 'PASS'
-    except ValueError as exc:
+    except (ValueError, KeyError) as exc:
         result['integrity'] = 'FAIL'
         result['warnings'].append(str(exc))
+
     commands = {name[:-9]: metadata(raw) for name, raw in files.items() if name.endswith('/meta.txt')}
     result['producer_results'] = dict(Counter(x.get('result', 'UNKNOWN') for x in commands.values()))
     source = text('UID_MAP_SOURCE.txt').strip()
@@ -114,42 +136,53 @@ def analyse(files):
             result['uid_map'] = 'PASS'
             for uid in ('10148', '10186'):
                 result['uids'][uid] = sorted(set(mapping.get(uid, []))) or ['UNMAPPED in successful live map']
-    # Only live stream: history overlaps it. END must never count as another start.
+
     counts = Counter()
-    audio = Counter()
     markers = []
+    phases = []
     for name in files:
         if name.startswith('marker-'):
-            markers.append(text(name).strip())
-    result['action_markers_uptime'] = sorted(markers)
+            raw = text(name).strip()
+            parsed = marker_tuple(raw)
+            if parsed is not None:
+                markers.append((parsed[0], raw))
+                phases.append(parsed)
+            else:
+                result['warnings'].append('ignored malformed marker: ' + name)
+    markers.sort(key=lambda item: item[0])
+    result['action_markers_uptime'] = [raw for _, raw in markers]
+    phases.sort(key=lambda item: item[0])
+
+    label_seen = Counter()
+    phase_records = []
+    for start, label in phases:
+        label_seen[label] += 1
+        key = f'{label}#{label_seen[label]}'
+        phase_records.append((start, label, key))
+
     context = metadata(files.get('CONTEXT.txt', b''))
     epoch_offset = None
     try:
         epoch_offset = float(context['start_epoch']) - float(context['start_uptime'])
     except (KeyError, ValueError):
         pass
-    phases = []
-    for marker in markers:
-        parts = marker.split(maxsplit=1)
-        if len(parts) == 2:
-            try:
-                phases.append((float(parts[0]), parts[1]))
-            except ValueError:
-                pass
-    phases.sort()
+
+    audio = Counter()
     suppressed = Counter()
     last_uptime = None
     for line in text('commands/live-log/output.txt').splitlines():
-        phase = 'UNMARKED'
+        phase_key = 'UNMARKED#1'
         epoch = re.match(r'\s*(\d+\.\d+)\s', line)
         if epoch and epoch_offset is not None:
             current = float(epoch.group(1)) - epoch_offset
             last_uptime = current
-            for start, label in phases:
+            for start, _label, key in phase_records:
                 if current >= start:
-                    phase = label
+                    phase_key = key
+                else:
+                    break
         if 'chatty' in line:
-            suppressed[phase] += 1
+            suppressed[phase_key] += 1
         if 'remountUidExternalStorage' in line:
             uid = re.search(r'\buid[= :]+(\d+)', line)
             if uid and (re.search(r'\bSTART\b', line, re.I) or re.search(r'Cmd send remountUidExternalStorage uid \d+', line)):
@@ -157,22 +190,28 @@ def analyse(files):
             elif not re.search(r'\bEND\b', line, re.I):
                 result['remount_unclassified_lines'] += 1
         if 'get_presentation_position: Operation not permitted' in line:
-            audio[phase] += 1
+            audio[phase_key] += 1
+
     result['remount_starts'] = dict(counts)
     result['audio_position_lines'] = dict(audio)
     result['chatty_lines'] = dict(suppressed)
     result['audio_observed_rates'] = {}
-    for i, (start, label) in enumerate(phases):
-        end = phases[i + 1][0] if i + 1 < len(phases) else last_uptime
+    for i, (start, label, key) in enumerate(phase_records):
+        end = phase_records[i + 1][0] if i + 1 < len(phase_records) else last_uptime
         if end is not None and end > start:
-            result['audio_observed_rates'][label] = {'seconds': round(end - start, 3),
-                'lines_per_second_lower_bound': round(audio[label] / (end - start), 3),
-                'chatty_lines': suppressed[label]}
+            result['audio_observed_rates'][key] = {
+                'label': label,
+                'occurrence': int(key.rsplit('#', 1)[1]),
+                'seconds': round(end - start, 3),
+                'lines_per_second_lower_bound': round(audio[key] / (end - start), 3),
+                'chatty_lines': suppressed[key],
+            }
 
     result['warnings'].append('Log suppression/chatty and capture truncation can undercount; lines are not unsuppressed event rates. Correlate epoch logs with uptime/UTC context and manual action markers.')
     if result['integrity'] != 'PASS':
         result['warnings'].append('Counts are partial/untrusted; no absence or attribution conclusions allowed.')
     return result
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -189,6 +228,7 @@ def main():
     else:
         print(rendered, end='')
     return 0 if result['integrity'] == 'PASS' else 1
+
 
 if __name__ == '__main__':
     raise SystemExit(main())
