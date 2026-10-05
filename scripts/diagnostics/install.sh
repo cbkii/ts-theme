@@ -10,7 +10,9 @@ BB=/data/adb/magisk/busybox
 shift
 SRC=$("$BB" dirname "$("$BB" readlink -f "$0")")
 DEST=/data/adb/ts18-diagnostics-toolkit
-# Validate entire bundle against the independently compared SHA256SUMS first.
+SERVICE=/data/adb/service.d
+ENTRY=$SERVICE/76-ts18-startup-1.3.sh
+STAGE=/data/adb/ts18-diagnostics-toolkit.stage-$$
 (cd "$SRC" && "$BB" sha256sum -c SHA256SUMS) || exit 1
 for old in "$@"; do
     case "$old" in
@@ -19,35 +21,68 @@ for old in "$@"; do
     esac
     case "$old" in *..*|*' '*|*'
 '*) exit 1 ;; esac
-    [ "${old%/*}" = /data/adb/service.d ] || exit 1
+    [ "${old%/*}" = "$SERVICE" ] || exit 1
     [ -f "$old" ] && [ ! -L "$old" ] || exit 1
 done
-# Every recognised prior boot entry must be explicitly selected for backup.
-for existing in /data/adb/service.d/*ts18*startup*.sh /data/adb/service.d/*ts18*deepdiag*.sh; do
+for existing in "$SERVICE"/*ts18*startup*.sh "$SERVICE"/*ts18*deepdiag*.sh; do
     [ -f "$existing" ] || continue
     selected=0
     for old in "$@"; do [ "$old" = "$existing" ] && selected=1; done
     [ "$selected" = 1 ] || { echo "BLOCKED: also select prior entry $existing"; exit 1; }
 done
-# Refuse all active/stale locks until the operator inspects/finishes their run.
 for lock in /data/adb/ts18-startup-logs/active /data/adb/ts18-deepdiag-v3/worker.lock /data/adb/ts18-startup-logs-1.3/active; do
     [ ! -e "$lock" ] || { echo "BLOCKED: inspect/stop existing collector: $lock"; exit 1; }
 done
 [ ! -e "$DEST" ] || { echo 'BLOCKED: existing toolkit; back up and review upgrade explicitly'; exit 1; }
-BACKUP=/data/adb/ts18-diagnostics-backup-$("$BB" date -u +%Y%m%dT%H%M%SZ)
-"$BB" mkdir -m 700 "$BACKUP" "$DEST" || exit 1
-"$BB" chown 0:0 "$BACKUP" "$DEST" || exit 1
+[ ! -e "$ENTRY" ] || { echo "BLOCKED: target boot entry already exists: $ENTRY"; exit 1; }
+[ ! -e "$STAGE" ] || { echo "BLOCKED: stale installer stage: $STAGE"; exit 1; }
+
+service_created=0
+if [ ! -d "$SERVICE" ]; then
+    "$BB" mkdir -m 700 "$SERVICE" || exit 1
+    "$BB" chown 0:0 "$SERVICE" || exit 1
+    service_created=1
+fi
+BACKUP=/data/adb/ts18-diagnostics-backup-$("$BB" date -u +%Y%m%dT%H%M%SZ)-p$$
+"$BB" mkdir -m 700 "$BACKUP" "$STAGE" || exit 1
+"$BB" chown 0:0 "$BACKUP" "$STAGE" || exit 1
+printf 'state=STAGING\nservice_created=%s\n' "$service_created" > "$BACKUP/TRANSACTION.txt"
+
 for file in ts18-startup-1.3.sh capture-lib.sh; do
-    "$BB" cp "$SRC/$file" "$DEST/$file" && "$BB" chown 0:0 "$DEST/$file" && "$BB" chmod 700 "$DEST/$file" || exit 1
-    [ "$("$BB" sha256sum "$SRC/$file" | "$BB" cut -d ' ' -f 1)" = "$("$BB" sha256sum "$DEST/$file" | "$BB" cut -d ' ' -f 1)" ] || exit 1
+    "$BB" cp "$SRC/$file" "$STAGE/$file" && "$BB" chown 0:0 "$STAGE/$file" && "$BB" chmod 700 "$STAGE/$file" || exit 1
+    [ "$("$BB" sha256sum "$SRC/$file" | "$BB" cut -d ' ' -f 1)" = "$("$BB" sha256sum "$STAGE/$file" | "$BB" cut -d ' ' -f 1)" ] || exit 1
 done
-# Move only explicitly selected older entry points. Preserve bytes and metadata.
+printf '#!/system/bin/sh\nexec /system/bin/sh /data/adb/ts18-diagnostics-toolkit/ts18-startup-1.3.sh --start forensic 180\n' > "$STAGE/boot-entry.new" || exit 1
+"$BB" chown 0:0 "$STAGE/boot-entry.new" && "$BB" chmod 700 "$STAGE/boot-entry.new" || exit 1
+
+rollback() {
+    trap - HUP INT TERM
+    rollback_ok=1
+    if [ -e "$ENTRY" ]; then "$BB" mv "$ENTRY" "$BACKUP/new-entry.failed" || rollback_ok=0; fi
+    for restore in "$@"; do
+        saved=$BACKUP/${restore##*/}
+        if [ -e "$saved" ] && [ ! -e "$restore" ]; then "$BB" mv "$saved" "$restore" || rollback_ok=0; fi
+    done
+    if [ -d "$DEST" ]; then "$BB" mv "$DEST" "$BACKUP/toolkit.failed" || rollback_ok=0; fi
+    if [ -d "$STAGE" ]; then "$BB" mv "$STAGE" "$BACKUP/stage.failed" || rollback_ok=0; fi
+    if [ "$rollback_ok" = 1 ]; then
+        printf 'state=ROLLED_BACK\n' > "$BACKUP/TRANSACTION.txt"
+        echo "BLOCKED: install failed and prior boot entries were restored; inspect $BACKUP"
+    else
+        printf 'state=RECOVERY_REQUIRED\n' > "$BACKUP/TRANSACTION.txt"
+        echo "BLOCKED: install failed and automatic rollback was incomplete; do not reboot; inspect $BACKUP, $SERVICE and $DEST"
+    fi
+    exit 1
+}
+trap 'rollback "$@"' HUP INT TERM
+
+"$BB" mv "$STAGE" "$DEST" || rollback "$@"
+"$BB" mv "$DEST/boot-entry.new" "$ENTRY" || rollback "$@"
+printf 'state=NEW_ENTRY_INSTALLED\n' > "$BACKUP/TRANSACTION.txt"
 for old in "$@"; do
-    "$BB" mv "$old" "$BACKUP/" || exit 1
+    "$BB" mv "$old" "$BACKUP/" || rollback "$@"
 done
-entry=/data/adb/service.d/76-ts18-startup-1.3.sh
-[ ! -e "$entry" ] || exit 1
-printf '#!/system/bin/sh\nexec /system/bin/sh /data/adb/ts18-diagnostics-toolkit/ts18-startup-1.3.sh --start forensic 180\n' > "$DEST/boot-entry.new" || exit 1
-"$BB" chown 0:0 "$DEST/boot-entry.new" && "$BB" chmod 700 "$DEST/boot-entry.new" && "$BB" mv "$DEST/boot-entry.new" "$entry" || exit 1
+trap - HUP INT TERM
+printf 'state=PASS\nentry=%s\ntoolkit=%s\n' "$ENTRY" "$DEST" > "$BACKUP/TRANSACTION.txt"
 echo "PASS installed; older scripts retained in $BACKUP. No reboot/capture performed."
 echo 'Review README rollback and --status before starting.'
