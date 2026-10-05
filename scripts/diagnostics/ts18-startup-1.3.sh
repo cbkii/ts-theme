@@ -9,6 +9,7 @@ BB=/data/adb/magisk/busybox
 [ -x "$BB" ] || { echo 'BLOCKED: Magisk BusyBox required'; exit 1; }
 SELF=$("$BB" readlink -f "$0") || exit 1
 BASE=${SELF%/*}
+# shellcheck source=capture-lib.sh
 . "$BASE/capture-lib.sh" || exit 1
 STATE=/data/adb/ts18-startup-logs-1.3
 EXPORT=/storage/emulated/0/Download/TS18-startup-logs
@@ -157,13 +158,13 @@ case "${1:---start}" in
     read -r OUT < "$LOCK/output"
     atomic "$OUT/marker-$(uptime_s)-$$.txt" "$(uptime_s) $2"
     mark_rc=$?; "$BB" rmdir "$LOCK/control"; exit "$mark_rc" ;;
- --start) MODE=${2:-forensic}; SECONDS=${3:-180} ;;
- --worker) MODE=$2; SECONDS=$3 ;;
+ --start) MODE=${2:-forensic}; DURATION=${3:-180} ;;
+ --worker) MODE=$2; DURATION=$3 ;;
  *) echo 'Unknown command; --help'; exit 64 ;;
 esac
 case "$MODE" in forensic|performance) ;; *) exit 64 ;; esac
-case "$SECONDS" in ''|*[!0-9]*) exit 64 ;; esac
-[ "$SECONDS" -ge 30 ] && [ "$SECONDS" -le 300 ] || exit 64
+case "$DURATION" in ''|*[!0-9]*) exit 64 ;; esac
+[ "$DURATION" -ge 30 ] && [ "$DURATION" -le 300 ] || exit 64
 
 if [ "${1:---start}" != --worker ]; then
     for legacy in /data/adb/ts18-startup-logs/active/worker /data/adb/ts18-deepdiag-v3/worker.lock/pid; do
@@ -179,7 +180,7 @@ if [ "${1:---start}" != --worker ]; then
     "$BB" mkdir -p "$STATE/runs" || exit 1
     "$BB" chmod 700 "$STATE" "$STATE/runs" || exit 1
     "$BB" mkdir "$LOCK" 2>/dev/null || { echo 'BLOCKED: active/stale lock; use --status'; exit 1; }
-    "$BB" setsid "$BB" sh "$SELF" --worker "$MODE" "$SECONDS" </dev/null > "$STATE/launcher.txt" 2>&1 &
+    "$BB" setsid "$BB" sh "$SELF" --worker "$MODE" "$DURATION" </dev/null > "$STATE/launcher.txt" 2>&1 &
     echo 'Dispatched; --status and COMPLETE.txt report producer state independently of outer su exit.'
     exit 0
 fi
@@ -188,7 +189,7 @@ START=$(uptime_s); END=$((START + 600))
 RUN=$("$BB" date -u +%Y%m%dT%H%M%SZ)-p$$
 OUT=$STATE/runs/$RUN
 "$BB" mkdir -p "$OUT/commands" || exit 1
-worker_ids=$("$BB" sed 's/.*) //' /proc/$$/stat | "$BB" awk '{print $3, $4}')
+worker_ids=$("$BB" sed 's/.*) //' /proc/$$/stat | "$BB" awk "{print \$3, \$4}")
 if [ "$worker_ids" != "$$ $$" ]; then
     echo 'BLOCKED: isolated worker identity unavailable; no capture started' > "$OUT/BLOCKED.txt"
     atomic "$STATE/latest" "$OUT"
@@ -220,10 +221,10 @@ cap fingerprint "$NATIVE/getprop" ro.build.fingerprint
 cap history "$NATIVE/logcat" -d -b all -t 2000 -v epoch
 cap packages-early "$NATIVE/pm" list packages -U
 for pkg in $PACKAGES; do cap "appops-before-$pkg" "$NATIVE/cmd" appops get "$pkg"; done
-event "PHASE measurement-start mode=$MODE seconds=$SECONDS"
-MEASURE_END=$(( $(uptime_s) + SECONDS ))
+event "PHASE measurement-start mode=$MODE seconds=$DURATION"
+MEASURE_END=$(( $(uptime_s) + DURATION ))
 if [ ! -f "$LOCK/STOP" ]; then
-    (capture live-log "$SECONDS" 16777216 "$NATIVE/logcat" -b all -v epoch -T 1) & LOG_JOB=$!
+    (capture live-log "$DURATION" 16777216 "$NATIVE/logcat" -b all -v epoch -T 1) & LOG_JOB=$!
 else
     LOG_JOB=
 fi
