@@ -15,17 +15,34 @@ EXPORT=/storage/emulated/0/Download/TS18-startup-logs
 NATIVE=/system/bin
 PACKAGES='com.cbkii.ts18launcher app.organicmaps.incar com.tw.media com.navimods.radio com.dofun.variety com.tw.radio com.tw.music com.tw.core com.google.android.gms com.google.android.gsf'
 
-# Child producers only emit evidence; no settings, services or playback writes.
 case "${1:-}" in
  --produce) shift; produce "$@"; exit ;;
  --watchdog)
     w_pid=$2; w_ticks=$3; w_end=$4; w_out=$5
-    while same_process "$w_pid" "$w_ticks"; do
+    while :; do
+        if ! same_process "$w_pid" "$w_ticks"; then
+            for owner in "$w_out"/commands/*/owner; do
+                [ -r "$owner" ] || continue
+                read -r owned_pid owned_ticks < "$owner"
+                same_process "$owned_pid" "$owned_ticks" && "$BB" kill -KILL "-$owned_pid" 2>/dev/null
+            done
+            for reader_owner in "$w_out"/commands/*/reader-owner; do
+                [ -r "$reader_owner" ] || continue
+                read -r reader_pid reader_ticks < "$reader_owner"
+                same_process "$reader_pid" "$reader_ticks" && "$BB" kill -KILL "$reader_pid" 2>/dev/null
+            done
+            exit 0
+        fi
         if [ "$(uptime_s)" -ge "$w_end" ]; then
             for owner in "$w_out"/commands/*/owner; do
                 [ -r "$owner" ] || continue
                 read -r owned_pid owned_ticks < "$owner"
                 same_process "$owned_pid" "$owned_ticks" && "$BB" kill -KILL "-$owned_pid" 2>/dev/null
+            done
+            for reader_owner in "$w_out"/commands/*/reader-owner; do
+                [ -r "$reader_owner" ] || continue
+                read -r reader_pid reader_ticks < "$reader_owner"
+                same_process "$reader_pid" "$reader_ticks" && "$BB" kill -KILL "$reader_pid" 2>/dev/null
             done
             "$BB" kill -KILL "-$w_pid" 2>/dev/null
             "$BB" sleep 1
@@ -34,8 +51,7 @@ case "${1:-}" in
             exit 1
         fi
         "$BB" sleep 1
-    done
-    exit 0 ;;
+    done ;;
  --sample)
     [ -n "${2:-}" ] && { echo 'OBSERVER worker proc stat (ticks, not percent)'; "$BB" cat "/proc/$2/stat"; }
     printf 'uptime=%s\n' "$(uptime_s)"
@@ -47,7 +63,7 @@ case "${1:-}" in
         [ -r "$p/cmdline" ] || continue
         name=$("$BB" tr '\000' '\n' < "$p/cmdline" 2>/dev/null | "$BB" head -n 1)
         case "$name" in
-          com.google.android.gms*|com.google.android.gsf*|com.cbkii.ts18launcher*|app.organicmaps.incar*|com.tw.media*|com.navimods.radio*|com.tw.core*|*ts18-startup-1.3*)
+          com.google.android.gms*|com.google.android.gsf*|com.cbkii.ts18launcher*|app.organicmaps.incar*|com.tw.media*|com.navimods.radio*|com.dofun.variety*|com.tw.radio*|com.tw.music*|com.tw.core*|*ts18-startup-1.3*)
             printf '\nPROCESS %s %s\n' "${p##*/}" "$name"
             "$BB" cat "$p/stat" "$p/status" "$p/io" 2>/dev/null
             ;;
@@ -65,7 +81,6 @@ case "${1:-}" in
     done
     exit 0 ;;
  --inventory)
-    # Metadata plus hashes only. Never copy module configs or raw shell lines.
     for f in "$SELF" "$BASE/capture-lib.sh" /data/adb/service.d/* /data/adb/post-fs-data.d/* /data/adb/modules/*/module.prop /data/adb/modules/*/service.sh /data/adb/modules/*/post-fs-data.sh /data/adb/modules/*/*.conf /data/adb/modules/*/*.json; do
         [ -f "$f" ] || continue
         "$BB" stat -c '%u:%g %a %s %n' "$f"
@@ -87,12 +102,12 @@ case "${1:-}" in
     pkg=$2
     paths=$("$NATIVE/pm" path "$pkg") || exit $?
     printf '%s\n' "$paths"
+    printf '%s\n' "$paths" | "$BB" grep -q '^package:/' || { echo 'apk_paths=UNKNOWN'; exit 1; }
     printf '%s\n' "$paths" | while IFS= read -r line; do
         case "$line" in package:/*) apk=${line#package:} ;; *) continue ;; esac
         "$BB" sha256sum "$apk" || exit 1
         "$BB" ls -l "${apk%/*}"/oat/*/* 2>/dev/null || true
-        # Only known embedded build metadata, never arbitrary APK content.
-        echo "embedded_revision=UNKNOWN unless reported by a known metadata asset below"
+        echo 'embedded_revision=UNKNOWN unless reported by a known metadata asset below'
         for entry in assets/BUILD_INFO.txt assets/build-info.properties; do
             "$BB" unzip -p "$apk" "$entry" 2>/dev/null || true
         done
@@ -105,13 +120,13 @@ case "${1:-}" in
     exit $? ;;
  --help|-h)
     echo 'Usage: ts18-startup-1.3.sh --start [forensic|performance] [30..300] | --status | --stop | --mark LABEL'
+    echo 'Labels: IDLE, AUXIO_PLAY, AUXIO_PAUSE, NAVRADIO_PLAY, NAVRADIO_PAUSE.'
     echo 'Default boot entry: forensic 180. Capture budget 600 seconds, hard deadline 700 seconds; no automatic device mutation.'
     exit 0 ;;
 esac
 
 uid=$("$BB" id -u)
 if [ "$uid" != 0 ]; then
-    # Preserve useful ordinary-context evidence without pretending root worked.
     STATE=${TMPDIR:-/data/local/tmp}/ts18-startup-logs-1.3-uid$uid
 fi
 case "$STATE" in /*) ;; *) echo 'BLOCKED: private state path unavailable'; exit 1 ;; esac
@@ -121,19 +136,22 @@ case "${1:---start}" in
     if [ -r "$LOCK/owner" ]; then
         read -r pid identity < "$LOCK/owner"
         if same_process "$pid" "$identity"; then echo "RUNNING pid=$pid"; else echo 'WARN stale lock; preserve evidence and inspect before manual recovery'; fi
+    elif [ -d "$LOCK" ]; then echo 'STARTING or stale lock; inspect before recovery'
     else echo INACTIVE; fi
     if [ -r "$STATE/latest" ]; then read -r latest < "$STATE/latest"; echo "latest=$latest"; "$BB" cat "$latest/COMPLETE.txt" "$latest/SEALED.txt" 2>/dev/null; fi
     exit 0 ;;
  --stop)
-    [ -r "$LOCK/owner" ] || { echo INACTIVE; exit 0; }
+    [ -d "$LOCK" ] || { echo INACTIVE; exit 0; }
+    if [ ! -r "$LOCK/owner" ]; then
+        : > "$LOCK/STOP"; echo 'Stop requested during startup; worker will observe it.'; exit 0
+    fi
     read -r pid identity < "$LOCK/owner"
     same_process "$pid" "$identity" || { echo 'WARN stale lock'; exit 1; }
     : > "$LOCK/STOP"; echo 'Stop requested; bounded producers will finish and seal.'; exit 0 ;;
  --mark)
     [ $# = 2 ] || exit 64
-    case "$2" in ''|*[!A-Za-z0-9_.:-]*) echo 'Use a short non-sensitive label'; exit 64 ;; esac
-    [ ${#2} -le 96 ] || exit 64
-    # Marker writes hold an exclusive control directory, also taken at sealing.
+    case "$2" in IDLE|AUXIO_PLAY|AUXIO_PAUSE|NAVRADIO_PLAY|NAVRADIO_PAUSE) ;;
+      *) echo 'Use one of: IDLE AUXIO_PLAY AUXIO_PAUSE NAVRADIO_PLAY NAVRADIO_PAUSE'; exit 64 ;; esac
     "$BB" mkdir "$LOCK/control" 2>/dev/null || { echo 'BLOCKED: inactive/busy'; exit 1; }
     if [ -f "$LOCK/FINISHING" ] || [ ! -r "$LOCK/output" ]; then "$BB" rmdir "$LOCK/control"; exit 1; fi
     read -r OUT < "$LOCK/output"
@@ -148,16 +166,18 @@ case "$SECONDS" in ''|*[!0-9]*) exit 64 ;; esac
 [ "$SECONDS" -ge 30 ] && [ "$SECONDS" -le 300 ] || exit 64
 
 if [ "${1:---start}" != --worker ]; then
-    # Refuse to compete with a running historical collector, including same boot.
     for legacy in /data/adb/ts18-startup-logs/active/worker /data/adb/ts18-deepdiag-v3/worker.lock/pid; do
         if [ -r "$legacy" ]; then
             read -r oldpid oldticks < "$legacy"
-            if "$BB" kill -0 "$oldpid" 2>/dev/null; then echo "BLOCKED: older collector may be running ($legacy)"; exit 1; fi
+            if [ -n "$oldticks" ]; then
+                same_process "$oldpid" "$oldticks" && { echo "BLOCKED: older collector is running ($legacy)"; exit 1; }
+            elif "$BB" kill -0 "$oldpid" 2>/dev/null; then
+                echo "BLOCKED: older collector may be running without start identity ($legacy)"; exit 1
+            fi
         fi
     done
     "$BB" mkdir -p "$STATE/runs" || exit 1
     "$BB" chmod 700 "$STATE" "$STATE/runs" || exit 1
-    # Never auto-reclaim a stale lock: fail closed rather than race another start.
     "$BB" mkdir "$LOCK" 2>/dev/null || { echo 'BLOCKED: active/stale lock; use --status'; exit 1; }
     "$BB" setsid "$BB" sh "$SELF" --worker "$MODE" "$SECONDS" </dev/null > "$STATE/launcher.txt" 2>&1 &
     echo 'Dispatched; --status and COMPLETE.txt report producer state independently of outer su exit.'
@@ -174,20 +194,25 @@ if [ "$worker_ids" != "$$ $$" ]; then
     atomic "$STATE/latest" "$OUT"
     exit 1
 fi
-atomic "$LOCK/owner" "$$ $(ticks "$$")" || exit 1
+worker_ticks=$(ticks "$$")
+[ -n "$worker_ticks" ] || { echo 'BLOCKED: worker start identity unavailable' > "$OUT/BLOCKED.txt"; exit 1; }
+atomic "$LOCK/owner" "$$ $worker_ticks" || exit 1
 atomic "$LOCK/output" "$OUT" || exit 1
 atomic "$STATE/latest" "$OUT" || exit 1
-"$BB" setsid "$BB" sh "$SELF" --watchdog "$$" "$(ticks "$$")" "$((START + 700))" "$OUT" </dev/null >/dev/null 2>&1 &
+"$BB" setsid "$BB" sh "$SELF" --watchdog "$$" "$worker_ticks" "$((START + 700))" "$OUT" </dev/null >/dev/null 2>&1 &
 trap ': > "$LOCK/STOP"' INT TERM HUP
 {
     echo 'collector=1.3.0'; echo "start_epoch=$($BB date +%s)"; echo "mode=$MODE"; echo "start_uptime=$START"; echo "PATH=$PATH"
     "$BB" id; "$BB" cat /proc/self/attr/current /proc/sys/kernel/random/boot_id
     "$BB" readlink /proc/self/ns/mnt /proc/1/ns/mnt
     echo 'mount visibility=observed namespace only; UID0 is not platform/ADB authority'
-    [ "$uid" = 0 ] || echo 'WARN root admission mismatch; private producers BLOCKED; read-only partial capture retained'
+    [ "$uid" = 0 ] || echo 'WARN root admission mismatch; root-only persistent inventory BLOCKED; ordinary-context read-only capture retained'
 } > "$OUT/CONTEXT.txt" 2>&1
-# Use POSIX shifting (Android mksh and BusyBox ash); no Termux interpreter needed.
-cap() { name=$1; shift; capture "$name" 6 524288 "$@"; }
+cap() {
+    name=$1; shift
+    if [ -f "$LOCK/STOP" ]; then event "BLOCKED $name stop-requested"; return 1; fi
+    capture "$name" 6 524288 "$@"
+}
 cap collector-identity "$BB" stat -c '%u:%g %a %n' "$SELF" "$BASE/capture-lib.sh"
 cap collector-selinux "$NATIVE/ls" -lZ "$SELF" "$BASE/capture-lib.sh"
 cap collector-hashes "$BB" sha256sum "$SELF" "$BASE/capture-lib.sh"
@@ -195,10 +220,13 @@ cap fingerprint "$NATIVE/getprop" ro.build.fingerprint
 cap history "$NATIVE/logcat" -d -b all -t 2000 -v epoch
 cap packages-early "$NATIVE/pm" list packages -U
 for pkg in $PACKAGES; do cap "appops-before-$pkg" "$NATIVE/cmd" appops get "$pkg"; done
-# Timed phase: no Binder/dumpsys/PM/hash/provenance work inside this window.
 event "PHASE measurement-start mode=$MODE seconds=$SECONDS"
 MEASURE_END=$(( $(uptime_s) + SECONDS ))
-(capture live-log "$SECONDS" 16777216 "$NATIVE/logcat" -b all -v epoch -T 1) & LOG_JOB=$!
+if [ ! -f "$LOCK/STOP" ]; then
+    (capture live-log "$SECONDS" 16777216 "$NATIVE/logcat" -b all -v epoch -T 1) & LOG_JOB=$!
+else
+    LOG_JOB=
+fi
 index=0; next_audio=0
 while [ "$(uptime_s)" -lt "$MEASURE_END" ] && [ ! -f "$LOCK/STOP" ]; do
     cap "sample-$index" "$BB" sh "$SELF" --sample "$$"
@@ -212,40 +240,45 @@ while [ "$(uptime_s)" -lt "$MEASURE_END" ] && [ ! -f "$LOCK/STOP" ]; do
     index=$((index + 1))
     "$BB" sleep 5
 done
-wait "$LOG_JOB" || true
+[ -z "$LOG_JOB" ] || wait "$LOG_JOB" || true
 event 'PHASE measurement-end; subsequent heavy diagnostics excluded from latency/CPU comparisons'
-# Reserve bounded post-readiness replay for PM that was unavailable at early boot.
-for attempt in 1 2 3 4 5; do
-    if cap "packages-ready-$attempt" "$NATIVE/pm" list packages -U; then
-        if "$BB" grep -q '^package:.* uid:[0-9]' "$OUT/commands/packages-ready-$attempt/output.txt"; then
-            atomic "$OUT/UID_MAP_SOURCE.txt" "commands/packages-ready-$attempt"; break
+
+if [ ! -f "$LOCK/STOP" ]; then
+    for attempt in 1 2 3 4 5; do
+        if cap "packages-ready-$attempt" "$NATIVE/pm" list packages -U; then
+            if "$BB" grep -q '^package:.* uid:[0-9]' "$OUT/commands/packages-ready-$attempt/output.txt"; then
+                atomic "$OUT/UID_MAP_SOURCE.txt" "commands/packages-ready-$attempt"; break
+            fi
         fi
+        "$BB" sleep 2
+    done
+    [ -f "$OUT/UID_MAP_SOURCE.txt" ] || event 'UNKNOWN package-UID map; failed/empty queries never establish absence'
+    for pkg in $PACKAGES; do
+        [ -f "$LOCK/STOP" ] && break
+        cap "package-$pkg" "$NATIVE/dumpsys" package "$pkg"
+        capture "apk-$pkg" 10 524288 "$BB" sh "$SELF" --apk "$pkg"
+        cap "appops-$pkg" "$NATIVE/cmd" appops get "$pkg"
+        cap "pss-$pkg" "$NATIVE/dumpsys" meminfo "$pkg"
+    done
+    if [ "$uid" = 0 ]; then cap persistent-inventory "$BB" sh "$SELF" --inventory; else event 'BLOCKED persistent-inventory requires root'; fi
+    cap framework-hashes "$BB" sha256sum /system/framework/framework.jar /system/framework/services.jar
+    for service in media_session audio media.audio_flinger media.audio_policy activity window storage mount; do
+        cap "service-$service" "$NATIVE/dumpsys" "$service"
+    done
+    cap recents "$NATIVE/dumpsys" activity recents
+    cap stacks "$NATIVE/dumpsys" activity stacks
+    cap kernel "$NATIVE/dmesg"
+    cap gms-runtime-maps "$BB" sh "$SELF" --runtime
+    cap final-memory "$BB" sh "$SELF" --sample "$$"
+    if [ "$MODE" = forensic ]; then
+        cap dexopt "$NATIVE/dumpsys" package dexopt
+        cap thermal "$NATIVE/dumpsys" thermalservice
+        cap cpuinfo "$NATIVE/dumpsys" cpuinfo
     fi
-    "$BB" sleep 2
-done
-[ -f "$OUT/UID_MAP_SOURCE.txt" ] || event 'UNKNOWN package-UID map; failed/empty queries never establish absence'
-for pkg in $PACKAGES; do
-    cap "package-$pkg" "$NATIVE/dumpsys" package "$pkg"
-    capture "apk-$pkg" 10 524288 "$BB" sh "$SELF" --apk "$pkg"
-    cap "appops-$pkg" "$NATIVE/cmd" appops get "$pkg"
-    cap "pss-$pkg" "$NATIVE/dumpsys" meminfo "$pkg"
-done
-if [ "$uid" = 0 ]; then cap persistent-inventory "$BB" sh "$SELF" --inventory; else event 'BLOCKED persistent-inventory requires root'; fi
-cap framework-hashes "$BB" sha256sum /system/framework/framework.jar /system/framework/services.jar
-for service in media_session audio media.audio_flinger media.audio_policy activity window storage mount; do
-    cap "service-$service" "$NATIVE/dumpsys" "$service"
-done
-cap recents "$NATIVE/dumpsys" activity recents
-cap stacks "$NATIVE/dumpsys" activity stacks
-cap kernel "$NATIVE/dmesg"
-cap gms-runtime-maps "$BB" sh "$SELF" --runtime
-cap final-memory "$BB" sh "$SELF" --sample "$$"
-if [ "$MODE" = forensic ]; then
-    cap dexopt "$NATIVE/dumpsys" package dexopt
-    cap thermal "$NATIVE/dumpsys" thermalservice
-    cap cpuinfo "$NATIVE/dumpsys" cpuinfo
+else
+    event 'INFO stop requested; post-measurement heavy diagnostics skipped'
 fi
-# Finish only after the live capture parent has joined its isolated producer.
+
 : > "$LOCK/FINISHING"
 tries=0
 until "$BB" mkdir "$LOCK/control" 2>/dev/null; do
@@ -253,18 +286,20 @@ until "$BB" mkdir "$LOCK/control" 2>/dev/null; do
     "$BB" sleep 1
 done
 event "PHASE finish elapsed_s=$(( $(uptime_s) - START )) observer=sample-durations-and-collector-PID-in-proc-stat"
-seal || { echo 'FAIL: seal' > "$OUT/UNSEALED.txt"; exit 1; }
-# Finished archive and CRC/hash verification; private source is always retained.
+seal || { echo 'FAIL: seal or producer cleanup unproven' > "$OUT/UNSEALED.txt"; exit 1; }
 archive=$STATE/$RUN.tar.gz
 if "$BB" timeout -s KILL 20 "$BB" tar -czf "$archive" -C "$STATE/runs" "$RUN" && "$BB" timeout -s KILL 15 "$BB" gzip -t "$archive"; then
     "$BB" sha256sum "$archive" > "$archive.sha256"
     if [ -d /storage/emulated/0/Download ] && "$BB" timeout -s KILL 3 "$BB" mkdir -p "$EXPORT"; then
         if "$BB" timeout -s KILL 15 "$BB" cp "$archive" "$EXPORT/$RUN.tar.gz.partial" &&
-          [ "$("$BB" sha256sum "$archive" | "$BB" cut -d ' ' -f 1)" = "$("$BB" timeout -s KILL 10 "$BB" sha256sum "$EXPORT/$RUN.tar.gz.partial" | "$BB" cut -d ' ' -f 1)" ]; then
-            "$BB" mv "$EXPORT/$RUN.tar.gz.partial" "$EXPORT/$RUN.tar.gz"
-            (cd "$EXPORT" && "$BB" sha256sum "$RUN.tar.gz") > "$EXPORT/$RUN.tar.gz.sha256"
+          [ "$("$BB" sha256sum "$archive" | "$BB" cut -d ' ' -f 1)" = "$("$BB" timeout -s KILL 10 "$BB" sha256sum "$EXPORT/$RUN.tar.gz.partial" | "$BB" cut -d ' ' -f 1)" ] &&
+          "$BB" mv "$EXPORT/$RUN.tar.gz.partial" "$EXPORT/$RUN.tar.gz" &&
+          (cd "$EXPORT" && "$BB" sha256sum "$RUN.tar.gz") > "$EXPORT/$RUN.tar.gz.sha256"; then
             atomic "$STATE/export-status" "PASS $EXPORT/$RUN.tar.gz"
-        else atomic "$STATE/export-status" "WARN export failed; retained $archive"; fi
+        else
+            "$BB" rm -f "$EXPORT/$RUN.tar.gz.partial"
+            atomic "$STATE/export-status" "WARN export finalisation failed; retained $archive"
+        fi
     else atomic "$STATE/export-status" "WARN Downloads unavailable; retained $archive"; fi
 else atomic "$STATE/export-status" "WARN archive/CRC failed; retained $OUT"; fi
 "$BB" rm -f "$LOCK/owner" "$LOCK/output" "$LOCK/STOP" "$LOCK/FINISHING"
