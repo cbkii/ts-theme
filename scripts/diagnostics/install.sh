@@ -5,7 +5,10 @@ export PATH
 unset LD_PRELOAD LD_LIBRARY_PATH
 umask 077
 BB=/data/adb/magisk/busybox
-[ -x "$BB" ] && [ "$("$BB" id -u)" = 0 ] || { echo 'BLOCKED: native Magisk root required'; exit 1; }
+if [ ! -x "$BB" ] || [ "$("$BB" id -u 2>/dev/null)" != 0 ]; then
+    echo 'BLOCKED: native Magisk root required'
+    exit 1
+fi
 [ "${1:-}" = --install ] || { echo 'Usage: install.sh --install [EXACT_OLD_SERVICE_SCRIPT ...]'; exit 64; }
 shift
 SRC=$("$BB" dirname "$("$BB" readlink -f "$0")")
