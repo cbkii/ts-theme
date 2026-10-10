@@ -2,6 +2,7 @@
 import json
 import concurrent.futures
 import os
+import shlex
 from pathlib import Path
 import shutil
 import subprocess
@@ -83,6 +84,12 @@ elif cmd == 'am':
         print('Stack id=4 bounds=[0,0][1280,720] displayId=0 userId=0')
         if s.get('nav_alive', True): print('taskId=42: app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity')
         sys.exit(0)
+    if a[0] == 'start':
+        # Independent append receipts reveal duplicate dispatch even if state
+        # snapshots race. One O_APPEND write, no read-modify-write counter.
+        receipt = os.open(str(p.with_name('start-dispatches.jsonl')), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        os.write(receipt, json.dumps(a).encode() + bytes([10]))
+        os.close(receipt)
     s['commands'].append(a)
     write_state(s)
     if a[0] == 'start':
@@ -120,6 +127,11 @@ class NavigationLifecycleTest(unittest.TestCase):
                 if resolved is None and name == 'timeout':
                     self.skipTest('GNU timeout required for bounded Android command doubles')
                 (bin_dir / name).symlink_to(resolved)
+            if overrides.get('boot_unavailable'):
+                fake_cat = bin_dir / 'cat'; fake_cat.unlink()
+                fake_cat.write_text('#!/bin/sh\nif [ "$1" = /proc/sys/kernel/random/boot_id ]; then exit 1; fi\nexec '
+                                    + shlex.quote(shutil.which('cat')) + ' "$@"\n')
+                fake_cat.chmod(0o700)
             for name in ('id', 'getprop', 'dumpsys', 'am', 'pm', 'pidof', 'app_process'):
                 path = bin_dir / name
                 path.write_text(ANDROID.replace('app.organicmaps.incar', overrides.get('nav_package', 'app.organicmaps.incar')))
@@ -129,6 +141,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             seed_claim = overrides.pop("seed_claim", False)
             close_after_first = overrides.pop("close_after_first", False)
             reveal_after_first = overrides.pop("reveal_after_first", False)
+            disable_claim = overrides.pop("disable_claim", False)
             state = dict(mode=5, bounds=[0,141,1131,702], focus=42, commands=[])
             state.update(overrides)
             state_path = work / 'state.json'
@@ -136,7 +149,9 @@ class NavigationLifecycleTest(unittest.TestCase):
             source = HELPER.read_text().replace('PATH=/system/bin:/system/xbin:/vendor/bin', f'PATH={bin_dir}', 1)
             source = source.replace('/system/bin/toybox timeout -k 1', 'timeout -k 1')
             source = source.replace('ROOT_DIR=/data/adb/ts18-launcher', f'ROOT_DIR={work}', 1)
-            script = work / 'helper.sh'
+            if disable_claim:
+                source = source.replace('mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING', 'true', 1)
+            script = work / 'helper.sh' 
             script.write_text(source)
             if seed_claim:
                 boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
@@ -163,6 +178,8 @@ class NavigationLifecycleTest(unittest.TestCase):
                         state_path.write_text(json.dumps(state))
             final_state = json.loads(state_path.read_text())
             final_state['claims_remaining'] = len(list(work.glob('launch-*')))
+            receipt = work / 'start-dispatches.jsonl'
+            final_state['start_dispatches'] = len(receipt.read_text().splitlines()) if receipt.exists() else 0
             return result, final_state
 
     def test_bootstrap_is_observed_without_focus_resize_or_redelivery(self):
@@ -208,7 +225,16 @@ class NavigationLifecycleTest(unittest.TestCase):
              'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
             nav_alive=False, delayed_task=True, bridge_available=True, focus=7, parallel=True)
         self.assertIn('code=LAUNCH_PENDING', result.stdout)
+        self.assertEqual(1, state['start_dispatches'])
         self.assertEqual(1, len(state['commands']))
+
+    def test_dispatch_oracle_detects_duplicates_when_claim_is_disabled(self):
+        _, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, delayed_task=True, bridge_available=True, focus=7,
+            parallel=True, disable_claim=True)
+        self.assertEqual(2, state['start_dispatches'])
 
     def test_old_same_boot_claim_does_not_expire(self):
         result, state = self.run_helper(
@@ -269,6 +295,22 @@ class NavigationLifecycleTest(unittest.TestCase):
             bridge_available=True, bridge_top_missing=True)
         self.assertIn('code=FULLSCREEN_POLICY_BLOCKED', result.stdout)
         self.assertEqual([], state['commands'])
+
+    def test_proven_warm_fullscreen_does_not_depend_on_boot_metadata_cleanup(self):
+        result, state = self.run_helper(
+            ['fullscreen', '0', 'app.organicmaps.incar', '42',
+             'app.organicmaps.incar/app.organicmaps.MwmActivity'],
+            bridge_available=True, boot_unavailable=True)
+        self.assertIn('code=FULLSCREEN', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+
+    def test_cold_launch_requires_boot_metadata_before_dispatch(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, bridge_available=True, boot_unavailable=True, focus=7)
+        self.assertIn('code=LAUNCH_MARKER_FAILED', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
 
     def test_window_visibility_is_independent_of_valid_task_geometry(self):
         args = ['verify-native', '0', 'app.organicmaps.incar', '0', '141', '1131', '702', '42']

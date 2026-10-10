@@ -554,13 +554,13 @@ launch_freeform_once() {
 }
 
 launch_claim_path() {
-  current_boot=$(cat /proc/sys/kernel/random/boot_id) || fail LAUNCH_MARKER_FAILED
-  case "$current_boot" in ''|*[!a-f0-9-]*) fail LAUNCH_MARKER_FAILED ;; esac
+  current_boot=$(cat /proc/sys/kernel/random/boot_id) || return 1
+  case "$current_boot" in ''|*[!a-f0-9-]*) return 1 ;; esac
   launch_marker="$ROOT_DIR/launch-$ANDROID_USER-$PKG-$current_boot"
 }
 
 claim_cold_launch() {
-  launch_claim_path
+  launch_claim_path || fail LAUNCH_MARKER_FAILED
   # Atomic across every cold-launch path and helper process. Time alone cannot
   # resolve an accepted/uncertain dispatch, including an explicit fullscreen one.
   mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING
@@ -592,7 +592,9 @@ resolve_launch_claim_if_ready() {
     app.organicmaps.incar:app.organicmaps.incar/app.organicmaps.MwmActivity) ;;
     app.organicmaps.incar:*) return 0 ;;
   esac
-  launch_claim_path
+  # Cleanup is optional on a proven warm task; metadata refusal must not
+  # invalidate an already verified fullscreen/windowed transition.
+  launch_claim_path || return 0
   rmdir "$launch_marker" 2>/dev/null || true
 }
 
