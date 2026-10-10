@@ -104,6 +104,8 @@ public static void main(String[] args){
  check(RawFreeformTaskBackend.presents==1,"recovery ran after HOME stopped");c.onHomeVisible();android.view.View.drain();check(p.configured==1,"real HOME return failed to recover");
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="ROOT_UNAVAILABLE";p=new NativeNavigationPanel();start(p);android.view.View.drain();p.fullscreen.run();
  check(NavigationProvider.launches==1&&RawFreeformTaskBackend.fullscreens==0,"explicit fallback depended on failed root");
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="ROOT_UNAVAILABLE";p=new NativeNavigationPanel();c=start(p);p.retry.run();android.view.View.drain();p.fullscreen.run();
+ check(RawFreeformTaskBackend.fullscreens==1,"successful recovery retained stale root failure");
  check(!NavigationRecoveryPolicy.ordinaryFullscreenAllowed("FULLSCREEN_POLICY_BLOCKED"),"permission policy bypassed");
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);c.destroy();android.view.View.drain();check(RawFreeformTaskBackend.presents==1,"destroyed session retried");
  System.out.println("PASS controller acquisition/bootstrap/focus/visibility/budget/lifecycle/fallback");

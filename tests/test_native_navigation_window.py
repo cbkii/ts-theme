@@ -88,7 +88,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             helper_root = root / "helper"
             bin_dir.mkdir()
             helper_root.mkdir()
-            for command in ("awk", "cat", "cut", "grep", "head", "rm", "sleep", "tr", "timeout"):
+            for command in ("awk", "cat", "cut", "grep", "head", "rm", "sleep", "tr", "timeout", "mkdir", "rmdir"):
                 resolved = shutil.which(command)
                 if resolved is None:
                     self.fail(f"required test command is unavailable: {command}")

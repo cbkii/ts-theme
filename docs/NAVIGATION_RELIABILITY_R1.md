@@ -30,9 +30,10 @@ HOME stop/destroy/fullscreen cancels scheduled recovery; a real HOME return,
 authority change or manual Retry resets the bounded budget.
 
 Each automatic acquisition first observes tasks. An accepted cold launch is
-protected by a private boot-ID/uptime marker written before dispatch; even a
-launcher timeout/restart cannot blindly launch again for 45 seconds. The marker
-is cleared after MwmActivity is positively observed. A live service-only process
+protected by an atomic private boot/user/package directory claim before dispatch.
+A launcher timeout/restart cannot replay the launch; the claim never expires on
+time alone. Definite command rejection or validated task identity resolves it. The claim
+is cleared for every validated package; Organic Maps must first reach MwmActivity. A live service-only process
 can cold-launch only after complete ATM NONE plus negative Recents and stack
 observations. A failed query cannot prove disappearance. Independently discovered
 replacement tasks are adopted by package/user/component, with fresh geometry

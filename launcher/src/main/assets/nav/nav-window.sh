@@ -542,27 +542,24 @@ launch_freeform_once() {
   esac
   PHASE=launch
   native_launch_supported || fail FREEFORM_LAUNCH_UNSUPPORTED
-  launch_marker="$ROOT_DIR/launch-$ANDROID_USER-$PKG"
-  if [ -r "$launch_marker" ]; then
-    read -r previous_boot previous_launch < "$launch_marker"
-    read -r now_uptime _ < /proc/uptime
-    current_boot=$(cat /proc/sys/kernel/random/boot_id) || fail LAUNCH_MARKER_FAILED
-    if [ "$previous_boot" = "$current_boot" ]; then
-      valid_uint "$previous_launch" || fail LAUNCH_PENDING
-      [ "$(( ${now_uptime%%.*} - previous_launch ))" -ge 45 ] || fail LAUNCH_PENDING
-    fi
-  fi
-  read -r now_uptime _ < /proc/uptime
-  # Persist before dispatch: timeout or launcher death cannot permit a second launch.
-  current_boot=$(cat /proc/sys/kernel/random/boot_id) || fail LAUNCH_MARKER_FAILED
-  printf '%s %s\n' "$current_boot" "${now_uptime%%.*}" > "$launch_marker" || fail LAUNCH_MARKER_FAILED
+  launch_claim_path
+  # Atomic across launcher/helper processes. A same-boot claim never expires on
+  # time alone: only a validated Activity or definite rejection resolves it.
+  mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING
   bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 5 \
     -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
     -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
   LAUNCH_EXIT=$?
-  if [ "$LAUNCH_EXIT" -ne 0 ]; then
-    if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
-      fail FREEFORM_LAUNCH_UNSUPPORTED
+  if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
+    rmdir "$launch_marker" 2>/dev/null || true
+    fail FREEFORM_LAUNCH_UNSUPPORTED
+  fi
+  if [ "$LAUNCH_EXIT" -ne 0 ] || grep -Eq '^(Error:|Error type|Exception|Security exception:)' "$LAUNCH_OUTPUT"; then
+    # Timeout/signal or an unclassified exception can occur after acceptance.
+    # Retain that claim. Ordinary command rejection permits a bounded retry.
+    if { [ "$LAUNCH_EXIT" -gt 0 ] && [ "$LAUNCH_EXIT" -lt 124 ]; } ||
+      grep -Eq '^(Error:|Error type|Security exception:)' "$LAUNCH_OUTPUT"; then
+      rmdir "$launch_marker" 2>/dev/null || true
     fi
     fail FREEFORM_LAUNCH_FAILED
   fi
@@ -571,12 +568,21 @@ launch_freeform_once() {
   log_event "cold launch transaction=$TRANSACTION package=$PKG component=$component display=0 mode=5"
 }
 
+launch_claim_path() {
+  current_boot=$(cat /proc/sys/kernel/random/boot_id) || fail LAUNCH_MARKER_FAILED
+  case "$current_boot" in ''|*[!a-f0-9-]*) fail LAUNCH_MARKER_FAILED ;; esac
+  launch_marker="$ROOT_DIR/launch-$ANDROID_USER-$PKG-$current_boot"
+}
+
 require_bootstrap_ready() {
   case "$PKG:$TASK_COMPONENT" in
-    app.organicmaps.incar:app.organicmaps.incar/app.organicmaps.MwmActivity)
-      rm -f "$ROOT_DIR/launch-$ANDROID_USER-$PKG" ;;
+    app.organicmaps.incar:app.organicmaps.incar/app.organicmaps.MwmActivity) ;;
     app.organicmaps.incar:*) PHASE=bootstrap; fail BOOTSTRAP_PENDING ;;
   esac
+  # Every supported package resolves its accepted-launch claim on validated task
+  # identity; Organic Maps must additionally have advanced past bootstrap.
+  launch_claim_path
+  rmdir "$launch_marker" 2>/dev/null || true
 }
 
 observe_window() {

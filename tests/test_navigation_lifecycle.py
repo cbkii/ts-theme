@@ -1,5 +1,6 @@
 """Run the production helper against stateful Android command doubles."""
 import json
+import concurrent.futures
 import os
 from pathlib import Path
 import shutil
@@ -78,6 +79,8 @@ elif cmd == 'am':
     s['commands'].append(a)
     p.write_text(json.dumps(s))
     if a[0] == 'start':
+        if s.get('reject_launch'):
+            print('Error type 3: activity does not exist'); sys.exit(1)
         if '--task' in a: assert a[a.index('--task')+1] == '42', a
         else:
             s['nav_alive'] = not s.get('delayed_task')
@@ -103,13 +106,16 @@ class NavigationLifecycleTest(unittest.TestCase):
             work = Path(tmp)
             bin_dir = work / 'bin'
             bin_dir.mkdir()
-            for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout'):
+            for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout', 'mkdir', 'rmdir'):
                 (bin_dir / name).symlink_to(shutil.which(name))
             for name in ('id', 'getprop', 'dumpsys', 'am', 'pm', 'pidof', 'app_process'):
                 path = bin_dir / name
-                path.write_text(ANDROID)
+                path.write_text(ANDROID.replace('app.organicmaps.incar', overrides.get('nav_package', 'app.organicmaps.incar')))
                 path.chmod(0o700)
             replays = overrides.pop("replays", 1)
+            parallel = overrides.pop("parallel", False)
+            seed_claim = overrides.pop("seed_claim", False)
+            close_after_first = overrides.pop("close_after_first", False)
             state = dict(mode=5, bounds=[0,141,1131,702], focus=42, commands=[])
             state.update(overrides)
             state_path = work / 'state.json'
@@ -119,9 +125,25 @@ class NavigationLifecycleTest(unittest.TestCase):
             source = source.replace('ROOT_DIR=/data/adb/ts18-launcher', f'ROOT_DIR={work}', 1)
             script = work / 'helper.sh'
             script.write_text(source)
-            for _ in range(replays):
-                result = subprocess.run(['/bin/sh', str(script), *args], capture_output=True, text=True,
+            if seed_claim:
+                boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+                claim = work / ('launch-0-app.organicmaps.incar-' + boot)
+                claim.mkdir()
+                os.utime(claim, (1, 1))
+            def invoke():
+                return subprocess.run(['/bin/sh', str(script), *args], capture_output=True, text=True,
                                         env={**os.environ, 'ANDROID_STATE': str(state_path)}, timeout=12)
+            if parallel:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                    results = list(pool.map(lambda _: invoke(), range(2)))
+                result = next((r for r in results if 'LAUNCH_PENDING' in r.stdout), results[-1])
+            else:
+                for iteration in range(replays):
+                    result = invoke()
+                    if close_after_first and iteration == 0:
+                        state = json.loads(state_path.read_text())
+                        state.update(nav_alive=False, focus=7)
+                        state_path.write_text(json.dumps(state))
             return result, json.loads(state_path.read_text())
 
     def test_bootstrap_is_observed_without_focus_resize_or_redelivery(self):
@@ -150,6 +172,39 @@ class NavigationLifecycleTest(unittest.TestCase):
             nav_alive=False, delayed_task=True, bridge_available=True, focus=7, replays=2)
         self.assertIn('code=LAUNCH_PENDING', result.stdout)
         self.assertEqual(1, len(state['commands']))
+
+    def test_concurrent_acquisition_has_one_atomic_launch_claim(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, delayed_task=True, bridge_available=True, focus=7, parallel=True)
+        self.assertIn('code=LAUNCH_PENDING', result.stdout)
+        self.assertEqual(1, len(state['commands']))
+
+    def test_old_same_boot_claim_does_not_expire(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, bridge_available=True, focus=7, seed_claim=True)
+        self.assertIn('code=LAUNCH_PENDING', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_definite_launch_rejection_releases_claim_for_retry(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, bridge_available=True, focus=7, reject_launch=True, replays=2)
+        self.assertIn('code=FREEFORM_LAUNCH_FAILED', result.stdout)
+        self.assertEqual(2, len(state['commands']))
+
+    def test_other_package_claim_clears_after_validated_activity(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'other.navigation',
+             'other.navigation/app.organicmaps.MwmActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_package='other.navigation', nav_alive=False, bridge_available=True,
+            cold_component='app.organicmaps.MwmActivity', focus=7, replays=2, close_after_first=True)
+        self.assertIn('code=PRESENTED_NATIVE', result.stdout)
+        self.assertEqual(2, sum(c[0] == 'start' and '--task' not in c for c in state['commands']))
 
     def test_window_visibility_is_independent_of_valid_task_geometry(self):
         args = ['verify-native', '0', 'app.organicmaps.incar', '0', '141', '1131', '702', '42']
