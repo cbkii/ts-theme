@@ -139,3 +139,10 @@ It **does not** start/stop tasks, change settings, send playback/key input, alte
 Substantial outputs are written under `/storage/emulated/0/Download/`; transient work remains private where applicable. The helpers never clear DoFun application data, set SELinux permissive, broadly change ownership/mode, write `/system` or `/vendor`, or modify the `com.dofun.variety` APK outside the explicitly guarded legacy donor workflow.
 
 See `docs/INSTALL_TS18.md`, `docs/STANDALONE_LAUNCHER.md` and `docs/MEDIA_BACKGROUND_READINESS.md` for the associated installation and physical-validation procedures.
+
+## Consolidated system attribution
+
+For startup/performance capture, installed splits/UIDs, memory and system-caller
+attribution use [diagnostics 1.3](../diagnostics/README.md). It preserves PR14
+collectors and background-only media/task contracts. See its explicit native-root
+entry and reversible installer; never run multiple boot collectors together.

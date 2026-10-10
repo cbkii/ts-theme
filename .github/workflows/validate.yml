@@ -54,10 +54,12 @@ jobs:
           python3 tools/ts18_theme.py validate
           python3 -m unittest discover -s tests -v
           bash -n tools/*.sh scripts/ci/*.sh scripts/termux/*.sh scripts/termux/lib/*.sh
+          for script in scripts/diagnostics/*.sh; do sh -n "$script"; done
           sh -n scripts/magisk/*.sh launcher/src/main/assets/nav/nav-window.sh
           python3 -m py_compile tools/launcher_apk_check.py
           shellcheck tools/*.sh scripts/ci/*.sh
           shellcheck -x -P scripts/termux scripts/termux/*.sh scripts/termux/lib/*.sh
+          shellcheck -x -s sh -P scripts/diagnostics scripts/diagnostics/*.sh
           shellcheck -s sh scripts/magisk/*.sh
           # nav-window.sh deliberately stores literal AWK programs in single-quoted shell strings;
           # SC2016 is therefore disabled only for this one helper, not repository-wide.
@@ -147,3 +149,27 @@ jobs:
           validate_run_id=$GITHUB_RUN_ID
           grep -Fxq "source_sha=$SOURCE_SHA" "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
           grep -Fxq "build_run_id=$validate_run_id" "$RUNNER_TEMP/testing-input/BUILD_INFO.txt"
+
+      - name: Build exact diagnostics handoff bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/TS18-diagnostics-1.3-PR${{ github.event.pull_request.number || 'head' }}-${SOURCE_REVISION}.zip"
+          repro="$RUNNER_TEMP/diagnostics-repro.zip"
+          python3 scripts/diagnostics/build-bundle.py "$bundle"
+          python3 scripts/diagnostics/build-bundle.py "$repro"
+          cmp -s "$bundle" "$repro"
+          sha256sum "$bundle" > "$bundle.sha256"
+          printf 'source_sha=%s\nsource_ref=%s\nworkflow_run=%s\n' \
+            "$SOURCE_REVISION" "$SOURCE_REF" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/diagnostics-provenance.txt"
+
+      - name: Upload exact diagnostics handoff
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: TS18-diagnostics-1.3-${{ env.SOURCE_REVISION }}
+          path: |
+            ${{ runner.temp }}/TS18-diagnostics-1.3-PR*-${{ env.SOURCE_REVISION }}.zip
+            ${{ runner.temp }}/TS18-diagnostics-1.3-PR*-${{ env.SOURCE_REVISION }}.zip.sha256
+            ${{ runner.temp }}/diagnostics-provenance.txt
+          if-no-files-found: error
+          retention-days: 14
