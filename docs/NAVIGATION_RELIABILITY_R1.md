@@ -30,10 +30,14 @@ HOME stop/destroy/fullscreen cancels scheduled recovery; a real HOME return,
 authority change or manual Retry resets the bounded budget.
 
 Each automatic acquisition first observes tasks. An accepted cold launch is
-protected by an atomic private boot/user/package directory claim before dispatch.
+protected by an atomic private boot/user/package directory claim before dispatch,
+shared by freeform and explicit root fullscreen cold starts.
 A launcher timeout/restart cannot replay the launch; the claim never expires on
 time alone. Definite command rejection or validated task identity resolves it. The
-claim is cleared for every validated package; Organic Maps must first reach
+A timed-out/uncertain dispatch cannot be cleared merely by Retry or budget
+exhaustion: those events do not prove server-side cancellation. Use the normal
+Apps/system launcher path for an explicit user launch while retaining that uncertainty.
+The claim is cleared for every validated package; Organic Maps must first reach
 MwmActivity. A live service-only process
 can cold-launch only after complete ATM NONE plus negative Recents and stack
 observations. A failed query cannot prove disappearance. Independently discovered

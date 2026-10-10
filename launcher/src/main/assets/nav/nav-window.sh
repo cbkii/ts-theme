@@ -542,27 +542,12 @@ launch_freeform_once() {
   esac
   PHASE=launch
   native_launch_supported || fail FREEFORM_LAUNCH_UNSUPPORTED
-  launch_claim_path
-  # Atomic across launcher/helper processes. A same-boot claim never expires on
-  # time alone: only a validated Activity or definite rejection resolves it.
-  mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING
+  claim_cold_launch
   bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 5 \
     -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
     -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
   LAUNCH_EXIT=$?
-  if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
-    rmdir "$launch_marker" 2>/dev/null || true
-    fail FREEFORM_LAUNCH_UNSUPPORTED
-  fi
-  if [ "$LAUNCH_EXIT" -ne 0 ] || grep -Eq '^(Error:|Error type|Exception|Security exception:)' "$LAUNCH_OUTPUT"; then
-    # Timeout/signal or an unclassified exception can occur after acceptance.
-    # Retain that claim. Ordinary command rejection permits a bounded retry.
-    if { [ "$LAUNCH_EXIT" -gt 0 ] && [ "$LAUNCH_EXIT" -lt 124 ]; } ||
-      grep -Eq '^(Error:|Error type|Security exception:)' "$LAUNCH_OUTPUT"; then
-      rmdir "$launch_marker" 2>/dev/null || true
-    fi
-    fail FREEFORM_LAUNCH_FAILED
-  fi
+  check_cold_launch_result FREEFORM_LAUNCH_FAILED FREEFORM_LAUNCH_UNSUPPORTED
   LAUNCHED=1
   PHASE=bootstrap
   log_event "cold launch transaction=$TRANSACTION package=$PKG component=$component display=0 mode=5"
@@ -574,15 +559,53 @@ launch_claim_path() {
   launch_marker="$ROOT_DIR/launch-$ANDROID_USER-$PKG-$current_boot"
 }
 
+claim_cold_launch() {
+  launch_claim_path
+  # Atomic across every cold-launch path and helper process. Time alone cannot
+  # resolve an accepted/uncertain dispatch, including an explicit fullscreen one.
+  mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING
+}
+
+check_cold_launch_result() {
+  failure_code="$1"
+  unsupported_code="$2"
+  if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
+    rmdir "$launch_marker" 2>/dev/null || true
+    fail "$unsupported_code"
+  fi
+  if [ "$LAUNCH_EXIT" -ne 0 ] || grep -Eq '^(Error:|Error type|Exception|Security exception:)' "$LAUNCH_OUTPUT"; then
+    # Timeout/signal or an unclassified exception can occur after acceptance.
+    # Retain that claim. Only an explicit pre-dispatch rejection may retry;
+    # a nonzero producer exit alone does not prove server-side cancellation.
+    if grep -Eq '^(Error type|Error: Activity not started|Error: [Uu]nable to resolve Intent|Security exception:|Permission Denial:)' "$LAUNCH_OUTPUT"; then
+      rmdir "$launch_marker" 2>/dev/null || true
+    fi
+    fail "$failure_code"
+  fi
+}
+
+resolve_launch_claim_if_ready() {
+  [ "$DISPLAY_ID" = 0 ] || return 0
+  [ "$TASK_COMPONENT" != unknown ] || return 0
+  case "$TASK_COMPONENT" in "$PKG"/*) ;; *) return 0 ;; esac
+  case "$PKG:$TASK_COMPONENT" in
+    app.organicmaps.incar:app.organicmaps.incar/app.organicmaps.MwmActivity) ;;
+    app.organicmaps.incar:*) return 0 ;;
+  esac
+  launch_claim_path
+  rmdir "$launch_marker" 2>/dev/null || true
+}
+
 require_bootstrap_ready() {
+  [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+  [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
   case "$PKG:$TASK_COMPONENT" in
     app.organicmaps.incar:app.organicmaps.incar/app.organicmaps.MwmActivity) ;;
     app.organicmaps.incar:*) PHASE=bootstrap; fail BOOTSTRAP_PENDING ;;
   esac
   # Every supported package resolves its accepted-launch claim on validated task
   # identity; Organic Maps must additionally have advanced past bootstrap.
-  launch_claim_path
-  rmdir "$launch_marker" 2>/dev/null || true
+  resolve_launch_claim_if_ready
 }
 
 observe_window() {
@@ -623,7 +646,7 @@ move_task_fullscreen() {
     [ "$component" != unknown ] || fail COMPONENT_UNKNOWN
     if ! run_bridge mode "$pkg" "$wanted_task" 1 1 >"$LAUNCH_OUTPUT" 2>&1; then
       # Never redeliver an Activity over a legitimate foreign permission/settings flow.
-      if grep -q -E 'LEGITIMATE_FOREIGN_ACTIVITY|TASK_STACK_NOT_EXCLUSIVE|MODE_NOT_VERIFIED' "$LAUNCH_OUTPUT"; then
+      if grep -q -E 'LEGITIMATE_FOREIGN_ACTIVITY|TASK_STACK_NOT_EXCLUSIVE|MODE_NOT_VERIFIED|TOP_ACTIVITY_UNOBSERVED' "$LAUNCH_OUTPUT"; then
         fail FULLSCREEN_POLICY_BLOCKED
       fi
       # Explicit-user fallback only: the already-proven exact-task transition.
@@ -818,11 +841,16 @@ case "$action" in
         # Read-only resolution has proved absence across recents, stacks and process.
         valid_component "$cold_component" || fail COMPONENT_UNKNOWN
         case "$cold_component" in "$PKG"/*) ;; *) fail COMPONENT_PACKAGE_MISMATCH ;; esac
+        PHASE=launch
         native_launch_supported || fail FULLSCREEN_LAUNCH_UNSUPPORTED
+        claim_cold_launch
         bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 1 \
           -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
-          -f 0x10000000 -n "$cold_component" >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_FAILED
+          -f 0x10000000 -n "$cold_component" >"$LAUNCH_OUTPUT" 2>&1
+        LAUNCH_EXIT=$?
+        check_cold_launch_result FULLSCREEN_FAILED FULLSCREEN_LAUNCH_UNSUPPORTED
         LAUNCHED=1
+        PHASE=bootstrap
         require_task "$PKG" 0 30
         hint="$TASK_ID"
         ;;
@@ -830,6 +858,7 @@ case "$action" in
       *) fail TASK_OBSERVATION_UNCERTAIN ;;
     esac
     move_task_fullscreen "$PKG" "$hint"
+    resolve_launch_claim_if_ready
     emit_protocol OK FULLSCREEN
     ;;
 

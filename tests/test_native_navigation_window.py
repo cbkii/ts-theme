@@ -89,7 +89,9 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             bin_dir.mkdir()
             helper_root.mkdir()
             for command in ("awk", "cat", "cut", "grep", "head", "rm", "sleep", "tr", "timeout", "mkdir", "rmdir"):
-                resolved = shutil.which(command)
+                resolved = shutil.which(command) or (shutil.which("gtimeout") if command == "timeout" else None)
+                if resolved is None and command == "timeout":
+                    self.skipTest("GNU timeout required for bounded Android command doubles")
                 if resolved is None:
                     self.fail(f"required test command is unavailable: {command}")
                 os.symlink(resolved, bin_dir / command)

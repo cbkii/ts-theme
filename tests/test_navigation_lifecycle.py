@@ -16,6 +16,10 @@ import json, os, sys
 from pathlib import Path
 p = Path(os.environ['ANDROID_STATE'])
 s = json.loads(p.read_text())
+def write_state(value):
+    staged = p.with_name(p.name + '.' + str(os.getpid()))
+    staged.write_text(json.dumps(value))
+    staged.replace(p)
 cmd = Path(sys.argv[0]).name
 a = sys.argv[1:]
 if cmd == 'id': print(0)
@@ -60,6 +64,8 @@ elif cmd == 'app_process':
         print('UNKNOWN IllegalStateException TASK_AMBIGUOUS'); sys.exit(1)
     if not s.get('nav_alive', True): print('NONE'); sys.exit(0)
     if a[0] != 'status':
+        if s.get('bridge_top_missing'):
+            print('UNKNOWN IllegalStateException TOP_ACTIVITY_UNOBSERVED'); sys.exit(1)
         if s.get('foreign_top'):
             print('UNKNOWN IllegalStateException LEGITIMATE_FOREIGN_ACTIVITY'); sys.exit(1)
         if s.get('shared_stack'):
@@ -67,8 +73,9 @@ elif cmd == 'app_process':
         s['commands'].append(['bridge', *a])
         s['mode'] = int(a[4]) if a[0] == 'mode' else s['mode']
         if a[5] == '1': s['focus'] = 42
-        p.write_text(json.dumps(s))
-    print('FOUND 42 4 0 %s %s app.organicmaps.incar/app.organicmaps.MwmActivity unknown' % (s['mode'], ','.join(map(str,s['bounds']))))
+        write_state(s)
+    component = 'unknown' if s.get('unknown_top') else 'app.organicmaps.incar/app.organicmaps.MwmActivity'
+    print('FOUND 42 4 0 %s %s %s unknown' % (s['mode'], ','.join(map(str,s['bounds'])), component))
 elif cmd == 'am':
     if a == ['help']:
         print('start --windowingMode --display'); sys.exit(0)
@@ -77,8 +84,10 @@ elif cmd == 'am':
         if s.get('nav_alive', True): print('taskId=42: app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity')
         sys.exit(0)
     s['commands'].append(a)
-    p.write_text(json.dumps(s))
+    write_state(s)
     if a[0] == 'start':
+        if s.get('exception_launch'):
+            print('Exception occurred while executing start'); sys.exit(1)
         if s.get('reject_launch'):
             print('Error type 3: activity does not exist'); sys.exit(1)
         if '--task' in a: assert a[a.index('--task')+1] == '42', a
@@ -96,7 +105,7 @@ elif cmd == 'am':
             if s.get('long_error'): print('stack trace line\n' * 60, file=sys.stderr)
             sys.exit(1)
         s['bounds'] = list(map(int, a[3:]))
-    p.write_text(json.dumps(s))
+    write_state(s)
 '''
 
 
@@ -107,7 +116,10 @@ class NavigationLifecycleTest(unittest.TestCase):
             bin_dir = work / 'bin'
             bin_dir.mkdir()
             for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout', 'mkdir', 'rmdir'):
-                (bin_dir / name).symlink_to(shutil.which(name))
+                resolved = shutil.which(name) or (shutil.which('gtimeout') if name == 'timeout' else None)
+                if resolved is None and name == 'timeout':
+                    self.skipTest('GNU timeout required for bounded Android command doubles')
+                (bin_dir / name).symlink_to(resolved)
             for name in ('id', 'getprop', 'dumpsys', 'am', 'pm', 'pidof', 'app_process'):
                 path = bin_dir / name
                 path.write_text(ANDROID.replace('app.organicmaps.incar', overrides.get('nav_package', 'app.organicmaps.incar')))
@@ -128,7 +140,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             script.write_text(source)
             if seed_claim:
                 boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
-                claim = work / ('launch-0-app.organicmaps.incar-' + boot)
+                claim = work / ('launch-0-' + overrides.get('nav_package', 'app.organicmaps.incar') + '-' + boot)
                 claim.mkdir()
                 os.utime(claim, (1, 1))
             def invoke():
@@ -149,7 +161,9 @@ class NavigationLifecycleTest(unittest.TestCase):
                         state = json.loads(state_path.read_text())
                         state.update(nav_alive=True, nav_component='app.organicmaps.MwmActivity', focus=7)
                         state_path.write_text(json.dumps(state))
-            return result, json.loads(state_path.read_text())
+            final_state = json.loads(state_path.read_text())
+            final_state['claims_remaining'] = len(list(work.glob('launch-*')))
+            return result, final_state
 
     def test_bootstrap_is_observed_without_focus_resize_or_redelivery(self):
         result, state = self.run_helper(
@@ -212,6 +226,14 @@ class NavigationLifecycleTest(unittest.TestCase):
         self.assertIn('code=FREEFORM_LAUNCH_FAILED', result.stdout)
         self.assertEqual(2, len(state['commands']))
 
+    def test_unclassified_dispatch_exception_preserves_claim(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, bridge_available=True, focus=7, exception_launch=True, replays=2)
+        self.assertIn('code=LAUNCH_PENDING', result.stdout)
+        self.assertEqual(1, len(state['commands']))
+
     def test_other_package_claim_clears_after_validated_activity(self):
         result, state = self.run_helper(
             ['present-native', '0', 'other.navigation',
@@ -220,6 +242,33 @@ class NavigationLifecycleTest(unittest.TestCase):
             cold_component='app.organicmaps.MwmActivity', focus=7, replays=2, close_after_first=True)
         self.assertIn('code=PRESENTED_NATIVE', result.stdout)
         self.assertEqual(2, sum(c[0] == 'start' and '--task' not in c for c in state['commands']))
+
+    def test_fullscreen_delayed_cold_launch_blocks_following_native_replay(self):
+        result, state = self.run_helper(
+            ['fullscreen', '0', 'app.organicmaps.incar', '0',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity'],
+            nav_alive=False, delayed_task=True, bridge_available=True, focus=7, replays=2)
+        self.assertIn('code=LAUNCH_PENDING', result.stdout)
+        self.assertEqual(1, len(state['commands']))
+        self.assertEqual(1, state['claims_remaining'])
+
+    def test_unknown_other_package_component_cannot_resolve_claim(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'other.navigation', 'other.navigation/.Main',
+             '0', '141', '1131', '702', '0', '1'],
+            nav_package='other.navigation', activities_miss=True, bridge_available=True,
+            unknown_top=True, seed_claim=True, focus=7)
+        self.assertIn('code=COMPONENT_UNKNOWN', result.stdout)
+        self.assertEqual(1, state['claims_remaining'])
+        self.assertEqual([], state['commands'])
+
+    def test_unobserved_bridge_top_cannot_redeliver_fullscreen_activity(self):
+        result, state = self.run_helper(
+            ['fullscreen', '0', 'app.organicmaps.incar', '42',
+             'app.organicmaps.incar/app.organicmaps.MwmActivity'],
+            bridge_available=True, bridge_top_missing=True)
+        self.assertIn('code=FULLSCREEN_POLICY_BLOCKED', result.stdout)
+        self.assertEqual([], state['commands'])
 
     def test_window_visibility_is_independent_of_valid_task_geometry(self):
         args = ['verify-native', '0', 'app.organicmaps.incar', '0', '141', '1131', '702', '42']
