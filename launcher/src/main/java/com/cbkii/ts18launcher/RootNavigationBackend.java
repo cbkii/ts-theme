@@ -159,6 +159,14 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private NavigationHelperResult retryKnownTaskMiss(
             String packageName, int taskId, String phase, Operation operation) {
         NavigationHelperResult first = operation.run();
+        if (taskId > 0 && "TASK_OBSERVATION_UNCERTAIN".equals(first.code) && !destroyed) {
+            NavigationHelperResult discovered = helper.run("status", packageName, "0");
+            if (discovered.success && discovered.taskId > 0 && discovered.taskId != taskId
+                    && discovered.userId == AndroidUserId.current()
+                    && packageName.equals(discovered.packageName)
+                    && discovered.component.startsWith(packageName + "/"))
+                return NavigationHelperResult.withCode(discovered, "TASK_REPLACED", "read-only reacquisition");
+        }
         if (taskId <= 0 || !"TASK_NOT_FOUND".equals(first.code) || destroyed) {
             rememberKnownTask(first, packageName, taskId);
             return first;

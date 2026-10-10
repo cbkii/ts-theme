@@ -39,7 +39,7 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
         retain = between(CONTROLLER,
                          "private void retainObservedTask",
                          "private void markWindowed")
-        self.assertIn('"TASK_OBSERVATION_UNCERTAIN".equals(result.code)', retain)
+        self.assertIn("NavigationRecoveryPolicy.recoverable(result.code)", retain)
         self.assertIn("result.taskId > 0", retain)
 
     def test_uncertain_resume_uses_existing_non_mutating_controller_path(self):
@@ -61,13 +61,13 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
         present = between(CONTROLLER, "private void startPresent", "private void beginReacquisitionGeneration")
         helper = between(CONTROLLER,
                          "private boolean deferUncertainTaskObservation",
-                         "private int beginOperation")
+                         "private boolean openOrdinaryFullscreen")
         self.assertIn('deferUncertainTaskObservation(result, pkg, "verify")', verify)
         self.assertIn('deferUncertainTaskObservation(result, pkg, "pre-present")', present)
         self.assertIn('"TASK_OBSERVATION_UNCERTAIN".equals(result.code)', helper)
         self.assertIn("needsValidation = true", helper)
         self.assertIn("needsPresentation = true", helper)
-        self.assertIn('panel.showFailure("Navigation task state uncertain", this::retry, () -> openFullscreen(null))', helper)
+        self.assertIn("scheduleRecovery(pkg, result.code)", helper)
         self.assertNotIn("activeTaskId = -1", helper)
         self.assertNotIn("latchFailure", helper)
         self.assertNotIn("startPresent(", helper)
@@ -96,7 +96,7 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
             'if ("TASK_AMBIGUOUS"', 1
         )[0]
         self.assertIn("activeTaskId = -1", not_found)
-        self.assertIn("latchFailure", not_found)
+        self.assertIn("scheduleRecovery", not_found)
 
 
 if __name__ == "__main__":

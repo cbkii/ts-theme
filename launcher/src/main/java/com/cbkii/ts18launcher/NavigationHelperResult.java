@@ -9,13 +9,15 @@ final class NavigationHelperResult {
     final int displayId; final int windowingMode; final int supportsPip;
     final int launched; final int transactionId;
     final int helpExit; final int helpWindowingMode; final int helpDisplay; final int launchExit;
+    final int windowVisible; final int windowDrawn; final String phase;
     final String packageName; final String component; final String bounds; final String pinnedPackage; final String raw;
 
     private NavigationHelperResult(boolean success, String code, int userId, int taskId, int stackId,
             int displayId, int windowingMode, int supportsPip, int launched, int transactionId,
             int helpExit, int helpWindowingMode, int helpDisplay, int launchExit,
             String packageName,
-            String component, String bounds, String pinnedPackage, String raw) {
+            String component, String bounds, String pinnedPackage, String raw, int windowVisible, int windowDrawn, String phase) {
+        this.windowVisible=windowVisible; this.windowDrawn=windowDrawn; this.phase=phase;
         this.success=success; this.code=code; this.userId=userId; this.taskId=taskId; this.stackId=stackId;
         this.displayId=displayId; this.windowingMode=windowingMode; this.supportsPip=supportsPip;
         this.launched=launched; this.transactionId=transactionId;
@@ -37,9 +39,9 @@ final class NavigationHelperResult {
                 parseTriState(values.get("launched")),parseNonNegative(values.get("transaction")),
                 parseNonNegative(values.get("helpExit")),parseTriState(values.get("helpWindowingMode")),
                 parseTriState(values.get("helpDisplay")),parseNonNegative(values.get("launchExit")),
-                safe(values.get("package")),safe(values.get("component")),safe(values.get("bounds")),safe(values.get("pinnedPackage")),raw);
+                safe(values.get("package")),safe(values.get("component")),safe(values.get("bounds")),safe(values.get("pinnedPackage")),raw,parseTriState(values.get("visible")),parseTriState(values.get("drawn")),safe(values.get("phase")));
     }
-    static NavigationHelperResult failure(String code,String raw){ return new NavigationHelperResult(false,code,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,"","","","",raw==null?"":raw); }
+    static NavigationHelperResult failure(String code,String raw){ return new NavigationHelperResult(false,code,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,"","","","",raw==null?"":raw,-1,-1,""); }
     static NavigationHelperResult withCode(NavigationHelperResult source, String code, String rawSuffix) {
         if (source == null) return failure(code, rawSuffix);
         String raw = source.raw == null ? "" : source.raw;
@@ -50,8 +52,9 @@ final class NavigationHelperResult {
                 source.stackId, source.displayId, source.windowingMode, source.supportsPip,
                 source.launched, source.transactionId, source.helpExit, source.helpWindowingMode,
                 source.helpDisplay, source.launchExit, source.packageName, source.component,
-                source.bounds, source.pinnedPackage, raw);
+                source.bounds, source.pinnedPackage, raw, source.windowVisible, source.windowDrawn, source.phase);
     }
+    boolean presentationConfirmed() { return success && windowVisible == 1 && windowDrawn == 1; }
     private static String lastProtocolLine(String raw){
         if(raw==null||raw.isEmpty()) return ""; String[] lines=raw.split("\\r?\\n");
         for(int i=lines.length-1;i>=0;i--){ String line=lines[i].trim(); if(line.startsWith("OK ")||line.equals("OK")||line.startsWith("FAIL ")||line.equals("FAIL")) return line; }

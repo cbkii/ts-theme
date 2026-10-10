@@ -19,6 +19,14 @@ cmd = Path(sys.argv[0]).name
 a = sys.argv[1:]
 if cmd == 'id': print(0)
 elif cmd == 'dumpsys':
+    if a[0] == 'window':
+        print('  Window #0 Window{fake u0 app.organicmaps.incar/app.organicmaps.MwmActivity}:')
+        print('    mDisplayId=0 stackId=4')
+        print('    mHasSurface=true isReadyForDisplay()=true')
+        print('    isOnScreen=' + ('false' if s.get('window_hidden') else 'true'))
+        print('    isVisible=' + ('false' if s.get('window_hidden') else 'true'))
+        print('    Surface: shown=true layer=3')
+        sys.exit(0)
     if a[1] == 'recents':
         print('ACTIVITY MANAGER RECENT TASKS (dumpsys activity recents)')
         if s.get('nav_alive', True): print('TaskRecord{fake #42 A=app.organicmaps.incar U=0 StackId=4}')
@@ -40,7 +48,7 @@ elif cmd == 'dumpsys':
     if 'top_focus' in s:
         print('  topResumedActivity=ActivityRecord{fake u0 %s t%s}' % (pkg, s['top_focus']))
 elif cmd == 'pidof':
-    if s.get('nav_alive', True): print('4889')
+    if s.get('nav_alive', True) or s.get('process_only'): print('4889')
     else: sys.exit(1)
 elif cmd == 'pm': print('package:' + str(p))
 elif cmd == 'app_process':
@@ -61,6 +69,8 @@ elif cmd == 'app_process':
         p.write_text(json.dumps(s))
     print('FOUND 42 4 0 %s %s app.organicmaps.incar/app.organicmaps.MwmActivity unknown' % (s['mode'], ','.join(map(str,s['bounds']))))
 elif cmd == 'am':
+    if a == ['help']:
+        print('start --windowingMode --display'); sys.exit(0)
     if a[:2] == ['stack', 'list']:
         print('Stack id=4 bounds=[0,0][1280,720] displayId=0 userId=0')
         if s.get('nav_alive', True): print('taskId=42: app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity')
@@ -68,8 +78,11 @@ elif cmd == 'am':
     s['commands'].append(a)
     p.write_text(json.dumps(s))
     if a[0] == 'start':
-        assert '--task' in a and a[a.index('--task')+1] == '42', a
-        s['mode'] = int(a[a.index('--windowingMode')+1]); s['focus'] = 42
+        if '--task' in a: assert a[a.index('--task')+1] == '42', a
+        else:
+            s['nav_alive'] = not s.get('delayed_task')
+            s['nav_component'] = s.get('cold_component', 'app.organicmaps.SplashActivity')
+        s['mode'] = int(a[a.index('--windowingMode')+1]); s['focus'] = 7 if s.get('delayed_task') else 42
     elif a[:2] == ['task', 'focus']:
         s['focus'] = int(a[2])
         if s.get('transition_component_on_home_focus') and s['focus'] == 7:
@@ -96,18 +109,55 @@ class NavigationLifecycleTest(unittest.TestCase):
                 path = bin_dir / name
                 path.write_text(ANDROID)
                 path.chmod(0o700)
+            replays = overrides.pop("replays", 1)
             state = dict(mode=5, bounds=[0,141,1131,702], focus=42, commands=[])
             state.update(overrides)
             state_path = work / 'state.json'
             state_path.write_text(json.dumps(state))
             source = HELPER.read_text().replace('PATH=/system/bin:/system/xbin:/vendor/bin', f'PATH={bin_dir}', 1)
-            source = source.replace('/system/bin/toybox timeout -k 1 3', 'timeout -k 1 3')
+            source = source.replace('/system/bin/toybox timeout -k 1', 'timeout -k 1')
             source = source.replace('ROOT_DIR=/data/adb/ts18-launcher', f'ROOT_DIR={work}', 1)
             script = work / 'helper.sh'
             script.write_text(source)
-            result = subprocess.run(['/bin/sh', str(script), *args], capture_output=True, text=True,
-                                    env={**os.environ, 'ANDROID_STATE': str(state_path)}, timeout=12)
+            for _ in range(replays):
+                result = subprocess.run(['/bin/sh', str(script), *args], capture_output=True, text=True,
+                                        env={**os.environ, 'ANDROID_STATE': str(state_path)}, timeout=12)
             return result, json.loads(state_path.read_text())
+
+    def test_bootstrap_is_observed_without_focus_resize_or_redelivery(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_component='app.organicmaps.SplashActivity', focus=42)
+        self.assertIn('code=BOOTSTRAP_PENDING', result.stdout)
+        self.assertIn('task=42', result.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_process_without_task_can_launch_after_structured_absence(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, process_only=True, bridge_available=True, focus=7)
+        self.assertIn('code=BOOTSTRAP_PENDING', result.stdout)
+        self.assertEqual(1, len(state['commands']))
+        self.assertEqual('start', state['commands'][0][0])
+        self.assertNotIn('--task', state['commands'][0])
+
+    def test_accepted_launch_with_delayed_task_is_not_dispatched_twice(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, delayed_task=True, bridge_available=True, focus=7, replays=2)
+        self.assertIn('code=LAUNCH_PENDING', result.stdout)
+        self.assertEqual(1, len(state['commands']))
+
+    def test_window_visibility_is_independent_of_valid_task_geometry(self):
+        args = ['verify-native', '0', 'app.organicmaps.incar', '0', '141', '1131', '702', '42']
+        result, state = self.run_helper(args)
+        self.assertIn('visible=1 drawn=1', result.stdout)
+        hidden, state = self.run_helper(args, window_hidden=True)
+        self.assertIn('visible=unknown drawn=unknown', hidden.stdout)
+        self.assertEqual([], state['commands'])
 
     def test_warm_park_validates_home_and_preserves_freeform_task(self):
         result, state = self.run_helper(

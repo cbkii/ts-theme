@@ -97,6 +97,9 @@ public final class NavTaskBridge {
                 found.component = component.flattenToString();
                 ComponentName top = (ComponentName) type.getField("topActivity").get(stack);
                 found.foreignTop = top != null && !pkg.equals(top.getPackageName());
+                // The stack top is the task top only for an exclusive stack. Preserve base
+                // ownership separately; never mistake the launch alias for bootstrap readiness.
+                if (ids.length == 1 && top != null) found.component = top.flattenToString();
                 found.bounds = bounds != null && i < bounds.length ? bounds[i] : null;
             }
         }
