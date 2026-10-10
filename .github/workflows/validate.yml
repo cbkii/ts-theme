@@ -154,7 +154,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bundle="$RUNNER_TEMP/TS18-diagnostics-1.3-PR${{ github.event.pull_request.number || 'head' }}-${SOURCE_REVISION:0:7}.zip"
+          bundle="$RUNNER_TEMP/TS18-diagnostics-1.3-PR${{ github.event.pull_request.number || 'head' }}-${SOURCE_REVISION}.zip"
           repro="$RUNNER_TEMP/diagnostics-repro.zip"
           python3 scripts/diagnostics/build-bundle.py "$bundle"
           python3 scripts/diagnostics/build-bundle.py "$repro"

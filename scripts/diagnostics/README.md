@@ -28,7 +28,7 @@ and its internal `SHA256SUMS` before use.
 The installer is explicit and does not reboot or start capture. It stages and
 hashes the replacement before changing service entries. The new toolkit and boot
 entry are committed before explicitly selected older entries are moved to a backup.
-Handled failures and signals run rollback; `TRANSACTION.txt` records whether the
+Failures and signals after rollback traps are installed run rollback. Earlier staging failures can leave STAGING artefacts requiring inspection before retry; `TRANSACTION.txt` records whether the
 operation is STAGING, NEW_ENTRY_INSTALLED, PASS, ROLLED_BACK or RECOVERY_REQUIRED.
 A hard power loss or SIGKILL cannot run a shell trap, so an interrupted install must
 be inspected before reboot or retry. Existing diagnostic evidence is never deleted.

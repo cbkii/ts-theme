@@ -6,6 +6,7 @@ same_process() { [ -n "$2" ] && [ "$(ticks "$1")" = "$2" ]; }
 atomic() { printf '%s\n' "$2" > "$1.new" && "$BB" mv "$1.new" "$1"; }
 event() { printf '%s\t%s\n' "$(uptime_s)" "$*" >> "$OUT/events.tsv"; }
 CAPTURE_UNSAFE=${CAPTURE_UNSAFE:-0}
+mark_unsafe() { CAPTURE_UNSAFE=1; : > "$OUT/CAPTURE_UNSAFE.txt"; }
 
 # One isolated session per producer. The child proves its session/process identity
 # before any external producer command is started. The parent owns termination.
@@ -44,7 +45,14 @@ capture() {
     # producer group is killed first; EOF then lets head flush partial evidence.
     "$BB" head -c "$c_limit" < "$c_dir/pipe" > "$c_dir/output.txt" &
     c_reader=$!; c_reader_ticks=$(ticks "$c_reader")
-    atomic "$c_dir/reader-owner" "$c_reader $c_reader_ticks"
+    if [ -z "$c_reader_ticks" ] || ! atomic "$c_dir/reader-owner" "$c_reader $c_reader_ticks"; then
+        "$BB" kill -KILL "$c_reader" 2>/dev/null || true
+        wait "$c_reader" 2>/dev/null || true
+        "$BB" rm -f "$c_dir/pipe"
+        mark_unsafe
+        event "BLOCKED $c_name reader-registration-failed"
+        return 1
+    fi
 
     "$BB" setsid "$BB" sh "$SELF" --produce "$c_dir" "$@" </dev/null >/dev/null 2>&1 &
     c_pid=$!
@@ -59,7 +67,7 @@ capture() {
         "$BB" kill -KILL "$c_reader" 2>/dev/null || true
         wait "$c_reader" 2>/dev/null || true
         "$BB" rm -f "$c_dir/pipe"
-        CAPTURE_UNSAFE=1
+        mark_unsafe
         printf 'end_uptime=%s\nduration_s=%s\nproducer_rc=UNKNOWN\nresult=BLOCKED\nbytes=0\n' \
             "$(uptime_s)" "$(( $(uptime_s) - c_start ))" >> "$c_dir/meta.txt"
         event "BLOCKED $c_name producer-identity-unavailable"
@@ -72,11 +80,20 @@ capture() {
         "$BB" kill -KILL "$c_reader" 2>/dev/null || true
         wait "$c_reader" 2>/dev/null || true
         "$BB" rm -f "$c_dir/pipe"
-        CAPTURE_UNSAFE=1
+        mark_unsafe
         event "BLOCKED $c_name producer-identity-mismatch"
         return 1
     fi
-    atomic "$c_dir/owner" "$c_pid $c_ticks"
+    if ! atomic "$c_dir/owner" "$c_pid $c_ticks"; then
+        "$BB" kill -KILL "-$c_pid" 2>/dev/null || true
+        wait "$c_pid" 2>/dev/null || true
+        "$BB" kill -KILL "$c_reader" 2>/dev/null || true
+        wait "$c_reader" 2>/dev/null || true
+        "$BB" rm -f "$c_dir/pipe"
+        mark_unsafe
+        event "BLOCKED $c_name producer-registration-failed"
+        return 1
+    fi
 
     c_until=$((c_start + c_secs)); [ "$c_until" -le "$END" ] || c_until=$END
     while same_process "$c_pid" "$c_ticks" && [ ! -f "$c_dir/producer.done" ] && [ "$(uptime_s)" -lt "$c_until" ]; do
@@ -90,7 +107,7 @@ capture() {
         c_result=WARN_TIMEOUT
     else
         c_result=BLOCKED
-        CAPTURE_UNSAFE=1
+        mark_unsafe
     fi
 
     # A valid seal requires proven termination of the entire owned producer group.
@@ -102,7 +119,7 @@ capture() {
     fi
     wait "$c_pid" 2>/dev/null || true
     if [ "$c_group_stopped" != 1 ]; then
-        CAPTURE_UNSAFE=1
+        mark_unsafe
         c_result=BLOCKED
         event "BLOCKED $c_name producer-group-cleanup-unproven"
     fi
@@ -113,7 +130,7 @@ capture() {
     done
     if same_process "$c_reader" "$c_reader_ticks"; then
         "$BB" kill -KILL "$c_reader" 2>/dev/null || true
-        CAPTURE_UNSAFE=1
+        mark_unsafe
         c_result=BLOCKED
         event "BLOCKED $c_name reader-cleanup-unproven"
     fi
@@ -130,7 +147,7 @@ capture() {
 
 seal() {
     # Caller has joined capture/stream workers and excludes further markers.
-    [ "${CAPTURE_UNSAFE:-0}" = 0 ] || return 1
+    [ "${CAPTURE_UNSAFE:-0}" = 0 ] && [ ! -e "$OUT/CAPTURE_UNSAFE.txt" ] || return 1
     printf 'producer=COMPLETE\nqualification=NOT_RUN\n' > "$OUT/COMPLETE.txt"
     (cd "$OUT" && "$BB" find . -type f ! -name MANIFEST.sha256 ! -name SEALED.txt -print | "$BB" sort |
         while IFS= read -r s_file; do "$BB" sha256sum "$s_file" || exit 1; done) > "$OUT/MANIFEST.sha256" || return 1

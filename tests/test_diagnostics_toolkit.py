@@ -118,6 +118,14 @@ class AnalysisTests(unittest.TestCase):
             finally:
                 analyser.MAX_BYTES = old
 
+    def test_nonfinite_markers_rejected(self):
+        for value in ('nan', 'inf', '-inf', '1e999'):
+            self.assertIsNone(analyser.marker_tuple(value + ' INVALID'))
+        self.assertEqual(analyser.marker_tuple('2 IDLE'), (2.0, 'IDLE'))
+
+    def test_unsafe_capture_never_integrity_pass(self):
+        self.assertEqual(analyser.analyse(sealed({'CAPTURE_UNSAFE.txt': b''}))['integrity'], 'FAIL')
+
     def test_numeric_marker_order_and_repeated_phase_occurrences(self):
         files = {
             'CONTEXT.txt': b'start_epoch=1000\nstart_uptime=0\n',

@@ -2,6 +2,7 @@
 """Offline, bounded TS18 1.3 analysis. Never extract or execute archive members."""
 import argparse
 from collections import Counter, defaultdict
+import math
 import hashlib
 import gzip
 import io
@@ -83,7 +84,8 @@ def marker_tuple(raw):
     if len(parts) != 2:
         return None
     try:
-        return float(parts[0]), parts[1]
+        value = float(parts[0])
+        return (value, parts[1]) if math.isfinite(value) else None
     except ValueError:
         return None
 
@@ -117,7 +119,7 @@ def analyse(files):
             raise ValueError('invalid completion sentinel')
         if not text('SEALED.txt').strip().startswith('PASS'):
             raise ValueError('invalid seal sentinel')
-        if any(x in files for x in ('FORCED_STOP.txt', 'UNSEALED.txt')):
+        if any(x in files for x in ('FORCED_STOP.txt', 'UNSEALED.txt', 'CAPTURE_UNSAFE.txt')):
             raise ValueError('partial/forced run')
         result['integrity'] = 'PASS'
     except (ValueError, KeyError) as exc:

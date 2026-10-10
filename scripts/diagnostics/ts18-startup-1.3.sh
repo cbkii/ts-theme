@@ -196,7 +196,11 @@ if [ "$worker_ids" != "$$ $$" ]; then
     exit 1
 fi
 worker_ticks=$(ticks "$$")
-[ -n "$worker_ticks" ] || { echo 'BLOCKED: worker start identity unavailable' > "$OUT/BLOCKED.txt"; exit 1; }
+[ -n "$worker_ticks" ] || {
+    echo 'BLOCKED: worker start identity unavailable' > "$OUT/BLOCKED.txt"
+    atomic "$STATE/latest" "$OUT"
+    exit 1
+}
 atomic "$LOCK/owner" "$$ $worker_ticks" || exit 1
 atomic "$LOCK/output" "$OUT" || exit 1
 atomic "$STATE/latest" "$OUT" || exit 1
@@ -224,7 +228,9 @@ for pkg in $PACKAGES; do cap "appops-before-$pkg" "$NATIVE/cmd" appops get "$pkg
 event "PHASE measurement-start mode=$MODE seconds=$DURATION"
 MEASURE_END=$(( $(uptime_s) + DURATION ))
 if [ ! -f "$LOCK/STOP" ]; then
-    (capture live-log "$DURATION" 16777216 "$NATIVE/logcat" -b all -v epoch -T 1) & LOG_JOB=$!
+    (capture live-log "$DURATION" 16777216 "$NATIVE/logcat" -b all -v epoch -T 1
+     [ "${CAPTURE_UNSAFE:-0}" = 0 ] || exit 70
+     exit 0) & LOG_JOB=$!
 else
     LOG_JOB=
 fi
@@ -241,7 +247,7 @@ while [ "$(uptime_s)" -lt "$MEASURE_END" ] && [ ! -f "$LOCK/STOP" ]; do
     index=$((index + 1))
     "$BB" sleep 5
 done
-[ -z "$LOG_JOB" ] || wait "$LOG_JOB" || true
+if [ -n "$LOG_JOB" ]; then wait "$LOG_JOB" || mark_unsafe; fi
 event 'PHASE measurement-end; subsequent heavy diagnostics excluded from latency/CPU comparisons'
 
 if [ ! -f "$LOCK/STOP" ]; then
@@ -257,7 +263,11 @@ if [ ! -f "$LOCK/STOP" ]; then
     for pkg in $PACKAGES; do
         [ -f "$LOCK/STOP" ] && break
         cap "package-$pkg" "$NATIVE/dumpsys" package "$pkg"
-        capture "apk-$pkg" 10 524288 "$BB" sh "$SELF" --apk "$pkg"
+        if [ -f "$LOCK/STOP" ]; then
+            event "BLOCKED apk-$pkg stop-requested"
+        else
+            capture "apk-$pkg" 10 524288 "$BB" sh "$SELF" --apk "$pkg"
+        fi
         cap "appops-$pkg" "$NATIVE/cmd" appops get "$pkg"
         cap "pss-$pkg" "$NATIVE/dumpsys" meminfo "$pkg"
     done

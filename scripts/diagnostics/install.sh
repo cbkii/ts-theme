@@ -38,7 +38,11 @@ for lock in /data/adb/ts18-startup-logs/active /data/adb/ts18-deepdiag-v3/worker
 done
 [ ! -e "$DEST" ] || { echo 'BLOCKED: existing toolkit; back up and review upgrade explicitly'; exit 1; }
 [ ! -e "$ENTRY" ] || { echo "BLOCKED: target boot entry already exists: $ENTRY"; exit 1; }
-[ ! -e "$STAGE" ] || { echo "BLOCKED: stale installer stage: $STAGE"; exit 1; }
+for prior_stage in /data/adb/ts18-diagnostics-toolkit.stage-*; do
+    [ ! -e "$prior_stage" ] && [ ! -L "$prior_stage" ] || {
+        echo "BLOCKED: inspect stale installer stage: $prior_stage"; exit 1;
+    }
+done
 
 service_created=0
 if [ ! -d "$SERVICE" ]; then
@@ -49,7 +53,7 @@ fi
 BACKUP=/data/adb/ts18-diagnostics-backup-$("$BB" date -u +%Y%m%dT%H%M%SZ)-p$$
 "$BB" mkdir -m 700 "$BACKUP" "$STAGE" || exit 1
 "$BB" chown 0:0 "$BACKUP" "$STAGE" || exit 1
-printf 'state=STAGING\nservice_created=%s\n' "$service_created" > "$BACKUP/TRANSACTION.txt"
+printf 'state=STAGING\nservice_created=%s\n' "$service_created" > "$BACKUP/TRANSACTION.txt" || exit 1
 
 for file in ts18-startup-1.3.sh capture-lib.sh; do
     "$BB" cp "$SRC/$file" "$STAGE/$file" && "$BB" chown 0:0 "$STAGE/$file" && "$BB" chmod 700 "$STAGE/$file" || exit 1
@@ -69,10 +73,10 @@ rollback() {
     if [ -d "$DEST" ]; then "$BB" mv "$DEST" "$BACKUP/toolkit.failed" || rollback_ok=0; fi
     if [ -d "$STAGE" ]; then "$BB" mv "$STAGE" "$BACKUP/stage.failed" || rollback_ok=0; fi
     if [ "$rollback_ok" = 1 ]; then
-        printf 'state=ROLLED_BACK\n' > "$BACKUP/TRANSACTION.txt"
+        printf 'state=ROLLED_BACK\n' > "$BACKUP/TRANSACTION.txt" || echo "RECOVERY_REQUIRED: transaction record unavailable; inspect $BACKUP"
         echo "BLOCKED: install failed and prior boot entries were restored; inspect $BACKUP"
     else
-        printf 'state=RECOVERY_REQUIRED\n' > "$BACKUP/TRANSACTION.txt"
+        printf 'state=RECOVERY_REQUIRED\n' > "$BACKUP/TRANSACTION.txt" || echo "RECOVERY_REQUIRED: transaction record unavailable; inspect $BACKUP"
         echo "BLOCKED: install failed and automatic rollback was incomplete; do not reboot; inspect $BACKUP, $SERVICE and $DEST"
     fi
     exit 1
@@ -81,11 +85,11 @@ trap 'rollback "$@"' HUP INT TERM
 
 "$BB" mv "$STAGE" "$DEST" || rollback "$@"
 "$BB" mv "$DEST/boot-entry.new" "$ENTRY" || rollback "$@"
-printf 'state=NEW_ENTRY_INSTALLED\n' > "$BACKUP/TRANSACTION.txt"
+printf 'state=NEW_ENTRY_INSTALLED\n' > "$BACKUP/TRANSACTION.txt" || rollback "$@"
 for old in "$@"; do
     "$BB" mv "$old" "$BACKUP/" || rollback "$@"
 done
+printf 'state=PASS\nentry=%s\ntoolkit=%s\n' "$ENTRY" "$DEST" > "$BACKUP/TRANSACTION.txt" || rollback "$@"
 trap - HUP INT TERM
-printf 'state=PASS\nentry=%s\ntoolkit=%s\n' "$ENTRY" "$DEST" > "$BACKUP/TRANSACTION.txt"
 echo "PASS installed; older scripts retained in $BACKUP. No reboot/capture performed."
 echo 'Review README rollback and --status before starting.'
