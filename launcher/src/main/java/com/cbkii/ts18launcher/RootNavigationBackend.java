@@ -41,7 +41,8 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                                 Integer.toString(bounds.left), Integer.toString(bounds.top),
                                 Integer.toString(bounds.right), Integer.toString(bounds.bottom),
                                 Integer.toString(taskId)));
-                if ("TASK_OBSERVATION_UNCERTAIN".equals(verified.code)) {
+                if ("TASK_OBSERVATION_UNCERTAIN".equals(verified.code)
+                        || "TASK_REPLACED".equals(verified.code)) {
                     android.util.Log.w("TS18Nav", "known task observation uncertain before repair; "
                             + "retaining authority without launching task=" + taskId);
                     return verified;
@@ -159,6 +160,14 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private NavigationHelperResult retryKnownTaskMiss(
             String packageName, int taskId, String phase, Operation operation) {
         NavigationHelperResult first = operation.run();
+        if (taskId > 0 && "TASK_OBSERVATION_UNCERTAIN".equals(first.code) && !destroyed) {
+            NavigationHelperResult discovered = helper.run("status", packageName, "0");
+            if (discovered.success && discovered.taskId > 0 && discovered.taskId != taskId
+                    && discovered.userId == AndroidUserId.current()
+                    && packageName.equals(discovered.packageName)
+                    && discovered.component.startsWith(packageName + "/"))
+                return NavigationHelperResult.withCode(discovered, "TASK_REPLACED", "read-only reacquisition");
+        }
         if (taskId <= 0 || !"TASK_NOT_FOUND".equals(first.code) || destroyed) {
             rememberKnownTask(first, packageName, taskId);
             return first;

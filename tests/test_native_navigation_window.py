@@ -88,8 +88,10 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             helper_root = root / "helper"
             bin_dir.mkdir()
             helper_root.mkdir()
-            for command in ("awk", "cat", "cut", "grep", "head", "rm", "sleep", "tr"):
-                resolved = shutil.which(command)
+            for command in ("awk", "cat", "cut", "grep", "head", "rm", "sleep", "tr", "timeout", "mkdir", "rmdir"):
+                resolved = shutil.which(command) or (shutil.which("gtimeout") if command == "timeout" else None)
+                if resolved is None and command == "timeout":
+                    self.skipTest("GNU timeout required for bounded Android command doubles")
                 if resolved is None:
                     self.fail(f"required test command is unavailable: {command}")
                 os.symlink(resolved, bin_dir / command)
@@ -125,6 +127,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
                 f"ROOT_DIR={helper_root}",
                 1,
             )
+            source = source.replace("/system/bin/toybox timeout -k 1", "timeout -k 1")
             test_helper.write_text(source, encoding="utf-8")
             environment = os.environ.copy()
             environment.update({
@@ -325,8 +328,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
     def test_inflight_callbacks_coalesce_and_cannot_launch_again(self):
         self.assertIn("if (activeOperationId != 0)", self.controller)
         self.assertIn("pendingReconcile = true", self.controller)
-        self.assertIn("acquisitionAttemptGeneration == authorityGeneration", self.controller)
-        self.assertIn("Acquisition already attempted; use Retry", self.controller)
+        self.assertIn("recoveryCallback != null", self.controller)
+        self.assertIn("LAUNCH_PENDING", self.helper)
         self.assertIn("beginReacquisitionGeneration()", self.controller)
 
     def test_failure_latch_is_explicit_retry_and_fullscreen_only(self):

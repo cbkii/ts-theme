@@ -49,8 +49,9 @@ final class NavigationRootHelper {
                 .append(' ').append(AndroidUserId.current());
         for (String arg : args) command.append(' ').append(singleQuote(arg));
         ProcessResult result = executeRoot(command.toString(), COMMAND_TIMEOUT_MS);
-        if (result.timedOut) return NavigationHelperResult.failure("TASK_OBSERVATION_UNCERTAIN", "helper timeout; " + result.output);
         NavigationHelperResult parsed = NavigationHelperResult.parse(result.output);
+        if (result.timedOut || result.exitCode == 124 || result.exitCode == 137)
+            return NavigationHelperResult.withCode(parsed, "PHASE_TIMEOUT", "helper deadline action=" + action);
         if (result.exitCode != 0 && parsed.success) {
             return NavigationHelperResult.failure("HELPER_EXIT_" + result.exitCode, result.output);
         }
