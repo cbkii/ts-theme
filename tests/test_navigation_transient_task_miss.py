@@ -41,6 +41,8 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
                          "private void markWindowed")
         self.assertIn("NavigationRecoveryPolicy.recoverable(result.code)", retain)
         self.assertIn("result.taskId > 0", retain)
+        recovery_policy = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationRecoveryPolicy.java").read_text()
+        self.assertIn('case "TASK_OBSERVATION_UNCERTAIN"', recovery_policy)
 
     def test_uncertain_resume_uses_existing_non_mutating_controller_path(self):
         policy = between(BACKEND,
@@ -74,7 +76,7 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
 
     def test_present_backend_stops_before_mutation_when_observation_is_uncertain(self):
         present = between(BACKEND, "@Override public void present", "@Override public void verify")
-        uncertain = present.split('if ("TASK_OBSERVATION_UNCERTAIN".equals(verified.code))', 1)[1].split(
+        uncertain = present.split('if ("TASK_OBSERVATION_UNCERTAIN".equals(verified.code)', 1)[1].split(
             'if ("TASK_NOT_FOUND"', 1
         )[0]
         self.assertIn("return verified", uncertain)

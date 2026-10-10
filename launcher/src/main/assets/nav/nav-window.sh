@@ -595,7 +595,7 @@ observe_window() {
       }
     }
     /^[[:space:]]*Window #[0-9]+ Window\{/ {
-      finish(); matched=(index($0, " u" user " ") && index($0, component));
+      finish(); matched=(index($0, " u" user " ") && index($0, component "}"));
       valid_stack=0; display=0; surface=0; onscreen=0; visible=0; drawn=0
     }
     matched && /mDisplayId=0([[:space:]]|$)/ {display=1}
@@ -760,7 +760,6 @@ case "$action" in
     validate_bounds "$left" "$top" "$right" "$bottom" || fail BAD_BOUNDS
     require_task "$PKG" "$hint" 1
     verify_state 5 "$left,$top,$right,$bottom"
-    require_bootstrap_ready
     PHASE=visibility
     observe_window
     emit_protocol OK VERIFIED_NATIVE

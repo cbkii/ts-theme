@@ -22,7 +22,7 @@ final class NavigationRecoveryPolicy {
         if (code == null) return false;
         switch (code) {
             case "TASK_OBSERVATION_UNCERTAIN": case "TASK_NOT_FOUND": case "TASK_REPLACED":
-            case "FOREGROUND_CHANGED": case "TASK_STATE_UNREADABLE": case "BOOTSTRAP_PENDING":
+            case "FOREGROUND_CHANGED": case "TASK_STATE_UNREADABLE": case "COMPONENT_UNKNOWN": case "BOOTSTRAP_PENDING":
             case "LAUNCH_PENDING": case "PHASE_TIMEOUT": case "PRESENTATION_UNCONFIRMED":
             case "FREEFORM_TRANSITION_REJECTED": case "NATIVE_NOT_FOREGROUND":
             case "BOUNDS_MISMATCH": case "WINDOWING_MODE_MISMATCH": case "FOCUS_FAILED":
@@ -35,8 +35,6 @@ final class NavigationRecoveryPolicy {
     static boolean ordinaryFullscreenAllowed(String code) {
         return "ROOT_UNAVAILABLE".equals(code) || "ROOT_REQUIRED".equals(code)
                 || "INSTALL_TIMEOUT".equals(code) || "FREEFORM_LAUNCH_UNSUPPORTED".equals(code)
-                || "FULLSCREEN_LAUNCH_UNSUPPORTED".equals(code)
-                || "TASK_OBSERVATION_UNCERTAIN".equals(code) || "NO_RESPONSE".equals(code)
-                || "BAD_RESPONSE".equals(code);
+                || "FULLSCREEN_LAUNCH_UNSUPPORTED".equals(code);
     }
 }

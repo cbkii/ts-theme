@@ -41,7 +41,8 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                                 Integer.toString(bounds.left), Integer.toString(bounds.top),
                                 Integer.toString(bounds.right), Integer.toString(bounds.bottom),
                                 Integer.toString(taskId)));
-                if ("TASK_OBSERVATION_UNCERTAIN".equals(verified.code)) {
+                if ("TASK_OBSERVATION_UNCERTAIN".equals(verified.code)
+                        || "TASK_REPLACED".equals(verified.code)) {
                     android.util.Log.w("TS18Nav", "known task observation uncertain before repair; "
                             + "retaining authority without launching task=" + taskId);
                     return verified;

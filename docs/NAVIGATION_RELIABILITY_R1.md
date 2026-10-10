@@ -32,12 +32,14 @@ authority change or manual Retry resets the bounded budget.
 Each automatic acquisition first observes tasks. An accepted cold launch is
 protected by an atomic private boot/user/package directory claim before dispatch.
 A launcher timeout/restart cannot replay the launch; the claim never expires on
-time alone. Definite command rejection or validated task identity resolves it. The claim
-is cleared for every validated package; Organic Maps must first reach MwmActivity. A live service-only process
+time alone. Definite command rejection or validated task identity resolves it. The
+claim is cleared for every validated package; Organic Maps must first reach
+MwmActivity. A live service-only process
 can cold-launch only after complete ATM NONE plus negative Recents and stack
 observations. A failed query cannot prove disappearance. Independently discovered
 replacement tasks are adopted by package/user/component, with fresh geometry
-verification before repair.
+verification before repair. Read-only geometry verification preserves other
+same-package screens; automatic mutation/focus still requires map bootstrap readiness.
 
 The current departure fullscreen/freeform policy is preserved. HOME/native focus
 is accepted for a warm mode-5 presentation; a fullscreen map is not compacted over
@@ -47,9 +49,10 @@ later physical experiment, not an assumed improvement.
 ## Fallback and diagnostics
 
 Explicit Open fullscreen first reuses the native task path. Root/backend discovery
-refusal can fall back to the ordinary Android package launch, triggered only by
+refusal or a definite unsupported launch capability can fall back to the ordinary
+Android package launch, triggered only by
 that user action. A known root refusal avoids another root attempt. Permission/
-foreign-Activity policy refusal does not permit this fallback. No CLEAR_TASK,
+foreign-Activity policy refusal or an uncertain native result does not permit this fallback. No CLEAR_TASK,
 force-stop, injected input, second navigation authority or automatic Leaflet/HOME
 switch is introduced. A normal Android launch is dispatch evidence, not a verified
 fullscreen window.

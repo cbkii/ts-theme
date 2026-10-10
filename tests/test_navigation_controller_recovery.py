@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher'
 
 
-@unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'JDK required')
+@unittest.skipUnless(shutil.which('java'), 'Java compiler module required')
 class ControllerRecoveryTests(unittest.TestCase):
     def test_recovery_without_more_lifecycle_callbacks(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -21,9 +21,12 @@ public String getPackageName(){return "com.cbkii.ts18launcher";} public int getT
 public boolean hasWindowFocus(){return true;} public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();} }''',
                 'android/view/Window.java': 'package android.view; public class Window {public View getDecorView(){return View.INSTANCE;}}',
                 'android/view/View.java': '''package android.view; public class View {
-public static final View INSTANCE=new View(); public static final java.util.ArrayDeque<Runnable> jobs=new java.util.ArrayDeque<>();
-public boolean postDelayed(Runnable r,long d){jobs.add(r); return true;} public boolean removeCallbacks(Runnable r){return jobs.remove(r);}
-public static void drain(){int n=0;while(!jobs.isEmpty()){if(++n>30)throw new AssertionError("unbounded retry");jobs.remove().run();}}
+public static final View INSTANCE=new View();
+public record Job(Runnable action,long due){} public static final java.util.ArrayDeque<Job> jobs=new java.util.ArrayDeque<>();
+public boolean postDelayed(Runnable r,long d){jobs.add(new Job(r,android.os.SystemClock.now+d));return true;}
+public boolean removeCallbacks(Runnable r){return jobs.removeIf(j->j.action()==r);}
+public static void drain(){int n=0;while(!jobs.isEmpty()){if(++n>30)throw new AssertionError("unbounded retry");
+Job j=jobs.remove();android.os.SystemClock.now=Math.max(android.os.SystemClock.now,j.due());j.action().run();}}
 }''',
                 'android/content/ComponentName.java': '''package android.content; public class ComponentName { final String p,c;
 public ComponentName(String p,String c){this.p=p;this.c=c;} public String getPackageName(){return p;}
@@ -38,7 +41,7 @@ public static final int MATCH_DEFAULT_ONLY=1;public static class NameNotFoundExc
 public android.content.Intent getLaunchIntentForPackage(String p){return new android.content.Intent();}
 public ActivityInfo getActivityInfo(android.content.ComponentName c,int f)throws NameNotFoundException{return new ActivityInfo();}}''',
                 'android/location/Location.java': 'package android.location; public class Location {}',
-                'android/os/SystemClock.java': 'package android.os; public class SystemClock {public static long elapsedRealtime(){return 1000;}}',
+                'android/os/SystemClock.java': 'package android.os; public class SystemClock {public static long now=1000;public static long elapsedRealtime(){return now;}}',
                 'android/util/Log.java': 'package android.util; public class Log {public static int i(String t,String s){return 0;}public static int w(String t,String s){return 0;}}',
             }
             for path, content in android.items():
@@ -66,10 +69,10 @@ class NavigationProvider {static final String ORGANIC_MAPS_INCAR="app.organicmap
 static boolean hasLauncherActivity(android.app.Activity a,String p){return true;}
 static boolean open(android.app.Activity a,String p,android.location.Location l){launches++;return true;}}
 class RawFreeformTaskBackend implements NavigationSurfaceBackend {
-static int presents,resumes,verifies,fullscreens;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss;
+static int presents,resumes,verifies,fullscreens;static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss;
 RawFreeformTaskBackend(android.app.Activity a){}public String label(){return "fake";}
 static NavigationHelperResult good(){return NavigationHelperResult.parse("OK code=RESUMED_NATIVE user=0 task=42 stack=4 package=app.organicmaps.incar component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 windowingMode=5 bounds=0,100,1100,700 visible=1 drawn=1");}
-public void present(String p,String c,NavigationWindowBounds b,int t,int id,Callback cb){presents++;
+public void present(String p,String c,NavigationWindowBounds b,int t,int id,Callback cb){presents++;android.os.SystemClock.now+=workMs;
 if(alwaysMiss||presents==1){
  if("BOOTSTRAP_PENDING".equals(first))cb.onResult(NavigationHelperResult.withCode(good(),first,""));
  else if("HIDDEN".equals(first))cb.onResult(NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown")));
@@ -83,7 +86,7 @@ public void fullscreen(String p,String c,int t,Callback cb){fullscreens++;cb.onR
 public void backgroundFullscreen(String p,int t,String h,int ht,boolean e,Callback cb){cb.onResult(good());}
 public void suspend(String p,int t,String h,int ht,Callback cb){cb.onResult(good());}public void destroy(){}
 static void reset(){presents=resumes=verifies=fullscreens=0;alwaysMiss=resumeMiss=false;first="TASK_OBSERVATION_UNCERTAIN";
-NavigationProvider.launches=0;android.view.View.jobs.clear();}}
+NavigationProvider.launches=0;workMs=0;android.os.SystemClock.now=1000;android.view.View.jobs.clear();}}
 ''')
             (package / 'Harness.java').write_text(r'''package com.cbkii.ts18launcher;
 public class Harness {
@@ -92,6 +95,8 @@ static NavigationWindowController start(NativeNavigationPanel p){NavigationWindo
 public static void main(String[] args){
  RawFreeformTaskBackend.reset();NativeNavigationPanel p=new NativeNavigationPanel();start(p);android.view.View.drain();
  check(p.configured==1&&RawFreeformTaskBackend.presents==2,"transient acquisition never recovered");
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="COMPONENT_UNKNOWN";p=new NativeNavigationPanel();start(p);android.view.View.drain();
+ check(p.configured==1&&RawFreeformTaskBackend.presents==2,"missing top Activity never recovered");
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="BOOTSTRAP_PENDING";p=new NativeNavigationPanel();start(p);android.view.View.drain();
  check(p.configured==1&&RawFreeformTaskBackend.presents==1&&RawFreeformTaskBackend.verifies==1,"bootstrap duplicated launch");
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="BOOTSTRAP_PENDING";RawFreeformTaskBackend.resumeMiss=true;p=new NativeNavigationPanel();start(p);android.view.View.drain();
@@ -100,6 +105,8 @@ public static void main(String[] args){
  check(p.configured==0,"geometry incorrectly claimed visibility");android.view.View.drain();check(p.configured==1&&RawFreeformTaskBackend.presents==1,"surface recovery relaunched task");
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.alwaysMiss=true;p=new NativeNavigationPanel();start(p);android.view.View.drain();
  check(RawFreeformTaskBackend.presents==7&&p.error.contains("TASK_OBSERVATION_UNCERTAIN"),"recovery budget not enforced");
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.alwaysMiss=true;RawFreeformTaskBackend.workMs=20000;p=new NativeNavigationPanel();start(p);android.view.View.drain();
+ check(RawFreeformTaskBackend.presents==4&&p.error.contains("TASK_OBSERVATION_UNCERTAIN"),"elapsed recovery deadline ignored");
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();NavigationWindowController c=start(p);c.onHomeStopped();android.view.View.drain();
  check(RawFreeformTaskBackend.presents==1,"recovery ran after HOME stopped");c.onHomeVisible();android.view.View.drain();check(p.configured==1,"real HOME return failed to recover");
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="ROOT_UNAVAILABLE";p=new NativeNavigationPanel();start(p);android.view.View.drain();p.fullscreen.run();
@@ -107,11 +114,13 @@ public static void main(String[] args){
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="ROOT_UNAVAILABLE";p=new NativeNavigationPanel();c=start(p);p.retry.run();android.view.View.drain();p.fullscreen.run();
  check(RawFreeformTaskBackend.fullscreens==1,"successful recovery retained stale root failure");
  check(!NavigationRecoveryPolicy.ordinaryFullscreenAllowed("FULLSCREEN_POLICY_BLOCKED"),"permission policy bypassed");
+ check(!NavigationRecoveryPolicy.ordinaryFullscreenAllowed("TASK_OBSERVATION_UNCERTAIN")&&!NavigationRecoveryPolicy.ordinaryFullscreenAllowed("NO_RESPONSE"),"uncertain native result replayed via fallback");
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);c.destroy();android.view.View.drain();check(RawFreeformTaskBackend.presents==1,"destroyed session retried");
  System.out.println("PASS controller acquisition/bootstrap/focus/visibility/budget/lifecycle/fallback");
 }}
 ''')
-            subprocess.run(['javac', '-d', str(root / 'classes'),
+            (root / 'classes').mkdir()
+            subprocess.run(['java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-d', str(root / 'classes'),
                             *map(str, root.rglob('*.java'))], check=True, capture_output=True, text=True)
             result = subprocess.run(['java', '-cp', str(root / 'classes'),
                                      'com.cbkii.ts18launcher.Harness'], check=True, capture_output=True, text=True)

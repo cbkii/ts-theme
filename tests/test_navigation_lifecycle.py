@@ -21,7 +21,7 @@ a = sys.argv[1:]
 if cmd == 'id': print(0)
 elif cmd == 'dumpsys':
     if a[0] == 'window':
-        print('  Window #0 Window{fake u0 app.organicmaps.incar/app.organicmaps.MwmActivity}:')
+        print('  Window #0 Window{fake u0 app.organicmaps.incar/app.organicmaps.MwmActivity' + ('Other' if s.get('decoy_window') else '') + '}:')
         print('    mDisplayId=0 stackId=4')
         print('    mHasSurface=true isReadyForDisplay()=true')
         print('    isOnScreen=' + ('false' if s.get('window_hidden') else 'true'))
@@ -116,6 +116,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             parallel = overrides.pop("parallel", False)
             seed_claim = overrides.pop("seed_claim", False)
             close_after_first = overrides.pop("close_after_first", False)
+            reveal_after_first = overrides.pop("reveal_after_first", False)
             state = dict(mode=5, bounds=[0,141,1131,702], focus=42, commands=[])
             state.update(overrides)
             state_path = work / 'state.json'
@@ -143,6 +144,10 @@ class NavigationLifecycleTest(unittest.TestCase):
                     if close_after_first and iteration == 0:
                         state = json.loads(state_path.read_text())
                         state.update(nav_alive=False, focus=7)
+                        state_path.write_text(json.dumps(state))
+                    if reveal_after_first and iteration == 0:
+                        state = json.loads(state_path.read_text())
+                        state.update(nav_alive=True, nav_component='app.organicmaps.MwmActivity', focus=7)
                         state_path.write_text(json.dumps(state))
             return result, json.loads(state_path.read_text())
 
@@ -172,6 +177,16 @@ class NavigationLifecycleTest(unittest.TestCase):
             nav_alive=False, delayed_task=True, bridge_available=True, focus=7, replays=2)
         self.assertIn('code=LAUNCH_PENDING', result.stdout)
         self.assertEqual(1, len(state['commands']))
+
+    def test_delayed_task_appears_and_is_adopted_without_second_launch(self):
+        result, state = self.run_helper(
+            ['present-native', '0', 'app.organicmaps.incar',
+             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, delayed_task=True, bridge_available=True, focus=7,
+            replays=2, reveal_after_first=True)
+        self.assertIn('code=PRESENTED_NATIVE', result.stdout)
+        self.assertIn('task=42', result.stdout)
+        self.assertEqual(1, sum(c[0] == 'start' for c in state['commands']))
 
     def test_concurrent_acquisition_has_one_atomic_launch_claim(self):
         result, state = self.run_helper(
@@ -212,6 +227,16 @@ class NavigationLifecycleTest(unittest.TestCase):
         self.assertIn('visible=1 drawn=1', result.stdout)
         hidden, state = self.run_helper(args, window_hidden=True)
         self.assertIn('visible=unknown drawn=unknown', hidden.stdout)
+        decoy, _ = self.run_helper(args, decoy_window=True)
+        self.assertIn('visible=unknown drawn=unknown', decoy.stdout)
+        self.assertEqual([], state['commands'])
+
+    def test_read_only_verify_preserves_same_package_non_map_flow(self):
+        result, state = self.run_helper(
+            ['verify-native', '0', 'app.organicmaps.incar', '0', '141', '1131', '702', '42'],
+            nav_component='app.organicmaps.settings.SettingsActivity')
+        self.assertIn('code=VERIFIED_NATIVE', result.stdout)
+        self.assertNotIn('code=BOOTSTRAP_PENDING', result.stdout)
         self.assertEqual([], state['commands'])
 
     def test_warm_park_validates_home_and_preserves_freeform_task(self):

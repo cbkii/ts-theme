@@ -357,7 +357,7 @@ final class NavigationWindowController {
             if (!finishOperation(operation)) return;
             retainObservedTask(result, pkg);
             if (acceptIdentity(result, pkg, 0) && result.displayId == 0 && result.windowingMode == 1) {
-                activeTaskId = result.taskId; activePackage = pkg;
+                activeTaskId = result.taskId; activePackage = pkg; lastHelperCode = "";
                 needsValidation = true; needsPresentation = true; clearFailureLatch();
                 Log.i(TAG, "fullscreen task=" + result.taskId + " package=" + pkg + " verifiedBounds=" + result.bounds);
                 if (location != null && !NavigationProvider.open(activity, pkg, location))

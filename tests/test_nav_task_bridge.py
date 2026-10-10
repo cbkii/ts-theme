@@ -48,6 +48,7 @@ public class ActivityTaskManager {
    if("shared".equals(scenario)){s.taskIds=new int[]{42,99};s.taskNames=new String[]{s.taskNames[0],"other.package/.Activity"};s.taskUserIds=new int[]{0,0};}
    if("wrong-user".equals(scenario))s.taskUserIds[0]=10;
    if("foreign-top".equals(scenario))s.topActivity=android.content.ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
+   if("no-top".equals(scenario))s.topActivity=null;
    if("unknown-name".equals(scenario))s.taskNames[0]="unreadable";
   }
   public List<StackInfo> getAllStackInfos(){
@@ -98,6 +99,22 @@ class NavTaskBridgeTest(unittest.TestCase):
         result = self.run_bridge()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("FOUND 42 8 0 5", result.stdout)
+
+    def test_missing_top_does_not_report_base_as_map_readiness(self):
+        result = self.run_bridge(scenario="no-top")
+        self.assertIn("FOUND 42 8 0 5", result.stdout)
+        self.assertIn(" unknown", result.stdout)
+        self.assertNotIn("app.organicmaps.MwmActivity", result.stdout)
+
+    def test_unobserved_top_cannot_change_mode(self):
+        result = self.run_bridge("mode", scenario="no-top")
+        self.assertIn("TOP_ACTIVITY_UNOBSERVED", result.stdout)
+        self.assertNotIn("CALL", result.stdout)
+
+    def test_shared_stack_does_not_assign_stack_top_to_each_task(self):
+        result = self.run_bridge(scenario="shared")
+        self.assertIn("FOUND 42 8 0 5", result.stdout)
+        self.assertIn(" unknown", result.stdout)
 
     def test_background_mode_never_brings_task_to_top(self):
         result = self.run_bridge("mode")

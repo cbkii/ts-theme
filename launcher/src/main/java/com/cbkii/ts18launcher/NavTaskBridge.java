@@ -46,6 +46,8 @@ public final class NavTaskBridge {
                 if (observed.taskCount != 1 || observed.display != 0 || observed.activityType != 1)
                     throw new IllegalStateException("TASK_STACK_NOT_EXCLUSIVE");
                 if (observed.foreignTop) throw new IllegalStateException("LEGITIMATE_FOREIGN_ACTIVITY");
+                if ("unknown".equals(observed.component))
+                    throw new IllegalStateException("TOP_ACTIVITY_UNOBSERVED");
                 Method setMode = api.getMethod("setTaskWindowingMode", int.class, int.class, boolean.class);
                 if ("probe-mode".equals(action)) { mode = observed.mode; toTop = false; }
                 // No-op capability proof occurs in this exact root Binder caller first.
@@ -99,7 +101,7 @@ public final class NavTaskBridge {
                 found.foreignTop = top != null && !pkg.equals(top.getPackageName());
                 // The stack top is the task top only for an exclusive stack. Preserve base
                 // ownership separately; never mistake the launch alias for bootstrap readiness.
-                if (ids.length == 1 && top != null) found.component = top.flattenToString();
+                found.component = ids.length == 1 && top != null ? top.flattenToString() : "unknown";
                 found.bounds = bounds != null && i < bounds.length ? bounds[i] : null;
             }
         }
