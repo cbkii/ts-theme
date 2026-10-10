@@ -151,7 +151,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             source = source.replace('ROOT_DIR=/data/adb/ts18-launcher', f'ROOT_DIR={work}', 1)
             if disable_claim:
                 source = source.replace('mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING', 'true', 1)
-            script = work / 'helper.sh' 
+            script = work / 'helper.sh'
             script.write_text(source)
             if seed_claim:
                 boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()

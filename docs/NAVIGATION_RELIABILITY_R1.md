@@ -33,7 +33,7 @@ Each automatic acquisition first observes tasks. An accepted cold launch is
 protected by an atomic private boot/user/package directory claim before dispatch,
 shared by freeform and explicit root fullscreen cold starts.
 A launcher timeout/restart cannot replay the launch; the claim never expires on
-time alone. Definite command rejection or validated task identity resolves it. The
+time alone. Definite command rejection or validated task identity resolves it.
 A timed-out/uncertain dispatch cannot be cleared merely by Retry or budget
 exhaustion: those events do not prove server-side cancellation. Use the normal
 Apps/system launcher path for an explicit user launch while retaining that uncertainty.
