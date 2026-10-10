@@ -39,9 +39,9 @@ done
 [ ! -e "$DEST" ] || { echo 'BLOCKED: existing toolkit; back up and review upgrade explicitly'; exit 1; }
 [ ! -e "$ENTRY" ] || { echo "BLOCKED: target boot entry already exists: $ENTRY"; exit 1; }
 for prior_stage in /data/adb/ts18-diagnostics-toolkit.stage-*; do
-    [ ! -e "$prior_stage" ] && [ ! -L "$prior_stage" ] || {
-        echo "BLOCKED: inspect stale installer stage: $prior_stage"; exit 1;
-    }
+    if [ -e "$prior_stage" ] || [ -L "$prior_stage" ]; then
+        echo "BLOCKED: inspect stale installer stage: $prior_stage"; exit 1
+    fi
 done
 
 service_created=0
