@@ -16,6 +16,11 @@ def has_java_compiler():
 ROOT = Path(__file__).resolve().parents[1]
 
 class RepairQualificationTests(unittest.TestCase):
+    def test_build_provenance_accepts_both_ci_and_testing_identity(self):
+        source = (ROOT / 'launcher/build.gradle.kts').read_text()
+        self.assertRegex(source, r'environmentVariable\("SOURCE_REVISION"\)\s*\.orElse\(providers.environmentVariable\("TESTING_SOURCE_SHA"\)\)')
+        self.assertRegex(source, r'environmentVariable\("SOURCE_REF"\)\s*\.orElse\(providers.environmentVariable\("TESTING_SOURCE_REF"\)\)')
+
     def test_embedded_payload_integrity_and_syntax(self):
         source = (ROOT / 'scripts/qualification/ts18-validate.sh').read_text()
         payloads = {name: body+'\n' for name, tag, body in re.findall(

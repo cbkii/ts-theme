@@ -27,7 +27,7 @@ The kit is local and read-only for device state. It writes its own private captu
 
 ## 2. Run the smoke gate first
 
-Select **s**. Prepare a normal music library/storage connection and a radio station. In the launcher, select **Settings → Diagnostics & system → Testing methods** and begin with N1 / Bridge / L2. The guide starts a bounded capture lasting up to 300 seconds; wait for **Trace is measuring now** before acting. If it expires between steps, the guide starts a new capture. Treat each capture as separate evidence: there can be a gap between them, so do not infer continuity across a restart.
+Select **s**. Prepare a normal music library/storage connection and a radio station. In the launcher, select **Settings → Diagnostics & system → Testing methods** and begin with N1 / Bridge / L2. The guide starts a bounded capture with a measurement window of up to 300 seconds; preflight and post-capture inventory take additional time. Wait for **Trace is measuring now** before acting. If the measurement window expires between steps, the guide starts a new capture. Treat each capture as separate evidence: there can be a gap between them, so do not infer continuity across a restart.
 
 For each prompt, switch to HOME, perform the action once, return to Termux and press **p** (pass), **f** (fail), or **n** (not run/uncertain). Only report what you personally saw/heard. These are separate observations:
 

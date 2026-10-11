@@ -4,8 +4,10 @@ plugins {
 
 val versionCodeAuthority = providers.gradleProperty("VERSION_CODE").get().toInt()
 val versionNameAuthority = providers.gradleProperty("VERSION_NAME").get()
-val sourceRevision = providers.environmentVariable("SOURCE_REVISION").orElse("unknown").get()
-val sourceRef = providers.environmentVariable("SOURCE_REF").orElse("local").get()
+val sourceRevision = providers.environmentVariable("SOURCE_REVISION")
+    .orElse(providers.environmentVariable("TESTING_SOURCE_SHA")).orElse("unknown").get()
+val sourceRef = providers.environmentVariable("SOURCE_REF")
+    .orElse(providers.environmentVariable("TESTING_SOURCE_REF")).orElse("local").get()
 
 val signingValues = mapOf(
     "TS_THEME_KEYSTORE_FILE" to providers.environmentVariable("TS_THEME_KEYSTORE_FILE").orNull,
