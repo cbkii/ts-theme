@@ -19,6 +19,11 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private final ExecutorService executor;
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean destroyed;
+    private volatile long requestedDeadline;
+    private long runningDeadline;
+
+    @Override public void setDeadline(long deadline) { requestedDeadline = deadline; }
+    private long remaining() { return Math.max(0L, runningDeadline - android.os.SystemClock.elapsedRealtime()); }
     private volatile NavigationHelperResult lastKnownTaskObservation;
 
     RootNavigationBackend(Context context, String threadName) {
@@ -142,7 +147,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
 
     private void ensureNavigationPermissions(String packageName) {
         NavigationPermissionBootstrapper.Result result =
-                NavigationPermissionBootstrapper.ensureNow(context, packageName);
+                NavigationPermissionBootstrapper.ensureNow(context, packageName, runningDeadline - 500L);
         if (!result.success && result.attempted) {
             android.util.Log.w("TS18NavPerm",
                     "permission mitigation failed open package=" + packageName
@@ -175,7 +180,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
         android.util.Log.w("TS18Nav", "transient TASK_NOT_FOUND phase=" + phase
                 + " package=" + packageName + " task=" + taskId + " · rechecking parser once");
         try {
-            Thread.sleep(KNOWN_TASK_RECHECK_DELAY_MS);
+            Thread.sleep(Math.min(KNOWN_TASK_RECHECK_DELAY_MS, remaining()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return first;
@@ -223,7 +228,8 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                 + "command -v pidof >/dev/null || exit 3; "
                 + "pidof " + packageName + " >/dev/null 2>&1; rc=$?; "
                 + "[ \"$rc\" = 0 ] && exit 2; [ \"$rc\" = 1 ] && exit 1; exit 3";
-        RootShell.Result result = RootShell.runMillis(command, CORROBORATION_TIMEOUT_MS);
+        if (remaining() < 1500L || destroyed) return AbsenceEvidence.UNKNOWN;
+        RootShell.Result result = RootShell.runWithin(command, Math.min(CORROBORATION_TIMEOUT_MS, remaining() - 500L));
         if (!result.completed) return AbsenceEvidence.UNKNOWN;
         if (result.exitCode == 0) return AbsenceEvidence.PRESENT_IN_RECENTS;
         if (result.exitCode == 1) return AbsenceEvidence.ABSENT;
@@ -260,10 +266,17 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                     NavigationHelperResult.failure("DESTROYED", ""));
             return;
         }
+        final long deadline = requestedDeadline > 0L ? requestedDeadline
+                : android.os.SystemClock.elapsedRealtime() + 12000L;
         executor.execute(() -> {
+            runningDeadline = deadline;
+            helper.setDeadline(deadline);
             NavigationHelperResult result;
             try {
-                result = operation.run();
+                result = destroyed || remaining() < 1500L
+                        ? NavigationHelperResult.failure("ACTION_TIMEOUT", "before backend admission")
+                        : operation.run();
+                if (remaining() == 0L) result = NavigationHelperResult.withCode(result, "ACTION_TIMEOUT", "backend deadline");
             } catch (RuntimeException e) {
                 result = NavigationHelperResult.failure("BACKEND_EXCEPTION",
                         e.getClass().getSimpleName());

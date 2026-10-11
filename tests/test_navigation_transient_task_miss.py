@@ -20,7 +20,7 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
                               "private AbsenceEvidence corroborateKnownTask",
                               "private static boolean safePackage")
         self.assertIn('"TASK_NOT_FOUND".equals(first.code)', policy)
-        self.assertIn("Thread.sleep(KNOWN_TASK_RECHECK_DELAY_MS)", policy)
+        self.assertIn("Thread.sleep(Math.min(KNOWN_TASK_RECHECK_DELAY_MS, remaining()))", policy)
         self.assertIn("AbsenceEvidence evidence = corroborateKnownTask", policy)
         self.assertIn("if (evidence == AbsenceEvidence.ABSENT) return second;", policy)
         self.assertIn("NavigationHelperResult.withCode(", policy)

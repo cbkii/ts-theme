@@ -3,6 +3,7 @@ package com.cbkii.ts18launcher;
 interface NavigationSurfaceBackend {
     interface Callback { void onResult(NavigationHelperResult result); }
     String label();
+    default void setDeadline(long elapsedDeadlineMs) { }
     void present(String packageName, String launchComponent, NavigationWindowBounds bounds,
             int taskId, int transactionId, Callback callback);
     void verify(String packageName, NavigationWindowBounds bounds, int taskId, Callback callback);

@@ -4,8 +4,10 @@ plugins {
 
 val versionCodeAuthority = providers.gradleProperty("VERSION_CODE").get().toInt()
 val versionNameAuthority = providers.gradleProperty("VERSION_NAME").get()
-val sourceRevision = providers.environmentVariable("SOURCE_REVISION").orElse("unknown").get()
-val sourceRef = providers.environmentVariable("SOURCE_REF").orElse("local").get()
+val sourceRevision = providers.environmentVariable("SOURCE_REVISION")
+    .orElse(providers.environmentVariable("TESTING_SOURCE_SHA")).orElse("unknown").get()
+val sourceRef = providers.environmentVariable("SOURCE_REF")
+    .orElse(providers.environmentVariable("TESTING_SOURCE_REF")).orElse("local").get()
 
 val signingValues = mapOf(
     "TS_THEME_KEYSTORE_FILE" to providers.environmentVariable("TS_THEME_KEYSTORE_FILE").orNull,
@@ -116,4 +118,26 @@ dependencies {
     // JVM tests need a real JSONObject implementation; Android's compile stubs throw
     // at runtime. This remains test-only and never enters the launcher APK.
     testImplementation("org.json:json:20240303")
+}
+
+// Text provenance is inspectable in the installed APK without resource-table tooling.
+abstract class WriteProvenance : DefaultTask() {
+    @get:Input abstract val revision: Property<String>
+    @get:Input abstract val sourceBranch: Property<String>
+    @get:OutputDirectory abstract val destination: DirectoryProperty
+    @TaskAction fun write() {
+        val target = destination.get().file("build-info.properties").asFile
+        target.parentFile.mkdirs()
+        target.writeText("source_revision=${revision.get()}\nsource_ref=${sourceBranch.get()}\n")
+    }
+}
+val generateProvenance = tasks.register<WriteProvenance>("generateProvenance") {
+    revision.set(sourceRevision)
+    sourceBranch.set(sourceRef)
+    destination.set(layout.buildDirectory.dir("generated/provenanceAssets"))
+}
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(generateProvenance, WriteProvenance::destination)
+    }
 }

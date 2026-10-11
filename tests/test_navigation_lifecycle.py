@@ -122,7 +122,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             work = Path(tmp)
             bin_dir = work / 'bin'
             bin_dir.mkdir()
-            for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout', 'mkdir', 'rmdir'):
+            for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout', 'mkdir', 'rmdir', 'mv'):
                 resolved = shutil.which(name) or (shutil.which('gtimeout') if name == 'timeout' else None)
                 if resolved is None and name == 'timeout':
                     self.skipTest('GNU timeout required for bounded Android command doubles')
@@ -136,6 +136,8 @@ class NavigationLifecycleTest(unittest.TestCase):
                 path = bin_dir / name
                 path.write_text(ANDROID.replace('app.organicmaps.incar', overrides.get('nav_package', 'app.organicmaps.incar')))
                 path.chmod(0o700)
+            method = overrides.pop("method", "N1")
+            transition = overrides.pop("transition", "intent")
             replays = overrides.pop("replays", 1)
             parallel = overrides.pop("parallel", False)
             seed_claim = overrides.pop("seed_claim", False)
@@ -147,10 +149,11 @@ class NavigationLifecycleTest(unittest.TestCase):
             state_path = work / 'state.json'
             state_path.write_text(json.dumps(state))
             source = HELPER.read_text().replace('PATH=/system/bin:/system/xbin:/vendor/bin', f'PATH={bin_dir}', 1)
+            source = source.replace('/proc/$$/stat', '/proc/self/stat')
             source = source.replace('/system/bin/toybox timeout -k 1', 'timeout -k 1')
             source = source.replace('ROOT_DIR=/data/adb/ts18-launcher', f'ROOT_DIR={work}', 1)
             if disable_claim:
-                source = source.replace('mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING', 'true', 1)
+                source = source.replace('mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING', 'mkdir -p "$launch_marker"', 1)
             script = work / 'helper.sh'
             script.write_text(source)
             if seed_claim:
@@ -160,7 +163,7 @@ class NavigationLifecycleTest(unittest.TestCase):
                 os.utime(claim, (1, 1))
             def invoke():
                 return subprocess.run(['/bin/sh', str(script), *args], capture_output=True, text=True,
-                                        env={**os.environ, 'ANDROID_STATE': str(state_path)}, timeout=12)
+                                        env={**os.environ, 'ANDROID_STATE': str(state_path), 'TS18_METHOD': method, 'TS18_TRANSITION': transition}, timeout=12)
             if parallel:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
                     results = list(pool.map(lambda _: invoke(), range(2)))
@@ -181,6 +184,35 @@ class NavigationLifecycleTest(unittest.TestCase):
             receipt = work / 'start-dispatches.jsonl'
             final_state['start_dispatches'] = len(receipt.read_text().splitlines()) if receipt.exists() else 0
             return result, final_state
+
+    def test_n2_cold_requires_explicit_normal_open_without_launch(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, bridge_available=True, focus=7, method='N2')
+        self.assertIn('NORMAL_OPEN_REQUIRED', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+
+    def test_n2_fullscreen_cold_requires_normal_open_without_launch(self):
+        result, state = self.run_helper(['fullscreen', '0', 'app.organicmaps.incar', '0',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity'],
+            nav_alive=False, bridge_available=True, focus=7, method='N2')
+        self.assertIn('NORMAL_OPEN_REQUIRED', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+
+    def test_n2_converts_same_task_without_activity_intent(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '42', '1'],
+            mode=1, focus=7, bridge_available=True, method='N2', transition='bridge')
+        self.assertIn('PRESENTED_NATIVE', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertTrue(any(c[:2] == ['bridge', 'mode'] for c in state['commands']))
+
+    def test_bridge_refusal_does_not_switch_to_intent_method(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '42', '1'],
+            mode=1, focus=7, transition='bridge')
+        self.assertIn('TASK_MODE_METHOD_BLOCKED', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
 
     def test_bootstrap_is_observed_without_focus_resize_or_redelivery(self):
         result, state = self.run_helper(

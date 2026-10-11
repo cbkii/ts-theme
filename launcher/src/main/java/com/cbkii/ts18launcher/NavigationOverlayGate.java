@@ -8,7 +8,7 @@ final class NavigationOverlayGate {
 
     boolean request(Runnable action) {
         if (action == null) return false;
-        if (pending.isEmpty()) ready = false;
+        pending.clear(); ready = false;
         pending.add(action);
         return true;
     }
@@ -16,7 +16,7 @@ final class NavigationOverlayGate {
     boolean isPending() { return !pending.isEmpty(); }
 
     void onVisible() { visible = true; deliver(); }
-    void onStopped() { visible = false; }
+    void onStopped() { visible = false; cancel(); }
     void onSettled() { ready = true; deliver(); }
     void cancel() { pending.clear(); ready = false; }
 

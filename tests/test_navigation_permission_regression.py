@@ -62,9 +62,10 @@ class NavigationPermissionRegressionTests(unittest.TestCase):
 
     def test_root_navigation_processes_are_timeout_wrapped_and_force_terminated(self):
         helper = ROOT_HELPER.read_text(encoding="utf-8")
-        self.assertIn("/system/bin/toybox timeout -k 1", helper)
-        self.assertIn("terminate(process)", helper)
-        self.assertIn("process.destroyForcibly()", helper)
+        self.assertIn("RootShell.runWithin(command, timeoutMs)", helper)
+        shell = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/RootShell.java").read_text()
+        self.assertIn("process.destroyForcibly()", shell)
+        self.assertIn("exec /system/bin/toybox timeout -k 1 ", shell)
 
 
 if __name__ == "__main__":
