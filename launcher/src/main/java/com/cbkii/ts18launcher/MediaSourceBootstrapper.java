@@ -104,6 +104,7 @@ final class MediaSourceBootstrapper {
             if (connection != null && connection.controller == controller) {
                 MediaListenerService.observeExternalController(controller);
             }
+            maybePrepareAuxio(controller);
             markController(packageName, controller);
             if (controllerReadyForPlay(controller)) return;
         }
@@ -153,7 +154,7 @@ final class MediaSourceBootstrapper {
 
     String readinessDiagnostics() {
         if (statuses.isEmpty()) return "No media readiness attempts in this launcher process.";
-        StringBuilder text = new StringBuilder();
+        StringBuilder text = new StringBuilder(TestingProfiles.summary(context)).append("\n");
         for (Map.Entry<String, Status> entry : statuses.entrySet()) {
             if (text.length() > 0) text.append('\n');
             text.append(entry.getKey()).append(": ").append(entry.getValue().phase);
@@ -277,6 +278,7 @@ final class MediaSourceBootstrapper {
         Pending actual = pending == null ? null : addPending(connection.pending, pending);
         if (connection.controller != null) {
             MediaListenerService.observeExternalController(connection.controller);
+            maybePrepareAuxio(connection.controller);
             if (actual != null) issueConnected(connection.controller, actual);
             return;
         }
@@ -330,6 +332,7 @@ final class MediaSourceBootstrapper {
                     connection.preparing = false;
                     MediaListenerService.observeExternalController(connection.controller);
                     MediaEventTrace.record("browser", "connected", packageName);
+                    maybePrepareAuxio(connection.controller);
                     markController(packageName, connection.controller);
                     MediaListenerService.refreshActiveSessions();
                     drain(connection);
@@ -361,10 +364,42 @@ final class MediaSourceBootstrapper {
         }
     }
 
+    private final java.util.Set<android.media.session.MediaSession.Token> preparedTokens = new java.util.HashSet<>();
+
+    private void maybePrepareAuxio(MediaController controller) {
+        if (controller == null || !TestingProfiles.prepareAuxio(context)
+                || !MediaSourceAdapter.AUXIO_PACKAGE.equals(controller.getPackageName())
+                || !MediaListenerService.hasNotificationAccess(context) || isPlaying(controller)) return;
+        Pending interactive = inFlightToggle.get(controller.getPackageName());
+        // Auxio's advertised PLAY performs its own cold restore. Do not race it with PREPARE.
+        if (interactive != null && !interactive.settled) return;
+        try {
+            android.media.MediaMetadata metadata = controller.getMetadata();
+            if (metadata != null && metadata.getString(android.media.MediaMetadata.METADATA_KEY_MEDIA_ID) != null) return;
+        } catch (RuntimeException error) { return; }
+        PlaybackState state = playbackState(controller);
+        if (state == null || (state.getActions() & PlaybackState.ACTION_PREPARE) == 0L) {
+            MediaEventTrace.record("browser", "prepare-blocked", "Installed Auxio does not advertise PREPARE yet");
+            return;
+        }
+        if (!preparedTokens.add(controller.getSessionToken())) return;
+        try {
+            controller.getTransportControls().prepare();
+            MediaEventTrace.record("browser", "prepare-dispatched", controller.getPackageName());
+        } catch (RuntimeException error) {
+            MediaEventTrace.record("browser", "prepare-rejected", error.getClass().getSimpleName());
+        }
+    }
+
     private void attachBrowserController(Connection connection, int generation) {
         MediaController controller = connection.controller;
         if (controller == null) throw new IllegalStateException("MediaBrowser controller missing");
         MediaController.Callback callback = new MediaController.Callback() {
+            @Override public void onPlaybackStateChanged(PlaybackState state) {
+                if (!valid(connection, generation)) return;
+                maybePrepareAuxio(connection.controller);
+                markController(connection.adapter.packageName, connection.controller);
+            }
             @Override public void onSessionDestroyed() {
                 handler.post(() -> browserSessionDestroyed(connection, generation));
             }
@@ -382,6 +417,7 @@ final class MediaSourceBootstrapper {
         connections.remove(packageName);
         disconnect(connection);
         MediaEventTrace.record("session", "bound-destroyed", packageName);
+        preparedTokens.remove(connection.controller == null ? null : connection.controller.getSessionToken());
         mark(packageName, MediaCommandPolicy.Phase.FAILED,
                 "Bound MediaSession ended; a future request will reconnect");
 
@@ -488,27 +524,40 @@ final class MediaSourceBootstrapper {
         start.lastAttemptMs = now;
         start.prepareDeadlineMs = actual == null ? now + PREPARE_TIMEOUT_MS : actual.deadlineMs;
         int generation = ++start.generation;
+        final String method = TestingProfiles.radio(context);
         mark(adapter.packageName, MediaCommandPolicy.Phase.STARTING,
-                "Root service start, normal Android fallback, then exact-session discovery");
+                "Radio method " + method + "; awaiting admission then exact-session readiness");
         final ServiceStart target = start;
-        MediaEventTrace.record("service", "root-start", adapter.packageName);
+        MediaEventTrace.record("service", "method-start", adapter.packageName + " method=" + method);
         rootExecutor.execute(() -> {
-            RootShell.Result root = RootShell.runMillis(
-                    adapter.rootStartCommand(), ROOT_START_TIMEOUT_MS);
+            long remaining = target.prepareDeadlineMs - SystemClock.uptimeMillis();
+            RootShell.Result root = "normal".equals(method)
+                    ? new RootShell.Result(false, -1, "normal method selected")
+                    : RootShell.runWithin(adapter.rootStartCommand(), Math.min(ROOT_START_TIMEOUT_MS, remaining));
             handler.post(() -> {
                 if (destroyed || serviceStarts.get(adapter.packageName) != target
                         || target.generation != generation) {
                     MediaEventTrace.record("service", "stale-start-result", adapter.packageName);
                     return;
                 }
+                if (SystemClock.uptimeMillis() >= target.prepareDeadlineMs) {
+                    target.inFlight = false;
+                    List<Pending> expired = new ArrayList<>(target.pending); target.pending.clear();
+                    finishAll(expired, false, "Service admission deadline expired"); return;
+                }
+                boolean rootAccepted = MediaAdmissionPolicy.accepted(root.completed, root.exitCode, root.output);
                 boolean normalAccepted = false;
-                if (!root.success()) normalAccepted = startExplicitServiceNormally(adapter);
+                boolean normalAllowed = "normal".equals(method) || ("auto".equals(method)
+                        && MediaAdmissionPolicy.definitelyRejected(root.completed, root.exitCode, root.output));
+                if (!rootAccepted && normalAllowed) normalAccepted = startExplicitServiceNormally(adapter);
+                boolean uncertain = !rootAccepted && !normalAllowed && !"normal".equals(method)
+                        && !MediaAdmissionPolicy.definitelyRejected(root.completed, root.exitCode, root.output);
                 MediaPreparationPolicy.StartRoute route = MediaPreparationPolicy.resolveStartRoute(
-                        root.success(), normalAccepted);
+                        rootAccepted, normalAccepted);
                 MediaEventTrace.record("service", "start-route",
                         adapter.packageName + " · " + route);
                 target.inFlight = false;
-                if (route == MediaPreparationPolicy.StartRoute.FAILED) {
+                if (route == MediaPreparationPolicy.StartRoute.FAILED && !uncertain) {
                     mark(adapter.packageName, MediaCommandPolicy.Phase.FAILED,
                             "Background service start was rejected");
                     List<Pending> failed = new ArrayList<>(target.pending);
@@ -518,7 +567,8 @@ final class MediaSourceBootstrapper {
                 }
 
                 mark(adapter.packageName, MediaCommandPolicy.Phase.CONNECTED,
-                        "Service start accepted; session readiness not yet verified");
+                        uncertain ? "Service admission uncertain; observe exact session without another start"
+                                : "Service start accepted; session readiness not yet verified");
                 MediaListenerService.refreshActiveSessions();
                 List<Pending> commands = new ArrayList<>(target.pending);
                 target.pending.clear();
@@ -573,6 +623,7 @@ final class MediaSourceBootstrapper {
         MediaListenerService.refreshActiveSessions();
         MediaController controller = controllerForPackage(pending.packageName);
         if (controller != null) {
+            maybePrepareAuxio(controller);
             markController(pending.packageName, controller);
             long notBefore = coldPlayNotBeforeMs(pending);
             if (notBefore > now && (supports(controller, pending.desired)
@@ -631,6 +682,9 @@ final class MediaSourceBootstrapper {
                     Math.max(1L, MediaCommandPolicy.boundedDelay(
                             now, pending.deadlineMs, notBefore - now)));
             return;
+        }
+        if (now >= pending.deadlineMs) {
+            finish(pending, false, pending.sourceLabel + " command deadline expired"); return;
         }
         int state = stateOf(controller);
         boolean guardedColdPlay = pending.coldPlayGuarded

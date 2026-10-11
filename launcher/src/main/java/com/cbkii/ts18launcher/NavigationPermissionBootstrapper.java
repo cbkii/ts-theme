@@ -41,7 +41,7 @@ final class NavigationPermissionBootstrapper {
 
     private static final String TAG = "TS18NavPerm";
     private static final long ROOT_TIMEOUT_MS = 2200L;
-    private static final Object ROOT_GRANT_LOCK = new Object();
+    private static final java.util.concurrent.locks.ReentrantLock ROOT_GRANT_LOCK = new java.util.concurrent.locks.ReentrantLock();
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "ts18-nav-permissions");
         thread.setDaemon(true);
@@ -73,6 +73,10 @@ final class NavigationPermissionBootstrapper {
 
     /** Runs on a worker thread. Used by the native task backend immediately before presentation. */
     static Result ensureNow(Context context, String packageName) {
+        return ensureNow(context, packageName, android.os.SystemClock.elapsedRealtime() + ROOT_TIMEOUT_MS + 1000L);
+    }
+
+    static Result ensureNow(Context context, String packageName, long deadline) {
         if (!UiPersonalizationPrefs.navigationRootPermissionGrant(context)) {
             return new Result(true, false, packageName,
                     java.util.Collections.emptyList(), "Disabled");
@@ -87,7 +91,9 @@ final class NavigationPermissionBootstrapper {
                     java.util.Collections.emptyList(), "Unsafe package name");
         }
 
-        synchronized (ROOT_GRANT_LOCK) {
+        if (Thread.currentThread().isInterrupted() || !ROOT_GRANT_LOCK.tryLock())
+            return new Result(false, false, packageName, java.util.Collections.emptyList(), "Permission grant busy");
+        try {
             PackageManager packages = context.getPackageManager();
             final PackageInfo info;
             try {
@@ -122,7 +128,7 @@ final class NavigationPermissionBootstrapper {
             }
             command.append("; exit $failed");
 
-            RootShell.Result root = RootShell.runMillis(command.toString(), ROOT_TIMEOUT_MS);
+            RootShell.Result root = RootShell.runWithin(command.toString(), Math.min(ROOT_TIMEOUT_MS, deadline - android.os.SystemClock.elapsedRealtime()));
             List<String> remaining = new ArrayList<>();
             for (String permission : missing) {
                 if (packages.checkPermission(permission, packageName)
@@ -142,7 +148,7 @@ final class NavigationPermissionBootstrapper {
             else Log.w(TAG, "root permission mitigation incomplete package=" + packageName
                     + " user=" + userId + " detail=" + detail + " output=" + root.output);
             return new Result(success, true, packageName, missing, detail);
-        }
+        } finally { ROOT_GRANT_LOCK.unlock(); }
     }
 
     private static void deliver(Callback callback, Result result) {

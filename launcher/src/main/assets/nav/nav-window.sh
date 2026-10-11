@@ -16,6 +16,14 @@ STACKS="$ROOT_DIR/.stacks.$$"
 WINDOWS="$ROOT_DIR/.windows.$$"
 read -r start_uptime _ < /proc/uptime
 DEADLINE=$(( ${start_uptime%%.*} + 10 ))
+case "${TS18_DEADLINE_S:-}" in
+  ''|*[!0-9]*) ;;
+  *) [ "$TS18_DEADLINE_S" -lt "$DEADLINE" ] && DEADLINE=$TS18_DEADLINE_S ;;
+esac
+METHOD=${TS18_METHOD:-N1}
+TRANSITION=${TS18_TRANSITION:-intent}
+case "$METHOD" in N0|N1|N2) ;; *) METHOD=N1 ;; esac
+case "$TRANSITION" in bridge|intent) ;; *) TRANSITION=bridge ;; esac
 PHASE=admission
 VISIBLE=unknown
 DRAWN=unknown
@@ -215,7 +223,10 @@ check_deadline() {
 }
 bounded() {
   check_deadline
-  /system/bin/toybox timeout -k 1 2 "$@"
+  remaining_seconds=$((DEADLINE - ${current_uptime%%.*}))
+  producer_seconds=2
+  [ "$remaining_seconds" -le "$producer_seconds" ] && producer_seconds=$remaining_seconds
+  /system/bin/toybox timeout -k 1 "$producer_seconds" "$@"
 }
 
 log_event() {
@@ -294,6 +305,7 @@ emit_protocol() {
     "$outcome" "$code" "$ANDROID_USER" "$TASK_ID" "$STACK_ID" "$PKG" "$TASK_COMPONENT" "$DISPLAY_ID" \
     "$WINDOWING_MODE" "$TASK_BOUNDS" "$SUPPORTS_PIP" "$LAUNCHED" "$TRANSACTION" \
     "$HELP_EXIT" "$HELP_WINDOWING_MODE" "$HELP_DISPLAY" "$LAUNCH_EXIT" "$PHASE" "$VISIBLE" "$DRAWN" "$IDENTITY_SOURCE"
+  printf 'method=%s transition=%s ' "$METHOD" "$TRANSITION"
   vendor_state_fields
   printf '\n'
 }
@@ -334,10 +346,10 @@ run_bridge() {
   bridge_action="$1"
   shift
   command -v app_process >/dev/null 2>&1 || return 3
-  bridge_apk="$(pm path --user "$ANDROID_USER" com.cbkii.ts18launcher 2>/dev/null | head -n 1)"
+  bridge_apk="$(bounded pm path --user "$ANDROID_USER" com.cbkii.ts18launcher 2>/dev/null | head -n 1)"
   bridge_apk="${bridge_apk#package:}"
   [ -r "$bridge_apk" ] || return 3
-  CLASSPATH="$bridge_apk" /system/bin/toybox timeout -k 1 3 app_process /system/bin \
+  CLASSPATH="$bridge_apk" bounded app_process /system/bin \
     com.cbkii.ts18launcher.NavTaskBridge "$bridge_action" "$ANDROID_USER" "$@"
 }
 
@@ -543,6 +555,7 @@ launch_freeform_once() {
   PHASE=launch
   native_launch_supported || fail FREEFORM_LAUNCH_UNSUPPORTED
   claim_cold_launch
+  journal_launch dispatching
   bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 5 \
     -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
     -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
@@ -564,13 +577,27 @@ claim_cold_launch() {
   # Atomic across every cold-launch path and helper process. Time alone cannot
   # resolve an accepted/uncertain dispatch, including an explicit fullscreen one.
   mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING
+  journal_launch reserved
+}
+
+journal_launch() {
+  owner_ticks=$(awk '{sub(/^.*\) /, ""); print $20}' /proc/$$/stat) || fail LAUNCH_JOURNAL_FAILED
+  printf '%s %s %s method=%s transaction=%s uptime=%s\n' "$1" "$$" "$owner_ticks" "$METHOD" "$TRANSACTION" "$start_uptime" \
+    > "$launch_marker/state.$$" || fail LAUNCH_JOURNAL_FAILED
+  mv "$launch_marker/state.$$" "$launch_marker/state" || fail LAUNCH_JOURNAL_FAILED
+  log_event "launch-journal phase=$1 method=$METHOD transaction=$TRANSACTION owner=$$"
+}
+
+clear_launch_claim() {
+  rm -f "$launch_marker/state" "$launch_marker/state.$$"
+  rmdir "$launch_marker" 2>/dev/null || true
 }
 
 check_cold_launch_result() {
   failure_code="$1"
   unsupported_code="$2"
   if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
-    rmdir "$launch_marker" 2>/dev/null || true
+    clear_launch_claim
     fail "$unsupported_code"
   fi
   if [ "$LAUNCH_EXIT" -ne 0 ] || grep -Eq '^(Error:|Error type|Exception|Security exception:)' "$LAUNCH_OUTPUT"; then
@@ -578,10 +605,13 @@ check_cold_launch_result() {
     # Retain that claim. Only an explicit pre-dispatch rejection may retry;
     # a nonzero producer exit alone does not prove server-side cancellation.
     if grep -Eq '^(Error type|Error: Activity not started|Error: [Uu]nable to resolve Intent|Security exception:|Permission Denial:)' "$LAUNCH_OUTPUT"; then
-      rmdir "$launch_marker" 2>/dev/null || true
+      clear_launch_claim
+      fail "$failure_code"
     fi
+    journal_launch uncertain
     fail "$failure_code"
   fi
+  journal_launch accepted
 }
 
 resolve_launch_claim_if_ready() {
@@ -595,7 +625,7 @@ resolve_launch_claim_if_ready() {
   # Cleanup is optional on a proven warm task; metadata refusal must not
   # invalidate an already verified fullscreen/windowed transition.
   launch_claim_path || return 0
-  rmdir "$launch_marker" 2>/dev/null || true
+  clear_launch_claim
 }
 
 require_bootstrap_ready() {
@@ -688,6 +718,7 @@ case "$action" in
     fi
     printf 'OK code=READY uid=0 bridgeQuery=%s modeMutation=not-run nativeLaunch=%s helpExit=%s helpWindowingMode=%s helpDisplay=%s '  \
       "$bridge_query" "$native_launch" "$HELP_EXIT" "$HELP_WINDOWING_MODE" "$HELP_DISPLAY"
+    printf 'method=%s transition=%s ' "$METHOD" "$TRANSITION"
     vendor_state_fields
     printf '\n'
     ;;
@@ -725,6 +756,8 @@ case "$action" in
       case "$rc" in
         0) validate_observed_component ;;
         1)
+          [ "$METHOD" != N2 ] || fail NORMAL_OPEN_REQUIRED
+          [ "$METHOD" != N0 ] || fail NORMAL_OPEN_REQUIRED
           require_home_presentation 0
           launch_freeform_once "$launch_component"
           PHASE=bootstrap
@@ -745,8 +778,13 @@ case "$action" in
     if [ "$WINDOWING_MODE" != 5 ]; then
       require_home_presentation 0
       [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
-      bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 5 --task "$wanted_task" \
-        -f 0x20000000 -n "$TASK_COMPONENT" >"$LAUNCH_OUTPUT" 2>&1 || fail FREEFORM_TRANSITION_FAILED
+      if [ "$TRANSITION" = bridge ]; then
+        run_bridge mode "$PKG" "$wanted_task" 5 1 >"$LAUNCH_OUTPUT" 2>&1 || fail TASK_MODE_METHOD_BLOCKED
+      else
+        [ "$METHOD" != N2 ] || fail METHOD_COMBINATION_BLOCKED
+        bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 5 --task "$wanted_task" \
+          -f 0x20000000 -n "$TASK_COMPONENT" >"$LAUNCH_OUTPUT" 2>&1 || fail FREEFORM_TRANSITION_FAILED
+      fi
       wait_state "$PKG" "$wanted_task" 5 any || fail FREEFORM_TRANSITION_REJECTED
     fi
     require_home_presentation "$wanted_task"
@@ -846,6 +884,7 @@ case "$action" in
         PHASE=launch
         native_launch_supported || fail FULLSCREEN_LAUNCH_UNSUPPORTED
         claim_cold_launch
+        journal_launch dispatching
         bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 1 \
           -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
           -f 0x10000000 -n "$cold_component" >"$LAUNCH_OUTPUT" 2>&1

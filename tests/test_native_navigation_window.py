@@ -88,7 +88,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             helper_root = root / "helper"
             bin_dir.mkdir()
             helper_root.mkdir()
-            for command in ("awk", "cat", "cut", "grep", "head", "rm", "sleep", "tr", "timeout", "mkdir", "rmdir"):
+            for command in ("awk", "cat", "cut", "grep", "head", "rm", "sleep", "tr", "timeout", "mkdir", "rmdir", "mv"):
                 resolved = shutil.which(command) or (shutil.which("gtimeout") if command == "timeout" else None)
                 if resolved is None and command == "timeout":
                     self.skipTest("GNU timeout required for bounded Android command doubles")
@@ -128,6 +128,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
                 1,
             )
             source = source.replace("/system/bin/toybox timeout -k 1", "timeout -k 1")
+            source = source.replace('/proc/$$/stat', '/proc/self/stat')
             test_helper.write_text(source, encoding="utf-8")
             environment = os.environ.copy()
             environment.update({
@@ -221,7 +222,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("logCapabilityEvidence(result)", self.controller)
         self.assertRegex(
             present,
-            r"0\) validate_observed_component ;;\s*1\)\s*require_home_presentation 0\s*launch_freeform_once",
+            r"0\) validate_observed_component ;;\s*1\)\s*\[.*?NORMAL_OPEN_REQUIRED\s*\[.*?NORMAL_OPEN_REQUIRED\s*require_home_presentation 0\s*launch_freeform_once",
         )
         self.assertEqual(1, present.count('launch_freeform_once "$launch_component"'))
         self.assertRegex(present, r"2\) fail TASK_AMBIGUOUS.*;;")

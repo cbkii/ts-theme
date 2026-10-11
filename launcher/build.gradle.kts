@@ -117,3 +117,22 @@ dependencies {
     // at runtime. This remains test-only and never enters the launcher APK.
     testImplementation("org.json:json:20240303")
 }
+
+// Text provenance is inspectable in the installed APK without resource-table tooling.
+abstract class WriteProvenance : DefaultTask() {
+    @get:Input abstract val revision: Property<String>
+    @get:Input abstract val sourceBranch: Property<String>
+    @get:OutputDirectory abstract val destination: DirectoryProperty
+    @TaskAction fun write() {
+        val target = destination.get().file("build-info.properties").asFile
+        target.parentFile.mkdirs()
+        target.writeText("source_revision=${revision.get()}\nsource_ref=${sourceBranch.get()}\n")
+    }
+}
+val generateProvenance = tasks.register<WriteProvenance>("generateProvenance") {
+    revision.set(sourceRevision)
+    sourceBranch.set(sourceRef)
+    destination.set(layout.buildDirectory.dir("generated/provenanceAssets"))
+}
+android.sourceSets.getByName("main").assets.srcDir(generateProvenance.flatMap { it.destination })
+tasks.named("preBuild").configure { dependsOn(generateProvenance) }

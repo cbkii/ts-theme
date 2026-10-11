@@ -37,7 +37,19 @@ final class RootShell {
         return runInternal(command, shellSeconds, timeoutMillis + 1500L);
     }
 
+    /** Includes output-drain and process teardown in the caller's remaining budget. */
+    static Result runWithin(String command, long budgetMillis) {
+        if (budgetMillis < 100L || Thread.currentThread().isInterrupted())
+            return new Result(false, -1, "deadline before admission");
+        return runInternal(command, Math.max(1L, budgetMillis / 1000L), budgetMillis, true);
+    }
+
     private static Result runInternal(String command, long shellTimeoutSeconds, long waitMillis) {
+        return runInternal(command, shellTimeoutSeconds, waitMillis, false);
+    }
+
+    private static Result runInternal(String command, long shellTimeoutSeconds, long waitMillis, boolean strict) {
+        long deadline = android.os.SystemClock.elapsedRealtime() + waitMillis;
         if (command == null || command.isEmpty()) {
             return traced(command, new Result(false, -1, "invalid root command"));
         }
@@ -61,18 +73,18 @@ final class RootShell {
             drainer.setDaemon(true);
             drainer.start();
 
-            boolean completed = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
+            boolean completed = process.waitFor(strict ? Math.max(1L, deadline - android.os.SystemClock.elapsedRealtime() - 100L) : waitMillis, TimeUnit.MILLISECONDS);
             if (!completed) {
                 process.destroy();
-                if (!process.waitFor(500, TimeUnit.MILLISECONDS)) {
+                if (strict || !process.waitFor(500, TimeUnit.MILLISECONDS)) {
                     process.destroyForcibly();
                 }
-                joinQuietly(drainer, 1000);
+                joinQuietly(drainer, strict ? Math.max(1L, Math.min(100L, deadline - android.os.SystemClock.elapsedRealtime())) : 1000L);
                 return traced(command,
                         new Result(false, -1, appendStatus(output, "root command timed out")));
             }
 
-            joinQuietly(drainer, 1000);
+            joinQuietly(drainer, strict ? Math.max(1L, Math.min(100L, deadline - android.os.SystemClock.elapsedRealtime())) : 1000L);
             return traced(command, new Result(true, process.exitValue(), output.toString()));
         } catch (IOException e) {
             return traced(command,
