@@ -472,7 +472,7 @@ baseline() {
   echo 'BASELINE: Have you installed the exact two TESTING APKs and retained DoFun as recovery HOME?'
   echo 'This script cannot install an APK or change HOME. You must check the download hashes first.'
   ask 'Enter=queue preflight snapshot, n=record Not Run, b=back:'
-  case "$answer" in b) return ;; n) record Q0 N 0; return ;; '') ;; *) echo 'No action selected.'; return ;; esac
+  case "$answer" in b) return ;; n) record Q0 n 0; return ;; '') ;; *) echo 'No action selected.'; return ;; esac
   run preflight || { echo 'Preflight did not queue; use status and the recovery section.'; record Q0 n 0; return; }
   echo 'Wait here. The snapshot may take several minutes. No app interaction is required.'
   wait_checkpoint || { run status; record Q0 n 0; return; }
@@ -1170,7 +1170,7 @@ TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
 cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
-41250da9f78973f894d0adad8987beb3653f203f0869cd3cd41aea23a553f0d3  guide.sh
+f6a7186f100ac4487f4fa45198779a870ab7ffe2d94ef9efde409f284cd0da02  guide.sh
 57f467701a6923ea72fffc8ceca36dea1a5845a0982e77bbc9f4828dd5ad5f49  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json
 f27eb0ba7c2b5f22e139627a9c4a03ad405c32ae5b983f5de369ece7a52cad79  candidates.tsv

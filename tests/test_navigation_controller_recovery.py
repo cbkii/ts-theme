@@ -5,11 +5,18 @@ import subprocess
 import tempfile
 import unittest
 
+def has_java_compiler():
+    try:
+        return subprocess.run(['java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-version'],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher'
 
 
-@unittest.skipUnless(shutil.which('java'), 'Java compiler module required')
+@unittest.skipUnless(has_java_compiler(), 'Java compiler module required')
 class ControllerRecoveryTests(unittest.TestCase):
     def test_recovery_without_more_lifecycle_callbacks(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -71,7 +78,7 @@ class NavigationProvider {static final String ORGANIC_MAPS_INCAR="app.organicmap
 static boolean hasLauncherActivity(android.app.Activity a,String p){return true;}
 static boolean open(android.app.Activity a,String p,android.location.Location l){launches++;return true;}}
 class RawFreeformTaskBackend implements NavigationSurfaceBackend {
-static int presents,resumes,verifies,fullscreens,statuses;static long deadline;static boolean delayed;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss;
+static int presents,resumes,verifies,fullscreens,statuses,departures,suspends;static long deadline;static boolean delayed;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss;
 RawFreeformTaskBackend(android.app.Activity a){}public void setDeadline(long d){deadline=d;}public String label(){return "fake";}
 static NavigationHelperResult good(){return NavigationHelperResult.parse("OK code=RESUMED_NATIVE user=0 task=42 stack=4 package=app.organicmaps.incar component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 windowingMode=5 bounds=0,100,1100,700 visible=1 drawn=1");}
 public void present(String p,String c,NavigationWindowBounds b,int t,int id,Callback cb){presents++;if(delayed){held=cb;return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);
@@ -84,10 +91,10 @@ public void verify(String p,NavigationWindowBounds b,int t,Callback cb){verifies
 public void resume(String p,NavigationWindowBounds b,int t,String h,int ht,Callback cb){resumes++;
 if(resumeMiss){resumeMiss=false;cb.onResult(NavigationHelperResult.failure("FOREGROUND_CHANGED",""));}else cb.onResult(good());}
 public void status(String p,int t,Callback cb){statuses++;android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);cb.onResult(alwaysMiss?NavigationHelperResult.failure(first,""):good());}
-public void fullscreen(String p,String c,int t,Callback cb){fullscreens++;cb.onResult(NavigationHelperResult.failure(fullscreenCode,""));}
-public void backgroundFullscreen(String p,int t,String h,int ht,boolean e,Callback cb){cb.onResult(good());}
-public void suspend(String p,int t,String h,int ht,Callback cb){cb.onResult(good());}public void destroy(){}
-static void reset(){presents=resumes=verifies=fullscreens=statuses=0;delayed=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=false;first="TASK_OBSERVATION_UNCERTAIN";
+public void fullscreen(String p,String c,int t,Callback cb){fullscreens++;cb.onResult("SUCCESS".equals(fullscreenCode)?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1")):NavigationHelperResult.failure(fullscreenCode,""));}
+public void backgroundFullscreen(String p,int t,String h,int ht,boolean e,Callback cb){departures++;cb.onResult(good());}
+public void suspend(String p,int t,String h,int ht,Callback cb){suspends++;cb.onResult(good());}public void destroy(){}
+static void reset(){presents=resumes=verifies=fullscreens=statuses=departures=suspends=0;delayed=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=false;first="TASK_OBSERVATION_UNCERTAIN";
 NavigationProvider.launches=0;workMs=0;android.os.SystemClock.now=1000;android.view.View.jobs.clear();}}
 ''')
             (package / 'Harness.java').write_text(r'''package com.cbkii.ts18launcher;
@@ -123,6 +130,21 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.first="TASK_OBSERVATION_UNCERTAIN";p.retry.run();android.view.View.drain();
  RawFreeformTaskBackend.fullscreenCode="TASK_OBSERVATION_UNCERTAIN";int before=RawFreeformTaskBackend.presents;
  c.openFullscreen(null);android.view.View.drain();check(RawFreeformTaskBackend.presents==before&&RawFreeformTaskBackend.fullscreens==2,"fullscreen goal became compact or repeated unchanged mutation");
+ // HOME stop/return must not erase an unresolved fullscreen goal or its deadline.
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ RawFreeformTaskBackend.fullscreenCode="TASK_OBSERVATION_UNCERTAIN";before=RawFreeformTaskBackend.presents;
+ c.openFullscreen(null);long goalDeadline=RawFreeformTaskBackend.deadline;c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
+ check(RawFreeformTaskBackend.presents==before&&RawFreeformTaskBackend.fullscreens==2&&RawFreeformTaskBackend.deadline==goalDeadline,"HOME return lost unresolved goal or reset deadline");
+ // False focus triggers guarded departure; an overlay still appears and parks the map.
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ android.app.Activity.focused=false;c.onHomeFocusLost();android.view.View.drain();
+ check(RawFreeformTaskBackend.departures==1,"focus loss failed to request guarded departure");
+ int[] drawer={0};c.openLauncherOverlay(()->drawer[0]++);android.view.View.drain();
+ check(drawer[0]==1&&RawFreeformTaskBackend.suspends==1,"unfocused drawer failed to park map");
+ // A successful fullscreen goal is complete; a resumed HOME without onStop may compact again.
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ RawFreeformTaskBackend.fullscreenCode="SUCCESS";c.openFullscreen(null);c.onHomeVisible();android.view.View.drain();
+ check(RawFreeformTaskBackend.fullscreens==1&&p.configured==2,"completed fullscreen goal stole HOME again");
  // In-flight Retry is acknowledged/coalesced and older results cannot win.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  java.lang.reflect.Method retry=NavigationWindowController.class.getDeclaredMethod("retry");retry.setAccessible(true);

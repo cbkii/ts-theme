@@ -235,6 +235,7 @@ final class MediaSourceBootstrapper {
         }
         finishAll(new ArrayList<>(inFlightToggle.values()), false, "Launcher unavailable");
         connections.clear();
+        preparedTokens.clear();
         serviceStarts.clear();
         inFlightToggle.clear();
         deferredPauseCandidate = "";
@@ -417,7 +418,6 @@ final class MediaSourceBootstrapper {
         connections.remove(packageName);
         disconnect(connection);
         MediaEventTrace.record("session", "bound-destroyed", packageName);
-        preparedTokens.remove(connection.controller == null ? null : connection.controller.getSessionToken());
         mark(packageName, MediaCommandPolicy.Phase.FAILED,
                 "Bound MediaSession ended; a future request will reconnect");
 
@@ -451,6 +451,7 @@ final class MediaSourceBootstrapper {
     }
 
     private void disconnect(Connection connection) {
+        if (connection.controller != null) preparedTokens.remove(connection.controller.getSessionToken());
         removeConnectTimeout(connection);
         if (connection.controller != null) {
             if (connection.controllerCallback != null) {

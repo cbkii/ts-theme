@@ -91,8 +91,14 @@ final class NavigationPermissionBootstrapper {
                     java.util.Collections.emptyList(), "Unsafe package name");
         }
 
-        if (Thread.currentThread().isInterrupted() || !ROOT_GRANT_LOCK.tryLock())
-            return new Result(false, false, packageName, java.util.Collections.emptyList(), "Permission grant busy");
+        try {
+            long remainingMillis = deadline - android.os.SystemClock.elapsedRealtime();
+            if (remainingMillis <= 0 || !ROOT_GRANT_LOCK.tryLock(remainingMillis, java.util.concurrent.TimeUnit.MILLISECONDS))
+                return new Result(false, false, packageName, java.util.Collections.emptyList(), "Permission grant deadline exhausted");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Result(false, false, packageName, java.util.Collections.emptyList(), "Permission grant interrupted");
+        }
         try {
             PackageManager packages = context.getPackageManager();
             final PackageInfo info;

@@ -70,7 +70,7 @@ final class NavigationWindowController {
         if (overlayGate.isPending()) { uiState.onHomeVisibleWithOverlay(); overlayGate.onVisible(); return; }
         overlayGate.onVisible();
         uiState.onHomeVisible();
-        if (homeStopped) { recovery.reset(); clearFailureLatch(); fullscreenGoal = false; observationOnly = false; repairedObservation = ""; }
+        if (homeStopped && !fullscreenGoal) { recovery.reset(); clearFailureLatch(); observationOnly = false; repairedObservation = ""; }
         homeStopped = false;
         String profile = TestingProfiles.navigation(activity) + "/" + TestingProfiles.transition(activity);
         if (!profile.equals(testingProfile)) {
@@ -86,11 +86,11 @@ final class NavigationWindowController {
     void onHomeStopped() {
         if (state == State.DESTROYED) return;
         homeStopped = true; externalLaunchGeneration++;
+        if (overlayGate.isPending()) MediaEventTrace.record("external-launch", "cancelled-home-stopped");
         cancelRecovery(); uiState.onHomeStopped(); overlayGate.onStopped(); needsValidation = true; needsPresentation = true;
         if (activeOperationId != 0) Log.i(TAG, "HOME stopped during bounded transaction; transaction retained id=" + activeOperationId);
         else Log.i(TAG, "HOME stopped; task authority retained without relaunch");
-        if (overlayGate.isPending()) MediaEventTrace.record("external-launch", "cancelled-home-stopped");
-        if (state != State.FULLSCREEN_HANDOFF) { recovery.reset(); requestDeparture(false); }
+        if (state != State.FULLSCREEN_HANDOFF && !fullscreenGoal) { recovery.reset(); requestDeparture(false); }
     }
 
     /** Focus loss can be our healthy native map, or a direct SystemUI/Recents handoff. */
@@ -434,7 +434,7 @@ final class NavigationWindowController {
             if (!finishOperation(operation)) return;
             retainObservedTask(result, pkg);
             if (acceptIdentity(result, pkg, 0) && result.displayId == 0 && result.windowingMode == 1) {
-                state = State.FULLSCREEN_HANDOFF; cancelRecovery(); recovery.reset(); observationOnly = false;
+                state = State.FULLSCREEN_HANDOFF; fullscreenGoal = false; cancelRecovery(); recovery.reset(); observationOnly = false;
                 activeTaskId = result.taskId; activePackage = pkg; lastHelperCode = "";
                 needsValidation = true; needsPresentation = true; clearFailureLatch();
                 Log.i(TAG, "fullscreen task=" + result.taskId + " package=" + pkg + " verifiedBounds=" + result.bounds);
@@ -473,6 +473,7 @@ final class NavigationWindowController {
         cancelRecovery(); pendingReconcile = false; pendingDeparture = false;
         state = State.FULLSCREEN_HANDOFF; needsValidation = true; needsPresentation = true;
         boolean opened = NavigationProvider.open(activity, pkg, location);
+        if (opened) fullscreenGoal = false;
         if (!opened) latchFailure(pkg, configuredMode, "Android launch unavailable");
         Log.i(TAG, "explicit ordinary fullscreen package=" + pkg + " reason=" + reason + " dispatched=" + opened);
         return opened;

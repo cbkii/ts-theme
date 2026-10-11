@@ -879,6 +879,8 @@ case "$action" in
       0) hint="$TASK_ID" ;;
       1)
         # Read-only resolution has proved absence across recents, stacks and process.
+        [ "$METHOD" != N2 ] || fail NORMAL_OPEN_REQUIRED
+        [ "$METHOD" != N0 ] || fail NORMAL_OPEN_REQUIRED
         valid_component "$cold_component" || fail COMPONENT_UNKNOWN
         case "$cold_component" in "$PKG"/*) ;; *) fail COMPONENT_PACKAGE_MISMATCH ;; esac
         PHASE=launch

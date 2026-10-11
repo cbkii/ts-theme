@@ -222,7 +222,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("logCapabilityEvidence(result)", self.controller)
         self.assertRegex(
             present,
-            r"0\) validate_observed_component ;;\s*1\)\s*\[.*?NORMAL_OPEN_REQUIRED\s*\[.*?NORMAL_OPEN_REQUIRED\s*require_home_presentation 0\s*launch_freeform_once",
+            r'0\) validate_observed_component ;;\s*1\)\s*\[ "\$METHOD" != N2 \] \|\| fail NORMAL_OPEN_REQUIRED\s*\[ "\$METHOD" != N0 \] \|\| fail NORMAL_OPEN_REQUIRED\s*require_home_presentation 0\s*launch_freeform_once',
         )
         self.assertEqual(1, present.count('launch_freeform_once "$launch_component"'))
         self.assertRegex(present, r"2\) fail TASK_AMBIGUOUS.*;;")

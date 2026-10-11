@@ -65,6 +65,7 @@ class NavigationPermissionRegressionTests(unittest.TestCase):
         self.assertIn("RootShell.runWithin(command, timeoutMs)", helper)
         shell = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/RootShell.java").read_text()
         self.assertIn("process.destroyForcibly()", shell)
+        self.assertIn("exec /system/bin/toybox timeout -k 1 ", shell)
 
 
 if __name__ == "__main__":

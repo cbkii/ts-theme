@@ -192,6 +192,13 @@ class NavigationLifecycleTest(unittest.TestCase):
         self.assertIn('NORMAL_OPEN_REQUIRED', result.stdout)
         self.assertEqual(0, state['start_dispatches'])
 
+    def test_n2_fullscreen_cold_requires_normal_open_without_launch(self):
+        result, state = self.run_helper(['fullscreen', '0', 'app.organicmaps.incar', '0',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity'],
+            nav_alive=False, bridge_available=True, focus=7, method='N2')
+        self.assertIn('NORMAL_OPEN_REQUIRED', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+
     def test_n2_converts_same_task_without_activity_intent(self):
         result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
             'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '42', '1'],

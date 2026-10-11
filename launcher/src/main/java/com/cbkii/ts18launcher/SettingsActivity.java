@@ -356,7 +356,13 @@ public final class SettingsActivity extends Activity {
                                 new String[]{"M1 · Auxio bind + advertised PREPARE", "M0 · Browser bind only"}); break;
                         case 4: chooseTesting("radio", new String[]{"auto", "root", "normal"},
                                 new String[]{"R0 · Root; normal only after definite refusal", "R1 · Root only", "R2 · Normal Android only"}); break;
-                        case 5: NavigationProvider.open(this, LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV), null); break;
+                        case 5:
+                            String navigationPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
+                            if (navigationPackage.isEmpty() && NavigationProvider.hasLauncherActivity(this, NavigationProvider.ORGANIC_MAPS_INCAR))
+                                navigationPackage = NavigationProvider.ORGANIC_MAPS_INCAR;
+                            if (!NavigationProvider.open(this, navigationPackage, null))
+                                Toast.makeText(this, "Navigation could not open. Choose an installed Navigation app.", Toast.LENGTH_LONG).show();
+                            break;
                         default: new AlertDialog.Builder(this).setTitle("Build and test identity")
                                 .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
                                         + "\n\nReturn HOME after selecting a method. Keep the Maps APK fixed. "

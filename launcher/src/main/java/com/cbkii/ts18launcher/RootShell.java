@@ -41,7 +41,7 @@ final class RootShell {
     static Result runWithin(String command, long budgetMillis) {
         if (budgetMillis < 100L || Thread.currentThread().isInterrupted())
             return new Result(false, -1, "deadline before admission");
-        return runInternal(command, Math.max(1L, budgetMillis / 1000L), budgetMillis, true);
+        return runInternal(command, Math.max(1L, (budgetMillis + 999L) / 1000L), budgetMillis, true);
     }
 
     private static Result runInternal(String command, long shellTimeoutSeconds, long waitMillis) {
@@ -79,16 +79,20 @@ final class RootShell {
                 if (strict || !process.waitFor(500, TimeUnit.MILLISECONDS)) {
                     process.destroyForcibly();
                 }
+                long teardownMillis = strict ? Math.max(0L, deadline - android.os.SystemClock.elapsedRealtime()) : 500L;
+                boolean exited = !process.isAlive() || process.waitFor(teardownMillis, TimeUnit.MILLISECONDS);
                 joinQuietly(drainer, strict ? Math.max(1L, Math.min(100L, deadline - android.os.SystemClock.elapsedRealtime())) : 1000L);
                 return traced(command,
-                        new Result(false, -1, appendStatus(output, "root command timed out")));
+                        new Result(false, -1, appendStatus(output, exited
+                                ? "root command timed out; process exited"
+                                : "root command timed out; process exit unconfirmed")));
             }
 
             joinQuietly(drainer, strict ? Math.max(1L, Math.min(100L, deadline - android.os.SystemClock.elapsedRealtime())) : 1000L);
             return traced(command, new Result(true, process.exitValue(), output.toString()));
         } catch (IOException e) {
             return traced(command,
-                    new Result(false, -1, e.getClass().getSimpleName() + ": " + e.getMessage()));
+                    new Result(false, -1, "process-not-started " + e.getClass().getSimpleName() + ": " + e.getMessage()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return traced(command, new Result(false, -1, "interrupted"));

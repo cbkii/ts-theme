@@ -134,5 +134,8 @@ val generateProvenance = tasks.register<WriteProvenance>("generateProvenance") {
     sourceBranch.set(sourceRef)
     destination.set(layout.buildDirectory.dir("generated/provenanceAssets"))
 }
-android.sourceSets.getByName("main").assets.srcDir(generateProvenance.flatMap { it.destination })
-tasks.named("preBuild").configure { dependsOn(generateProvenance) }
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(generateProvenance, WriteProvenance::destination)
+    }
+}
