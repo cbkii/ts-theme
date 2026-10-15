@@ -9,9 +9,6 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
-
-import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
 /**
  * Process-level launcher lifecycle, navigation bootstrap and removable-media reconciliation.
@@ -22,11 +19,9 @@ import com.cbkii.ts18launcher.platform.TopwayAdapter;
  */
 public final class Ts18LauncherApplication extends Application
         implements Application.ActivityLifecycleCallbacks {
-    private static final long STORAGE_WARM_DEBOUNCE_MS = 1500L;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean launcherResumed;
     private boolean receiverRegistered;
-    private long lastStorageWarmMs;
 
     private final BroadcastReceiver storageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -39,7 +34,7 @@ public final class Ts18LauncherApplication extends Application
             MediaListenerService.refreshActiveSessions();
             if (RemovableMediaPolicy.shouldWarm(event, launcherResumed,
                     UiPersonalizationPrefs.mediaStartupWarmup(Ts18LauncherApplication.this))) {
-                warmConfiguredMusicAfterMount();
+                StartupReadinessCoordinator.get(Ts18LauncherApplication.this).onStorageMounted();
             }
         }
     };
@@ -59,32 +54,21 @@ public final class Ts18LauncherApplication extends Application
         filter.addDataScheme("file");
         registerReceiver(storageReceiver, filter);
         receiverRegistered = true;
+        IntentFilter wake = new IntentFilter(Intent.ACTION_SCREEN_ON);
+        wake.addAction(Intent.ACTION_USER_PRESENT);
+        registerReceiver(wakeReceiver, wake);
+        StartupReadinessCoordinator.get(this).onProcessStart();
         MediaEventTrace.record("process", "created");
     }
 
-    private void warmConfiguredMusicAfterMount() {
-        long now = SystemClock.uptimeMillis();
-        if (lastStorageWarmMs > 0L && now - lastStorageWarmMs < STORAGE_WARM_DEBOUNCE_MS) {
-            MediaEventTrace.record("storage", "warm-debounced");
-            return;
+    private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+            // Screen-on/user-present is a wake hint only; it is never treated as verified ACC-on.
+            StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
+                    .onTrigger(StartupReadinessPolicy.Trigger.WAKE, String.valueOf(intent.getAction()));
         }
-        lastStorageWarmMs = now;
-        String packageName = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC);
-        if (packageName.isEmpty()) packageName = TopwayAdapter.defaultMusicPackage(this);
-        if (packageName.isEmpty()) {
-            MediaEventTrace.record("storage", "warm-skipped", "no configured music package");
-            return;
-        }
-        final String target = packageName;
-        MediaEventTrace.record("storage", "warm-request", target);
-        final MediaSourceBootstrapper bootstrapper = new MediaSourceBootstrapper(this);
-        bootstrapper.warm(target);
-        handler.postDelayed(() -> {
-            bootstrapper.destroy();
-            ProcessMediaSessionMonitor.refresh(Ts18LauncherApplication.this);
-            MediaEventTrace.record("storage", "warm-window-finished", target);
-        }, MediaSourceBootstrapper.PREPARE_TIMEOUT_MS + 750L);
-    }
+    };
 
     private static boolean isLauncher(Activity activity) {
         return activity instanceof LauncherActivity;
@@ -101,6 +85,7 @@ public final class Ts18LauncherApplication extends Application
     @Override public void onActivityResumed(Activity activity) {
         if (!isLauncher(activity)) return;
         launcherResumed = true;
+        StartupReadinessCoordinator.get(this).onHomeResumed(true);
         ProcessMediaSessionMonitor.refresh(this);
         MediaEventTrace.record("home", "resumed");
     }
@@ -108,6 +93,7 @@ public final class Ts18LauncherApplication extends Application
     @Override public void onActivityPaused(Activity activity) {
         if (!isLauncher(activity)) return;
         launcherResumed = false;
+        StartupReadinessCoordinator.get(this).onHomeResumed(false);
         MediaEventTrace.record("home", "paused");
     }
 
@@ -127,6 +113,7 @@ public final class Ts18LauncherApplication extends Application
         if (receiverRegistered) {
             try {
                 unregisterReceiver(storageReceiver);
+                unregisterReceiver(wakeReceiver);
             } catch (RuntimeException ignored) {
                 // The framework may already have torn the process down.
             }

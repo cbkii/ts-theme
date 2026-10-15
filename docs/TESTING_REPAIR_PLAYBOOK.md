@@ -33,6 +33,7 @@ For each prompt, switch to HOME, perform the action once, return to Termux and p
 
 | Step | Action | Pass requires |
 |---|---|---|
+| S0 | Boot/ACC wake, open nothing: wait up to 60 s on HOME | Music, Radio and Maps ready automatically; no autoplay/focus change/duplicate launch |
 | S1 | Music Play once | Audible music, not just a PLAYING flag |
 | S2 | Radio Play once | Audible radio without a second Play |
 | S3 | Music app icon, including while Maps starts | Music app opens despite compact-map failure |
@@ -43,7 +44,7 @@ For each prompt, switch to HOME, perform the action once, return to Termux and p
 | S8 | HOME once, then pan | Compact return without Retry or duplicated launch |
 | S9 | Only after a natural failure: Retry twice quickly | Acknowledged/coalesced recovery; bounded outcome |
 
-S9 is conditional: choose **n** if there is no failure/Retry button. It remains untested rather than manufacturing a failure. A critical failure or uncertainty in S1–S8 stops the smoke gate and exports evidence. Do not proceed to the long campaign. On failure, leave the failed screen untouched while capture runs; do not Retry/reboot first. The guide offers an eight-second delayed checkpoint: switch back to the failed screen during that countdown. A failure note is optional. Earlier failures remain in the archive even if a later trial succeeds.
+S9 is conditional: choose **n** if there is no failure/Retry button. It remains untested rather than manufacturing a failure. S0 is the first physical gate and must follow a genuine boot or verified ACC wake (screen-on alone is not ACC). Testing methods > Startup offers `Background only`, `Automatic fallback` (Music foreground bootstrap then HOME restore) and `Aggressive/loader` (also Radio; the loader needs overlay authority and is not yet implemented). A critical failure or uncertainty in S0–S8 stops the smoke gate and exports evidence. Do not proceed to the long campaign. On failure, leave the failed screen untouched while capture runs; do not Retry/reboot first. The guide offers an eight-second delayed checkpoint: switch back to the failed screen during that countdown. A failure note is optional. Earlier failures remain in the archive even if a later trial succeeds.
 
 Returning to Termux changes focus. Phone video showing the full screen and finger is necessary to establish touch alignment or a brief fault between samples. If the state has already recovered, say so; a recovered screenshot does not show the original failure. A sealed archive proves collection completed, not that the app passed.
 

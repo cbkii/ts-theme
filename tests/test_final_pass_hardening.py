@@ -15,7 +15,7 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertFalse((ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupMaskController.java").exists())
         self.assertNotIn("launchMediaBootstrap", LAUNCHER)
         self.assertNotIn("cold-foreground-prime", LAUNCHER)
-        self.assertIn("mediaBootstrapper.warmConfiguredSources()", LAUNCHER)
+        self.assertIn("StartupReadinessCoordinator.get(this)", LAUNCHER)
 
     def test_process_media_session_monitor_is_primary_cold_boot_observer(self):
         self.assertIn("ProcessMediaSessionMonitor.Observer", LAUNCHER)

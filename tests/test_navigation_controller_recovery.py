@@ -72,6 +72,7 @@ class LauncherPrefs {static final String KEY_NAV="nav";static String packageFor(
 class AppResolver {static String labelFor(android.app.Activity a,String p,String f){return p;}}
 class AndroidUserId {static int current(){return 0;}}
 class MediaEventTrace {static void record(String a,String b,String... c){}}
+class StartupReadinessCoordinator {static StartupReadinessCoordinator get(android.app.Activity c){return new StartupReadinessCoordinator();}void onNavigationState(String s,String d){}}
 class TestingProfiles {static String nav="N1";static String navigation(android.app.Activity a){return nav;}
 static String transition(android.app.Activity a){return "bridge";}static boolean retainCompact(android.app.Activity a){return false;}}
 class NavigationProvider {static final String ORGANIC_MAPS_INCAR="app.organicmaps.incar";static int launches;
@@ -154,8 +155,8 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  int[] opened={0};c.launchAfterSuspension(()->opened[0]++);RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
  android.view.View.drain();check(opened[0]==1&&p.configured==0,"source icon lost or old callback accepted");
- // No stale queued launch after HOME stops; returning HOME requires a fresh user tap.
- NavigationOverlayGate gate=new NavigationOverlayGate();gate.onVisible();gate.request(()->opened[0]++);gate.onStopped();gate.onSettled();gate.onVisible();check(opened[0]==1,"stale launch delivered on return");
+ // An explicit launch is retained across HOME stop and delivered exactly once when parking settles.
+ NavigationOverlayGate gate=new NavigationOverlayGate();gate.onVisible();gate.request(()->opened[0]++);gate.onStopped();gate.onSettled();gate.onVisible();gate.onSettled();check(opened[0]==2,"explicit launch lost or duplicated across HOME stop");
  // An unresponsive backend terminates at the admission deadline, with no callback needed.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
  check(android.os.SystemClock.now==46000&&p.error.contains("ACTION_TIMEOUT"),"watchdog failed");

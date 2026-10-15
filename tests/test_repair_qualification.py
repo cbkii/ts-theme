@@ -34,7 +34,7 @@ class RepairQualificationTests(unittest.TestCase):
                 expected, name = line.split('  ',1)
                 self.assertEqual(expected, hashlib.sha256(payloads[name].encode()).hexdigest(), name)
         ids=[line.split('\t')[0] for line in payloads['cases.tsv'].splitlines() if line and not line.startswith('#')]
-        for case in ['S1','S9','C1','W1','W8']: self.assertIn(case,ids)
+        for case in ['S0','S1','S9','C1','W1','W8']: self.assertIn(case,ids)
         self.assertEqual(len(ids),len(set(ids)))
 
     def test_healthy_smoke_skips_unavailable_retry_and_exports(self):
@@ -43,7 +43,7 @@ class RepairQualificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root/'engine/active').mkdir(parents=True)
-            cases = '\n'.join(f'S{i}\tSmoke\tStep {i}\tAction\tPass' for i in range(1,10))
+            cases = '\n'.join(f'S{i}\tSmoke\tStep {i}\tAction\tPass' for i in range(0,10))
             (root/'cases.tsv').write_text(cases)
             harness = r'''BB=/usr/bin/env
 ROOT=$1
@@ -55,7 +55,7 @@ wait_capture() { :; }
 checkpoint_case() { echo UNEXPECTED_CHECKPOINT; }
 '''+smoke+'\nsmoke_flow\n'
             result = subprocess.run(['sh','-c',harness,'harness',tmp],
-                                    input='\n'+'p\n'*8+'n\n',text=True,capture_output=True,check=True)
+                                    input='\n'+'p\n'*9+'n\n',text=True,capture_output=True,check=True)
             self.assertIn('RUN result S9 UNKNOWN',result.stdout)
             self.assertIn('Smoke observations passed.',result.stdout)
             self.assertIn('RUN export',result.stdout)

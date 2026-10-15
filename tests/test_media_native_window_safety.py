@@ -25,7 +25,7 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
             "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         bootstrapper = self.read(
             "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceBootstrapper.java")
-        self.assertIn("mediaBootstrapper.warmConfiguredSources()", launcher)
+        self.assertIn("StartupReadinessCoordinator.get(this)", launcher)
         self.assertIn("MediaBrowser", bootstrapper)
         self.assertIn("prepareExplicitService", bootstrapper)
 

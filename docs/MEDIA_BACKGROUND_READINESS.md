@@ -79,6 +79,12 @@ Readiness and transport contain no source-Activity fallback. Cold startup, dead-
 
 The shared metadata display remains observation-only. Repeated identical snapshots no longer call `setText()` on unchanged primary/secondary content, so the throttled event-triggered session refresh does not continually restart the marquee's five-second hold. `SlowMarqueePolicy` makes the semantic reset/overflow decision directly JVM-testable. The marquee cancels when hidden/detached and restarts after real text/width/visibility changes. Metadata fallback treats empty/whitespace TITLE/ARTIST fields as absent and continues to DISPLAY_TITLE/ALBUM_ARTIST/DISPLAY_SUBTITLE when supplied by the real source.
 
+## Startup Readiness Coordinator
+
+`StartupReadinessCoordinator` (application-scoped, main-thread, event-driven) is triggered by process start (full boot vs same-boot restart is decided from `Settings.Global boot_count`), `BOOT_COMPLETED` (signal only, no Activity launch), screen-on/user-present (a wake hint, never treated as verified ACC), HOME resume, storage mount and session loss. Overlapping triggers inside 1.5 s collapse; healthy sources are never re-admitted; each source has one in-flight admission and records state (`UNAVAILABLE/STARTING/READY/ACTIVE/FAILED/BLOCKED/UNCERTAIN`), method, generation, first failing boundary and elapsed time in the `startup` trace surface. Background preparation is the existing bootstrapper (Auxio MediaBrowser + PREPARE; NavRadio passive preparation remains disabled until qualified, so Radio stays UNCERTAIN until Play or the Aggressive foreground bootstrap). `Automatic fallback` adds one bounded foreground Music Activity bootstrap then HOME restore; `Aggressive/loader` also bootstraps Radio (it may start the tuner, so opt-in only; the optional loader is not implemented). Maps cold start remains owned by `NavigationWindowController`; the coordinator only observes it.
+
+NavRadio deadlines are separated: startup budget = 3.2 s cold settle guard + 4.5 s transport window, with a dedicated 1.6 s acknowledgement window, so the settle guard can no longer be skipped or starve acknowledgement. Explicit app launches (Music/Radio icons) are retained across HOME `onStop` and failed Maps parking, and delivered once when parking settles or the 3.5 s bound expires.
+
 ## Qualification tools
 
 All output is under `/storage/emulated/0/Download/ts-theme/`.

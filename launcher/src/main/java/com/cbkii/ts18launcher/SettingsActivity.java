@@ -341,7 +341,8 @@ public final class SettingsActivity extends Activity {
                 "Task transition: " + TestingProfiles.transition(this),
                 "Departure: " + (TestingProfiles.retainCompact(this) ? "retain compact" : "background fullscreen"),
                 "Music: " + (TestingProfiles.prepareAuxio(this) ? "bind + supported PREPARE" : "bind only"),
-                "Radio: " + TestingProfiles.radio(this), "Open navigation normally", "Build and test identity"};
+                "Radio: " + TestingProfiles.radio(this),
+                "Startup: " + TestingProfiles.startup(this), "Open navigation normally", "Build and test identity"};
         new AlertDialog.Builder(this).setTitle("Testing methods")
                 .setItems(choices, (dialog, which) -> {
                     switch (which) {
@@ -356,7 +357,10 @@ public final class SettingsActivity extends Activity {
                                 new String[]{"M1 · Auxio bind + advertised PREPARE", "M0 · Browser bind only"}); break;
                         case 4: chooseTesting("radio", new String[]{"auto", "root", "normal"},
                                 new String[]{"R0 · Root; normal only after definite refusal", "R1 · Root only", "R2 · Normal Android only"}); break;
-                        case 5:
+                        case 5: chooseTesting("startup", new String[]{"background", "auto", "aggressive"},
+                                new String[]{"Background only", "Automatic fallback (Music foreground bootstrap)",
+                                        "Aggressive/loader (Music + Radio foreground bootstrap)"}); break;
+                        case 6:
                             String navigationPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
                             if (navigationPackage.isEmpty() && NavigationProvider.hasLauncherActivity(this, NavigationProvider.ORGANIC_MAPS_INCAR))
                                 navigationPackage = NavigationProvider.ORGANIC_MAPS_INCAR;

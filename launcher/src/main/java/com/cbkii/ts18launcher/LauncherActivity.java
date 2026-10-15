@@ -225,8 +225,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void runMediaReadiness() {
-        if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-            mediaBootstrapper.warmConfiguredSources();
+        if (UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+            StartupReadinessCoordinator.get(this)
+                    .onTrigger(StartupReadinessPolicy.Trigger.RESUME, "home-ready");
         }
     }
 
@@ -412,6 +413,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void runSourceCommand(String label, String packageName, MediaListenerService.Command command) {
+        StartupReadinessCoordinator.get(this).onUserCommand();
         int generation = ++mediaStatusGeneration;
         mediaStatusActive = true;
         String appLabel = AppResolver.labelFor(this, packageName, label);
@@ -752,6 +754,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openNavigation(Location location) {
+        StartupReadinessCoordinator.get(this).onUserCommand();
         if (!ExperimentalMapPolicy.enabled(this)
                 && navigationWindowController != null
                 && navigationWindowController.openFullscreen(location)) return;
@@ -764,6 +767,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void launchAfterNavigation(Runnable launch) {
+        StartupReadinessCoordinator.get(this).onUserCommand();
         if (ExperimentalMapPolicy.enabled(this) || navigationWindowController == null) launch.run();
         else navigationWindowController.launchAfterSuspension(launch);
     }
