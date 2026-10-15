@@ -35,7 +35,7 @@ Request a TESTING snapshot at a meaningful install/device-test checkpoint, espec
 
 ## Automotive HOME UI
 
-Physical safe-area authority remains: panel 1280 x 720, top content boundary 55 px, safe-right x=1225, safe-bottom y=702. Proven device boundaries remain raw pixels.
+Physical baseline is a 1280 x 720 panel; x=1225/55 px top and y=702 are historical conservative layout limits, **not immutable SystemUI geometry**. September 2026 exact-unit evidence observed about x=1227 and 53 px top/right regions with density override changes. Re-read actual WMS/display/decor/insets at the test lifecycle; preserve protected bars and avoid double-subtracting fitted decor.
 
 Mono Drive uses:
 
@@ -85,12 +85,12 @@ Radio and generic Music remain separate authorities. Transport buttons are never
 
 1. exact active MediaSession for the target package when available/capable;
 2. evidence-backed per-source adapter;
-3. bounded Magisk-root service activation first for exact Auxio-TS, followed by its exported MediaBrowser wrapper and ordinary binding fallback;
+3. Auxio-TS exported MediaBrowser/real session with optional advertised PREPARE; root `am startservice` priming is rejected/disabled;
 4. bounded root-first NavRadio service activation only for an interactive Play request while passive service start remains physically unqualified;
 5. exported `android.media.browse.MediaBrowserService` for other compatible sources;
 6. bounded exact-session retry, one directional command, playback acknowledgement for Play/Pause, and a short visible failure status.
 
-No readiness/transport path launches a source Activity. Settings exposes **Warm media sources on HOME start**. When enabled, HOME reconciles readiness on start/resume/focus only through passively qualified adapters. Exact stock `com.tw.radio` is existing-session/external-route only because its current APK declares no service component. The launcher creates no MediaSession and never requests audio focus.
+No readiness/transport path in the **current PR #17 code** launches a source Activity. Settings exposes **Warm media sources on HOME start**, currently limited to qualified background adapters rather than complete car-start preparation; NavRadio passive startup remains unqualified. A new controlled Activity fallback and coordinated boot/ACC recovery are authorised **as future code work**, not yet operational. See [automatic car-start readiness handoff](AUTOMATIC_CAR_START_READINESS_PLAN.md). Exact stock `com.tw.radio` is existing-session/external-route only until separately qualified. The launcher creates no MediaSession and never requests audio focus.
 
 A Play/Pause intent is resolved once at tap time and retained through preparation. Duplicate in-flight Play/Pause intents are coalesced under one monotonic deadline. Preparing a new source does not stop the currently working opposite source; the opposite source is paused only after the requested source has acknowledged Play. Failed source switches reconcile the displayed source to actual playback rather than leaving a stale selected-source state. Generic Music uses explicit defensive refresh requests with a 15-second minimum spacing alongside event callbacks. Earlier Auxio-TS testing justified defensive queries; it does not qualify this current cadence.
 
@@ -111,7 +111,7 @@ Do not implement generic compact/split-screen profiles. Supported responsive rea
 - Topway right-sidebar shown/hidden geometry when exact runtime evidence discriminates it;
 - modest comparable landscape variation that preserves SystemUI safety and touch targets.
 
-The proven 1225 px safe-right remains the default full-panel authority while the right SystemUI sidebar is present.
+The x=1225 safe-right remains a conservative historical full-panel design constraint when the right SystemUI sidebar is present; it does not replace live runtime bar/inset authority.
 
 ## Experimental HOME map
 
@@ -143,7 +143,7 @@ SAF JSON export/import is versioned, whitelisted and transactional. It includes 
 
 ## Physical requalification
 
-Keep DoFun as HOME and test the launcher as an ordinary Activity first. Before beginning a new physical-validation round, request `/testing-apk` (or use another explicit TESTING trigger) on the exact commit you intend to install, then use the fixed draft release notes to confirm the APK's PR/head/built SHA before copying it to the TS18.
+On a fresh install, test the launcher as an ordinary Activity before switching HOME. On an already configured unit, resolve and preserve the current HOME; `com.cbkii.ts18launcher/.HomeAlias` was the observed HOME in September 2026. Keep DoFun enabled as a recoverable fallback. Before beginning a new physical-validation round, request `/testing-apk` (or use another explicit TESTING trigger) on the exact commit you intend to install, then use the fixed draft release notes to confirm the APK's PR/head/built SHA before copying it to the TS18.
 
 1. Verify Apps -> default Settings slot -> configured middle shortcuts -> accented Navigation, including 3/4/5/6 slot spacing and shortcuts-disabled mode.
 2. Confirm Navigation remains fixed at bottom and visible slots use the available middle rail height evenly.
@@ -159,7 +159,7 @@ Keep DoFun as HOME and test the launcher as an ordinary Activity first. Before b
 12. Run `collect-fast-media-evidence.sh`, `MONO_DRIVE_UX_ACCEPTANCE.md` and `measure-standalone-launcher.sh` where applicable.
 13. Only after ordinary-Activity gates pass continue HOME/reboot/cold-boot/ACC qualification.
 
-NavRadio passive warm-up and a stock TW Radio external control route remain unqualified until exact physical evidence establishes those contracts. Source-Activity fallbacks are forbidden for readiness and transport. Native Topway radio/music, Bluetooth/projection, reverse-camera behaviour and future windowed navigation remain unclaimed unless separately exercised.
+NavRadio passive warm-up and stock TW Radio external control remain unqualified. Current source readiness is background-only; the newly authorised controlled Activity staging remains NOT_IMPLEMENTED until a later code change and physical qualification. PR #14/#16/#17 already contain native navigation-window code, but its cold interactive readiness and stability are **not physically passed**. Native Topway radio/music, Bluetooth/projection and reverse-camera behaviour remain separate gates.
 
 ## Rollback
 

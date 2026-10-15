@@ -1,5 +1,7 @@
 # Background media readiness adapters
 
+> **Current implementation vs requested fix (16 October 2026):** This file describes the existing PR #17 background-only adapter. The owner reports that all Music, Radio and Maps cold-start profiles fail on the exact TS18. Automatic car-start readiness, application-scoped orchestration and controlled foreground Activity staging are **requested design, not current code**. See [automatic car-start readiness handoff](AUTOMATIC_CAR_START_READINESS_PLAN.md). The strict foreground ban below has been updated to authorise a gated implementation, not to claim it has shipped.
+
 This note records the evidence and implementation boundary for standalone-launcher fast media readiness. Vendor APK bytes are not committed. Static APK inspection establishes component contracts only; it does not replace installed-build/runtime qualification.
 
 ## Readiness model
@@ -10,7 +12,7 @@ The launcher keeps service start, controller connection, Play capability and pla
 - `IDLE`: no preparation is in flight.
 - `STARTING`: a bounded service/browser/session/command transaction is in flight.
 - `CONNECTED`: a service/session surface exists, but Play capability is not yet proven.
-- `READY`: the exact controller is reachable and advertises a usable Play action.
+- `READY` (current adapter semantics): the exact controller is reachable and advertises a usable Play action. **Not sufficient** to prove the restored Auxio queue/USB library or radio tuner/audio path is operational; the new coordinator must track source-specific operational readiness separately.
 - `PLAYING`: playback state has acknowledged the requested Play.
 - `BLOCKED`: the installed source has no qualified background route or a required prerequisite is absent.
 - `FAILED`: a bounded attempt ended without satisfying the requested contract.
@@ -71,9 +73,17 @@ The launcher Application dynamically observes public removable-media availabilit
 
 Root service commands run off the UI thread and target the launcher's current Android user rather than hard-coding user 0. Root does not imply platform signing, UID 1000 or OEM vehicle-service authority. Root acceptance, normal-Android fallback and final readiness are separately recorded in the local event trace.
 
-## Masked Activity fallback
+## Foreground fallback — authorised next design, NOT_IMPLEMENTED
 
-Readiness and transport contain no source-Activity fallback. Cold startup, dead-controller recovery and explicit Play remain background-only; masked priming is not a future fallback under the current product contract. App/source icons are intentional foreground requests.
+PR #17 contains **no source-Activity bootstrap or loader**; current service/session warm-up remains background-only, and source icons remain intentional foreground requests. The earlier absolute prohibition is superseded **for the separately reviewed car-start reliability change only**:
+
+- Prefer source-owned silent Browser/PREPARE or qualified exported foreground-service readiness first. Do not replay a root admission after an accepted/uncertain result.
+- When demonstrably insufficient, allow **one** authorised normal/root-assisted source Activity initialisation with genuine service/queue/tuner readiness observation; restore the already-owned ts-theme HOME task, preserve original source authority and do not auto-Play.
+- Never take focus from a foreign user-selected app or hide an active permission/settings screen. Calls/reverse camera/SystemUI take priority. Preserve exact task and Android user; no task clear, force-stop or injected taps.
+- A loader is a later **optional** presentation technique, not a startup contract, and requires overlay app-op and physical safety qualification. Without it, use visible staging or truthful BLOCKED.
+- Do not enable passive NavRadio tuning/routing, stock-radio startup or aggressive mode by default until qualified on the installed build.
+
+Boot, ACC wake and HOME resume are separate triggers. The current launcher manifest has no boot receiver, and this document does not claim car-start orchestration is implemented.
 
 ## Metadata/ticker
 
@@ -89,6 +99,8 @@ All output is under `/storage/emulated/0/Download/ts-theme/`.
 - `scripts/termux/collect-media-lifecycle-evidence.sh [30..300]` is read-only and bounded. Run it while physically performing the intended ACC/reboot lifecycle transition. It correlates uptime/power, resumed task, processes, MediaSessions, storage and filtered Topway/ACC/sleep/wake logs. Display/screen-on alone is not classified as ACC.
 
 ## Physical qualification
+
+**New release blocker (owner observation, 15 October 2026):** the PR #17 Music/Radio/Maps methods do not reliably initialise cold; extended validation is deferred until an automatic three-source car-start smoke gate succeeds. Current CI and diagnostic-method options are not physical readiness evidence. Preserve and capture the original first failure, not a chain of repeated retries. The existing guided kit does not yet exercise an automatic boot/ACC-ready contract; see the handoff plan.
 
 Physical audible onset, installed NavRadio service side effects, stock TW Radio cold-control authority and ACC lifecycle are not claimed by repository CI. Treat a failed root/source prerequisite as BLOCKED for dependent tests, not as proof that every downstream media contract failed.
 

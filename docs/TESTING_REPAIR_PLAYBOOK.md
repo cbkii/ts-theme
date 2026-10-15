@@ -1,5 +1,7 @@
 # TS18 repair candidate — guided validation
 
+> **Release-gate update (16 October 2026):** The owner reports failures of all three primary integrations from a genuinely cold state across PR #17 testing modes. This is a report about physical behaviour, not a claim that the script has captured each earliest cause. Preserve this candidate for comparison; **do not spend time running the full campaign until a substantially changed startup implementation passes a short Music + Radio + interactive Maps smoke gate in one car-start session**. Automatic boot/ACC readiness is **NOT_IMPLEMENTED** by this APK or its current guided menu. The next implementation and new qualification cases are specified in [automatic car-start readiness handoff](AUTOMATIC_CAR_START_READINESS_PLAN.md). Do not interpret an old signed hash or this playbook as acceptance of the next build.
+
 11 October 2026. Physical qualification is **NOT_RUN**. Use the signed repair candidate identified in the PR handoff; do not choose an APK by its upload date. PR16 `ae2dd07` is the comparison baseline with reported regressions, not the repaired build. Keep a known rollback APK and DoFun available.
 
 ## 1. Install and start once
