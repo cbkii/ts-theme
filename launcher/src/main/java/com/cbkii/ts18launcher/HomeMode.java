@@ -32,6 +32,21 @@ final class HomeMode {
                 && context.getPackageName().equals(info.activityInfo.packageName);
     }
 
+    static boolean bringLauncherToFront(Context context) {
+        Intent intent = new Intent(context, LauncherActivity.class)
+                .setAction(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_HOME)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        try {
+            context.startActivity(intent);
+            return true;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
     static void requestHomeRole(Activity activity) {
         setHomeAliasEnabled(activity, true);
         try {

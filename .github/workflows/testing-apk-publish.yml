@@ -473,7 +473,7 @@ jobs:
           $MANAGED_MARKER
           **TESTING ONLY.** These are development snapshots for physical/engineering validation. They are not production releases and the newest snapshot is not necessarily the safest one.
 
-          Both retained snapshots intentionally use Android `versionName=0.0.0-testing` and `versionCode=999999`, so TESTING builds remain in the same reinstall/update lane.
+          Both retained snapshots intentionally use Android versionName 0.0.0-testing and versionCode 999999, so TESTING builds remain in the same reinstall/update lane.
 
           ## Current TESTING builds
 

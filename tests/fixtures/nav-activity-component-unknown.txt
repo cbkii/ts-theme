@@ -1,0 +1,11 @@
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #0 (activities from top to bottom):
+  Stack #14: type=standard mode=freeform
+    mBounds=Rect(475, 72 - 1211, 459)
+    Task id #9078
+    mBounds=Rect(475, 72 - 1211, 459)
+    * TaskRecord{e6de8b3 #9078 A=app.organicmaps.incar U=0 StackId=14 sz=1}
+      intent={flg=0x10000000}
+      * Hist #0: ActivityRecord{component-redacted}
+          packageName=app.organicmaps.incar processName=app.organicmaps.incar
+          state=RESUMED visible=true
