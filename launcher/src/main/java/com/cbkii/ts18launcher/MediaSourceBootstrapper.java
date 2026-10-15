@@ -693,9 +693,6 @@ final class MediaSourceBootstrapper {
                             now, pending.deadlineMs, notBefore - now)));
             return;
         }
-        if (now >= pending.deadlineMs - ACK_TIMEOUT_MS) {
-            finish(pending, false, pending.sourceLabel + " command deadline expired"); return;
-        }
         int state = stateOf(controller);
         boolean guardedColdPlay = pending.coldPlayGuarded
                 && pending.desired == MediaCommandPolicy.Desired.PLAY && !pending.dispatched;
