@@ -52,7 +52,7 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn('android:name=".Ts18LauncherApplication"', manifest)
         self.assertIn("Intent.ACTION_MEDIA_MOUNTED", app)
         self.assertIn("RemovableMediaPolicy.shouldWarm", app)
-        self.assertIn("bootstrapper.warm(target);", app)
+        self.assertIn("StartupReadinessPolicy.Trigger.STORAGE_MOUNT", app)
         self.assertNotIn("bootstrapper.command", app)
         self.assertNotIn("startActivity", app)
         self.assertNotIn("forceStopPackage", app)

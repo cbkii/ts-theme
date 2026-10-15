@@ -341,7 +341,8 @@ public final class SettingsActivity extends Activity {
                 "Task transition: " + TestingProfiles.transition(this),
                 "Departure: " + (TestingProfiles.retainCompact(this) ? "retain compact" : "background fullscreen"),
                 "Music: " + (TestingProfiles.prepareAuxio(this) ? "bind + supported PREPARE" : "bind only"),
-                "Radio: " + TestingProfiles.radio(this), "Open navigation normally", "Build and test identity"};
+                "Radio: " + TestingProfiles.radio(this), "Open navigation normally",
+                "Startup: " + TestingProfiles.startup(this), "Build and test identity"};
         new AlertDialog.Builder(this).setTitle("Testing methods")
                 .setItems(choices, (dialog, which) -> {
                     switch (which) {
@@ -363,6 +364,9 @@ public final class SettingsActivity extends Activity {
                             if (!NavigationProvider.open(this, navigationPackage, null))
                                 Toast.makeText(this, "Navigation could not open. Choose an installed Navigation app.", Toast.LENGTH_LONG).show();
                             break;
+                        case 6: chooseTesting("startup", new String[]{"background", "auto", "aggressive"},
+                                new String[]{"Background only · no foreground bootstrap", "Automatic fallback · foreground bootstrap then HOME restore",
+                                        "Aggressive · also root-assisted launch/HOME restore (no loader)"}); break;
                         default: new AlertDialog.Builder(this).setTitle("Build and test identity")
                                 .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
                                         + "\n\nReturn HOME after selecting a method. Keep the Maps APK fixed. "

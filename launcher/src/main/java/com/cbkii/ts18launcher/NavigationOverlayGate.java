@@ -1,29 +1,31 @@
 package com.cbkii.ts18launcher;
 
-/** Delivers a drawer only after the bounded task handoff and HOME visibility agree. */
+/**
+ * Holds one explicit external-app launch until navigation parking settles. The user's request is
+ * never dropped: if parking fails, times out, or HOME stops first, the launch is released instead.
+ */
 final class NavigationOverlayGate {
-    private final java.util.ArrayDeque<Runnable> pending = new java.util.ArrayDeque<>();
+    private Runnable pending;
     private boolean ready;
-    private boolean visible;
 
     boolean request(Runnable action) {
         if (action == null) return false;
-        pending.clear(); ready = false;
-        pending.add(action);
+        pending = action; ready = false;
         return true;
     }
 
-    boolean isPending() { return !pending.isEmpty(); }
+    boolean isPending() { return pending != null; }
 
-    void onVisible() { visible = true; deliver(); }
-    void onStopped() { visible = false; cancel(); }
-    void onSettled() { ready = true; deliver(); }
-    void cancel() { pending.clear(); ready = false; }
-
-    private void deliver() {
-        if (!visible || !ready || pending.isEmpty()) return;
-        java.util.ArrayDeque<Runnable> batch = new java.util.ArrayDeque<>(pending);
-        cancel();
-        while (!batch.isEmpty()) batch.removeFirst().run();
+    void onVisible() { }
+    /** HOME stopping often means the requested app is already taking over; honour the request. */
+    void onStopped() { release(); }
+    void onSettled() { ready = true; release(); }
+    /** Deliver the pending launch exactly once regardless of parking outcome. */
+    void release() {
+        Runnable action = pending;
+        pending = null; ready = false;
+        if (action != null) action.run();
     }
+    /** Supersede without delivering (a newer explicit action replaces this one). */
+    void cancel() { pending = null; ready = false; }
 }

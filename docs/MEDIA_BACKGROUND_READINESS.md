@@ -95,3 +95,31 @@ Physical audible onset, installed NavRadio service side effects, stock TW Radio 
 For audible-latency work, use the monotonic `TS18Media` events to measure HOME lifecycle, readiness request, root/browser/service result, exact-session observation, command dispatch, playback acknowledgement and metadata render; record physical audible onset separately by observation. For launcher/process death and notification-listener restart, capture the smallest lifecycle scenario rather than using force-stop as a substitute for ordinary process death.
 
 Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; explicit listener refresh requests have a 15-second minimum spacing; no periodic timer is scheduled and storage events can request refresh while HOME is hidden. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
+
+## Startup Readiness Coordinator (cold-start reliability)
+
+Service-only readiness repeatedly failed on the exact TS18 after cold boot. `StartupReadinessCoordinator`
+(application-scoped, event-driven, bounded) now reconciles Music, Radio and Navigation independently.
+
+Triggers: `BOOT_COMPLETED` signal (never launches an Activity), process restart (classified by
+`Settings.Global.BOOT_COUNT`), HOME resume, screen-on/user-present (a wake observation only —
+**not** verified ACC-on), removable-storage mount (late USB for Auxio) and source session loss.
+Overlapping triggers are debounced; each source has one in-flight admission; healthy sources are not
+disturbed; failed sources retry at most 3 times per boot (late USB mount excepted).
+
+Per-source chain:
+
+| Source | Background phase | Foreground fallback (mode permitting) |
+|---|---|---|
+| Music (Auxio-TS) | Existing exported MediaBrowser contract; READY requires a usable queue/metadata plus Play support, not a token | Normal Activity launch once, wait for usable queue, restore HOME |
+| Radio (NavRadio+) | Observe exact session only (passive service start is unproven; Play-time service start unchanged, with the cold-play guard now extending the command deadline instead of being dropped) | Normal Activity launch once, wait for session, restore HOME; unrequested playback is paused once |
+| Navigation (Organic Maps) | Reuse a known healthy task | Normal Activity launch once (Splash/permissions allowed, no root), dwell, restore HOME, then the existing controller converts the **same task** to compact (N2 semantics). The controller is held so it cannot cold-launch concurrently; an accepted launch is never repeated |
+
+Testing choices (Settings → Testing methods → Startup): `Background only`, `Automatic fallback`
+(default), `Aggressive` (also root-assisted `am start` launch/HOME restore only after the normal route
+fails; no transient loader is implemented). The foreground pipeline yields on user interaction, calls
+(audio mode), or failure to regain HOME, and never kills/clears source apps.
+
+States: UNAVAILABLE, STARTING, READY, ACTIVE, FAILED, BLOCKED, UNCERTAIN, recorded with method,
+generation, first failing boundary and elapsed time in the `TS18Media` `startup/*` trace. READY means
+service/session or task observation only; audibility, ACC and cold boot remain physical checks.

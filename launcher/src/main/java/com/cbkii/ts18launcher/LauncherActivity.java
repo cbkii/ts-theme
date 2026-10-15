@@ -67,6 +67,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
+    private StartupReadinessCoordinator.NavigationHook startupHook;
     private boolean launchedAsHome;
     private boolean redirectingToHome;
     private boolean locationPermissionRequested;
@@ -97,6 +98,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         nativeNavigationPanel = new NativeNavigationPanel(this);
         root.addView(nativeNavigationPanel);
         navigationWindowController = new NavigationWindowController(this, nativeNavigationPanel);
+        navigationWindowController.setStartupListener((ready, boundary) ->
+                StartupReadinessCoordinator.get(this).reportNavigation(ready, boundary));
+        startupHook = new StartupReadinessCoordinator.NavigationHook() {
+            @Override public void holdNavigation(boolean hold) {
+                if (navigationWindowController != null) navigationWindowController.setStartupHold(hold);
+            }
+            @Override public boolean hasNavigationTask() {
+                return navigationWindowController != null && navigationWindowController.hasNavigationTask();
+            }
+        };
+        StartupReadinessCoordinator.get(this).attachNavigationHook(startupHook);
 
         buildRail();
         buildRadioPanel();
@@ -208,7 +220,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onStop();
     }
 
+    @Override public void onUserInteraction() {
+        super.onUserInteraction();
+        StartupReadinessCoordinator.get(this).noteUserInteraction();
+    }
+
     @Override protected void onDestroy() {
+        StartupReadinessCoordinator.get(this).detachNavigationHook(startupHook);
         if (root != null) root.removeCallbacks(geometryUpdate);
         mediaRefreshHandler.removeCallbacksAndMessages(null);
         if (mediaBootstrapper != null) mediaBootstrapper.destroy();

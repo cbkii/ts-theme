@@ -638,7 +638,7 @@ smoke_flow() {
   ask 'Enter=start capture, b=back:'
   [ "$answer" != b ] || return
   start_trace mapwindow 300 || return
-  for id in S1 S2 S3 S4 S5 S6 S7 S8 S9; do
+  for id in S0 S1 S2 S3 S4 S5 S6 S7 S8 S9; do
     line=$("$BB" awk -F '\t' -v id="$id" '$1==id {print $3 "\n" $4 "\nPASS: " $5}' "$CASES")
     printf '\n%s\nSwitch to HOME, do this action once, then return here.\n' "$line"
     ask 'p=Pass, f=Fail, n=Not Run/uncertain, b=stop:'
@@ -740,6 +740,7 @@ W5	Map window	Bootstrap and permission ownership	Only when a real download/permi
 W6	Map window	Matched failed and recovered map	When the map is blank, frozen, cropped or touch is misplaced: do not press Retry. Run this trace while leaving failure visible 30 seconds. With phone video running use Retry ONCE only after the first 30 seconds, wait and test pan/menu. Do not reboot/clear data.	This is diagnostic comparison, not a recovery acceptance pass: record FAIL for original failure even if Retry recovers. Note whether capture began before or after failure.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
 W7	Map window	Overlay return and touch	One naturally available overlay at a time: SystemUI shade, regular phone call or reverse camera while parked. Dismiss it normally, return HOME, wait, pan and open menu. Record each overlay separately.	Overlay owns focus while active; map returns and touch is aligned afterwards. Unavailable variants Not Run.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
 W8	Map window	Layout and day/night lifecycle	Through ordinary launcher settings change rail/radio-side once; return HOME and test pan/menu. Use fullscreen and return. Change Maps day/night once through normal UI, test again. Restore original settings.	Map geometry, pixels and touch agree; unchanged mode returns do not lose route; real theme change remains usable. Record each variant separately.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
+S0	Smoke	Automatic cold-start readiness	Start a genuine boot or verified ACC wake. Do NOT open Music, Radio or Maps manually; wait up to 90 seconds with HOME visible (it may briefly show each app, then return). Leave Settings > Testing methods > Startup on Automatic fallback.	All three become usable without manual opening: Music and Radio respond to one HOME Play, compact Maps is interactive; HOME returns each time; no unwanted audio.	Continuous trace including TS18Media startup/* timeline (trigger, method, first failing boundary), installed/profile identity; phone video for audio/touch.
 S1	Smoke	Music Play	Press Music Play once. Listen for music.	Audible music; opposite source is not interrupted before music starts.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S2	Smoke	Radio Play	Press Radio Play once. Listen for radio.	Audible radio with one tap; no repeated hidden service starts.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S3	Smoke	Music app icon	Tap the Music app icon once, including while Maps is starting.	Music app opens within the bounded handoff, even if compact Maps fails.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
@@ -1170,8 +1171,8 @@ TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
 cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
-f6a7186f100ac4487f4fa45198779a870ab7ffe2d94ef9efde409f284cd0da02  guide.sh
-57f467701a6923ea72fffc8ceca36dea1a5845a0982e77bbc9f4828dd5ad5f49  cases.tsv
+e80d6a13adbeb017bcbc0bcdf49c52cfb01e3f06ad29e75592a24befb69e1a67  guide.sh
+3b5370ac3bf63a1f468176dec878c6d034ac5fbcd728fd27a046a9662cbd25d5  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json
 f27eb0ba7c2b5f22e139627a9c4a03ad405c32ae5b983f5de369ece7a52cad79  candidates.tsv
 49e7cffda51dbf04adc863f69435bedf670111d4ebb3c48cfcc8cabe7cfd5f77  ts18-startup-1.3.sh

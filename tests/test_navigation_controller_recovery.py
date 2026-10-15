@@ -154,8 +154,8 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  int[] opened={0};c.launchAfterSuspension(()->opened[0]++);RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
  android.view.View.drain();check(opened[0]==1&&p.configured==0,"source icon lost or old callback accepted");
- // No stale queued launch after HOME stops; returning HOME requires a fresh user tap.
- NavigationOverlayGate gate=new NavigationOverlayGate();gate.onVisible();gate.request(()->opened[0]++);gate.onStopped();gate.onSettled();gate.onVisible();check(opened[0]==1,"stale launch delivered on return");
+ // An explicit launch pending when HOME stops is released exactly once, never lost.
+ NavigationOverlayGate gate=new NavigationOverlayGate();gate.onVisible();gate.request(()->opened[0]++);gate.onStopped();gate.onSettled();gate.onVisible();check(opened[0]==2,"explicit launch lost when HOME stopped");gate.onSettled();check(opened[0]==2,"launch delivered twice");
  // An unresponsive backend terminates at the admission deadline, with no callback needed.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
  check(android.os.SystemClock.now==46000&&p.error.contains("ACTION_TIMEOUT"),"watchdog failed");

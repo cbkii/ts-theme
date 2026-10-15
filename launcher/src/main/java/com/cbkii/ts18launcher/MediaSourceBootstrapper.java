@@ -44,6 +44,7 @@ final class MediaSourceBootstrapper {
     // before its startup audio-focus/routing transition had settled, producing silence. Delay the
     // one user Play until after that boundary; never synthesize a second Play.
     private static final long NAVRADIO_COLD_PLAY_NOT_BEFORE_MS = 3200L;
+    private static final long NAVRADIO_STARTUP_CEILING_MS = 7000L;
 
     static final class Status {
         final MediaCommandPolicy.Phase phase;
@@ -144,6 +145,34 @@ final class MediaSourceBootstrapper {
 
     boolean hasUsableController(String packageName) {
         return controllerReadyForPlay(controllerForPackage(packageName));
+    }
+
+    /**
+     * Music readiness is a usable queue/library, not merely a browser connection or a session
+     * token: the source must accept Play and expose queue or media metadata of its own.
+     */
+    boolean hasUsableQueue(String packageName) {
+        MediaController controller = controllerForPackage(packageName);
+        if (controller == null || !controllerReadyForPlay(controller)) return false;
+        try {
+            java.util.List<android.media.session.MediaSession.QueueItem> queue = controller.getQueue();
+            if (queue != null && !queue.isEmpty()) return true;
+            return controller.getMetadata() != null;
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    /** True only when the source is observed playing without a user command; used to undo it once. */
+    void pauseUnrequestedPlayback(String packageName) {
+        MediaController controller = controllerForPackage(packageName);
+        if (controller == null || !isPlaying(controller)) return;
+        try {
+            controller.getTransportControls().pause();
+            MediaEventTrace.record("startup", "unrequested-playback-paused", packageName);
+        } catch (RuntimeException ignored) {
+            MediaEventTrace.record("startup", "unrequested-playback-pause-failed", packageName);
+        }
     }
 
     Status status(String packageName) {
@@ -665,6 +694,15 @@ final class MediaSourceBootstrapper {
         ServiceStart start = serviceStarts.get(pending.packageName);
         if (start == null || start.lastAttemptMs <= 0L) return 0L;
         long notBefore = start.lastAttemptMs + NAVRADIO_COLD_PLAY_NOT_BEFORE_MS;
+        // Startup, transport and acknowledgement deadlines are separate: a late service start must
+        // lengthen the command deadline rather than silently dropping the guard (which dispatched
+        // Play into the unsettled cold routing state and produced silence).
+        long needed = notBefore + ACK_TIMEOUT_MS;
+        if (needed > pending.deadlineMs) {
+            pending.deadlineMs = Math.min(needed, start.lastAttemptMs + NAVRADIO_STARTUP_CEILING_MS);
+            MediaEventTrace.record("service", "deadline-extended",
+                    pending.packageName + " deadline=" + pending.deadlineMs);
+        }
         return notBefore < pending.deadlineMs ? notBefore : 0L;
     }
 
@@ -968,7 +1006,7 @@ final class MediaSourceBootstrapper {
         final String packageName;
         final MediaCommandPolicy.Desired desired;
         final List<ResultCallback> callbacks = new ArrayList<>();
-        final long deadlineMs;
+        long deadlineMs;
         boolean dispatched;
         boolean settled;
         boolean coldPlayGuarded;

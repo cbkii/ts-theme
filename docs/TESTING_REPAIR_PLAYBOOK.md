@@ -33,6 +33,7 @@ For each prompt, switch to HOME, perform the action once, return to Termux and p
 
 | Step | Action | Pass requires |
 |---|---|---|
+| S0 | Genuine boot/ACC wake, no manual app opening, wait ≤90 s (Startup = Automatic fallback; compare Background only / Aggressive afterwards) | Music, Radio and compact Maps all ready; HOME returns after each brief app visit; nothing plays unprompted |
 | S1 | Music Play once | Audible music, not just a PLAYING flag |
 | S2 | Radio Play once | Audible radio without a second Play |
 | S3 | Music app icon, including while Maps starts | Music app opens despite compact-map failure |
