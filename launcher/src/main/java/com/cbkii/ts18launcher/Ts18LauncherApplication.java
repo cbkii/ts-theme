@@ -27,6 +27,21 @@ public final class Ts18LauncherApplication extends Application
     private boolean launcherResumed;
     private boolean receiverRegistered;
     private long lastStorageWarmMs;
+    private MediaSourceBootstrapper mediaBootstrapper;
+    private String mediaConfiguration = "";
+
+    /** One playback-command/bootstrap owner survives HOME stop and Activity recreation. */
+    static MediaSourceBootstrapper mediaSources(Context context) {
+        Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();
+        String configuration = LauncherPrefs.packageFor(app, LauncherPrefs.KEY_MUSIC) + ":"
+                + RadioProvider.resolvePackage(app);
+        if (app.mediaBootstrapper == null || !configuration.equals(app.mediaConfiguration)) {
+            if (app.mediaBootstrapper != null) app.mediaBootstrapper.destroy();
+            app.mediaBootstrapper = new MediaSourceBootstrapper(app);
+            app.mediaConfiguration = configuration;
+        }
+        return app.mediaBootstrapper;
+    }
 
     private final BroadcastReceiver storageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -77,10 +92,9 @@ public final class Ts18LauncherApplication extends Application
         }
         final String target = packageName;
         MediaEventTrace.record("storage", "warm-request", target);
-        final MediaSourceBootstrapper bootstrapper = new MediaSourceBootstrapper(this);
+        final MediaSourceBootstrapper bootstrapper = mediaSources(this);
         bootstrapper.warm(target);
         handler.postDelayed(() -> {
-            bootstrapper.destroy();
             ProcessMediaSessionMonitor.refresh(Ts18LauncherApplication.this);
             MediaEventTrace.record("storage", "warm-window-finished", target);
         }, MediaSourceBootstrapper.PREPARE_TIMEOUT_MS + 750L);
@@ -134,6 +148,7 @@ public final class Ts18LauncherApplication extends Application
         }
         unregisterActivityLifecycleCallbacks(this);
         handler.removeCallbacksAndMessages(null);
+        if (mediaBootstrapper != null) mediaBootstrapper.destroy();
         ProcessMediaSessionMonitor.stop();
         MediaEventTrace.record("process", "terminated");
         super.onTerminate();

@@ -10,9 +10,8 @@ import java.util.concurrent.Executors;
 /** Shared bounded executor for one root-backed navigation experiment. */
 abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private static final long KNOWN_TASK_RECHECK_DELAY_MS = 180L;
-    private static final long CORROBORATION_TIMEOUT_MS = 4000L;
 
-    private enum AbsenceEvidence { PRESENT_IN_RECENTS, PROCESS_ALIVE, ABSENT, UNKNOWN }
+    private enum AbsenceEvidence { PRESENT_IN_RECENTS, ABSENT, UNKNOWN }
 
     private final Context context;
     private final NavigationRootHelper helper;
@@ -157,9 +156,9 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
 
     /**
      * A second miss from the same dumpsys/activity parser is not independent evidence of task
-     * removal. After the short parser recheck, corroborate through ActivityManager recents plus
-     * process existence. Only a clean recents miss with no package process proves absence. When
-     * contrary/ambiguous evidence remains, retain the last successfully observed windowed task
+     * removal. After the short parser recheck, reuse the helper's independent live-task resolver.
+     * Empty Recents history and a service-only process cannot veto a complete ATM absence.
+     * When contrary/ambiguous evidence remains, retain the last successfully observed windowed task
      * identity without treating it as a fresh successful verification.
      */
     private NavigationHelperResult retryKnownTaskMiss(
@@ -214,27 +213,12 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
 
     private AbsenceEvidence corroborateKnownTask(String packageName, int taskId) {
         if (!safePackage(packageName) || taskId <= 0) return AbsenceEvidence.UNKNOWN;
-        String prefix = "#" + taskId + " A=" + packageName;
-        String command = "snapshot=\"$(dumpsys activity recents 2>/dev/null)\" || exit 3; "
-                + "printf '%s\\n' \"$snapshot\" | grep -q 'ACTIVITY MANAGER RECENT TASKS' || exit 3; "
-                + "printf '%s\\n' \"$snapshot\" | grep -F '" + prefix
-                + " ' >/dev/null && exit 0; "
-                + "printf '%s\\n' \"$snapshot\" | grep -F '" + prefix
-                + "}' >/dev/null && exit 0; "
-                + "printf '%s\\n' \"$snapshot\" | grep -F '" + packageName + "' >/dev/null && exit 3; "
-                + "stack=\"$(am stack list 2>/dev/null)\" || exit 3; "
-                + "printf '%s\\n' \"$stack\" | grep -q 'Stack id=' || exit 3; "
-                + "printf '%s\\n' \"$stack\" | grep -F '" + packageName + "' >/dev/null && exit 2; "
-                + "command -v pidof >/dev/null || exit 3; "
-                + "pidof " + packageName + " >/dev/null 2>&1; rc=$?; "
-                + "[ \"$rc\" = 0 ] && exit 2; [ \"$rc\" = 1 ] && exit 1; exit 3";
+        // status already corroborates activities, structured ATM, live Recents and stacks.
+        // Do not let a weaker package process or empty historical Recents entry veto it.
         if (remaining() < 1500L || destroyed) return AbsenceEvidence.UNKNOWN;
-        RootShell.Result result = RootShell.runWithin(command, Math.min(CORROBORATION_TIMEOUT_MS, remaining() - 500L));
-        if (!result.completed) return AbsenceEvidence.UNKNOWN;
-        if (result.exitCode == 0) return AbsenceEvidence.PRESENT_IN_RECENTS;
-        if (result.exitCode == 1) return AbsenceEvidence.ABSENT;
-        if (result.exitCode == 2) return AbsenceEvidence.PROCESS_ALIVE;
-        return AbsenceEvidence.UNKNOWN;
+        NavigationHelperResult live = helper.run("status", packageName, "0");
+        if (live.success) return AbsenceEvidence.PRESENT_IN_RECENTS;
+        return "TASK_NOT_FOUND".equals(live.code) ? AbsenceEvidence.ABSENT : AbsenceEvidence.UNKNOWN;
     }
 
     private static boolean safePackage(String packageName) {

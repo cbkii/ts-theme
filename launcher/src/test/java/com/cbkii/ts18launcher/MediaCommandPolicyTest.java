@@ -36,6 +36,15 @@ public class MediaCommandPolicyTest {
                 PlaybackState.STATE_PLAYING));
     }
 
+    @Test public void bufferingIsPauseSideButNotReplacementPlaybackAcknowledgement() {
+        assertTrue(MediaCommandPolicy.usesPauseAction(PlaybackState.STATE_BUFFERING));
+        assertTrue(MediaCommandPolicy.usesPauseAction(PlaybackState.STATE_CONNECTING));
+        assertFalse(MediaCommandPolicy.acknowledged(MediaCommandPolicy.Desired.PLAY,
+                PlaybackState.STATE_BUFFERING));
+        assertFalse(MediaCommandPolicy.acknowledged(MediaCommandPolicy.Desired.PLAY,
+                PlaybackState.STATE_CONNECTING));
+    }
+
     @Test public void skipCommandsAreNeverPreAcknowledged() {
         assertFalse(MediaCommandPolicy.acknowledged(MediaCommandPolicy.Desired.PREVIOUS,
                 PlaybackState.STATE_PLAYING));

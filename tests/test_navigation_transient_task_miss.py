@@ -25,11 +25,9 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
         self.assertIn("if (evidence == AbsenceEvidence.ABSENT) return second;", policy)
         self.assertIn("NavigationHelperResult.withCode(", policy)
         self.assertIn('cached, "TASK_OBSERVATION_UNCERTAIN"', policy)
-        self.assertIn("dumpsys activity recents 2>/dev/null", corroborate)
-        self.assertIn('" A=" + packageName', corroborate)
-        self.assertIn("+ \" ' >/dev/null && exit 0; \"", corroborate)
-        self.assertIn("+ \"}' >/dev/null && exit 0; \"", corroborate)
-        self.assertIn('"pidof " + packageName', corroborate)
+        self.assertIn('helper.run("status", packageName, "0")', corroborate)
+        self.assertIn('"TASK_NOT_FOUND".equals(live.code)', corroborate)
+        self.assertNotIn('pidof', corroborate)
 
     def test_uncertainty_keeps_identity_but_is_not_success(self):
         with_code = between(RESULT,

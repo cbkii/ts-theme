@@ -212,7 +212,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn('2) fail TASK_AMBIGUOUS', self.helper)
         cold_launch = self.helper.split("launch_freeform_once()", 1)[1].split("move_task_fullscreen()", 1)[0]
         self.assertEqual(1, cold_launch.count(
-            'am start --user "$ANDROID_USER" --display 0 --windowingMode 5'))
+            'am start --user "$ANDROID_USER" --display 0 --windowingMode "$cold_mode"'))
         self.assertIn("-a android.intent.action.MAIN -c android.intent.category.LAUNCHER", self.helper)
         self.assertIn('am task resizeable "$wanted_task" 2', self.helper)
         self.assertIn('am task resize "$wanted_task" "$left" "$top" "$right" "$bottom"', self.helper)
@@ -222,7 +222,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("logCapabilityEvidence(result)", self.controller)
         self.assertRegex(
             present,
-            r'0\) validate_observed_component ;;\s*1\)\s*\[ "\$METHOD" != N2 \] \|\| fail NORMAL_OPEN_REQUIRED\s*\[ "\$METHOD" != N0 \] \|\| fail NORMAL_OPEN_REQUIRED\s*require_home_presentation 0\s*launch_freeform_once',
+            r'0\) validate_observed_component ;;\s*1\)\s*\[ "\$METHOD" != N0 \] \|\| fail NORMAL_OPEN_REQUIRED\s*require_home_presentation 0\s*launch_freeform_once',
         )
         self.assertEqual(1, present.count('launch_freeform_once "$launch_component"'))
         self.assertRegex(present, r"2\) fail TASK_AMBIGUOUS.*;;")
@@ -298,7 +298,10 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertNotIn("startActivity(", self.controller)
         self.assertNotIn("POST_LAUNCH_RECONCILE", self.controller)
         self.assertNotIn("POST_LAUNCH_RECONCILE", self.controller)
-        self.assertIn("park-timeout", self.controller)
+        independent = self.controller.split("void launchAfterSuspension(Runnable launch)", 1)[1].split("boolean openNormally", 1)[0]
+        self.assertIn("launch.run();", independent)
+        self.assertNotIn("suspendForLauncherSurface", independent)
+        self.assertNotIn("postDelayed", independent)
 
     def test_home_stop_preserves_inflight_transaction_and_backend(self):
         stop_body = self.controller.split("void onHomeStopped()", 1)[1].split(

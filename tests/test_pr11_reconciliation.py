@@ -50,7 +50,7 @@ class Pr11ReconciliationTests(unittest.TestCase):
             '[ "$(id -u 2>/dev/null)" = 0 ]', 1
         )[0]
         self.assertIn('--windowingMode 1 --task "$wanted_task"', fullscreen)
-        self.assertIn('wait_state "$pkg" "$wanted_task" 1 any', fullscreen)
+        self.assertIn('wait_state "$pkg" "$wanted_task" 1 0,0,0,0', fullscreen)
         self.assertNotIn("am task resize ", fullscreen)
 
     def test_known_navigation_task_is_verified_and_corroborated_before_repair(self):
@@ -66,10 +66,9 @@ class Pr11ReconciliationTests(unittest.TestCase):
         self.assertIn("retryKnownTaskMiss", present)
         self.assertIn("TASK_OBSERVATION_UNCERTAIN", present)
         self.assertIn("return verified", present)
-        self.assertIn("dumpsys activity recents 2>/dev/null", corroborate)
-        self.assertIn('"pidof " + packageName', corroborate)
-        self.assertIn("+ \" ' >/dev/null && exit 0; \"", corroborate)
-        self.assertIn("+ \"}' >/dev/null && exit 0; \"", corroborate)
+        self.assertIn('helper.run("status", packageName, "0")', corroborate)
+        self.assertIn('"TASK_NOT_FOUND".equals(live.code)', corroborate)
+        self.assertNotIn('pidof', corroborate)
 
     def test_parked_known_task_is_focused_before_reporting_windowed(self):
         controller = self.read("launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowController.java")
