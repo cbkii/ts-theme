@@ -43,7 +43,7 @@ Prefer the smallest coherent Android-10 Java change; reuse existing single-fligh
 
 ## Delivery and safety
 
-- Create a focused **stacked** code PR above the latest intended integrated head. Do not accidentally target stale `main`. If beginning from this docs-only branch, preserve its ancestry and include these instructions.
+- Create the focused **new stacked code PR** from the **frozen head recorded in [baseline PR #19](https://github.com/cbkii/ts-theme/pull/19)**, targeting `integration/ts18-standalone-baseline` (not stale `main` or the superseded docs branch). The full Work Packages A–H and physical acceptance contract are in [handoff issue #20](https://github.com/cbkii/ts-theme/issues/20). Preserve ancestry, these instructions and the P1 release-blocking qualifications.
 - Run the repository-required Python validation/tests, shell syntax/ShellCheck, Android lint/JVM tests and build tasks relevant to actual changes. Exact CI/head and tests run must be reported; device-only checks remain NOT_RUN until observed.
 - Request one final-head signed **TESTING** snapshot using the established explicit `/testing-apk` workflow only for installable code changes, pinning PR/ref/commit/package/signer/hash. Keep previous rollback and DoFun installed/enabled.
 - No vendor APKs, protected data clearing, broad chmod, SELinux changes, private MCU/CAN commands, protected firmware/partition writes, auto-Play or duplicate player/route ownership.
