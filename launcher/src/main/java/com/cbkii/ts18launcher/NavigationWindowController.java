@@ -162,7 +162,11 @@ final class NavigationWindowController {
 
     void cancelLauncherOverlay() { overlayGate.cancel(); pendingSuspendReason = ""; }
 
-    void launchAfterSuspension(Runnable launch) {
+    void launchAfterSuspension(Runnable launch) { launchAfterSuspension(launch, false); }
+
+    /** Explicit source launches are independent of navigation state: delivered even if parking fails or HOME stops. */
+    void launchAfterSuspension(Runnable launch, boolean explicitLaunch) {
+        if (state == State.DESTROYED && explicitLaunch && launch != null) { launch.run(); return; }
         if (state == State.DESTROYED || launch == null) return;
         cancelRecovery(); cancelActiveOperation();
         fullscreenGoal = false; fullscreenRequested = false; retryRequested = false;
@@ -175,7 +179,7 @@ final class NavigationWindowController {
             state = State.FULLSCREEN_HANDOFF;
             MediaEventTrace.record("external-launch", "dispatched", "action=" + generation);
             launch.run();
-        });
+        }, explicitLaunch);
         uiState.onLauncherOverlayOpened();
         recovery.reset();
         suspendForLauncherSurface("external app launch");
@@ -183,7 +187,7 @@ final class NavigationWindowController {
             if (generation == externalLaunchGeneration && overlayGate.isPending()) {
                 cancelActiveOperation(); pendingSuspendReason = "";
                 MediaEventTrace.record("external-launch", "park-timeout", "action=" + generation);
-                overlayGate.onSettled();
+                if (explicitLaunch) overlayGate.flush(); else overlayGate.onSettled();
             }
         }, 3500L);
     }
@@ -211,7 +215,7 @@ final class NavigationWindowController {
         return openFullscreenNow(pkg, location);
     }
 
-    void destroy() { cancelActiveOperation(); cancelRecovery(); overlayGate.cancel(); finishPresentationCallback(false); authorityGeneration++; activeOperationId = 0; state = State.DESTROYED; destroyBackendInstance(); }
+    void destroy() { cancelActiveOperation(); cancelRecovery(); overlayGate.flush(); overlayGate.cancel(); finishPresentationCallback(false); authorityGeneration++; activeOperationId = 0; state = State.DESTROYED; destroyBackendInstance(); }
 
     void whenHomePresented(java.util.function.Consumer<Boolean> callback) {
         if (callback == null) return;

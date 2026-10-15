@@ -665,7 +665,14 @@ final class MediaSourceBootstrapper {
         ServiceStart start = serviceStarts.get(pending.packageName);
         if (start == null || start.lastAttemptMs <= 0L) return 0L;
         long notBefore = start.lastAttemptMs + NAVRADIO_COLD_PLAY_NOT_BEFORE_MS;
-        return notBefore < pending.deadlineMs ? notBefore : 0L;
+        pending.deadlineMs = coldPlayDeadline(pending.deadlineMs, notBefore);
+        return notBefore;
+    }
+
+    /** The startup guard and the command deadline are separate: guard first, then a full ack window. */
+    static long coldPlayDeadline(long deadlineMs, long notBeforeMs) {
+        long needed = notBeforeMs + ACK_TIMEOUT_MS;
+        return needed > deadlineMs ? needed : deadlineMs;
     }
 
     private void dispatchToController(MediaController controller, Pending pending) {
@@ -968,7 +975,7 @@ final class MediaSourceBootstrapper {
         final String packageName;
         final MediaCommandPolicy.Desired desired;
         final List<ResultCallback> callbacks = new ArrayList<>();
-        final long deadlineMs;
+        long deadlineMs;
         boolean dispatched;
         boolean settled;
         boolean coldPlayGuarded;

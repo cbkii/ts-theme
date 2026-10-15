@@ -269,7 +269,7 @@ case "${1:-}" in
     profiles=/data/user/$user/com.cbkii.ts18launcher/shared_prefs/testing_profiles.xml
     if [ -f "$profiles" ] && [ ! -L "$profiles" ]; then
       echo 'Testing methods:'
-      "$BB" grep -oE '<string name="(navigation|transition|departure|music|radio)"[^<]*' "$profiles"
+      "$BB" grep -oE '<string name="(navigation|transition|departure|music|radio|startup)"[^<]*' "$profiles"
     else echo 'testing_profile=DEFAULT (N1 bridge L2 M1 R0)'; fi
     exit 0 ;;
 esac
@@ -740,7 +740,7 @@ W5	Map window	Bootstrap and permission ownership	Only when a real download/permi
 W6	Map window	Matched failed and recovered map	When the map is blank, frozen, cropped or touch is misplaced: do not press Retry. Run this trace while leaving failure visible 30 seconds. With phone video running use Retry ONCE only after the first 30 seconds, wait and test pan/menu. Do not reboot/clear data.	This is diagnostic comparison, not a recovery acceptance pass: record FAIL for original failure even if Retry recovers. Note whether capture began before or after failure.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
 W7	Map window	Overlay return and touch	One naturally available overlay at a time: SystemUI shade, regular phone call or reverse camera while parked. Dismiss it normally, return HOME, wait, pan and open menu. Record each overlay separately.	Overlay owns focus while active; map returns and touch is aligned afterwards. Unavailable variants Not Run.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
 W8	Map window	Layout and day/night lifecycle	Through ordinary launcher settings change rail/radio-side once; return HOME and test pan/menu. Use fullscreen and return. Change Maps day/night once through normal UI, test again. Restore original settings.	Map geometry, pixels and touch agree; unchanged mode returns do not lose route; real theme change remains usable. Record each variant separately.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
-S1	Smoke	Music Play	Press Music Play once. Listen for music.	Audible music; opposite source is not interrupted before music starts.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
+S1	Smoke	Music Play	After a genuine boot or verified ACC wake, WITHOUT opening Music, Radio or Maps first (Testing methods > Startup: Automatic fallback; allow ~30 s), press Music Play once. Listen for music.	Audible music; opposite source is not interrupted before music starts.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S2	Smoke	Radio Play	Press Radio Play once. Listen for radio.	Audible radio with one tap; no repeated hidden service starts.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S3	Smoke	Music app icon	Tap the Music app icon once, including while Maps is starting.	Music app opens within the bounded handoff, even if compact Maps fails.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S4	Smoke	Radio app icon	Return HOME and tap the Radio app icon once.	Radio app opens once; no stale music app opens later.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
@@ -1169,9 +1169,9 @@ else atomic "$STATE/export-status" "WARN archive/CRC failed; retained $OUT"; fi
 TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
-cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
+642a86c027f4c477c42c34c0b2a7ffb2ccfa977cb2f28148763c5207fcce9108  checkpoint.sh
 f6a7186f100ac4487f4fa45198779a870ab7ffe2d94ef9efde409f284cd0da02  guide.sh
-57f467701a6923ea72fffc8ceca36dea1a5845a0982e77bbc9f4828dd5ad5f49  cases.tsv
+9c76e3be97364b1af1b0b97417f90a4d1062b4dbd840d519abe4d232fd52e6c1  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json
 f27eb0ba7c2b5f22e139627a9c4a03ad405c32ae5b983f5de369ece7a52cad79  candidates.tsv
 49e7cffda51dbf04adc863f69435bedf670111d4ebb3c48cfcc8cabe7cfd5f77  ts18-startup-1.3.sh
