@@ -196,10 +196,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (root == null) { super.onStop(); return; }
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        boolean commandPending = mediaStatusActive;
+        // A pending user Play must survive HOME stop (source Activity staging, app switch): the
+        // bootstrapper completes it exactly once; only the stale UI callback is invalidated.
         mediaStatusGeneration++;
         mediaStatusActive = false;
-        if (commandPending) resetMediaBootstrapper();
         ProcessMediaSessionMonitor.removeObserver(this);
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
@@ -339,7 +339,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         radioPrevious = controlButton(R.drawable.ic_previous, "Previous station", false);
         radioPlayPause = controlButton(R.drawable.ic_play, "Play or pause radio", false);
         radioNext = controlButton(R.drawable.ic_next, "Next station", false);
-        radioRole.setOnClickListener(v -> openConfigured(LauncherPrefs.KEY_RADIO));
+        radioRole.setOnClickListener(v -> openSourceApp(LauncherPrefs.KEY_RADIO));
         radioPrevious.setOnClickListener(v -> radioCommand(MediaListenerService.Command.PREVIOUS));
         radioPlayPause.setOnClickListener(v -> radioCommand(MediaListenerService.Command.PLAY_PAUSE));
         radioNext.setOnClickListener(v -> radioCommand(MediaListenerService.Command.NEXT));
@@ -353,7 +353,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaPrevious = controlButton(R.drawable.ic_previous, "Previous track", false);
         playPause = controlButton(R.drawable.ic_play, "Play or pause music", false);
         mediaNext = controlButton(R.drawable.ic_next, "Next track", false);
-        musicRole.setOnClickListener(v -> openConfigured(LauncherPrefs.KEY_MUSIC));
+        musicRole.setOnClickListener(v -> openSourceApp(LauncherPrefs.KEY_MUSIC));
         mediaPrevious.setOnClickListener(v -> musicCommand(MediaListenerService.Command.PREVIOUS));
         playPause.setOnClickListener(v -> musicCommand(MediaListenerService.Command.PLAY_PAUSE));
         mediaNext.setOnClickListener(v -> musicCommand(MediaListenerService.Command.NEXT));
@@ -761,6 +761,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void openConfigured(String key) {
         launchAfterNavigation(() -> openConfiguredNow(key));
+    }
+
+    /**
+     * Music/Radio source icons are independent of Navigation: launch immediately so a failed,
+     * pending or HOME-stop-cancelled Maps handoff can never swallow the request. Navigation is
+     * still parked afterwards through the existing controller, without gating the launch.
+     */
+    private void openSourceApp(String key) {
+        openConfiguredNow(key);
+        if (!ExperimentalMapPolicy.enabled(this) && navigationWindowController != null)
+            navigationWindowController.launchAfterSuspension(() -> { });
     }
 
     private void launchAfterNavigation(Runnable launch) {

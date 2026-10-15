@@ -38,8 +38,9 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
     def test_home_stop_and_media_configuration_change_invalidate_obsolete_commands(self):
         launcher = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java").read_text(encoding="utf-8")
         self.assertIn("reconcileMediaConfiguration();", launcher)
-        self.assertIn("boolean commandPending = mediaStatusActive;", launcher)
-        self.assertIn("if (commandPending) resetMediaBootstrapper();", launcher)
+        # HOME stop invalidates only the stale UI callback; a pending user Play completes once.
+        self.assertNotIn("if (commandPending) resetMediaBootstrapper();", launcher)
+        self.assertIn("pending user Play must survive HOME stop", launcher)
         self.assertIn("mediaStatusGeneration++;", launcher)
         self.assertIn("mediaBootstrapper.destroy();", launcher)
         self.assertIn("mediaBootstrapper = new MediaSourceBootstrapper(this);", launcher)

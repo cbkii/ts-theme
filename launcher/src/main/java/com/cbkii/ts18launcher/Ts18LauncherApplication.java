@@ -27,6 +27,9 @@ public final class Ts18LauncherApplication extends Application
     private boolean launcherResumed;
     private boolean receiverRegistered;
     private long lastStorageWarmMs;
+    private StartupReadinessCoordinator startup;
+
+    StartupReadinessCoordinator startup() { return startup; }
 
     private final BroadcastReceiver storageReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -40,6 +43,19 @@ public final class Ts18LauncherApplication extends Application
             if (RemovableMediaPolicy.shouldWarm(event, launcherResumed,
                     UiPersonalizationPrefs.mediaStartupWarmup(Ts18LauncherApplication.this))) {
                 warmConfiguredMusicAfterMount();
+            }
+            if (event == RemovableMediaPolicy.Event.AVAILABLE && startup != null) startup.onStorageMounted();
+        }
+    };
+
+    private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent == null || startup == null) return;
+            if (Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
+                MediaEventTrace.record("startup", "screen-on", "not ACC proof");
+                startup.onTrigger(StartupReadinessPolicy.Trigger.SCREEN_ON);
+            } else if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                startup.onScreenOff();
             }
         }
     };
@@ -58,7 +74,13 @@ public final class Ts18LauncherApplication extends Application
         filter.addAction(Intent.ACTION_MEDIA_BAD_REMOVAL);
         filter.addDataScheme("file");
         registerReceiver(storageReceiver, filter);
+        IntentFilter screen = new IntentFilter(Intent.ACTION_SCREEN_ON);
+        screen.addAction(Intent.ACTION_SCREEN_OFF);
+        registerReceiver(screenReceiver, screen);
         receiverRegistered = true;
+        startup = new StartupReadinessCoordinator(this);
+        ProcessMediaSessionMonitor.addObserver(this, startup);
+        startup.onTrigger(StartupReadinessPolicy.Trigger.PROCESS_START);
         MediaEventTrace.record("process", "created");
     }
 
@@ -101,6 +123,10 @@ public final class Ts18LauncherApplication extends Application
     @Override public void onActivityResumed(Activity activity) {
         if (!isLauncher(activity)) return;
         launcherResumed = true;
+        if (startup != null) {
+            startup.setHomeResumed(true);
+            startup.onTrigger(StartupReadinessPolicy.Trigger.HOME_RESUME);
+        }
         ProcessMediaSessionMonitor.refresh(this);
         MediaEventTrace.record("home", "resumed");
     }
@@ -108,6 +134,7 @@ public final class Ts18LauncherApplication extends Application
     @Override public void onActivityPaused(Activity activity) {
         if (!isLauncher(activity)) return;
         launcherResumed = false;
+        if (startup != null) startup.setHomeResumed(false);
         MediaEventTrace.record("home", "paused");
     }
 
@@ -127,6 +154,7 @@ public final class Ts18LauncherApplication extends Application
         if (receiverRegistered) {
             try {
                 unregisterReceiver(storageReceiver);
+                unregisterReceiver(screenReceiver);
             } catch (RuntimeException ignored) {
                 // The framework may already have torn the process down.
             }
@@ -134,6 +162,7 @@ public final class Ts18LauncherApplication extends Application
         }
         unregisterActivityLifecycleCallbacks(this);
         handler.removeCallbacksAndMessages(null);
+        if (startup != null) startup.destroy();
         ProcessMediaSessionMonitor.stop();
         MediaEventTrace.record("process", "terminated");
         super.onTerminate();

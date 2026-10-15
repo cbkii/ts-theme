@@ -138,6 +138,16 @@ final class MediaSourceBootstrapper {
                 deferredPauseCandidate.isEmpty() ? "none" : deferredPauseCandidate);
     }
 
+    /** True when the source-owned session accepts Play (or is already playing). */
+    boolean isReadyForPlay(String packageName) {
+        MediaController controller = controllerForPackage(packageName);
+        return controller != null && controllerReadyForPlay(controller);
+    }
+
+    boolean hasController(String packageName) {
+        return controllerForPackage(packageName) != null;
+    }
+
     boolean isPlaying(String packageName) {
         return isPlaying(controllerForPackage(packageName));
     }
@@ -182,7 +192,8 @@ final class MediaSourceBootstrapper {
         MediaEventTrace.record("command", "request",
                 packageName + " desired=" + desired + " controller=" + (controller != null));
         Pending pending = new Pending(sourceLabel, packageName, desired, callback,
-                SystemClock.uptimeMillis() + COMMAND_TIMEOUT_MS);
+                SystemClock.uptimeMillis()
+                        + MediaPreparationPolicy.commandTimeoutMs(packageName, COMMAND_TIMEOUT_MS));
         if (desired == MediaCommandPolicy.Desired.PLAY) {
             pending.pauseOnPlayPackage = deferredPauseCandidate;
         }
