@@ -85,8 +85,8 @@ final class NavigationWindowController {
 
     void onHomeStopped() {
         if (state == State.DESTROYED) return;
-        homeStopped = true; externalLaunchGeneration++;
-        if (overlayGate.isPending()) MediaEventTrace.record("external-launch", "cancelled-home-stopped");
+        homeStopped = true;
+        if (overlayGate.isPending()) MediaEventTrace.record("external-launch", "retained-home-stopped");
         cancelRecovery(); uiState.onHomeStopped(); overlayGate.onStopped(); needsValidation = true; needsPresentation = true;
         if (activeOperationId != 0) Log.i(TAG, "HOME stopped during bounded transaction; transaction retained id=" + activeOperationId);
         else Log.i(TAG, "HOME stopped; task authority retained without relaunch");

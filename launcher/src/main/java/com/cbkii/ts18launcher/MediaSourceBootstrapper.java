@@ -44,6 +44,21 @@ final class MediaSourceBootstrapper {
     // before its startup audio-focus/routing transition had settled, producing silence. Delay the
     // one user Play until after that boundary; never synthesize a second Play.
     private static final long NAVRADIO_COLD_PLAY_NOT_BEFORE_MS = 3200L;
+    // Startup (admission+settling), transport (single dispatch) and acknowledgement deadlines are
+    // separate: NavRadio's startup budget includes the cold settle guard plus the normal transport
+    // window, and acknowledgement always receives its own full ACK_TIMEOUT_MS.
+    static final long NAVRADIO_COMMAND_TIMEOUT_MS = NAVRADIO_COLD_PLAY_NOT_BEFORE_MS + COMMAND_TIMEOUT_MS;
+
+    static long commandTimeoutMs(String packageName) {
+        return MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName)
+                ? NAVRADIO_COMMAND_TIMEOUT_MS : COMMAND_TIMEOUT_MS;
+    }
+
+    static long coldPlayNotBeforeMs(long lastAttemptMs, long deadlineMs) {
+        if (lastAttemptMs <= 0L) return 0L;
+        long notBefore = lastAttemptMs + NAVRADIO_COLD_PLAY_NOT_BEFORE_MS;
+        return notBefore < deadlineMs ? notBefore : deadlineMs - 1L;
+    }
 
     static final class Status {
         final MediaCommandPolicy.Phase phase;
@@ -182,7 +197,7 @@ final class MediaSourceBootstrapper {
         MediaEventTrace.record("command", "request",
                 packageName + " desired=" + desired + " controller=" + (controller != null));
         Pending pending = new Pending(sourceLabel, packageName, desired, callback,
-                SystemClock.uptimeMillis() + COMMAND_TIMEOUT_MS);
+                SystemClock.uptimeMillis() + commandTimeoutMs(packageName));
         if (desired == MediaCommandPolicy.Desired.PLAY) {
             pending.pauseOnPlayPackage = deferredPauseCandidate;
         }
@@ -664,8 +679,7 @@ final class MediaSourceBootstrapper {
                 || !MediaSourceAdapter.NAVRADIO_PACKAGE.equals(pending.packageName)) return 0L;
         ServiceStart start = serviceStarts.get(pending.packageName);
         if (start == null || start.lastAttemptMs <= 0L) return 0L;
-        long notBefore = start.lastAttemptMs + NAVRADIO_COLD_PLAY_NOT_BEFORE_MS;
-        return notBefore < pending.deadlineMs ? notBefore : 0L;
+        return coldPlayNotBeforeMs(start.lastAttemptMs, pending.deadlineMs);
     }
 
     private void dispatchToController(MediaController controller, Pending pending) {
@@ -720,8 +734,7 @@ final class MediaSourceBootstrapper {
             finish(pending, true, "");
             return;
         }
-        pending.ackDeadlineMs = Math.min(pending.deadlineMs,
-                SystemClock.uptimeMillis() + ACK_TIMEOUT_MS);
+        pending.ackDeadlineMs = SystemClock.uptimeMillis() + ACK_TIMEOUT_MS;
         mark(pending.packageName, MediaCommandPolicy.Phase.STARTING,
                 pending.desired == MediaCommandPolicy.Desired.PLAY
                         ? "Play dispatched; awaiting playback acknowledgement"
