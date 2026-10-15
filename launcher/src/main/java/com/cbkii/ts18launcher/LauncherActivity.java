@@ -192,6 +192,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         updateLabels();
     }
 
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (event != null && event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN
+                && getApplication() instanceof Ts18LauncherApplication) {
+            StartupReadinessCoordinator startup = ((Ts18LauncherApplication) getApplication()).startup();
+            if (startup != null) startup.noteUserInteraction();
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
     @Override protected void onStop() {
         if (root == null) { super.onStop(); return; }
         appearanceController.stop();
@@ -662,7 +671,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             if (!ShortcutSlot.launch(this, LauncherPrefs.QUICK_KEYS[index])) openPicker(LauncherPrefs.QUICK_KEYS[index]);
             mediaSelection.select(LauncherPrefs.lastSource(this));
             updateLabels();
-        });
+        }, true);
     }
 
     private void toggleAppDrawer() {
@@ -760,12 +769,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void openConfigured(String key) {
-        launchAfterNavigation(() -> openConfiguredNow(key));
+        launchAfterNavigation(() -> openConfiguredNow(key), true);
     }
 
-    private void launchAfterNavigation(Runnable launch) {
+    private void launchAfterNavigation(Runnable launch, boolean explicit) {
         if (ExperimentalMapPolicy.enabled(this) || navigationWindowController == null) launch.run();
-        else navigationWindowController.launchAfterSuspension(launch);
+        else navigationWindowController.launchAfterSuspension(launch, explicit);
     }
 
     private void openConfiguredNow(String key) {

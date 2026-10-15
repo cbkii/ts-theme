@@ -46,4 +46,35 @@ public class NavigationOverlayGateTest {
         gate.onVisible();
         assertFalse(gate.isPending());
     }
+
+    @Test public void explicitLaunchSurvivesHomeStopExactlyOnce() {
+        NavigationOverlayGate gate = new NavigationOverlayGate();
+        int[] shown = {0};
+        gate.onVisible();
+        gate.request(() -> shown[0]++, true);
+        gate.onStopped();
+        gate.onSettled();
+        gate.onVisible();
+        assertEquals(1, shown[0]);
+        assertFalse(gate.isPending());
+    }
+
+    @Test public void explicitLaunchFlushesWithoutSettleOrVisibility() {
+        NavigationOverlayGate gate = new NavigationOverlayGate();
+        int[] shown = {0};
+        gate.request(() -> shown[0]++, true);
+        gate.flush();
+        gate.flush();
+        assertEquals(1, shown[0]);
+    }
+
+    @Test public void flushDoesNotChangeVisibility() {
+        NavigationOverlayGate gate = new NavigationOverlayGate();
+        int[] shown = {0};
+        gate.request(() -> shown[0]++, true);
+        gate.flush();
+        gate.request(() -> shown[0] += 10);
+        gate.onSettled();
+        assertEquals(1, shown[0]);
+    }
 }
