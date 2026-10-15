@@ -28,7 +28,7 @@ public class Configuration { public Window windowConfiguration=new Window();
 }''',
     "android/app/IActivityTaskManager.java": '''package android.app;
 import java.util.List;
-public interface IActivityTaskManager { List<StackInfo> getAllStackInfos(); void setTaskWindowingMode(int id,int mode,boolean toTop); }
+public interface IActivityTaskManager { List<StackInfo> getAllStackInfos(); void setTaskWindowingMode(int id,int mode,boolean toTop); void resizeStack(int id,android.graphics.Rect bounds,boolean dock,boolean preserve,boolean animate,int duration); }
 ''',
     "android/app/StackInfo.java": '''package android.app;
 import android.content.ComponentName; import android.graphics.Rect; import android.content.res.Configuration;
@@ -45,6 +45,7 @@ public class ActivityTaskManager {
  public static class Service implements IActivityTaskManager {
   final StackInfo s=new StackInfo(); final String scenario=System.getenv("SCENARIO");
   Service(){
+   if("fullscreen".equals(scenario))s.configuration.windowConfiguration.mode=1;
    if("shared".equals(scenario)){s.taskIds=new int[]{42,99};s.taskNames=new String[]{s.taskNames[0],"other.package/.Activity"};s.taskUserIds=new int[]{0,0};}
    if("wrong-user".equals(scenario))s.taskUserIds[0]=10;
    if("foreign-top".equals(scenario))s.topActivity=android.content.ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
@@ -56,6 +57,10 @@ public class ActivityTaskManager {
    if("absent".equals(scenario))return Collections.emptyList();
    if("ambiguous".equals(scenario)){StackInfo other=new StackInfo();other.taskIds[0]=43;return Arrays.asList(s,other);}
    return Arrays.asList(s);
+  }
+  public void resizeStack(int id,android.graphics.Rect bounds,boolean dock,boolean preserve,boolean animate,int duration){
+   if(bounds!=null||preserve||animate||dock)throw new AssertionError("unsafe resize");
+   System.out.println("CLEAR stack="+id+" null=true");
   }
   public void setTaskWindowingMode(int id,int mode,boolean toTop){
    System.out.println("CALL task="+id+" mode="+mode+" toTop="+toTop);
@@ -94,6 +99,18 @@ class NavTaskBridgeTest(unittest.TestCase):
                                "com.cbkii.ts18launcher.NavTaskBridge", *args],
                               env={**os.environ, "SCENARIO": scenario},
                               capture_output=True, text=True, timeout=5)
+
+    def test_clear_fullscreen_bounds_uses_null_on_exclusive_stack(self):
+        result = self.run_bridge("clear-fullscreen-bounds", scenario="fullscreen")
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn("CLEAR stack=8 null=true", result.stdout)
+        self.assertNotIn("CALL task=", result.stdout)
+
+    def test_clear_fullscreen_bounds_refuses_freeform_shared_and_permission_flow(self):
+        for scenario in ("normal", "shared", "foreign-top", "no-top"):
+            result = self.run_bridge("clear-fullscreen-bounds", scenario=scenario)
+            self.assertNotEqual(0, result.returncode, result.stdout)
+            self.assertNotIn("CLEAR stack=", result.stdout)
 
     def test_base_and_top_activity_difference_keeps_same_task(self):
         result = self.run_bridge()

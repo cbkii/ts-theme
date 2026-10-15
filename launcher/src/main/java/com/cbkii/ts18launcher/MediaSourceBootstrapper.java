@@ -182,7 +182,7 @@ final class MediaSourceBootstrapper {
         MediaEventTrace.record("command", "request",
                 packageName + " desired=" + desired + " controller=" + (controller != null));
         Pending pending = new Pending(sourceLabel, packageName, desired, callback,
-                SystemClock.uptimeMillis() + COMMAND_TIMEOUT_MS);
+                SystemClock.uptimeMillis() + commandTimeoutMs(packageName));
         if (desired == MediaCommandPolicy.Desired.PLAY) {
             pending.pauseOnPlayPackage = deferredPauseCandidate;
         }
@@ -658,6 +658,12 @@ final class MediaSourceBootstrapper {
                         now, pending.deadlineMs, COMMAND_RETRY_MS)));
     }
 
+    static long commandTimeoutMs(String packageName) {
+        // Reserve the cold service settling interval in addition to normal readiness.
+        return COMMAND_TIMEOUT_MS + (MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName)
+                ? NAVRADIO_COLD_PLAY_NOT_BEFORE_MS : 0L) + ACK_TIMEOUT_MS;
+    }
+
     private long coldPlayNotBeforeMs(Pending pending) {
         if (pending == null || pending.dispatched
                 || pending.desired != MediaCommandPolicy.Desired.PLAY
@@ -665,13 +671,16 @@ final class MediaSourceBootstrapper {
         ServiceStart start = serviceStarts.get(pending.packageName);
         if (start == null || start.lastAttemptMs <= 0L) return 0L;
         long notBefore = start.lastAttemptMs + NAVRADIO_COLD_PLAY_NOT_BEFORE_MS;
-        return notBefore < pending.deadlineMs ? notBefore : 0L;
+        return notBefore;
     }
 
     private void dispatchToController(MediaController controller, Pending pending) {
         if (destroyed || pending.settled) return;
         long now = SystemClock.uptimeMillis();
         long notBefore = coldPlayNotBeforeMs(pending);
+        if (now >= pending.deadlineMs - ACK_TIMEOUT_MS) {
+            finish(pending, false, pending.sourceLabel + " readiness deadline expired"); return;
+        }
         if (notBefore > now) {
             pending.coldPlayGuarded = true;
             if (!pending.coldPlayGuardLogged) {
@@ -683,9 +692,6 @@ final class MediaSourceBootstrapper {
                     Math.max(1L, MediaCommandPolicy.boundedDelay(
                             now, pending.deadlineMs, notBefore - now)));
             return;
-        }
-        if (now >= pending.deadlineMs) {
-            finish(pending, false, pending.sourceLabel + " command deadline expired"); return;
         }
         int state = stateOf(controller);
         boolean guardedColdPlay = pending.coldPlayGuarded
@@ -768,11 +774,11 @@ final class MediaSourceBootstrapper {
         MediaEventTrace.record("command", "acknowledged",
                 pending.packageName + " desired=" + pending.desired);
         markController(pending.packageName, controller);
-        if (pending.desired == MediaCommandPolicy.Desired.PLAY) commitDeferredPause(pending);
+        if (pending.desired == MediaCommandPolicy.Desired.PLAY && commitDeferredPause(pending)) return;
         finish(pending, true, "");
     }
 
-    private void commitDeferredPause(Pending pending) {
+    private boolean commitDeferredPause(Pending pending) {
         String oppositePackage = pending.pauseOnPlayPackage;
         pending.pauseOnPlayPackage = "";
         MediaController opposite = oppositePackage == null || oppositePackage.isEmpty()
@@ -784,13 +790,43 @@ final class MediaSourceBootstrapper {
                 pending.packageName, oppositePackage, oppositePlaying, pauseSupported)) {
             if (oppositePackage != null && !oppositePackage.isEmpty()) {
                 MediaEventTrace.record("switch", "opposite-pause-skipped", oppositePackage);
+                if (oppositePlaying && !pending.packageName.equals(oppositePackage)) {
+                    finish(pending, false, "Replacement playing; previous source cannot be paused");
+                    return true;
+                }
             }
-            return;
+            return false;
         }
         if (sendDesired(opposite, MediaCommandPolicy.Desired.PAUSE)) {
-            MediaEventTrace.record("switch", "opposite-paused", oppositePackage);
+            MediaEventTrace.record("switch", "opposite-pause-dispatched", oppositePackage);
             MediaListenerService.refreshActiveSessions();
+            awaitOppositePause(opposite, pending, Math.min(pending.deadlineMs,
+                    SystemClock.uptimeMillis() + ACK_TIMEOUT_MS));
+            return true;
         }
+        finish(pending, false, "Replacement playing; previous source rejected Pause");
+        return true;
+    }
+
+    private void awaitOppositePause(MediaController opposite, Pending pending, long deadline) {
+        if (destroyed || pending.settled) return;
+        PlaybackState observed;
+        try { observed = opposite.getPlaybackState(); }
+        catch (RuntimeException error) {
+            finish(pending, false, "Previous source session ended before Pause verification"); return;
+        }
+        if (observed != null && MediaCommandPolicy.acknowledged(
+                MediaCommandPolicy.Desired.PAUSE, observed.getState())) {
+            MediaEventTrace.record("switch", "opposite-pause-acknowledged", opposite.getPackageName());
+            finish(pending, true, ""); return;
+        }
+        long now = SystemClock.uptimeMillis();
+        if (now >= deadline) {
+            MediaEventTrace.record("switch", "opposite-pause-unconfirmed", opposite.getPackageName());
+            finish(pending, false, "Replacement playing; previous source Pause unconfirmed"); return;
+        }
+        handler.postDelayed(() -> awaitOppositePause(opposite, pending, deadline),
+                Math.min(ACK_RETRY_MS, deadline - now));
     }
 
     private static boolean sendDesired(MediaController controller, MediaCommandPolicy.Desired desired) {

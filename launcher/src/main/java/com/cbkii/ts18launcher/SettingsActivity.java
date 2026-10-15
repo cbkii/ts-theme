@@ -347,7 +347,7 @@ public final class SettingsActivity extends Activity {
                     switch (which) {
                         case 0: chooseTesting("navigation", new String[]{"N0", "N1", "N2"},
                                 new String[]{"N0 · Normal open; compact disabled", "N1 · Direct compact cold launch",
-                                        "N2 · Open normally first, then return HOME to compact"}); break;
+                                        "N2 · Normal bootstrap then compact (Bridge)"}); break;
                         case 1: chooseTesting("transition", new String[]{"bridge", "intent"},
                                 new String[]{"Bridge · Same task; no Activity redelivery", "Intent comparator · May redeliver current Activity"}); break;
                         case 2: chooseTesting("departure", new String[]{"fullscreen", "retain"},
@@ -366,7 +366,7 @@ public final class SettingsActivity extends Activity {
                         default: new AlertDialog.Builder(this).setTitle("Build and test identity")
                                 .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
                                         + "\n\nReturn HOME after selecting a method. Keep the Maps APK fixed. "
-                                        + "N2 requires normal opening and setup before returning HOME. "
+                                        + "N2 starts once normally, then compacts the same map task; select Bridge. Complete any real permission/setup screens. "
                                         + "Use the guided collector for P/F/N results and export. No test clears app data.")
                                 .setPositiveButton("Done", null).show();
                     }

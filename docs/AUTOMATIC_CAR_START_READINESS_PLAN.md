@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | `LauncherActivity` + `Ts18LauncherApplication` | HOME-bound media warm-up and removable-storage reconciliation | Single application-owned boot/wake/source readiness transaction; retained ownership when HOME stops |
 | `MediaSourceBootstrapper` / adapters | Auxio Browser/PREPARE and interactive NavRadio service admission | Verified playable Auxio queue/USB library, silent Radio tuner/session readiness, separate admission/command/ack budgets |
-| `NavigationWindowController`, `nav-window.sh` | N0 ordinary open, N1 direct freeform, N2 manually opened then compact; bounded observation and atomic uncertain launch claims | Automatic *real* cold Activity/renderer readiness then same-task compact conversion, regardless of N1 helper suitability |
+| `NavigationWindowController`, `nav-window.sh` | N0 ordinary open, N1 direct freeform, N2 normal cold bootstrap then compact (post-validation repair; physically unqualified); bounded observation and atomic uncertain launch claims | Automatic *real* cold Activity/renderer readiness then same-task compact conversion, regardless of N1 helper suitability |
 | `NavigationOverlayGate` / source icons | Pending launch gate and focus/lifecycle cancellation | Unrelated Music/Radio app icons must work even if Maps is blocked; inspect cancellation path first |
 | `TestingProfiles`, `ts18-validate.sh` | N0/N1/N2, Bridge/Intent, M0/M1, Radio root/normal, P/F/N guided comparisons, exact-head build identity | Unattended automatic car-start smoke gate and final-head evidence of three ready sources together |
 

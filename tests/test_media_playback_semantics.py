@@ -35,14 +35,14 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn("queueBrowser(adapter, command);", bootstrap)
         self.assertIn('MediaEventTrace.record("session", "bound-destroyed"', bootstrap)
 
-    def test_home_stop_and_media_configuration_change_invalidate_obsolete_commands(self):
+    def test_home_stop_preserves_process_owner_but_configuration_change_reconciles(self):
         launcher = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java").read_text(encoding="utf-8")
         self.assertIn("reconcileMediaConfiguration();", launcher)
-        self.assertIn("boolean commandPending = mediaStatusActive;", launcher)
-        self.assertIn("if (commandPending) resetMediaBootstrapper();", launcher)
+        stop = launcher.split("@Override protected void onStop()", 1)[1].split("@Override protected void onDestroy()", 1)[0]
+        self.assertNotIn("resetMediaBootstrapper", stop)
+        self.assertNotIn("mediaBootstrapper.destroy()", launcher)
         self.assertIn("mediaStatusGeneration++;", launcher)
-        self.assertIn("mediaBootstrapper.destroy();", launcher)
-        self.assertIn("mediaBootstrapper = new MediaSourceBootstrapper(this);", launcher)
+        self.assertIn("mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);", launcher)
         self.assertIn("radioPackage.equals(mediaRadioPackage)", launcher)
         self.assertIn("musicPackage.equals(mediaMusicPackage)", launcher)
 
