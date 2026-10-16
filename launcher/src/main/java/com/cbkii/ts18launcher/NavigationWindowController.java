@@ -394,8 +394,8 @@ final class NavigationWindowController {
     private void startPresent(String pkg, String component, NavigationWindowBounds target, int taskHint) {
         if (!uiState.canPresentNavigation() && !normalBootstrapInFlight) { needsValidation = true; drainPendingWork(); return; }
         boolean acquisition = taskHint <= 0;
-        if (acquisition && "N2".equals(TestingProfiles.navigation(activity))) normalBootstrapInFlight = true;
         int operation = beginOperation(); if (operation == 0) return;
+        if (acquisition && "N2".equals(TestingProfiles.navigation(activity))) normalBootstrapInFlight = true;
         state = acquisition ? State.ACQUIRING : State.PRESENTING;
         panel.showStarting(label(pkg), acquisition ? "Acquiring one configured task · transaction " + operation : "Repairing task " + taskHint + " · transaction " + operation);
         backend.present(pkg, component, target, taskHint, operation, result -> {
@@ -570,6 +570,7 @@ final class NavigationWindowController {
         return true;
     }
     private void cancelActiveOperation() {
+        normalBootstrapInFlight = false;
         activeOperationId = 0;
         if (operationTimeout != null) activity.getWindow().getDecorView().removeCallbacks(operationTimeout);
         operationTimeout = null;

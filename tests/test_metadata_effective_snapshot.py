@@ -52,7 +52,7 @@ public static void main(String[] a)throws Exception{
 MediaMetadataView v=new MediaMetadataView(new android.content.Context());
 feed(v,new MediaListenerService.Snapshot("com.tw.media","Track","Artist"),"music");check(primary(v).equals("Track"));
 v.setMetadata("Preparing Music…","readiness");check(primary(v).equals("Track"));
-feed(v,new MediaListenerService.Snapshot("com.navimods.radio","ArtSound","FM"),"radio");check(primary(v).equals("ArtSound"));
+feed(v,new MediaListenerService.Snapshot("com.navimods.radio","Radio","FM"),"radio");check(primary(v).equals("FM"));
 feed(v,new MediaListenerService.Snapshot("","",""),"radio");check(primary(v).isEmpty());
 System.out.println("PASS process ticker/source switch/session removal");}}
 ''',

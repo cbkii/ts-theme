@@ -220,7 +220,7 @@ final class MediaSourceBootstrapper {
         MediaEventTrace.record("command", "request",
                 packageName + " desired=" + desired + " controller=" + (controller != null));
         Pending pending = new Pending(sourceLabel, packageName, desired, callback,
-                SystemClock.uptimeMillis() + commandTimeoutMs(packageName));
+                SystemClock.uptimeMillis() + commandTimeoutMs(packageName, desired, !deferredPauseCandidate.isEmpty()));
         if (desired == MediaCommandPolicy.Desired.PLAY) {
             pending.pauseOnPlayPackage = deferredPauseCandidate;
         }
@@ -696,10 +696,18 @@ final class MediaSourceBootstrapper {
                         now, pending.deadlineMs, COMMAND_RETRY_MS)));
     }
 
-    static long commandTimeoutMs(String packageName) {
-        // Reserve the cold service settling interval in addition to normal readiness.
-        return COMMAND_TIMEOUT_MS + (MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName)
-                ? NAVRADIO_COLD_PLAY_NOT_BEFORE_MS : 0L) + ACK_TIMEOUT_MS;
+    static long commandTimeoutMs(String packageName, MediaCommandPolicy.Desired desired,
+                                 boolean handover) {
+        // Admission, cold Play, primary acknowledgement and opposite Pause each own a budget.
+        boolean play = desired == MediaCommandPolicy.Desired.PLAY;
+        return COMMAND_TIMEOUT_MS + (play && MediaSourceAdapter.NAVRADIO_PACKAGE.equals(packageName)
+                ? NAVRADIO_COLD_PLAY_NOT_BEFORE_MS : 0L) + ACK_TIMEOUT_MS
+                + (play && handover ? ACK_TIMEOUT_MS : 0L);
+    }
+
+    private static long acknowledgementReserveMs(Pending pending) {
+        return ACK_TIMEOUT_MS + (pending.desired == MediaCommandPolicy.Desired.PLAY
+                && !pending.pauseOnPlayPackage.isEmpty() ? ACK_TIMEOUT_MS : 0L);
     }
 
     private long coldPlayNotBeforeMs(Pending pending) {
@@ -716,7 +724,7 @@ final class MediaSourceBootstrapper {
         if (destroyed || pending.settled) return;
         long now = SystemClock.uptimeMillis();
         long notBefore = coldPlayNotBeforeMs(pending);
-        if (now >= pending.deadlineMs - ACK_TIMEOUT_MS) {
+        if (now >= pending.deadlineMs - acknowledgementReserveMs(pending)) {
             finish(pending, false, pending.sourceLabel + " readiness deadline expired"); return;
         }
         if (notBefore > now) {
@@ -933,7 +941,8 @@ final class MediaSourceBootstrapper {
         String detail = phase == MediaCommandPolicy.Phase.PLAYING
                 ? "Playback acknowledged"
                 : phase == MediaCommandPolicy.Phase.READY
-                ? "Controller advertises Play"
+                ? ((actions & (PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PLAY_PAUSE)) != 0L
+                        ? "Controller advertises Play" : "Controller buffering/connecting; playback unconfirmed")
                 : "Controller connected; Play capability not yet verified";
         mark(packageName, phase, detail);
     }

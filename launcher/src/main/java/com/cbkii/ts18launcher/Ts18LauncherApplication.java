@@ -33,7 +33,9 @@ public final class Ts18LauncherApplication extends Application
     /** One playback-command/bootstrap owner survives HOME stop and Activity recreation. */
     static MediaSourceBootstrapper mediaSources(Context context) {
         Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();
-        String configuration = LauncherPrefs.packageFor(app, LauncherPrefs.KEY_MUSIC) + ":"
+        String music = LauncherPrefs.packageFor(app, LauncherPrefs.KEY_MUSIC);
+        if (music.isEmpty()) music = TopwayAdapter.defaultMusicPackage(app);
+        String configuration = AndroidUserId.current() + ":" + music + ":"
                 + RadioProvider.resolvePackage(app);
         if (app.mediaBootstrapper == null || !configuration.equals(app.mediaConfiguration)) {
             if (app.mediaBootstrapper != null) app.mediaBootstrapper.destroy();

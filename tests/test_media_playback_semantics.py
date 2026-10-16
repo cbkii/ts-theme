@@ -43,6 +43,8 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertNotIn("mediaBootstrapper.destroy()", launcher)
         self.assertIn("mediaStatusGeneration++;", launcher)
         self.assertIn("mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);", launcher)
+        reconcile = launcher.split("private void reconcileMediaConfiguration()", 1)[1].split("private void resetMediaBootstrapper()", 1)[0]
+        self.assertIn("resetMediaBootstrapper();", reconcile)
         self.assertIn("radioPackage.equals(mediaRadioPackage)", launcher)
         self.assertIn("musicPackage.equals(mediaMusicPackage)", launcher)
 

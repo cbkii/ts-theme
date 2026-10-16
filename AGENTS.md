@@ -78,3 +78,15 @@ API SecurityException. Accepted/uncertain starts and uncertain HOME returns are 
 replayed; no root component relaunch is allowed for HOME. Physical
 non-disruption, silence and three-source boot/ACC readiness remain mandatory acceptance
 gates; automatic testing-profile staging is not a qualified production feature.
+
+
+## Integrated PR #24 finalisation
+
+The earlier “next work” paragraphs describe the frozen PR #17/#19 baseline. PR #24
+now implements the coordinator, signal-only boot receiver, one shared source owner,
+and bounded normal/root staging described above. Its finalisation fixes delayed N2
+claim adoption, cancellation ownership, effective source identity and separate Play/
+Pause handover budgets. See `docs/STARTUP_FINALISATION_2026-10-16.md`. Keep #19/#25
+ancestry and do not merge the parent independently: inherited review fixes live in
+#24. Software readiness is not audible/tuner/map-input qualification. Use one signed
+exact-head TESTING candidate and its hash-pinned P/F/N kit for the physical smoke gate.

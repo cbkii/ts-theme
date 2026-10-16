@@ -255,7 +255,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void reconcileMediaConfiguration() {
         String radioPackage = RadioProvider.resolvePackage(this);
         String musicPackage = configuredMusicPackage();
-        if (radioPackage.equals(mediaRadioPackage) && musicPackage.equals(mediaMusicPackage)) return;
+        MediaSourceBootstrapper current = Ts18LauncherApplication.mediaSources(this);
+        if (current == mediaBootstrapper && radioPackage.equals(mediaRadioPackage)
+                && musicPackage.equals(mediaMusicPackage)) return;
         mediaStatusGeneration++;
         mediaStatusActive = false;
         resetMediaBootstrapper();
@@ -391,6 +393,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void radioCommand(MediaListenerService.Command command) {
+        reconcileMediaConfiguration();
         selectSource(MediaSelection.RADIO);
         String radioPackage = RadioProvider.resolvePackage(this);
         if (radioPackage.isEmpty()) { openPicker(LauncherPrefs.KEY_RADIO); return; }
@@ -402,6 +405,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void musicCommand(MediaListenerService.Command command) {
+        reconcileMediaConfiguration();
         selectSource(MediaSelection.MUSIC);
         String musicPackage = musicControlPackage();
         if (musicPackage.isEmpty()) { openPicker(LauncherPrefs.KEY_MUSIC); return; }

@@ -78,7 +78,7 @@ class NavigationProvider {static final String ORGANIC_MAPS_INCAR="app.organicmap
 static boolean hasLauncherActivity(android.app.Activity a,String p){return true;}
 static boolean open(android.app.Activity a,String p,android.location.Location l){launches++;return true;}}
 class RawFreeformTaskBackend implements NavigationSurfaceBackend {
-static int presents,resumes,verifies,fullscreens,statuses,departures,suspends;static long deadline;static boolean delayed;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss,bootstrapMode;
+static int presents,resumes,verifies,fullscreens,statuses,departures,suspends;static long deadline;static boolean delayed;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss,bootstrapMode,statusAbsentOnce;
 RawFreeformTaskBackend(android.app.Activity a){}public void setDeadline(long d){deadline=d;}public String label(){return "fake";}
 static NavigationHelperResult good(){return NavigationHelperResult.parse("OK code=RESUMED_NATIVE user=0 task=42 stack=4 package=app.organicmaps.incar component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 windowingMode=5 bounds=0,100,1100,700 visible=1 drawn=1");}
 public void present(String p,String c,NavigationWindowBounds b,int t,int id,Callback cb){presents++;if(delayed){held=cb;return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);
@@ -90,11 +90,11 @@ if(alwaysMiss||presents==1){
 public void verify(String p,NavigationWindowBounds b,int t,Callback cb){verifies++;cb.onResult(bootstrapMode?NavigationHelperResult.withCode(good(),"WINDOWING_MODE_MISMATCH",""):good());}
 public void resume(String p,NavigationWindowBounds b,int t,String h,int ht,Callback cb){resumes++;
 if(resumeMiss){resumeMiss=false;cb.onResult(NavigationHelperResult.failure("FOREGROUND_CHANGED",""));}else cb.onResult(good());}
-public void status(String p,int t,Callback cb){statuses++;android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);cb.onResult(alwaysMiss?NavigationHelperResult.failure(first,""):bootstrapMode?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","bounds=0,0,0,0")):good());}
+public void status(String p,int t,Callback cb){statuses++;if(statusAbsentOnce){statusAbsentOnce=false;cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);cb.onResult(alwaysMiss?NavigationHelperResult.failure(first,""):bootstrapMode?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","bounds=0,0,0,0")):good());}
 public void fullscreen(String p,String c,int t,Callback cb){fullscreens++;cb.onResult(("SUCCESS".equals(fullscreenCode)||"BAD_BOUNDS".equals(fullscreenCode))?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","BAD_BOUNDS".equals(fullscreenCode)?"bounds=0,100,1100,700":"bounds=0,0,0,0")):NavigationHelperResult.failure(fullscreenCode,""));}
 public void backgroundFullscreen(String p,int t,String h,int ht,boolean e,Callback cb){departures++;cb.onResult(good());}
 public void suspend(String p,int t,String h,int ht,Callback cb){suspends++;cb.onResult(good());}public void destroy(){}
-static void reset(){presents=resumes=verifies=fullscreens=statuses=departures=suspends=0;delayed=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=bootstrapMode=false;first="TASK_OBSERVATION_UNCERTAIN";
+static void reset(){presents=resumes=verifies=fullscreens=statuses=departures=suspends=0;delayed=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=bootstrapMode=statusAbsentOnce=false;first="TASK_OBSERVATION_UNCERTAIN";
 NavigationProvider.launches=0;workMs=0;android.os.SystemClock.now=1000;android.view.View.jobs.clear();}}
 ''')
             (package / 'Harness.java').write_text(r'''package com.cbkii.ts18launcher;
@@ -153,6 +153,11 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.first="BOOTSTRAP_PENDING";RawFreeformTaskBackend.bootstrapMode=true;
  p=new NativeNavigationPanel();c=start(p);c.onHomeStopped();android.view.View.drain();
  check(RawFreeformTaskBackend.statuses==1&&RawFreeformTaskBackend.presents==2&&RawFreeformTaskBackend.departures==0,"normal bootstrap observation/repair lost at HOME stop");
+ // Switching out of an active N2 transaction revokes its HOME-stop exception.
+ RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.delayed=true;
+ p=new NativeNavigationPanel();c=start(p);TestingProfiles.nav="N1";c.onHomeVisible();
+ java.lang.reflect.Field bootstrap=NavigationWindowController.class.getDeclaredField("normalBootstrapInFlight");bootstrap.setAccessible(true);
+ check(!bootstrap.getBoolean(c),"cancelled N2 retained HOME-stop exception");c.destroy();android.view.View.drain();
  // In-flight Retry is acknowledged/coalesced and older results cannot win.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  java.lang.reflect.Method retry=NavigationWindowController.class.getDeclaredMethod("retry");retry.setAccessible(true);
@@ -160,14 +165,14 @@ public static void main(String[] args)throws Exception{
  android.view.View.drain();check(p.configured==1&&RawFreeformTaskBackend.presents==2,"queued Retry lost or duplicated");
  // Source icons remain independent; superseded map callback cannot change the new action.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
- int[] opened={0};c.launchAfterSuspension(()->opened[0]++);RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
+ int[] opened={0};c.launchAfterSuspension(()->opened[0]++);check(opened[0]==1,"source icon waits for callback");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
  android.view.View.drain();check(opened[0]==1&&p.configured==0,"source icon lost or old callback accepted");
  // A source tap is synchronous, survives HOME stop and does not request map parking.
  check(opened[0]==1&&RawFreeformTaskBackend.suspends==0,"source still waits for map parking");
  c.onHomeStopped();android.view.View.drain();check(opened[0]==1,"source intent duplicated at HOME stop");
  // N2 absent-task recovery must reacquire, rather than observe the same absence forever.
- RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="TASK_NOT_FOUND";p=new NativeNavigationPanel();start(p);android.view.View.drain();
- check(p.configured==1,"confirmed absence did not recover");
+ RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.statusAbsentOnce=true;RawFreeformTaskBackend.first="TASK_NOT_FOUND";p=new NativeNavigationPanel();start(p);android.view.View.drain();
+ check(p.configured==1&&RawFreeformTaskBackend.presents==2,"confirmed N2 absence did not reacquire");
  // No stale queued launch after HOME stops; returning HOME requires a fresh user tap.
  NavigationOverlayGate gate=new NavigationOverlayGate();gate.onVisible();gate.request(()->opened[0]++);gate.onStopped();gate.onSettled();gate.onVisible();check(opened[0]==1,"stale launch delivered on return");
  // An unresponsive backend terminates at the admission deadline, with no callback needed.

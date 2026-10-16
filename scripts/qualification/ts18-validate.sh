@@ -5,7 +5,7 @@ set -u
 umask 077
 usage() {
 cat <<'HELP'
-TS18 consolidated qualification 2026-10-11 — repair candidate
+TS18 consolidated qualification 2026-10-16 — PR24 startup candidate
   help
   guide                     interactive, resumable one-letter test flow
   cases                     show every case and latest manual result
@@ -34,7 +34,7 @@ BB=/data/adb/magisk/busybox
 [ -x "$BB" ] || { echo 'STOPPED FOR SAFETY: enter the established Termux Kit s/st root lane; Magisk BusyBox is required.'; exit 1; }
 [ "$("$BB" id -u)" = 0 ] || { echo 'STOPPED FOR SAFETY: this comprehensive collector requires the explicit s/st root lane. It never calls su.'; exit 1; }
 SELF=$("$BB" readlink -f "$0") || exit 1
-ROOT=/data/data/com.termux/files/home/.ts18-pr-validation-startup-pr24-20261016-v1
+ROOT=/data/data/com.termux/files/home/.ts18-pr-validation-startup-pr24-20261016-v2
 BASE=$ROOT/toolkit
 EXPORT=/storage/emulated/0/Download/TS18-PR-Validation
 valid_label() {
@@ -670,7 +670,7 @@ smoke_flow() {
 }
 screen_flow() {
   echo 'Select one method in Settings > Diagnostics & system > Testing methods, then return here.'
-  echo 'N0: normal opening only. N1: direct compact. N2: normal open first, then HOME; Bridge required.'
+  echo 'N0: normal opening only. N1: direct compact. N2: automatic normal cold bootstrap then compact; Bridge required. Do not manually prime the cold trial.'
   echo 'Hold launch method fixed when comparing Bridge vs Intent (N1 only), then L1 vs L2.'
   echo 'Compare M0/M1 or R1/R2 separately. Keep APKs, media/storage and permissions unchanged.'
   echo 'Profiles and exact installed hashes are read automatically for every trial.'
@@ -752,7 +752,7 @@ S6	Smoke	Compact map	Return HOME. Wait at most 45 seconds; pan map and tap My Po
 S7	Smoke	Navigation rail	Tap the bottom Navigation rail button once.	Fullscreen request remains fullscreen; visible map accepts touch.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S8	Smoke	HOME return	Press HOME once; wait at most 45 seconds; pan compact map.	Compact map returns without Retry and without duplicated launch.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S9	Smoke	Retry acknowledgement	If a natural failure exists, tap Retry twice quickly and wait. Otherwise select n; this conditional case is not required on a healthy run.	Visible queued/recovery result; no silent tap loss, duplicate cold launch or unbounded loop.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
-C1	Screening	Selected method trial	Select one method through the app UI. Note the recorded starting state. For N0 use normal open; N1 use HOME compact; N2 open normally until map is ready then HOME. Pan and open menu. For media press one Play. Repeat this case twice from comparable recorded states, using r; use a third trial if results differ.	Requested method completes visibly/audibly; no hidden fallback. A blocked method is N/Blocked, not a fail of a different method. Warm and cold trials are separate.	Automatic profile, installed hashes, initial tasks/processes, correlated navigation/media events, window/input samples.
+C1	Screening	Selected method trial	Select one method through the app UI. Note the recorded starting state. For N0 use normal open; N1 use HOME compact; N2 cold: leave Maps unopened and let HOME bootstrap once (Bridge); warm: separately open normally then HOME. Pan and open menu. For media press one Play. Repeat this case twice from comparable recorded states, using r; use a third trial if results differ.	Requested method completes visibly/audibly; no hidden fallback. A blocked method is N/Blocked, not a fail of a different method. Warm and cold trials are separate.	Automatic profile, installed hashes, initial tasks/processes, correlated navigation/media events, window/input samples.
 B1	Startup	Full Android boot	Before opening this guide, film one genuine Android boot; leave HOME untouched for 90 seconds without opening any source. Now record that observation; never reboot a live collector.	Music, Radio and compact Maps ready without manual source opening; no unprompted audio. Phone video and post-boot history required.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
 B2	Startup	Cold power-on	Use a normally available safe full device power-on while parked, BEFORE this guide. Film startup and wait at HOME for 90 seconds. If cold power state cannot be established choose N.	Same three-source result as B1; record cold power state separately from ordinary Android reboot.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
 B3	Startup	Verified ACC wake	Using the normal parked vehicle controls, observe a genuine ACC sleep/wake on phone video. After wake leave HOME untouched 90 seconds, then start/resume the guide.	All three recover without manual opening; no duplicate launch or audio. Screen-on alone is not proof of ACC.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
@@ -842,7 +842,7 @@ TS18_EMBEDDED_PAYLOAD_4_END
     cat > "$stage/candidates.tsv" <<'TS18_EMBEDDED_PAYLOAD_5_END'
 # package	allowed_sha256_comma_separated	source_in_same_order
 app.organicmaps.incar	debc44fd7ef096e8796be2911cb9580b732800a77c27afe92de6d6241532994a,205586cbecad377ad605eacd8ec04eed3d4b6ac1b1157aea562e4064da2fcf13	db57091f5daa0cb53b481b4205fad6db0ccb1c6f,c454a66e040f92a96ebaf4f4d20c8038bfc984ce
-com.cbkii.ts18launcher	FROM_SIGNED_HANDOFF	fix/testing-integration-recovery
+com.cbkii.ts18launcher	FROM_SIGNED_HANDOFF	copilot/fix-cold-start-reliability
 TS18_EMBEDDED_PAYLOAD_5_END
     cat > "$stage/ts18-startup-1.3.sh" <<'TS18_EMBEDDED_PAYLOAD_6_END'
 #!/system/bin/sh
@@ -1183,10 +1183,10 @@ TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
 cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
-44fcab350f96c7db025148a179747b5e3d98a891fb01891c2b247c4385b9c6ca  guide.sh
-a01b0119cf60b62039efeea312765df7a8027473609f8152c20c3bb7b9267e60  cases.tsv
+5a9633354a01e031f13dcbcdb4fe7e19244d46e7054795d890d7c1a3e26a25fb  guide.sh
+1e5c9c56df4ec0e74afafd82a447f9aa999ef175f6f328963522e2c2da544e03  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json
-f27eb0ba7c2b5f22e139627a9c4a03ad405c32ae5b983f5de369ece7a52cad79  candidates.tsv
+792384359fcb97ef695c5be56a516340e3baa309cdcae7dca04704e573309b80  candidates.tsv
 49e7cffda51dbf04adc863f69435bedf670111d4ebb3c48cfcc8cabe7cfd5f77  ts18-startup-1.3.sh
 TS18_EMBEDDED_PAYLOAD_7_END
 

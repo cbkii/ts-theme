@@ -16,6 +16,9 @@ class MediaValidationRepairsTest(unittest.TestCase):
     def test_cold_guard_exactly_once_and_observed_handover(self):
         if not shutil.which("java"):
             self.skipTest("Java unavailable")
+        modules = subprocess.run(["java", "--list-modules"], capture_output=True, text=True, timeout=10)
+        if modules.returncode != 0 or "jdk.compiler@" not in modules.stdout:
+            self.skipTest("Java compiler module unavailable")
         stubs = {
             "android/content/Context.java": '''package android.content;
 public class Context { public static String MEDIA_SESSION_SERVICE="media";
@@ -42,13 +45,13 @@ public int state=STATE_PAUSED;public int getState(){return state;}public long ge
             "android/media/session/MediaSession.java": "package android.media.session; public class MediaSession {public static class Token{}public static class QueueItem{}}",
             "android/media/MediaMetadata.java": "package android.media;public class MediaMetadata {public static String METADATA_KEY_MEDIA_ID=\"id\",METADATA_KEY_TITLE=\"title\",METADATA_KEY_DISPLAY_TITLE=\"display\";public String text;public String getString(String s){return text;}}",
             "android/media/session/MediaController.java": '''package android.media.session;
-public class MediaController {public String pkg;public PlaybackState state=new PlaybackState();public int plays,pauses;public boolean buffer,ignorePause;
+public class MediaController {public String pkg;public PlaybackState state=new PlaybackState();public int plays,pauses;public boolean buffer,ignorePause;public long playDelay,pauseDelay;
 public MediaController(android.content.Context c,MediaSession.Token t){}public MediaController(String p){pkg=p;}
 public String getPackageName(){return pkg;}public PlaybackState getPlaybackState(){return state;}
 public android.media.MediaMetadata metadata;public java.util.List<MediaSession.QueueItem> queue;public java.util.List<MediaSession.QueueItem> getQueue(){return queue;}public android.media.MediaMetadata getMetadata(){return metadata;}public MediaSession.Token getSessionToken(){return new MediaSession.Token();}
 public void registerCallback(Callback c){} public void unregisterCallback(Callback c){}
 public Controls getTransportControls(){return new Controls();}public class Controls {
-public void play(){plays++;state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause)state.state=2;}
+public void play(){plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause){if(pauseDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=2,pauseDelay);else state.state=2;}}
 public void prepare(){}public void skipToPrevious(){}public void skipToNext(){}}
 public static class Callback {public void onPlaybackStateChanged(PlaybackState p){}public void onSessionDestroyed(){}} }
 ''',
@@ -104,7 +107,21 @@ public static void main(String[] args)throws Exception {
  b=create();radio.state.state=2;radio.buffer=false;music.state.state=3;music.ignorePause=true;result[0]=0;
  b.pausePackage(music.pkg);b.command("Radio",radio.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->result[0]=ok?1:-1);
  Handler.until(3000);check(result[0]==-1,"unacknowledged opposite Pause reported success");b.destroy();
- check((Long)MediaSourceBootstrapper.class.getDeclaredMethod("commandTimeoutMs",String.class).invoke(null,radio.pkg)>=4500+3200+1600,"radio budget truncated");
+ check(MediaSourceBootstrapper.commandTimeoutMs(radio.pkg,MediaCommandPolicy.Desired.PLAY,true)==4500+3200+3200,"handover budget truncated");
+ check(MediaSourceBootstrapper.commandTimeoutMs(radio.pkg,MediaCommandPolicy.Desired.PAUSE,true)==4500+1600,"Pause has cold Play delay");
+ check(MediaSourceBootstrapper.commandTimeoutMs(radio.pkg,MediaCommandPolicy.Desired.NEXT,false)==4500+1600,"Next has cold Play delay");
+ // Late primary acknowledgement still leaves a full opposite Pause interval.
+ b=create();music.state.state=3;music.ignorePause=false;music.pauseDelay=1300;radio.state.state=2;radio.playDelay=1500;result[0]=0;
+ Class<?> pc=Class.forName("com.cbkii.ts18launcher.MediaSourceBootstrapper$Pending");
+ Constructor<?> ctor=pc.getDeclaredConstructors()[0];ctor.setAccessible(true);
+ MediaSourceBootstrapper.ResultCallback done=(ok,m)->result[0]=ok?1:-1;
+ Object pending=ctor.newInstance("Radio",radio.pkg,MediaCommandPolicy.Desired.PLAY,done,
+     1000+MediaSourceBootstrapper.commandTimeoutMs(radio.pkg,MediaCommandPolicy.Desired.PLAY,true));
+ Field opposite=pc.getDeclaredField("pauseOnPlayPackage");opposite.setAccessible(true);opposite.set(pending,music.pkg);
+ Method dispatch=MediaSourceBootstrapper.class.getDeclaredMethod("dispatchToController",MediaController.class,pc);dispatch.setAccessible(true);
+ SystemClock.now=8500;int playsBefore=radio.plays,pausesBefore=music.pauses;dispatch.invoke(b,radio,pending);
+ Handler.until(11400);check(result[0]==1&&radio.plays==playsBefore+1&&music.pauses==pausesBefore+1,"late Play starved opposite Pause");b.destroy();
+ radio.playDelay=music.pauseDelay=0;
  b=create();radio.state.state=2;radio.metadata=new android.media.MediaMetadata();
  check(!b.hasUsableQueue(radio.pkg),"empty metadata marked ready");
  radio.metadata.text="ArtSound";check(b.hasUsableQueue(radio.pkg),"real station content not ready");

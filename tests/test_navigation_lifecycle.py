@@ -217,6 +217,17 @@ class NavigationLifecycleTest(unittest.TestCase):
         self.assertEqual([['task','focus','7'],['task','focus','42']], focuses)
         self.assertEqual(1, state['start_dispatches'])
 
+    def test_n2_delayed_task_adopts_original_claim_without_relaunch(self):
+        result, state = self.run_helper(['present-native','0','app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity','0','141','1131','702','0','1'],
+            nav_alive=False, delayed_task=True, focus=7, bridge_available=True,
+            method='N2', transition='bridge', replays=2, reveal_after_first=True, reveal_focus=42)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual([['task','focus','7'], ['task','focus','42']],
+                         [c for c in state['commands'] if c[:2] == ['task','focus']])
+        self.assertEqual(1, state['start_dispatches'])
+        self.assertEqual(0, state['claims_remaining'])
+
     def test_n2_bootstrap_yields_to_unrelated_foreground(self):
         result, state = self.run_helper(['present-native','0','app.organicmaps.incar',
             'app.organicmaps.incar/app.organicmaps.SplashActivity','0','141','1131','702','42','1'],

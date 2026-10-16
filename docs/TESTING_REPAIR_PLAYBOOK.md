@@ -83,7 +83,7 @@ After smoke passes, select **c** for Screening. Choose methods through the app U
 |---|---|---|
 | Navigation | N0 normal open | Compact disabled. Tap Navigation or Open navigation normally; root windowing is not required. |
 | Navigation | N1 direct compact | Start at HOME. A genuinely absent task can receive one freeform launch; pending/unknown dispatch is observed rather than relaunched. |
-| Navigation | N2 normal then compact | Choose Bridge. Open navigation normally, finish startup/downloads, wait for interactive map, then HOME. Convert that same task without Activity redelivery. An absent task receives one normal bootstrap before same-task compact conversion; unknown launch outcomes are observed without repeating. |
+| Navigation | N2 normal then compact | Choose Bridge. For the cold trial, leave Maps unopened and return to HOME: N2 admits one normal Activity, allows legitimate startup/permission screens, then converts the same task and restores HOME. Do not manually prime Maps first. For a separate warm trial, open Maps normally, finish setup and return HOME. Accepted/uncertain starts are observed without replay. |
 | Task transition | Bridge | Same-task mode API; unsupported/refused operation reports BLOCKED, with no automatic Intent substitute. |
 | Task transition | Intent comparator | N1 only. Same-task firmware Activity transition may redeliver current Activity. N2+Intent is BLOCKED. Compare on a warm fullscreen task returned to HOME; a task already in mode 5 does not exercise this variable. |
 | Departure | L1 retain / L2 background fullscreen | Change only after selecting a viable launch/transition method. Other app → HOME; record whether window-mode changes cause loss. |

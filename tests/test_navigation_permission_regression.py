@@ -47,6 +47,7 @@ class NavigationPermissionRegressionTests(unittest.TestCase):
 
         self.assertEqual(1, cold.count("am start "))
         self.assertIn('--user "$ANDROID_USER" --display 0 --windowingMode "$cold_mode"', cold)
+        self.assertIn("cold_mode=5", cold)
         self.assertIn('[ "$METHOD" != N2 ] || cold_mode=1', cold)
         self.assertIn("-a android.intent.action.MAIN -c android.intent.category.LAUNCHER", cold)
 

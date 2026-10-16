@@ -840,8 +840,19 @@ case "$action" in
     wanted_task="$TASK_ID"
     restore_home=0
     if [ "$METHOD" = N2 ] && launch_claim_path && [ -r "$launch_marker/state" ]; then
-      # Only the task observed after our own accepted cold launch owns this exception.
-      if grep -q "method=N2 .*task=$wanted_task$" "$launch_marker/state"; then restore_home=1; fi
+      # A delayed launch may first become visible in this invocation. Preserve the
+      # original admission identity while adopting its unique current-user renderer.
+      # Reserved/dispatching or different-task claims never grant HOME restoration.
+      if [ "$DISPLAY_ID" = 0 ] && [ "$TASK_COMPONENT" = "$PKG/app.organicmaps.MwmActivity" ]; then
+        if grep -q -E '^(accepted|uncertain|observed) .*method=N2 .*task=unknown$' "$launch_marker/state"; then
+          awk -v task="$wanted_task" '{sub(/task=unknown$/, "task=" task); print}' \
+            "$launch_marker/state" >"$launch_marker/state.$$" || fail LAUNCH_JOURNAL_FAILED
+          mv "$launch_marker/state.$$" "$launch_marker/state" || fail LAUNCH_JOURNAL_FAILED
+        fi
+        if grep -q -E "^(accepted|uncertain|observed) .*method=N2 .*task=$wanted_task$" "$launch_marker/state"; then
+          restore_home=1
+        fi
+      fi
     fi
     require_bootstrap_ready
     PHASE=mode

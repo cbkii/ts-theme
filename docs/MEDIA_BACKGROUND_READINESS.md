@@ -73,9 +73,14 @@ The launcher Application dynamically observes public removable-media availabilit
 
 Root service commands run off the UI thread and target the launcher's current Android user rather than hard-coding user 0. Root does not imply platform signing, UID 1000 or OEM vehicle-service authority. Root acceptance, normal-Android fallback and final readiness are separately recorded in the local event trace.
 
-## Foreground fallback — authorised next design, NOT_IMPLEMENTED
+## Foreground fallback — historical PR #17 boundary
 
-PR #17 contains **no source-Activity bootstrap or loader**; current service/session warm-up remains background-only, and source icons remain intentional foreground requests. The earlier absolute prohibition is superseded **for the separately reviewed car-start reliability change only**:
+PR #24 implements bounded normal/root foreground staging for TESTING comparison.
+The following design restrictions describe the earlier baseline; current implementation
+and physical limits are recorded in [the startup ledger](STARTUP_VALIDATION_REPAIRS_2026-10-16.md)
+and [root fallbacks](ROOT_READINESS_FALLBACKS.md). Physical non-disruption is NOT_RUN.
+
+PR #17 contains **no source-Activity bootstrap or loader**; its service/session warm-up remained background-only, and source icons remain intentional foreground requests. The earlier absolute prohibition is superseded **for the separately reviewed car-start reliability change only**:
 
 - Prefer source-owned silent Browser/PREPARE or qualified exported foreground-service readiness first. Do not replay a root admission after an accepted/uncertain result.
 - When demonstrably insufficient, allow **one** authorised normal/root-assisted source Activity initialisation with genuine service/queue/tuner readiness observation; restore the already-owned ts-theme HOME task, preserve original source authority and do not auto-Play.
@@ -83,7 +88,7 @@ PR #17 contains **no source-Activity bootstrap or loader**; current service/sess
 - A loader is a later **optional** presentation technique, not a startup contract, and requires overlay app-op and physical safety qualification. Without it, use visible staging or truthful BLOCKED.
 - Do not enable passive NavRadio tuning/routing, stock-radio startup or aggressive mode by default until qualified on the installed build.
 
-Boot, ACC wake and HOME resume are separate triggers. The current launcher manifest has no boot receiver, and this document does not claim car-start orchestration is implemented.
+Boot, ACC wake and HOME resume are separate triggers. PR #17 had no boot receiver; PR #24 now has a signal-only receiver and coordinator. ACC detection and physical startup behaviour remain unqualified.
 
 ## Metadata/ticker
 
