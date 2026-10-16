@@ -4,7 +4,7 @@ import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * Pure per-source startup ledger shared by {@link StartupReadinessCoordinator} and JVM tests.
+ * Pure per-source startup ledger shared by StartupReadinessCoordinator and JVM tests.
  *
  * It deduplicates overlapping triggers, enforces one in-flight admission per source, never
  * disturbs a healthy source and never repeats an accepted/uncertain Activity launch within one
