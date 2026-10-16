@@ -747,7 +747,8 @@ validate_startup_source() {
 
 require_startup_home() {
   require_task "$HOME_PKG" "$home_task" 2
-  [ "$DISPLAY_ID" = 0 ] && [ "$WINDOWING_MODE" = 1 ] || fail HOME_STATE_CHANGED
+  [ "$DISPLAY_ID" = 0 ] || fail HOME_STATE_CHANGED
+  [ "$WINDOWING_MODE" = 1 ] || fail HOME_STATE_CHANGED
   case "$TASK_COMPONENT" in
     com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias|com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity) ;;
     *) fail HOME_COMPONENT_CHANGED ;;
@@ -1046,10 +1047,12 @@ case "$action" in
     HOME_PKG="${6:-}"; home_task="${7:-0}"
     validate_startup_source
     valid_uint "$startup_task" || fail BAD_TASK
-    [ "$startup_task" -gt 0 ] && [ "$startup_task" != "$home_task" ] || fail BAD_TASK
+    [ "$startup_task" -gt 0 ] || fail BAD_TASK
+    [ "$startup_task" != "$home_task" ] || fail BAD_TASK
     require_startup_home
     require_task "$PKG" "$startup_task" 2
-    [ "$DISPLAY_ID" = 0 ] && [ "$WINDOWING_MODE" = 1 ] || fail STARTUP_SOURCE_STATE_CHANGED
+    [ "$DISPLAY_ID" = 0 ] || fail STARTUP_SOURCE_STATE_CHANGED
+    [ "$WINDOWING_MODE" = 1 ] || fail STARTUP_SOURCE_STATE_CHANGED
     [ "$TASK_COMPONENT" = "$startup_entry" ] || fail STARTUP_SOURCE_COMPONENT_CHANGED
     require_handoff_foreground "$startup_task" "$startup_task"
     require_startup_window_focus "$startup_entry"
