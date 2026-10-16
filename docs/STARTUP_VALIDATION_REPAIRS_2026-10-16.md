@@ -29,6 +29,13 @@ provides station metadata and Auxio track/artist. Later captures still report
 | CS08 | P1 | Staging can disrupt an already-playing opposite source; Pause dispatch is mistaken for settlement. | Protect playing sources, recheck before launch, share command generation, send at most one startup Pause and observe settlement within 1.6 seconds. Never overwrite a newer HOME transport request. |
 | CS09 | P2 | A reboot kills Termux/capture but the smoke instructions request reboot during the live guide. | Separate before-guide phone-video boot observations from post-boot bounded capture. Add B1–B10 one-letter startup cases. No continuous pre/post-reboot trace is claimed. |
 
+The final focus review verified that nav-window.sh explicitly focuses compact Maps.
+That can starve a media stage requiring focused HOME. Automatic compact presentation
+now waits for media background/staging settlement, with bounded queue expiry. This
+is an admission deferral only: the existing controller remains the sole Maps launch
+owner. User interaction releases the deferral immediately. No second Maps timer or
+Activity launch is restored.
+
 Final boundary review also found two related gaps: late USB events were discarded
 while HOME was hidden, and Radio Activity staging could run without notification
 access needed to observe/suppress unintended playback. Mounts now signal background

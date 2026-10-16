@@ -104,6 +104,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             @Override public boolean ready() { return navigationWindowController.startupNavigationReady(); }
             @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
             @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
+            @Override public void deferAutomaticPresentation(boolean defer) {
+                navigationWindowController.deferAutomaticStartupPresentation(defer);
+            }
         };
         StartupReadinessCoordinator.get(this).attachNavigationHook(startupHook);
 

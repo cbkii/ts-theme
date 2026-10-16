@@ -22,6 +22,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         boolean ready();
         boolean busy();
         void reconcile();
+        default void deferAutomaticPresentation(boolean defer) { }
     }
     private static StartupReadinessCoordinator instance;
     static synchronized StartupReadinessCoordinator get(Context context) {
@@ -47,10 +48,11 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private int homeTask = -1;
     private long stagedCommands;
     private boolean pauseSent;
+    private int navigationWaitGeneration = -1;
 
     private StartupReadinessCoordinator(Context context) {
-        this.context = context;
-        ProcessMediaSessionMonitor.addObserver(context, this);
+        this.context = context.getApplicationContext();
+        ProcessMediaSessionMonitor.addObserver(this.context, this);
     }
     private MediaSourceBootstrapper media() { return Ts18LauncherApplication.mediaSources(context); }
 
@@ -93,17 +95,33 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             int g = policy.begin(source, trigger, source == Source.NAVIGATION ? Method.TASK_ADOPTION : Method.SESSION, now);
             if (source == Source.NAVIGATION) {
                 // No second launch, fixed Splash dwell, or parallel root command. N0/N1/N2 remain comparators.
-                if (navigation != null) navigation.reconcile();
-                await(source, g, pkg, now + 18000L);
+                // Start its observation deadline only after media foreground admission settles.
+                // Otherwise the compact Maps task takes focus and starves media staging.
             } else {
                 if (source == Source.MUSIC) { policy.changeMethod(source, Method.BROWSER); media().warm(pkg); }
                 await(source, g, pkg, now + (source == Source.MUSIC ? 9000L : 2500L));
             }
         }
+        updateNavigationAdmission();
         runForegroundSoon();
     }
 
-    void attachNavigationHook(NavigationHook hook) { navigation = hook; }
+    private void updateNavigationAdmission() {
+        if (navigation == null) return;
+        boolean mediaPending = foregroundBusy || !foregroundQueue.isEmpty()
+                || policy.record(Source.MUSIC).state == State.STARTING
+                || policy.record(Source.RADIO).state == State.STARTING;
+        boolean defer = foregroundAllowed() && mediaPending;
+        navigation.deferAutomaticPresentation(defer);
+        StartupReadinessPolicy.Record r = policy.record(Source.NAVIGATION);
+        if (!defer && !yielded && r.state == State.STARTING && navigationWaitGeneration != r.generation) {
+            navigationWaitGeneration = r.generation;
+            navigation.reconcile();
+            await(Source.NAVIGATION, r.generation, packageFor(Source.NAVIGATION), SystemClock.uptimeMillis() + 18000L);
+        }
+    }
+
+    void attachNavigationHook(NavigationHook hook) { navigation = hook; updateNavigationAdmission(); }
     void detachNavigationHook(NavigationHook hook) { if (navigation == hook) navigation = null; }
     void onHomeResumed(Activity activity) {
         home = new WeakReference<>(activity); homeResumed = true; onTrigger(Trigger.HOME_RESUME);
@@ -144,7 +162,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 long now = SystemClock.uptimeMillis();
                 if (ready(source, pkg)) {
                     policy.ready(source, g, now);
-                    MediaEventTrace.record("startup", "ready", summary()); return;
+                    MediaEventTrace.record("startup", "ready", summary()); updateNavigationAdmission(); return;
                 }
                 if (now < deadline) { handler.postDelayed(this, 500L); return; }
                 if (source == Source.NAVIGATION) {
@@ -157,8 +175,12 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                     foregroundQueue.add(source); runForegroundSoon();
                     handler.postDelayed(() -> {
                         if (policy.record(source).generation == g && foregroundQueue.remove(source)) policy.block(source, g, "foreground-admission-expired", SystemClock.uptimeMillis());
+                        updateNavigationAdmission();
                     }, 20000L);
-                } else policy.block(source, g, "background-not-ready-or-staging-yielded", now);
+                } else {
+                    policy.block(source, g, "background-not-ready-or-staging-yielded", now);
+                    updateNavigationAdmission();
+                }
             }
         }, 500L);
     }
@@ -176,20 +198,20 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (navigation != null && navigation.busy()) { runForegroundSoon(); return; }
         Source source = foregroundQueue.poll();
         StartupReadinessPolicy.Record r = policy.record(source);
-        if (r.state != State.STARTING) { runForegroundSoon(); return; }
+        if (r.state != State.STARTING) { updateNavigationAdmission(); runForegroundSoon(); return; }
         String pkg = packageFor(source);
-        if (ready(source, pkg)) { policy.ready(source, r.generation, SystemClock.uptimeMillis()); runForegroundSoon(); return; }
+        if (ready(source, pkg)) { policy.ready(source, r.generation, SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return; }
         String opposite = packageFor(source == Source.MUSIC ? Source.RADIO : Source.MUSIC);
         if (source == Source.RADIO && !MediaListenerService.hasNotificationAccess(context)) {
             policy.block(source, r.generation, "notification-access-required", SystemClock.uptimeMillis());
-            runForegroundSoon(); return;
+            updateNavigationAdmission(); runForegroundSoon(); return;
         }
         if (media().isPlaying(pkg) || media().isPlaying(opposite)) {
-            policy.block(source, r.generation, "playing-source-protected", SystemClock.uptimeMillis()); runForegroundSoon(); return;
+            policy.block(source, r.generation, "playing-source-protected", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
         }
         Intent entry = context.getPackageManager().getLaunchIntentForPackage(pkg);
         if (entry == null || entry.getComponent() == null) {
-            policy.block(source, r.generation, "entry-unavailable", SystemClock.uptimeMillis()); runForegroundSoon(); return;
+            policy.block(source, r.generation, "entry-unavailable", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
         }
         foregroundBusy = true; foregroundSource = source;
         int token = ++foregroundToken, g = r.generation;
@@ -271,7 +293,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             handler.postDelayed(() -> {
                 if (token != foregroundToken) return;
                 if (!homeResumed || !activity.hasWindowFocus()) { yieldStage(source, g, "home-return-unconfirmed"); return; }
-                foregroundBusy = false; foregroundSource = null; runForegroundSoon();
+                foregroundBusy = false; foregroundSource = null; updateNavigationAdmission(); runForegroundSoon();
             }, 1200L);
         });
     }
@@ -300,6 +322,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         while (!foregroundQueue.isEmpty()) {
             Source s = foregroundQueue.poll(); policy.block(s, policy.record(s).generation, boundary, now);
         }
+        updateNavigationAdmission();
         MediaEventTrace.record("startup", "yield", boundary);
     }
     private boolean safeScreen() {

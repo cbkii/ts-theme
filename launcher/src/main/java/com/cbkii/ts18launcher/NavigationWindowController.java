@@ -60,6 +60,14 @@ final class NavigationWindowController {
     private NavigationWindowBounds appliedBounds;
     private java.util.function.Consumer<Boolean> pendingPresentationCallback;
 
+    private boolean startupPresentationDeferred;
+
+    /** Order automatic staging only; the controller retains the sole Maps task/launch authority. */
+    void deferAutomaticStartupPresentation(boolean defer) {
+        if (startupPresentationDeferred == defer || state == State.DESTROYED) return;
+        startupPresentationDeferred = defer;
+    }
+
     private java.util.function.BiConsumer<Boolean, String> startupListener;
 
     void setStartupListener(java.util.function.BiConsumer<Boolean, String> listener) {
@@ -255,6 +263,7 @@ final class NavigationWindowController {
     }
 
     private void reconcile(boolean force) {
+        if (startupPresentationDeferred && !force && !normalBootstrapInFlight) return;
         if ((!uiState.canPresentNavigation() && !normalBootstrapInFlight) || state == State.DESTROYED || bounds == null || recoveryCallback != null) return;
         if (activeOperationId != 0) { pendingReconcile = true; return; }
         String desiredMode = HomeNavigationSurfacePolicy.mode(activity), desiredPackage = selectedPackage();

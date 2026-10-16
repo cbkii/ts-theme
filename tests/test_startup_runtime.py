@@ -76,14 +76,19 @@ import android.os.*;import java.lang.reflect.*;import java.util.concurrent.*;
 import static com.cbkii.ts18launcher.StartupReadinessPolicy.*;
 public class Harness {
 static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
+static boolean navigationDeferred, navReady;
+static int navigationStarts;
 static class Inline extends AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,TimeUnit u){return true;}}
-static StartupReadinessCoordinator create()throws Exception{
+static StartupReadinessCoordinator create()throws Exception{return create(true);}
+static StartupReadinessCoordinator create(boolean ready)throws Exception{
+navReady=ready;navigationStarts=0;
 Handler.reset();MediaListenerService.access=true;RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
 RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);
 Ts18LauncherApplication.shared=new MediaSourceBootstrapper();Ts18LauncherApplication.shared.musicReady=true;
 Constructor<StartupReadinessCoordinator> c=StartupReadinessCoordinator.class.getDeclaredConstructor(android.content.Context.class);c.setAccessible(true);
 StartupReadinessCoordinator s=c.newInstance(new android.content.Context());Field f=s.getClass().getDeclaredField("observer");f.setAccessible(true);((ExecutorService)f.get(s)).shutdownNow();f.set(s,new Inline());
-s.attachNavigationHook(new StartupReadinessCoordinator.NavigationHook(){public boolean ready(){return true;}public boolean busy(){return false;}public void reconcile(){throw new AssertionError("duplicate Maps owner");}});
+s.attachNavigationHook(new StartupReadinessCoordinator.NavigationHook(){public boolean ready(){return navReady;}public boolean busy(){return false;}public void reconcile(){check(!navigationDeferred,"Maps acquired while media pending");navigationStarts++;navReady=true;}
+public void deferAutomaticPresentation(boolean defer){navigationDeferred=defer;}});
 s.onHomeResumed(new android.app.Activity());return s;}
 static StartupReadinessPolicy ledger(StartupReadinessCoordinator s)throws Exception{Field f=s.getClass().getDeclaredField("policy");f.setAccessible(true);return (StartupReadinessPolicy)f.get(s);}
 public static void main(String[] args)throws Exception {
@@ -94,10 +99,15 @@ check(StartupForegroundPolicy.parse(RootShell.forComponent("p/.A",1)+RootShell.f
 check(!top.matches(1,10,"com.cbkii.ts18launcher/.LauncherActivity"),"wrong user");
 StartupReadinessCoordinator s=create();int g=ledger(s).record(Source.RADIO).generation;
 s.onTrigger(Trigger.BOOT);check(ledger(s).record(Source.RADIO).generation==g,"late boot reset active generation");
+check(navigationDeferred,"Maps could take focus before media staging");
 Handler.until(4000);check(AppResolver.launches==1,"radio not staged once");
 Ts18LauncherApplication.shared.radioReady=true;
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);s.onHomeResumed(new android.app.Activity());};
-Handler.until(8000);check(android.app.ActivityManager.moves==1,"exact HOME not restored");check(ledger(s).record(Source.RADIO).state==State.READY,"content not ready");s.destroy();
+Handler.until(8000);check(android.app.ActivityManager.moves==1,"exact HOME not restored");check(ledger(s).record(Source.RADIO).state==State.READY,"content not ready");check(!navigationDeferred,"Maps stayed deferred after media");s.destroy();
+StartupReadinessCoordinator ordered=create(false);Handler.until(4000);
+check(navigationStarts==0&&AppResolver.launches==1,"Maps focus starved media admission");
+Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.moved=()->ordered.onHomeResumed(new android.app.Activity());
+Handler.until(8000);check(navigationStarts==1&&!navigationDeferred,"Maps not admitted once after media");ordered.destroy();
 StartupReadinessCoordinator unknown=create();RootShell.top="mCurrentFocus=null";Handler.until(15000);
 check(AppResolver.launches==0&&android.app.ActivityManager.moves==0,"unknown focus mutated");unknown.destroy();
 StartupReadinessCoordinator permission=create();Handler.until(4000);
@@ -105,7 +115,7 @@ RootShell.top=RootShell.forComponent("com.android.permissioncontroller/.GrantPer
 Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
 check(android.app.ActivityManager.moves==0,"permission screen stolen");permission.onTrigger(Trigger.SESSION_LOST);Handler.until(20000);
 check(AppResolver.launches==1,"uncertain launch repeated");permission.destroy();
-StartupReadinessCoordinator interrupted=create();Handler.until(4000);interrupted.noteUserInteraction();Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
+StartupReadinessCoordinator interrupted=create();Handler.until(4000);interrupted.noteUserInteraction();check(!navigationDeferred,"user navigation stayed blocked");Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
 check(android.app.ActivityManager.moves==0&&Ts18LauncherApplication.shared.pauses==0,"user cancellation ignored");interrupted.destroy();
 StartupReadinessCoordinator playing=create();Ts18LauncherApplication.shared.musicPlaying=true;Handler.until(15000);
 check(AppResolver.launches==0,"playing music disrupted");playing.destroy();
