@@ -52,6 +52,16 @@ S9 is conditional: choose **n** if there is no failure/Retry button. It remains 
 
 Returning to Termux changes focus. Phone video showing the full screen and finger is necessary to establish touch alignment or a brief fault between samples. If the state has already recovered, say so; a recovered screenshot does not show the original failure. A sealed archive proves collection completed, not that the app passed.
 
+## Root caller comparison
+
+On the same signed APK and fixed source apps, compare Startup **Automatic fallback**
+(normal first; root only after definite refusal) and **Aggressive** (guarded root
+first). Keep Maps N1/N2 fixed for each comparison. Record B1/S0 and audible S1/S2;
+check startup silence, same-task HOME return and interruption/permission ownership.
+A successful root command is not audible/readiness PASS. Do not revoke permissions
+to manufacture failure. Background only remains the no-media-Activity comparator.
+See [root assessment and exact gates](ROOT_READINESS_FALLBACKS.md).
+
 ## Startup B1–B10
 
 Main menu **b** opens one-letter P/F/N startup cases: B1 Android boot; B2 cold

@@ -49,9 +49,12 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private long stagedCommands;
     private boolean pauseSent;
     private int navigationWaitGeneration = -1;
+    private java.util.concurrent.atomic.AtomicBoolean stageLease = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final StartupRootFallback rootFallback;
 
     private StartupReadinessCoordinator(Context context) {
         this.context = context.getApplicationContext();
+        rootFallback = new StartupRootFallback(this.context);
         ProcessMediaSessionMonitor.addObserver(this.context, this);
     }
     private MediaSourceBootstrapper media() { return Ts18LauncherApplication.mediaSources(context); }
@@ -209,11 +212,17 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (media().isPlaying(pkg) || media().isPlaying(opposite)) {
             policy.block(source, r.generation, "playing-source-protected", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
         }
-        Intent entry = context.getPackageManager().getLaunchIntentForPackage(pkg);
+        final Intent entry;
+        try { entry = context.getPackageManager().getLaunchIntentForPackage(pkg); }
+        catch (RuntimeException unknown) {
+            policy.block(source, r.generation, "entry-lookup-unavailable", SystemClock.uptimeMillis());
+            updateNavigationAdmission(); runForegroundSoon(); return;
+        }
         if (entry == null || entry.getComponent() == null) {
             policy.block(source, r.generation, "entry-unavailable", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
         }
         foregroundBusy = true; foregroundSource = source;
+        stageLease = new java.util.concurrent.atomic.AtomicBoolean(true);
         int token = ++foregroundToken, g = r.generation;
         homeTask = activity.getTaskId(); stagedTask = -1;
         stagedEntry = entry.getComponent().flattenToShortString(); stagedCommands = media().userCommandGeneration(); pauseSent = false;
@@ -231,16 +240,51 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             }
             if (!policy.markActivityLaunch(source)) { yieldStage(source, g, "launch-already-accepted"); return; }
             MediaEventTrace.record("startup", "foreground-launch", source + " " + stagedEntry);
-            // Even an exception can leave an uncertain launch. Never issue a root duplicate.
-            if (!AppResolver.launchPackageQuietly(context, pkg)) { yieldStage(source, g, "launch-outcome-unconfirmed"); return; }
-            handler.postDelayed(() -> observe(token, owner -> {
-                if (!validStage(token) || owner == null || !owner.isEntry(AndroidUserId.current(), stagedEntry)) {
-                    yieldStage(source, g, "source-entry-not-foreground"); return;
-                }
-                stagedTask = owner.task;
-                awaitStage(source, g, pkg, token, SystemClock.uptimeMillis() + 8000L);
-            }), 1000L);
+            if (mode() == Mode.AGGRESSIVE) startWithRoot(source, g, pkg, token, true);
+            else startNormally(source, g, pkg, token, true);
         });
+    }
+    private void startNormally(Source source, int g, String pkg, int token, boolean allowRoot) {
+        if (!validStage(token) || !homeResumed) { yieldStage(source, g, "normal-admission-cancelled"); return; }
+        AppResolver.LaunchOutcome outcome = AppResolver.launchForStartup(context, pkg);
+        MediaEventTrace.record("startup", "normal-admission", source + " " + outcome);
+        if (outcome == AppResolver.LaunchOutcome.ACCEPTED) observeSourceAfterLaunch(source, g, pkg, token);
+        else if (outcome == AppResolver.LaunchOutcome.REJECTED && allowRoot) startWithRoot(source, g, pkg, token, false);
+        else yieldStage(source, g, "normal-launch-" + outcome);
+    }
+    private void startWithRoot(Source source, int g, String pkg, int token, boolean allowNormal) {
+        final java.util.concurrent.atomic.AtomicBoolean lease = stageLease;
+        final String entry = stagedEntry;
+        final int targetHome = homeTask;
+        observer.execute(() -> {
+            if (!lease.get()) return;
+            NavigationHelperResult result = rootFallback.launch(pkg, entry, targetHome);
+            handler.post(() -> {
+                if (token != foregroundToken || !lease.get()) return;
+                MediaEventTrace.record("startup", "root-admission", source + " " + result.code);
+                if (result.success && "STARTUP_SOURCE_DISPATCHED".equals(result.code))
+                    observeSourceAfterLaunch(source, g, pkg, token);
+                else if (allowNormal && StartupRootFallback.definitelyNotStarted(result) && validStage(token)) {
+                    // A different caller is safe only after proof that no root Activity was admitted.
+                    observe(token, top -> {
+                        if (!homeResumed || top == null || !top.matches(AndroidUserId.current(), targetHome,
+                                context.getPackageName() + "/.LauncherActivity")) {
+                            yieldStage(source, g, "normal-fallback-owner-changed"); return;
+                        }
+                        startNormally(source, g, pkg, token, false);
+                    });
+                } else yieldStage(source, g, "root-launch-" + result.code);
+            });
+        });
+    }
+    private void observeSourceAfterLaunch(Source source, int g, String pkg, int token) {
+        handler.postDelayed(() -> observe(token, owner -> {
+            if (!validStage(token) || owner == null || !owner.isEntry(AndroidUserId.current(), stagedEntry)) {
+                yieldStage(source, g, "source-entry-not-foreground"); return;
+            }
+            stagedTask = owner.task;
+            awaitStage(source, g, pkg, token, SystemClock.uptimeMillis() + 8000L);
+        }), 1000L);
     }
     private boolean validStage(int token) {
         return token == foregroundToken && foregroundAllowed() && safeScreen()
@@ -279,8 +323,6 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             if (!validStage(token) || top == null || !top.matches(AndroidUserId.current(), stagedTask, stagedEntry)) {
                 yieldStage(source, g, "home-return-owner-changed"); return;
             }
-            if (ready(source, pkg) && !media().isPlaying(pkg)) policy.ready(source, g, SystemClock.uptimeMillis());
-            else policy.uncertain(source, g, "content-or-silence-unconfirmed", SystemClock.uptimeMillis());
             // Restore the exact existing HOME task. No root am-start or component relaunch.
             Activity activity = home.get();
             if (activity == null || activity.getTaskId() != homeTask || activity.isFinishing()) {
@@ -289,22 +331,55 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             try {
                 android.app.ActivityManager manager = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
                 manager.moveTaskToFront(homeTask, 0);
-            } catch (RuntimeException e) { yieldStage(source, g, "home-return-refused"); return; }
-            handler.postDelayed(() -> {
-                if (token != foregroundToken) return;
-                if (!homeResumed || !activity.hasWindowFocus()) { yieldStage(source, g, "home-return-unconfirmed"); return; }
-                foregroundBusy = false; foregroundSource = null; updateNavigationAdmission(); runForegroundSoon();
-            }, 1200L);
+            } catch (SecurityException rejected) {
+                restoreHomeWithRoot(source, g, pkg, token); return;
+            } catch (RuntimeException uncertain) { yieldStage(source, g, "home-return-outcome-unconfirmed"); return; }
+            verifyHomeReturn(source, g, token);
+
         });
     }
+    private void restoreHomeWithRoot(Source source, int g, String pkg, int token) {
+        final java.util.concurrent.atomic.AtomicBoolean lease = stageLease;
+        final String entry = stagedEntry;
+        final int sourceTask = stagedTask, targetHome = homeTask;
+        observer.execute(() -> {
+            if (!lease.get()) return;
+            NavigationHelperResult result = rootFallback.restoreHome(pkg, entry, sourceTask, targetHome);
+            handler.post(() -> {
+                if (token != foregroundToken || !lease.get()) return;
+                MediaEventTrace.record("startup", "root-home", result.code);
+                if (result.success && "STARTUP_HOME_RESTORED".equals(result.code)) verifyHomeReturn(source, g, token);
+                else yieldStage(source, g, "root-home-" + result.code);
+            });
+        });
+    }
+    private void verifyHomeReturn(Source source, int g, int token) {
+        handler.postDelayed(() -> {
+            if (token != foregroundToken) return;
+            Activity activity = home.get();
+            if (!homeResumed || activity == null || activity.getTaskId() != homeTask || !activity.hasWindowFocus()) {
+                yieldStage(source, g, "home-return-unconfirmed"); return;
+            }
+            String pkg = packageFor(source);
+            if (ready(source, pkg) && !media().isPlaying(pkg)) policy.ready(source, g, SystemClock.uptimeMillis());
+            else policy.uncertain(source, g, "content-or-silence-unconfirmed", SystemClock.uptimeMillis());
+            stageLease.set(false);
+            foregroundBusy = false; foregroundSource = null; updateNavigationAdmission(); runForegroundSoon();
+        }, 1200L);
+    }
     private interface Observation { void accept(StartupForegroundPolicy top); }
-    private void observe(int token, Observation callback) {
+    private void observe(int token, Observation callback) { observe(token, callback, 2); }
+    private void observe(int token, Observation callback, int attempts) {
         observer.execute(() -> {
             RootShell.Result result = RootShell.runWithin(
                     "dumpsys activity activities | /system/bin/toybox grep 'mResumedActivity:'; "
                     + "dumpsys window windows | /system/bin/toybox grep 'mCurrentFocus='", 1800L);
             StartupForegroundPolicy top = result.success() ? StartupForegroundPolicy.parse(result.output) : null;
-            handler.post(() -> { if (token == foregroundToken && !destroyed) callback.accept(top); });
+            handler.post(() -> {
+                if (token != foregroundToken || destroyed) return;
+                if (top == null && attempts > 1) handler.postDelayed(() -> observe(token, callback, attempts - 1), 200L);
+                else callback.accept(top);
+            });
         });
     }
     private void yieldStage(Source source, int g, String boundary) {
@@ -312,6 +387,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         yielded = true; cancelForeground(boundary);
     }
     private void cancelForeground(String boundary) {
+        stageLease.set(false);
         foregroundToken++; foregroundBusy = false;
         long now = SystemClock.uptimeMillis();
         if (foregroundSource != null) {

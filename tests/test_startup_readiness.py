@@ -19,13 +19,16 @@ class StartupReadinessTests(unittest.TestCase):
         self.assertNotIn("NAVIGATION_DWELL_MS", coordinator)
         self.assertNotIn("holdNavigation", coordinator)
 
-    def test_staging_has_no_mutating_root_fallback(self):
+    def test_staging_root_routes_are_narrow_and_no_direct_shell_launch(self):
         coordinator = read("StartupReadinessCoordinator.java")
         self.assertIn("StartupForegroundPolicy.parse", coordinator)
         self.assertIn("moveTaskToFront(homeTask, 0)", coordinator)
         self.assertIn("pauseUnrequestedPlayback", coordinator)
         self.assertIn("acc=unverified", coordinator)
-        for forbidden in ("am start", "startservice", "force-stop", "requestAudioFocus", "setenforce"):
+        self.assertIn("catch (SecurityException rejected)", coordinator)
+        self.assertIn("AppResolver.LaunchOutcome.REJECTED && allowRoot", coordinator)
+        self.assertIn("StartupRootFallback.definitelyNotStarted(result)", coordinator)
+        for forbidden in ("startservice", "force-stop", "requestAudioFocus", "setenforce"):
             self.assertNotIn(forbidden, coordinator)
 
     def test_boot_receiver_signals_only(self):

@@ -71,6 +71,10 @@ Auxio-TS/NavRadio+ only after background readiness is insufficient. It must shar
 `Ts18LauncherApplication.mediaSources`, yield to user/protected/permission flows, check
 foreground task/component ownership, and restore only the existing HOME task. Maps cold
 acquisition belongs exclusively to the navigation controller/helper claim. No second
-Maps launcher, fixed Splash dwell, root duplicate launch or root HOME fallback. Physical
+Maps launcher, fixed Splash dwell or root duplicate launch. The root-fallback follow-up
+allows only guarded root Activity admission after definite refusal (or explicit
+Aggressive root-first comparison), and exact existing-HOME task focus after a definite
+API SecurityException. Accepted/uncertain starts and uncertain HOME returns are never
+replayed; no root component relaunch is allowed for HOME. Physical
 non-disruption, silence and three-source boot/ACC readiness remain mandatory acceptance
 gates; automatic testing-profile staging is not a qualified production feature.

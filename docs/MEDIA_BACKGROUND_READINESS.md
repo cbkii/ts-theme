@@ -137,12 +137,16 @@ Read-only root probes are bounded and run off the main thread. A source must rem
 the same task and exact entry Activity before the launcher restores **its existing task**.
 Permission/setup screens, changed task/component, missing focus, calls, screen-off,
 new HOME transport intent, configuration changes or missing HOME yield safely.
-`REORDER_TASKS` supports restoring the launcher's own existing task; there is no root
-`am start` retry or force-stop. Task return and physical source behaviour remain unqualified.
+`REORDER_TASKS` supports restoring the launcher's own existing task. The
+[root fallback follow-up](ROOT_READINESS_FALLBACKS.md) adds exact-task root focus only
+after a definite API SecurityException, and guarded source Activity root admission
+only after definite refusal or explicit root-first selection. Uncertain results are
+never replayed; there is no force-stop. Task return and physical source behaviour remain unqualified.
 
 Settings → Testing methods → Startup: Background only disables media foreground staging;
-Automatic fallback enables the guarded path. The legacy Aggressive selection deliberately
-uses the same safe path; root replay is disabled. The separate N0/N1/N2 navigation profile
+Automatic fallback enables the guarded normal-first path. Aggressive selects the
+guarded root-first caller, allowing normal only after definite root pre-admission
+failure or explicit rejection; accepted/uncertain starts are never replayed. The separate N0/N1/N2 navigation profile
 still controls Maps. There is no loader. The preparation switch applies to media/startup
 reconciliation; it does not disable the existing native Maps surface.
 

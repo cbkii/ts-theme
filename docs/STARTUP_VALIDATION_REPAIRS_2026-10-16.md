@@ -15,6 +15,14 @@ traces. T11 HOME is `.HomeAlias`, task 9648, with `mCurrentFocus=null`; Radio
 provides station metadata and Auxio track/artist. Later captures still report
 `NORMAL_OPEN_REQUIRED` and `TASK_OBSERVATION_UNCERTAIN`. No new device run exists.
 
+## Root fallback follow-up
+
+The later owner-requested [root readiness assessment](ROOT_READINESS_FALLBACKS.md)
+adds narrowly guarded alternative callers after definite refusals, plus an explicit
+root-first comparator. This supersedes only the blanket root-fallback exclusion
+below; the ban on duplicate/uncertain replay and separate Maps ownership remains.
+All new root paths remain physically NOT_RUN.
+
 ## Confirmed additional defects and disposition
 
 | ID | Severity | PR #24 defect | Correction |

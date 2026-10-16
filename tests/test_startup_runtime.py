@@ -40,7 +40,7 @@ public android.content.pm.PackageManager getPackageManager(){return new android.
 public Object getSystemService(String s){return switch(s){case "power"->new android.os.PowerManager();case "key"->new android.app.KeyguardManager();case "audio"->new android.media.AudioManager();default->new android.app.ActivityManager();};}}
 ''',
             'android/app/Activity.java': 'package android.app;public class Activity extends android.content.Context {public boolean isFinishing(){return false;}public boolean hasWindowFocus(){return true;}public int getTaskId(){return 10;}}',
-            'android/app/ActivityManager.java': 'package android.app;public class ActivityManager {public static int moves;public static Runnable moved=()->{};public void moveTaskToFront(int task,int flags){if(task!=10)throw new AssertionError("wrong HOME task");moves++;moved.run();}}',
+            'android/app/ActivityManager.java': 'package android.app;public class ActivityManager {public static int moves;public static boolean reject,uncertain;public static Runnable moved=()->{};public void moveTaskToFront(int task,int flags){if(reject)throw new SecurityException();if(uncertain)throw new IllegalStateException();if(task!=10)throw new AssertionError("wrong HOME task");moves++;moved.run();}}',
             'android/content/Intent.java': 'package android.content;public class Intent {String pkg;public Intent(String s){pkg=s;}public ComponentName getComponent(){return new ComponentName(pkg,pkg+".Main");}}',
             'android/content/ComponentName.java': 'package android.content;public class ComponentName {String p,c;public ComponentName(String p,String c){this.p=p;this.c=c;}public String flattenToShortString(){return p+"/"+c;}}',
             'android/content/pm/PackageManager.java': 'package android.content.pm;public class PackageManager {public android.content.Intent getLaunchIntentForPackage(String p){return new android.content.Intent(p);}}',
@@ -55,7 +55,7 @@ boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radi
 boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
 long userCommandGeneration(){return commands;}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
 class UiPersonalizationPrefs {static boolean mediaStartupWarmup(android.content.Context c){return true;}}
-class TestingProfiles {static String startup(android.content.Context c){return "auto";}}
+class TestingProfiles {static String mode="auto";static String startup(android.content.Context c){return mode;}}
 class LauncherPrefs {static String KEY_MUSIC="music",KEY_NAV="nav";static String music="com.tw.media";
 static String packageFor(android.content.Context c,String k){return k.equals("music")?music:"app.organicmaps.incar";}}
 class RadioProvider {static String resolvePackage(android.content.Context c){return "com.navimods.radio";}}
@@ -64,8 +64,15 @@ class MediaSourceAdapter {static String AUXIO_PACKAGE="com.tw.media",NAVRADIO_PA
 class HomeMode {static boolean isDefaultHome(android.content.Context c){return true;}}
 class AndroidUserId {static int current(){return 0;}}
 class MediaEventTrace {static void record(String a,String b,String... c){}}
-class AppResolver {static int launches;static boolean launchPackageQuietly(android.content.Context c,String p){launches++;
-RootShell.top=RootShell.forComponent(p+"/"+p+".Main",20);return true;}}
+class AppResolver {enum LaunchOutcome {ACCEPTED,REJECTED,UNCERTAIN}static LaunchOutcome outcome=LaunchOutcome.ACCEPTED;static int launches;static Runnable launched=()->{};
+static LaunchOutcome launchForStartup(android.content.Context c,String p){launches++;
+if(outcome==LaunchOutcome.ACCEPTED){RootShell.top=RootShell.forComponent(p+"/"+p+".Main",20);launched.run();}return outcome;}}
+class NavigationHelperResult {boolean success;String code;NavigationHelperResult(boolean s,String c){success=s;code=c;}}
+class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}
+NavigationHelperResult launch(String p,String e,int h){starts++;before.run();if(code.equals("STARTUP_SOURCE_DISPATCHED")){RootShell.top=RootShell.forComponent(e,20);launched.run();}return new NavigationHelperResult(code.equals("STARTUP_SOURCE_DISPATCHED"),code);}
+NavigationHelperResult restoreHome(String p,String e,int t,int h){returns++;if(returnCode.equals("STARTUP_HOME_RESTORED"))android.app.ActivityManager.moved.run();return new NavigationHelperResult(returnCode.equals("STARTUP_HOME_RESTORED"),returnCode);}
+static boolean definitelyNotStarted(NavigationHelperResult r){return r.code.equals("STARTUP_SOURCE_REJECTED");}}
+
 class RootShell {static String top;static int probes;static Runnable afterProbe=()->{};
 static String forComponent(String c,int task){return "mResumedActivity: ActivityRecord{abc u0 "+c+" t"+task+"}\\n mCurrentFocus=Window{def u0 "+c+"}\\n";}
 static class Result {String output;Result(String o){output=o;}boolean success(){return true;}}
@@ -82,11 +89,15 @@ static class Inline extends AbstractExecutorService {public void execute(Runnabl
 static StartupReadinessCoordinator create()throws Exception{return create(true);}
 static StartupReadinessCoordinator create(boolean ready)throws Exception{
 navReady=ready;navigationStarts=0;
-Handler.reset();MediaListenerService.access=true;RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
+Handler.reset();TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
+StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
+StartupRootFallback.code="STARTUP_SOURCE_DISPATCHED";StartupRootFallback.starts=0;StartupRootFallback.returns=0;StartupRootFallback.before=()->{};
+android.app.ActivityManager.reject=false;android.app.ActivityManager.uncertain=false;
+MediaListenerService.access=true;RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
 RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);
 Ts18LauncherApplication.shared=new MediaSourceBootstrapper();Ts18LauncherApplication.shared.musicReady=true;
 Constructor<StartupReadinessCoordinator> c=StartupReadinessCoordinator.class.getDeclaredConstructor(android.content.Context.class);c.setAccessible(true);
-StartupReadinessCoordinator s=c.newInstance(new android.content.Context());Field f=s.getClass().getDeclaredField("observer");f.setAccessible(true);((ExecutorService)f.get(s)).shutdownNow();f.set(s,new Inline());
+StartupReadinessCoordinator s=c.newInstance(new android.content.Context());Field f=s.getClass().getDeclaredField("observer");f.setAccessible(true);((ExecutorService)f.get(s)).shutdownNow();f.set(s,new Inline());AppResolver.launched=s::onHomePaused;StartupRootFallback.launched=s::onHomePaused;
 s.attachNavigationHook(new StartupReadinessCoordinator.NavigationHook(){public boolean ready(){return navReady;}public boolean busy(){return false;}public void reconcile(){check(!navigationDeferred,"Maps acquired while media pending");navigationStarts++;navReady=true;}
 public void deferAutomaticPresentation(boolean defer){navigationDeferred=defer;}});
 s.onHomeResumed(new android.app.Activity());return s;}
@@ -108,6 +119,28 @@ StartupReadinessCoordinator ordered=create(false);Handler.until(4000);
 check(navigationStarts==0&&AppResolver.launches==1,"Maps focus starved media admission");
 Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.moved=()->ordered.onHomeResumed(new android.app.Activity());
 Handler.until(8000);check(navigationStarts==1&&!navigationDeferred,"Maps not admitted once after media");ordered.destroy();
+StartupReadinessCoordinator root=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;Handler.until(4000);
+check(AppResolver.launches==1&&StartupRootFallback.starts==1,"definite rejection did not select root once");root.destroy();
+StartupReadinessCoordinator rootFirst=create();TestingProfiles.mode="aggressive";Handler.until(4000);
+check(AppResolver.launches==0&&StartupRootFallback.starts==1,"aggressive did not select root first");rootFirst.destroy();
+StartupReadinessCoordinator fallback=create();TestingProfiles.mode="aggressive";StartupRootFallback.code="STARTUP_SOURCE_REJECTED";Handler.until(4000);
+check(AppResolver.launches==1&&StartupRootFallback.starts==1,"definite root refusal did not allow normal once");fallback.destroy();
+StartupReadinessCoordinator ambiguous=create();TestingProfiles.mode="aggressive";StartupRootFallback.code="PHASE_TIMEOUT";Handler.until(15000);
+check(AppResolver.launches==0&&StartupRootFallback.starts==1,"root uncertainty replayed normal launch");ambiguous.destroy();
+StartupReadinessCoordinator normalUnknown=create();AppResolver.outcome=AppResolver.LaunchOutcome.UNCERTAIN;Handler.until(15000);
+check(StartupRootFallback.starts==0,"uncertain normal start replayed via root");normalUnknown.destroy();
+StartupReadinessCoordinator homeRejected=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;
+android.app.ActivityManager.reject=true;android.app.ActivityManager.moved=()->homeRejected.onHomeResumed(new android.app.Activity());Handler.until(8000);
+check(StartupRootFallback.returns==1&&ledger(homeRejected).record(Source.RADIO).state==State.READY,"definite HOME refusal not recovered");homeRejected.destroy();
+StartupReadinessCoordinator rootHomeFailure=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;
+android.app.ActivityManager.reject=true;StartupRootFallback.returnCode="HOME_FOCUS_FAILED";Handler.until(15000);
+check(StartupRootFallback.returns==1&&ledger(rootHomeFailure).record(Source.RADIO).state==State.UNCERTAIN,"failed root return marked ready");rootHomeFailure.destroy();
+StartupReadinessCoordinator noHomeReturn=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
+check(StartupRootFallback.returns==0&&ledger(noHomeReturn).record(Source.RADIO).state==State.UNCERTAIN,"silent/unconfirmed return repeated or marked ready");noHomeReturn.destroy();
+StartupReadinessCoordinator cancelledRoot=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;RootShell.afterProbe=cancelledRoot::noteUserInteraction;Handler.until(15000);
+check(StartupRootFallback.starts==0&&AppResolver.launches==0,"cancelled executor admitted source");cancelledRoot.destroy();
+StartupReadinessCoordinator homeUncertain=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.uncertain=true;Handler.until(15000);
+check(StartupRootFallback.returns==0&&ledger(homeUncertain).record(Source.RADIO).state==State.UNCERTAIN,"uncertain HOME return replayed");homeUncertain.destroy();
 StartupReadinessCoordinator unknown=create();RootShell.top="mCurrentFocus=null";Handler.until(15000);
 check(AppResolver.launches==0&&android.app.ActivityManager.moves==0,"unknown focus mutated");unknown.destroy();
 StartupReadinessCoordinator permission=create();Handler.until(4000);

@@ -714,6 +714,54 @@ move_task_fullscreen() {
   require_task "$pkg" "$wanted_task" 1
 }
 
+# Exact foreground ownership for media staging; no mode/geometry or vendor mutations.
+require_startup_window_focus() {
+  focus_expected="$1"
+  bounded dumpsys window windows >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  focus_component=$(awk -v user="$ANDROID_USER" '
+    function normalise(c, a) {
+      split(c,a,"/"); if (substr(a[2],1,1)==".") c=a[1] "/" a[1] a[2]
+      if(c=="com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias") c="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity"
+      return c
+    }
+    /mCurrentFocus=/ {
+      if ($0 !~ (" u" user " ")) {bad=1; next}
+      v=$0; sub(/^.* u[0-9]+ /,"",v); sub(/[}[:space:]].*$/,"",v)
+      if(index(v,"/")<2) {bad=1; next}
+      count++; component=normalise(v)
+    }
+    END {if(count==1 && !bad) print component}
+  ' "$WINDOWS")
+  [ "$focus_component" = "$focus_expected" ] || fail STARTUP_FOCUS_CHANGED
+}
+
+validate_startup_source() {
+  case "$PKG" in com.tw.media|com.navimods.radio) ;; *) fail STARTUP_PACKAGE_BLOCKED ;; esac
+  valid_component "$startup_entry" || fail BAD_COMPONENT
+  case "$startup_entry" in "$PKG"/*) ;; *) fail COMPONENT_MISMATCH ;; esac
+  startup_entry=$(printf '%s\n' "$startup_entry" | awk ' {split($0,a,"/"); if(substr(a[2],1,1)==".") print a[1] "/" a[1] a[2]; else print $0}')
+  [ "$HOME_PKG" = com.cbkii.ts18launcher ] || fail BAD_HOME_PACKAGE
+  valid_uint "$home_task" || fail BAD_HOME_TASK
+  [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
+}
+
+require_startup_home() {
+  require_task "$HOME_PKG" "$home_task" 2
+  [ "$DISPLAY_ID" = 0 ] && [ "$WINDOWING_MODE" = 1 ] || fail HOME_STATE_CHANGED
+  case "$TASK_COMPONENT" in
+    com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias|com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity) ;;
+    *) fail HOME_COMPONENT_CHANGED ;;
+  esac
+  # Hist #0 can be a base Activity rather than the actual top. A HOME task with
+  # settings/permission history is not authority to focus its launcher Activity.
+  awk -v task="$home_task" '
+    /^[[:space:]]*(Display|Stack|RootTask) #/ {target=0}
+    /^[[:space:]]*Task id #[0-9]+/ {v=$0; sub(/^.*#/,"",v); sub(/[^0-9].*$/,"",v); target=(v==task)}
+    target && /Hist #[0-9]+:/ {count++}
+    END {exit count==1 ? 0 : 1}
+  ' "$SNAPSHOT" || fail HOME_ACTIVITY_HISTORY_UNCERTAIN
+}
+
 [ "$(id -u 2>/dev/null)" = 0 ] || fail ROOT_REQUIRED
 for required in am dumpsys awk getprop grep tr cut cat head; do
   command -v "$required" >/dev/null 2>&1 || fail "${required}_MISSING"
@@ -970,6 +1018,48 @@ case "$action" in
       wait_state "$PKG" "$wanted_task" 1 any || fail FULLSCREEN_REJECTED
       emit_protocol OK BACKGROUND_FULLSCREEN
     fi
+    ;;
+
+  startup-source)
+    PKG="${3:-}"; startup_entry="${4:-}"; HOME_PKG="${5:-}"; home_task="${6:-0}"
+    validate_startup_source
+    require_startup_home
+    require_handoff_foreground "$home_task" "$home_task"
+    require_startup_window_focus com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity
+    PHASE=dispatch
+    bounded am start --user "$ANDROID_USER" --display 0 -a android.intent.action.MAIN \
+      -c android.intent.category.LAUNCHER -f 0x10000000 -n "$startup_entry" >"$LAUNCH_OUTPUT" 2>&1
+    startup_rc=$?
+    if [ "$startup_rc" != 0 ] || grep -q -E 'Error:|Error type|Exception|Permission Denial:' "$LAUNCH_OUTPUT"; then
+      # Timeout or a generic exception can occur after admission. Never call it rejected.
+      if [ "$startup_rc" != 124 ] && [ "$startup_rc" != 137 ] && grep -q -E 'SecurityException|Security exception:|Permission Denial:|Error type 3|Error: Activity class .* does not exist' "$LAUNCH_OUTPUT"; then
+        fail STARTUP_SOURCE_REJECTED
+      fi
+      fail STARTUP_SOURCE_UNCERTAIN
+    fi
+    TASK_ID=unknown; TASK_COMPONENT="$startup_entry"; PKG="${3:-}"
+    emit_protocol OK STARTUP_SOURCE_DISPATCHED
+    ;;
+
+  startup-home)
+    PKG="${3:-}"; startup_entry="${4:-}"; startup_task="${5:-0}"
+    HOME_PKG="${6:-}"; home_task="${7:-0}"
+    validate_startup_source
+    valid_uint "$startup_task" || fail BAD_TASK
+    [ "$startup_task" -gt 0 ] && [ "$startup_task" != "$home_task" ] || fail BAD_TASK
+    require_startup_home
+    require_task "$PKG" "$startup_task" 2
+    [ "$DISPLAY_ID" = 0 ] && [ "$WINDOWING_MODE" = 1 ] || fail STARTUP_SOURCE_STATE_CHANGED
+    [ "$TASK_COMPONENT" = "$startup_entry" ] || fail STARTUP_SOURCE_COMPONENT_CHANGED
+    require_handoff_foreground "$startup_task" "$startup_task"
+    require_startup_window_focus "$startup_entry"
+    PHASE=focus
+    bounded am task focus "$home_task" >"$LAUNCH_OUTPUT" 2>&1 || fail HOME_FOCUS_FAILED
+    require_foreground_task "$home_task" HOME_NOT_FOREGROUND
+    require_startup_home
+    require_startup_window_focus com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity
+    PKG="$HOME_PKG"
+    emit_protocol OK STARTUP_HOME_RESTORED
     ;;
 
   park-windowed)

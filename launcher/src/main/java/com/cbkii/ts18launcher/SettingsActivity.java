@@ -366,7 +366,7 @@ public final class SettingsActivity extends Activity {
                             break;
                         case 6: chooseTesting("startup", new String[]{"background", "auto", "aggressive"},
                                 new String[]{"Background only · no foreground bootstrap", "Automatic fallback · foreground bootstrap then HOME restore",
-                                        "Aggressive · same guarded staging; no root launch replay"}); break;
+                                        "Aggressive · guarded root-first staging; no uncertain replay"}); break;
                         default: new AlertDialog.Builder(this).setTitle("Build and test identity")
                                 .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
                                         + "\n\n" + StartupReadinessCoordinator.get(this).summary()
