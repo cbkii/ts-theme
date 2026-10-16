@@ -180,6 +180,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         String pkg = packageFor(source);
         if (ready(source, pkg)) { policy.ready(source, r.generation, SystemClock.uptimeMillis()); runForegroundSoon(); return; }
         String opposite = packageFor(source == Source.MUSIC ? Source.RADIO : Source.MUSIC);
+        if (source == Source.RADIO && !MediaListenerService.hasNotificationAccess(context)) {
+            policy.block(source, r.generation, "notification-access-required", SystemClock.uptimeMillis());
+            runForegroundSoon(); return;
+        }
         if (media().isPlaying(pkg) || media().isPlaying(opposite)) {
             policy.block(source, r.generation, "playing-source-protected", SystemClock.uptimeMillis()); runForegroundSoon(); return;
         }
@@ -196,6 +200,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                     || !(top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.LauncherActivity")
                             || top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.HomeAlias"))) {
                 yieldStage(source, g, "home-ownership-unconfirmed"); return;
+            }
+            if (source == Source.RADIO && !MediaListenerService.hasNotificationAccess(context)) {
+                yieldStage(source, g, "notification-access-lost"); return;
             }
             if (media().isPlaying(pkg) || media().isPlaying(opposite)) {
                 yieldStage(source, g, "playing-source-arrived"); return;
@@ -215,7 +222,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
     private boolean validStage(int token) {
         return token == foregroundToken && foregroundAllowed() && safeScreen()
-                && foregroundSource != null && packageFor(foregroundSource).equals(packages[foregroundSource.ordinal()])
+                && foregroundSource != null
+                && (foregroundSource != Source.RADIO || MediaListenerService.hasNotificationAccess(context))
+                && packageFor(foregroundSource).equals(packages[foregroundSource.ordinal()])
                 && media().userCommandGeneration() == stagedCommands;
     }
     private void awaitStage(Source source, int g, String pkg, int token, long deadline) {

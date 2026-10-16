@@ -64,7 +64,7 @@ public final class Ts18LauncherApplication extends Application
             MediaEventTrace.record("storage", event.name().toLowerCase(java.util.Locale.ROOT), detail);
             ProcessMediaSessionMonitor.refresh(Ts18LauncherApplication.this);
             MediaListenerService.refreshActiveSessions();
-            if (RemovableMediaPolicy.shouldWarm(event, launcherResumed,
+            if (RemovableMediaPolicy.shouldReconcile(event,
                     UiPersonalizationPrefs.mediaStartupWarmup(Ts18LauncherApplication.this))) {
                 warmConfiguredMusicAfterMount();
             }

@@ -48,7 +48,7 @@ public Object getSystemService(String s){return switch(s){case "power"->new andr
             'com/cbkii/ts18launcher/platform/TopwayAdapter.java': 'package com.cbkii.ts18launcher.platform;public class TopwayAdapter {public static String defaultMusicPackage(android.content.Context c){return "com.tw.media";}}',
             'com/cbkii/ts18launcher/Doubles.java': '''package com.cbkii.ts18launcher;
 class ProcessMediaSessionMonitor {interface Observer{void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
-class MediaListenerService {static class Snapshot{}}
+class MediaListenerService {static boolean access=true;static boolean hasNotificationAccess(android.content.Context c){return access;}static class Snapshot{}}
 class Ts18LauncherApplication {static MediaSourceBootstrapper shared=new MediaSourceBootstrapper();static MediaSourceBootstrapper mediaSources(android.content.Context c){return shared;}}
 class MediaSourceBootstrapper {boolean musicReady,radioReady,musicPlaying;long commands;int warms,pauses;
 boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radioReady;}
@@ -78,7 +78,7 @@ public class Harness {
 static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
 static class Inline extends AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,TimeUnit u){return true;}}
 static StartupReadinessCoordinator create()throws Exception{
-Handler.reset();RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
+Handler.reset();MediaListenerService.access=true;RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
 RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);
 Ts18LauncherApplication.shared=new MediaSourceBootstrapper();Ts18LauncherApplication.shared.musicReady=true;
 Constructor<StartupReadinessCoordinator> c=StartupReadinessCoordinator.class.getDeclaredConstructor(android.content.Context.class);c.setAccessible(true);
@@ -111,6 +111,8 @@ StartupReadinessCoordinator playing=create();Ts18LauncherApplication.shared.musi
 check(AppResolver.launches==0,"playing music disrupted");playing.destroy();
 StartupReadinessCoordinator off=create();Handler.until(4000);off.onScreenOff();Handler.until(15000);
 check(android.app.ActivityManager.moves==0,"screen-off restore");off.destroy();
+StartupReadinessCoordinator denied=create();MediaListenerService.access=false;Handler.until(15000);
+check(AppResolver.launches==0,"unobservable radio launched");denied.destroy();
 StartupReadinessCoordinator commands=create();Handler.until(4000);Ts18LauncherApplication.shared.commands++;Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
 check(android.app.ActivityManager.moves==0&&Ts18LauncherApplication.shared.pauses==0,"transport request overwritten");commands.destroy();
 System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
