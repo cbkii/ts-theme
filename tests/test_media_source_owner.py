@@ -56,4 +56,3 @@ System.out.println("PASS effective source identity preserves one process owner")
             subprocess.run(['java', '-m', 'jdk.compiler/com.sun.tools.javac.Main',
                             '-d', str(root), str(root / 'Harness.java')], check=True, timeout=20)
             subprocess.run(['java', '-cp', str(root), 'Harness'], check=True, timeout=10)
-
