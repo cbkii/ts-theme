@@ -292,7 +292,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn("setMediaButtonsReady(radioPrevious, radioPlayPause, radioNext)", launcher)
         self.assertIn("setMediaButtonsReady(mediaPrevious, playPause, mediaNext)", launcher)
         self.assertIn("mediaBootstrapper.pausePackage", launcher)
-        self.assertIn("warmConfiguredSources", launcher)
+        self.assertIn("StartupReadinessCoordinator.get(this).onTrigger", launcher)
         self.assertIn("scheduleMediaReadiness()", launcher)
         self.assertIn("onWindowFocusChanged(boolean hasFocus)", launcher)
         self.assertIn("mediaText.setClickable(false)", launcher)

@@ -34,7 +34,8 @@ public final class NavTaskBridge {
             Task observed = resolve(stacks.invoke(service), pkg, user, hint);
             if (observed == null) { System.out.println("NONE"); return; }
             if (!"status".equals(action)) {
-                if (!"mode".equals(action) && !"probe-mode".equals(action))
+                if (!"mode".equals(action) && !"probe-mode".equals(action)
+                        && !"clear-fullscreen-bounds".equals(action))
                     throw new IllegalArgumentException("BAD_ACTION");
                 if (hint <= 0 || args.length != 6)
                     throw new IllegalArgumentException("TASK_AUTHORITY_REQUIRED");
@@ -48,13 +49,21 @@ public final class NavTaskBridge {
                 if (observed.foreignTop) throw new IllegalStateException("LEGITIMATE_FOREIGN_ACTIVITY");
                 if ("unknown".equals(observed.component))
                     throw new IllegalStateException("TOP_ACTIVITY_UNOBSERVED");
-                Method setMode = api.getMethod("setTaskWindowingMode", int.class, int.class, boolean.class);
-                if ("probe-mode".equals(action)) { mode = observed.mode; toTop = false; }
-                // No-op capability proof occurs in this exact root Binder caller first.
-                // Permission failure ends here; no transaction-number or policy fallback exists.
-                if (!"probe-mode".equals(action))
-                    setMode.invoke(service, observed.id, observed.mode, false);
-                setMode.invoke(service, observed.id, mode, toTop);
+                if ("clear-fullscreen-bounds".equals(action)) {
+                    if (observed.mode != 1 || mode != 1 || toTop)
+                        throw new IllegalStateException("FULLSCREEN_AUTHORITY_REQUIRED");
+                    // API29 resizeStack(null) removes compact override bounds. Never use a
+                    // display-sized non-null rectangle or touch a shared/foreign stack.
+                    Method resize = api.getMethod("resizeStack", int.class, Rect.class,
+                            boolean.class, boolean.class, boolean.class, int.class);
+                    resize.invoke(service, observed.stack, null, false, false, false, -1);
+                } else {
+                    Method setMode = api.getMethod("setTaskWindowingMode", int.class, int.class, boolean.class);
+                    if ("probe-mode".equals(action)) { mode = observed.mode; toTop = false; }
+                    if (!"probe-mode".equals(action))
+                        setMode.invoke(service, observed.id, observed.mode, false);
+                    setMode.invoke(service, observed.id, mode, toTop);
+                }
                 observed = resolve(stacks.invoke(service), pkg, user, hint);
                 if (observed == null || observed.mode != mode)
                     throw new IllegalStateException("MODE_NOT_VERIFIED");

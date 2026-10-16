@@ -4,7 +4,7 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public class NavigationOverlayGateTest {
-    @Test public void stoppedHomeStillDeliversPendingLaunchExactlyOnce() {
+    @Test public void stoppedHomeCancelsPendingLaunch() {
         NavigationOverlayGate gate = new NavigationOverlayGate();
         int[] shown = {0};
         gate.onVisible();
@@ -12,17 +12,8 @@ public class NavigationOverlayGateTest {
         gate.onStopped();
         gate.onSettled();
         gate.onVisible();
-        assertEquals(1, shown[0]);
+        assertEquals(0, shown[0]);
         assertFalse(gate.isPending());
-    }
-
-    @Test public void failedParkingReleaseDeliversLaunch() {
-        NavigationOverlayGate gate = new NavigationOverlayGate();
-        int[] shown = {0};
-        gate.request(() -> shown[0]++);
-        gate.release();
-        gate.release();
-        assertEquals(1, shown[0]);
     }
 
     @Test public void newestRequestReplacesOlderPendingLaunch() {
@@ -37,7 +28,7 @@ public class NavigationOverlayGateTest {
         assertEquals(100, shown[0]);
     }
 
-    @Test public void launchWaitsForParkingWhileHomeVisible() {
+    @Test public void homeBeforeCompletionStillCannotExposeLaunchButtons() {
         NavigationOverlayGate gate = new NavigationOverlayGate();
         int[] shown = {0};
         gate.request(() -> shown[0]++);

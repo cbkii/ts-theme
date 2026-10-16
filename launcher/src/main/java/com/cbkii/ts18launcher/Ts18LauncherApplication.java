@@ -27,10 +27,28 @@ public final class Ts18LauncherApplication extends Application
     private boolean launcherResumed;
     private boolean receiverRegistered;
     private long lastStorageWarmMs;
+    private MediaSourceBootstrapper mediaBootstrapper;
+    private String mediaConfiguration = "";
+
+    /** One playback-command/bootstrap owner survives HOME stop and Activity recreation. */
+    static MediaSourceBootstrapper mediaSources(Context context) {
+        Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();
+        String configuration = LauncherPrefs.packageFor(app, LauncherPrefs.KEY_MUSIC) + ":"
+                + RadioProvider.resolvePackage(app);
+        if (app.mediaBootstrapper == null || !configuration.equals(app.mediaConfiguration)) {
+            if (app.mediaBootstrapper != null) app.mediaBootstrapper.destroy();
+            app.mediaBootstrapper = new MediaSourceBootstrapper(app);
+            app.mediaConfiguration = configuration;
+        }
+        return app.mediaBootstrapper;
+    }
 
     private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                StartupReadinessCoordinator.get(Ts18LauncherApplication.this).onScreenOff(); return;
+            }
             // Screen-on is a wake observation only; it is never treated as verified ACC-on.
             StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
                     .onTrigger(StartupReadinessPolicy.Trigger.SCREEN_ON);
@@ -69,6 +87,7 @@ public final class Ts18LauncherApplication extends Application
         registerReceiver(storageReceiver, filter);
         receiverRegistered = true;
         IntentFilter wake = new IntentFilter(Intent.ACTION_SCREEN_ON);
+        wake.addAction(Intent.ACTION_SCREEN_OFF);
         wake.addAction(Intent.ACTION_USER_PRESENT);
         registerReceiver(wakeReceiver, wake);
         MediaEventTrace.record("process", "created");
@@ -138,6 +157,8 @@ public final class Ts18LauncherApplication extends Application
         }
         unregisterActivityLifecycleCallbacks(this);
         handler.removeCallbacksAndMessages(null);
+        StartupReadinessCoordinator.get(this).destroy();
+        if (mediaBootstrapper != null) mediaBootstrapper.destroy();
         ProcessMediaSessionMonitor.stop();
         MediaEventTrace.record("process", "terminated");
         super.onTerminate();

@@ -35,7 +35,7 @@ final class MediaCommandPolicy {
     }
 
     static boolean acknowledged(Desired desired, int state) {
-        if (desired == Desired.PLAY) return usesPauseAction(state);
+        if (desired == Desired.PLAY) return state == PlaybackState.STATE_PLAYING;
         if (desired == Desired.PAUSE) {
             return state == PlaybackState.STATE_PAUSED
                     || state == PlaybackState.STATE_STOPPED
@@ -52,7 +52,7 @@ final class MediaCommandPolicy {
     }
 
     static Phase phaseForController(int state, long actions) {
-        if (usesPauseAction(state)) return Phase.PLAYING;
+        if (state == PlaybackState.STATE_PLAYING) return Phase.PLAYING;
         if (controllerReadyForPlay(state, actions)) return Phase.READY;
         return Phase.CONNECTED;
     }

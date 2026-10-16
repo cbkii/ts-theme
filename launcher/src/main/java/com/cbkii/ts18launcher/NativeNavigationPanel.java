@@ -38,7 +38,19 @@ final class NativeNavigationPanel extends FrameLayout {
         secondaryAction.setText(secondaryLabel==null?"":secondaryLabel);
         secondaryAction.setVisibility(secondary==null?View.GONE:View.VISIBLE);
     }
-    void showStarting(String label,String backend){status.setText("Updating navigation…");setActions(null,null,null,null);}
+    private Runnable retryAction; private Runnable fullscreenAction;
+    void setRecoveryActions(Runnable retry,Runnable fullscreen){retryAction=retry;fullscreenAction=fullscreen;}
+    void showStarting(String label,String backend){
+        String message="Updating navigation…";
+        if(backend!=null){
+            if(backend.startsWith("Retry queued"))message="Retry queued…";
+            else if(backend.startsWith("Acquiring"))message="Starting navigation…";
+            else if(backend.startsWith("Verifying"))message="Checking navigation…";
+            else if(backend.startsWith("Repairing"))message="Restoring navigation…";
+        }
+        status.setText(message);
+        setActions("Retry",retryAction,"Open fullscreen",fullscreenAction);
+    }
     void showConfigured(String detail,Runnable openFullscreen){status.setText("");setAction("Open fullscreen",openFullscreen);}
     void showFailure(String detail,Runnable retry,Runnable openFullscreen){status.setText(detail==null||detail.isEmpty()?"Navigation unavailable":detail);setActions("Retry",retry,"Open fullscreen",openFullscreen);}
     void showUnavailable(String detail,Runnable openFullscreen){status.setText(detail==null||detail.isEmpty()?"Navigation unavailable":detail);setAction("Open fullscreen",openFullscreen);}

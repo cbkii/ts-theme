@@ -89,7 +89,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
-        mediaBootstrapper = new MediaSourceBootstrapper(this);
+        mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);
         rememberMediaConfiguration();
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
@@ -101,12 +101,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         navigationWindowController.setStartupListener((ready, boundary) ->
                 StartupReadinessCoordinator.get(this).reportNavigation(ready, boundary));
         startupHook = new StartupReadinessCoordinator.NavigationHook() {
-            @Override public void holdNavigation(boolean hold) {
-                if (navigationWindowController != null) navigationWindowController.setStartupHold(hold);
-            }
-            @Override public boolean hasNavigationTask() {
-                return navigationWindowController != null && navigationWindowController.hasNavigationTask();
-            }
+            @Override public boolean ready() { return navigationWindowController.startupNavigationReady(); }
+            @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
+            @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
         };
         StartupReadinessCoordinator.get(this).attachNavigationHook(startupHook);
 
@@ -208,10 +205,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (root == null) { super.onStop(); return; }
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        boolean commandPending = mediaStatusActive;
         mediaStatusGeneration++;
         mediaStatusActive = false;
-        if (commandPending) resetMediaBootstrapper();
         ProcessMediaSessionMonitor.removeObserver(this);
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
@@ -229,7 +224,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         StartupReadinessCoordinator.get(this).detachNavigationHook(startupHook);
         if (root != null) root.removeCallbacks(geometryUpdate);
         mediaRefreshHandler.removeCallbacksAndMessages(null);
-        if (mediaBootstrapper != null) mediaBootstrapper.destroy();
         if (appDrawerPanel != null) appDrawerPanel.destroy();
         if (mapPanel != null) mapPanel.destroy();
         if (navigationWindowController != null) navigationWindowController.destroy();
@@ -244,7 +238,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void runMediaReadiness() {
         if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-            mediaBootstrapper.warmConfiguredSources();
+            StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.HOME_RESUME);
         }
     }
 
@@ -265,8 +259,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void resetMediaBootstrapper() {
-        if (mediaBootstrapper != null) mediaBootstrapper.destroy();
-        mediaBootstrapper = new MediaSourceBootstrapper(this);
+        mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);
         rememberMediaConfiguration();
     }
 
@@ -613,6 +606,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void updateLabels() {
+        boolean tickerRadio = MediaSelection.RADIO.equals(mediaSelection.displayed());
+        mediaText.setSnapshot(tickerRadio ? radioSnapshot : genericSnapshot, mediaSelection.displayed());
         String radioPackage = RadioProvider.resolvePackage(this);
         String radioLabel = AppResolver.labelFor(this, radioPackage, radioPackage.isEmpty() ? "Set radio" : "Radio");
         AutomotiveUi.setIconWithCrossfade(this, radioPlayPause,

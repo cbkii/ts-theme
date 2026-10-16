@@ -1,5 +1,7 @@
 # TS18 repair candidate — guided validation
 
+> **PR #24 startup candidate (16 October 2026):** automatic startup code and the PR #25 post-validation repairs now require a new exact-head signed APK. Historical T11/T13/T14 failures remain open until retested. Use Startup B1–B10 and the short three-source smoke gate before a long campaign. No physical boot/ACC/silence acceptance is implied by CI.
+
 11 October 2026. Physical qualification is **NOT_RUN**. Use the signed repair candidate identified in the PR handoff; do not choose an APK by its upload date. PR16 `ae2dd07` is the comparison baseline with reported regressions, not the repaired build. Keep a known rollback APK and DoFun available.
 
 ## 1. Install and start once
@@ -27,13 +29,15 @@ The kit is local and read-only for device state. It writes its own private captu
 
 ## 2. Run the smoke gate first
 
+Before opening Termux, film the genuine boot/wake on a phone and leave HOME untouched for 90 seconds. Do not open Music, Radio, Maps or Termux during that observation. Then open this guide; S0 records that observation, and the post-boot capture reads retained history. **Never reboot a running Termux collector.** A phone video can span reboot; a Termux process cannot.
+
 Select **s**. Prepare a normal music library/storage connection and a radio station. In the launcher, select **Settings → Diagnostics & system → Testing methods** and begin with N1 / Bridge / L2. The guide starts a bounded capture with a measurement window of up to 300 seconds; preflight and post-capture inventory take additional time. Wait for **Trace is measuring now** before acting. If the measurement window expires between steps, the guide starts a new capture. Treat each capture as separate evidence: there can be a gap between them, so do not infer continuity across a restart.
 
 For each prompt, switch to HOME, perform the action once, return to Termux and press **p** (pass), **f** (fail), or **n** (not run/uncertain). Only report what you personally saw/heard. These are separate observations:
 
 | Step | Action | Pass requires |
 |---|---|---|
-| S0 | Genuine boot/ACC wake, no manual app opening, wait ≤90 s (Startup = Automatic fallback; compare Background only / Aggressive afterwards) | Music, Radio and compact Maps all ready; HOME returns after each brief app visit; nothing plays unprompted |
+| S0 | Record the before-guide boot/wake observation, no manual source opening, wait ≤90 s (Startup = Automatic fallback) | Music, Radio and compact Maps all ready; HOME returns after each brief app visit; nothing plays unprompted |
 | S1 | Music Play once | Audible music, not just a PLAYING flag |
 | S2 | Radio Play once | Audible radio without a second Play |
 | S3 | Music app icon, including while Maps starts | Music app opens despite compact-map failure |
@@ -48,6 +52,19 @@ S9 is conditional: choose **n** if there is no failure/Retry button. It remains 
 
 Returning to Termux changes focus. Phone video showing the full screen and finger is necessary to establish touch alignment or a brief fault between samples. If the state has already recovered, say so; a recovered screenshot does not show the original failure. A sealed archive proves collection completed, not that the app passed.
 
+## Startup B1–B10
+
+Main menu **b** opens one-letter P/F/N startup cases: B1 Android boot; B2 cold
+power-on; B3 verified ACC wake; B4 screen wake; B5 late USB; B6 playing-source
+protection; B7 natural permission/setup; B8 normal process recreation; B9 call/camera;
+B10 immediate user override. Each prompt gives the exact action and acceptance.
+Reboot/power/wake observations happen **before** entering the guide, on phone video.
+Other cases use their own bounded captures. Choose N when a condition is unavailable.
+Do not invent a reboot-spanning trace or clear app data to manufacture a cold state.
+DoFun and the existing rollback APK remain available. The source collector still
+requires the final signed handoff checksum; a source/build match alone is not APK
+signer/installed identity acceptance.
+
 ## 3. Compare methods in the same APK
 
 After smoke passes, select **c** for Screening. Choose methods through the app UI; the collector reads the selected profile automatically. It never silently changes it. Use **r** to repeat one case; do two comparable trials per method, with a third if they disagree. Each 90-second trial has its own hashes, starting tasks/processes, profile and logs.
@@ -56,11 +73,11 @@ After smoke passes, select **c** for Screening. Choose methods through the app U
 |---|---|---|
 | Navigation | N0 normal open | Compact disabled. Tap Navigation or Open navigation normally; root windowing is not required. |
 | Navigation | N1 direct compact | Start at HOME. A genuinely absent task can receive one freeform launch; pending/unknown dispatch is observed rather than relaunched. |
-| Navigation | N2 normal then compact | Choose Bridge. Open navigation normally, finish startup/downloads, wait for interactive map, then HOME. Convert that same task without Activity redelivery. An absent task reports NORMAL_OPEN_REQUIRED. |
+| Navigation | N2 normal then compact | Choose Bridge. Open navigation normally, finish startup/downloads, wait for interactive map, then HOME. Convert that same task without Activity redelivery. An absent task receives one normal bootstrap before same-task compact conversion; unknown launch outcomes are observed without repeating. |
 | Task transition | Bridge | Same-task mode API; unsupported/refused operation reports BLOCKED, with no automatic Intent substitute. |
 | Task transition | Intent comparator | N1 only. Same-task firmware Activity transition may redeliver current Activity. N2+Intent is BLOCKED. Compare on a warm fullscreen task returned to HOME; a task already in mode 5 does not exercise this variable. |
 | Departure | L1 retain / L2 background fullscreen | Change only after selecting a viable launch/transition method. Other app → HOME; record whether window-mode changes cause loss. |
-| Music | M0 bind / M1 advertised PREPARE | Keep Auxio fixed. M1 sends PREPARE at most once per connected token only if the installed session advertises it and is not already ready. Unsupported contracts remain blocked; no source Activity priming. |
+| Music | M0 bind / M1 advertised PREPARE | Keep Auxio fixed. M1 sends PREPARE at most once per connected token only if the installed session advertises it and is not already ready. Unsupported contracts remain blocked; background-only comparator disables the separate startup foreground stage. |
 | Radio | R1 root / R2 normal Android | Interactive service admission routes, separately selected. Neither is passive radio warming; each keeps one exact session/playback authority. |
 | Radio | R0 guarded automatic | Root first; ordinary admission only after definite refusal. Timeout/uncertain results get observation, not a duplicate start. |
 

@@ -74,6 +74,8 @@ function activity_record_component(line, value) {
 }
 function finish() {
   if (!matched) return
+  # Empty task records in Recents are history, not an occupied Activity task.
+  if (!hist0) { matched=0; hist0=0; return }
   count++
   if (count == 1) {
     out_task=task
@@ -359,7 +361,12 @@ corroborate_absence() {
   absence_pkg="$1"
   bounded dumpsys activity recents >"$RECENTS" 2>&1 || return 3
   grep -q 'ACTIVITY MANAGER RECENT TASKS' "$RECENTS" || return 3
-  grep -F "$absence_pkg" "$RECENTS" >/dev/null && return 3
+  # A detached sz=0 task has no Activity. Retain all other matching/unknown records.
+  awk -v pkg="$absence_pkg" '
+    /TaskRecord\{/ { empty=($0 ~ /StackId=-1 sz=0[} ]/) }
+    index($0, pkg) && !empty {live=1}
+    END {exit live ? 0 : 1}
+  ' "$RECENTS" && return 3
   bounded am stack list >"$STACKS" 2>&1 || return 3
   grep -q 'Stack id=' "$STACKS" || return 3
   grep -F "$absence_pkg" "$STACKS" >/dev/null && return 3
@@ -415,6 +422,12 @@ read_task_once() {
     [ "$observed_rc" = 2 ] && return 2
   fi
   case "$bridge_record" in *TASK_AMBIGUOUS*) return 2 ;; esac
+  if [ "$bridge_rc" = 0 ] && [ "$bridge_record" = NONE ] && [ "$observed_hint" -gt 0 ]; then
+    # NONE for one stale ID does not prove package-wide absence.
+    bridge_record="$(run_bridge status "$observed_pkg" 0 2>/dev/null)"
+    bridge_rc=$?
+    case "$bridge_record" in FOUND\ *|*TASK_AMBIGUOUS*) return 3 ;; esac
+  fi
   corroborate_absence "$observed_pkg"
 }
 
@@ -556,14 +569,16 @@ launch_freeform_once() {
   native_launch_supported || fail FREEFORM_LAUNCH_UNSUPPORTED
   claim_cold_launch
   journal_launch dispatching
-  bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 5 \
+  cold_mode=5
+  [ "$METHOD" != N2 ] || cold_mode=1
+  bounded am start --user "$ANDROID_USER" --display 0 --windowingMode "$cold_mode" \
     -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
     -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
   LAUNCH_EXIT=$?
   check_cold_launch_result FREEFORM_LAUNCH_FAILED FREEFORM_LAUNCH_UNSUPPORTED
   LAUNCHED=1
   PHASE=bootstrap
-  log_event "cold launch transaction=$TRANSACTION package=$PKG component=$component display=0 mode=5"
+  log_event "cold launch transaction=$TRANSACTION package=$PKG component=$component display=0 mode=$cold_mode"
 }
 
 launch_claim_path() {
@@ -582,7 +597,7 @@ claim_cold_launch() {
 
 journal_launch() {
   owner_ticks=$(awk '{sub(/^.*\) /, ""); print $20}' /proc/$$/stat) || fail LAUNCH_JOURNAL_FAILED
-  printf '%s %s %s method=%s transaction=%s uptime=%s\n' "$1" "$$" "$owner_ticks" "$METHOD" "$TRANSACTION" "$start_uptime" \
+  printf '%s %s %s method=%s transaction=%s uptime=%s task=%s\n' "$1" "$$" "$owner_ticks" "$METHOD" "$TRANSACTION" "$start_uptime" "$TASK_ID" \
     > "$launch_marker/state.$$" || fail LAUNCH_JOURNAL_FAILED
   mv "$launch_marker/state.$$" "$launch_marker/state" || fail LAUNCH_JOURNAL_FAILED
   log_event "launch-journal phase=$1 method=$METHOD transaction=$TRANSACTION owner=$$"
@@ -689,7 +704,12 @@ move_task_fullscreen() {
     PHASE=focus
     bounded am task focus "$wanted_task" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
   fi
-  wait_state "$pkg" "$wanted_task" 1 any || fail FULLSCREEN_REJECTED
+  PHASE=geometry
+  require_task "$pkg" "$wanted_task" 1
+  if [ "$TASK_BOUNDS" != 0,0,0,0 ]; then
+    run_bridge clear-fullscreen-bounds "$pkg" "$wanted_task" 1 0 >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_GEOMETRY_UNCONFIRMED
+  fi
+  wait_state "$pkg" "$wanted_task" 1 0,0,0,0 || fail FULLSCREEN_GEOMETRY_UNCONFIRMED
   require_foreground_task "$wanted_task" FULLSCREEN_NOT_FOREGROUND
   require_task "$pkg" "$wanted_task" 1
 }
@@ -756,12 +776,12 @@ case "$action" in
       case "$rc" in
         0) validate_observed_component ;;
         1)
-          [ "$METHOD" != N2 ] || fail NORMAL_OPEN_REQUIRED
           [ "$METHOD" != N0 ] || fail NORMAL_OPEN_REQUIRED
           require_home_presentation 0
           launch_freeform_once "$launch_component"
           PHASE=bootstrap
           require_task "$PKG" 0 1
+          journal_launch observed
           ;;
         2) fail TASK_AMBIGUOUS "count=${TASK_COUNT:-unknown}" ;;
         *) fail TASK_OBSERVATION_UNCERTAIN ;;
@@ -769,6 +789,11 @@ case "$action" in
     fi
 
     wanted_task="$TASK_ID"
+    restore_home=0
+    if [ "$METHOD" = N2 ] && launch_claim_path && [ -r "$launch_marker/state" ]; then
+      # Only the task observed after our own accepted cold launch owns this exception.
+      if grep -q "method=N2 .*task=$wanted_task$" "$launch_marker/state"; then restore_home=1; fi
+    fi
     require_bootstrap_ready
     PHASE=mode
     [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
@@ -776,7 +801,8 @@ case "$action" in
     # Android Q may reject resizeTask on a fullscreen configuration even when
     # resizeable=2. Establish mode 5 on this exact task before applying bounds.
     if [ "$WINDOWING_MODE" != 5 ]; then
-      require_home_presentation 0
+      if [ "$restore_home" = 1 ]; then require_home_presentation "$wanted_task"
+      else require_home_presentation 0; fi
       [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
       if [ "$TRANSITION" = bridge ]; then
         run_bridge mode "$PKG" "$wanted_task" 5 1 >"$LAUNCH_OUTPUT" 2>&1 || fail TASK_MODE_METHOD_BLOCKED
@@ -800,6 +826,13 @@ case "$action" in
     verify_state 5 "$expected"
     require_home_presentation "$wanted_task"
     PHASE=focus
+    if [ "$restore_home" = 1 ]; then
+      # Complete the owned normal bootstrap behind the same HOME before presenting mode 5.
+      # Recheck focus immediately; never restore over another app or permission Activity.
+      require_handoff_foreground "$wanted_task" "$home_identity_task"
+      bounded am task focus "$home_identity_task" >"$LAUNCH_OUTPUT" 2>&1 || fail HOME_FOCUS_FAILED
+      require_foreground_task "$home_identity_task" HOME_NOT_FOREGROUND
+    fi
     bounded am task focus "$wanted_task" >"$LAUNCH_OUTPUT" 2>&1 || fail FOCUS_FAILED
     require_foreground_task "$wanted_task" NATIVE_NOT_FOREGROUND
     require_task "$PKG" "$wanted_task" 1
@@ -879,7 +912,6 @@ case "$action" in
       0) hint="$TASK_ID" ;;
       1)
         # Read-only resolution has proved absence across recents, stacks and process.
-        [ "$METHOD" != N2 ] || fail NORMAL_OPEN_REQUIRED
         [ "$METHOD" != N0 ] || fail NORMAL_OPEN_REQUIRED
         valid_component "$cold_component" || fail COMPONENT_UNKNOWN
         case "$cold_component" in "$PKG"/*) ;; *) fail COMPONENT_PACKAGE_MISMATCH ;; esac

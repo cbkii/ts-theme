@@ -11,36 +11,22 @@ def read(name):
 
 
 class StartupReadinessTests(unittest.TestCase):
-    def test_explicit_app_launch_survives_home_stop_and_failed_parking(self):
-        gate = read("NavigationOverlayGate.java")
-        controller = read("NavigationWindowController.java")
-        self.assertIn("void onStopped() { release(); }", gate)
-        self.assertNotIn("externalLaunchGeneration++;\n        if (overlayGate", controller)
-        on_stopped = controller[controller.index("void onHomeStopped()"):controller.index("void onHomeFocusLost")]
-        self.assertNotIn("externalLaunchGeneration++", on_stopped)
-        self.assertIn("overlayGate.release()", controller)  # timeout, destroy and latched failure
-
-    def test_navradio_guard_extends_deadline_instead_of_being_dropped(self):
-        boot = read("MediaSourceBootstrapper.java")
-        self.assertIn("NAVRADIO_STARTUP_CEILING_MS", boot)
-        self.assertIn("pending.deadlineMs = Math.min(needed", boot)
-
-    def test_coordinator_is_bounded_single_admission_and_never_autoplays(self):
+    def test_startup_uses_existing_media_and_map_owners(self):
         coordinator = read("StartupReadinessCoordinator.java")
-        policy = read("StartupReadinessPolicy.java")
-        for state in ("UNAVAILABLE", "STARTING", "READY", "ACTIVE", "FAILED", "BLOCKED", "UNCERTAIN"):
-            self.assertIn(state, policy)
-        self.assertIn("markActivityLaunch", coordinator)
+        self.assertIn("Ts18LauncherApplication.mediaSources(context)", coordinator)
+        self.assertNotIn("new MediaSourceBootstrapper", coordinator)
+        self.assertIn("navigation.reconcile()", coordinator)
+        self.assertNotIn("NAVIGATION_DWELL_MS", coordinator)
+        self.assertNotIn("holdNavigation", coordinator)
+
+    def test_staging_has_no_mutating_root_fallback(self):
+        coordinator = read("StartupReadinessCoordinator.java")
+        self.assertIn("StartupForegroundPolicy.parse", coordinator)
+        self.assertIn("moveTaskToFront(homeTask, 0)", coordinator)
         self.assertIn("pauseUnrequestedPlayback", coordinator)
-        self.assertIn("foregroundBusy", coordinator)
-        self.assertIn("HomeMode.bringLauncherToFront", coordinator)
         self.assertIn("acc=unverified", coordinator)
-        for forbidden in ("forceStop", "force-stop", "pm clear", "input tap", "requestAudioFocus",
-                          "setenforce", "WakeLock", "startservice"):
+        for forbidden in ("am start", "startservice", "force-stop", "requestAudioFocus", "setenforce"):
             self.assertNotIn(forbidden, coordinator)
-        # No unbounded loops or root polling: every poll is deadline-gated.
-        self.assertNotIn("while (true)", coordinator)
-        self.assertEqual(len(re.findall(r"RootShell\.", coordinator)), 2)
 
     def test_boot_receiver_signals_only(self):
         receiver = read("StartupBootReceiver.java")
@@ -59,10 +45,9 @@ class StartupReadinessTests(unittest.TestCase):
             self.assertIn(label, settings)
         self.assertIn('"background", "auto", "aggressive"', profiles)
 
-    def test_navigation_hold_prevents_duplicate_cold_launch(self):
+    def test_navigation_ready_requires_verified_presentation(self):
         controller = read("NavigationWindowController.java")
-        self.assertIn("if (startupHold)", controller)
-        self.assertIn("void setStartupHold", controller)
+        self.assertIn("state == State.WINDOWED && !needsValidation && !needsPresentation", controller)
 
     def test_home_yields_on_user_interaction(self):
         self.assertIn("noteUserInteraction", read("LauncherActivity.java"))

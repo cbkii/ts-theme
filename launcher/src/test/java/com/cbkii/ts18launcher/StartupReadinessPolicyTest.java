@@ -36,6 +36,8 @@ public class StartupReadinessPolicyTest {
         assertFalse(p.admit(Source.MUSIC, Trigger.HOME_RESUME, 1000));
         assertFalse(p.admit(Source.MUSIC, Trigger.SCREEN_ON, 1000));
         assertTrue(p.admit(Source.MUSIC, Trigger.STORAGE_MOUNT, 1000));
+        assertFalse(p.admit(Source.MUSIC, Trigger.SESSION_LOST, 1000));
+        p.sessionLost(Source.MUSIC);
         assertTrue(p.admit(Source.MUSIC, Trigger.SESSION_LOST, 1000));
     }
 
@@ -107,4 +109,27 @@ public class StartupReadinessPolicyTest {
         assertEquals(State.READY, p.record(Source.NAVIGATION).state);
         assertFalse(p.observedReady(Source.NAVIGATION, 300));
     }
+    @Test public void sessionEventCannotReplayAnUncertainActivityLaunch() {
+        StartupReadinessPolicy p = new StartupReadinessPolicy();
+        int g = p.begin(Source.RADIO, Trigger.BOOT, Method.ACTIVITY_BOOTSTRAP, 0);
+        p.markActivityLaunch(Source.RADIO);
+        p.uncertain(Source.RADIO, g, "ownership-unknown", 100);
+        assertFalse(p.admit(Source.RADIO, Trigger.SESSION_LOST, 10000));
+    }
+    @Test public void configurationAndBootChangesCannotReuseCallbackGenerations() {
+        StartupReadinessPolicy p = new StartupReadinessPolicy();
+        int first = p.begin(Source.MUSIC, Trigger.BOOT, Method.BROWSER, 0);
+        p.configurationChanged(Source.MUSIC);
+        int second = p.begin(Source.MUSIC, Trigger.HOME_RESUME, Method.BROWSER, 100);
+        assertTrue(second > first);
+        assertFalse(p.ready(Source.MUSIC, first, 200));
+        p.resetForBoot();
+        int third = p.begin(Source.MUSIC, Trigger.BOOT, Method.BROWSER, 300);
+        assertTrue(third > second);
+        assertFalse(p.ready(Source.MUSIC, second, 400));
+    }
+    @Test public void missingBootCounterDoesNotManufactureAReboot() {
+        assertEquals(Kind.HOME_RETURN, classify(Trigger.HOME_RESUME, -1, 10));
+    }
+
 }

@@ -40,6 +40,7 @@ final class StartupReadinessPolicy {
         }
     }
 
+    private int nextGeneration;
     private final Map<Source, Record> records = new EnumMap<>(Source.class);
     private final Map<Trigger, Long> lastTrigger = new EnumMap<>(Trigger.class);
 
@@ -51,7 +52,7 @@ final class StartupReadinessPolicy {
 
     /** The boot counter is the only reliable full-boot discriminator; screen-on is not ACC-on. */
     static Kind classify(Trigger trigger, long bootCount, long lastSeenBootCount) {
-        if (trigger == Trigger.BOOT || bootCount != lastSeenBootCount) return Kind.FULL_BOOT;
+        if (trigger == Trigger.BOOT || (bootCount >= 0 && bootCount != lastSeenBootCount)) return Kind.FULL_BOOT;
         if (trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON) return Kind.SAME_BOOT_WAKE;
         return Kind.HOME_RETURN;
     }
@@ -78,8 +79,7 @@ final class StartupReadinessPolicy {
                 return false;
             case READY:
             case ACTIVE:
-                return trigger == Trigger.SESSION_LOST
-                        || (source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT);
+                return source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT;
             case FAILED:
             case UNAVAILABLE:
             case BLOCKED:
@@ -90,8 +90,8 @@ final class StartupReadinessPolicy {
                         && now - r.finishedMs < FAILED_RETRY_SPACING_MS) return false;
                 return true;
             case UNCERTAIN:
-                // Observe only; the caller must not relaunch while an accepted launch is unresolved.
-                return trigger == Trigger.SESSION_LOST || trigger == Trigger.STORAGE_MOUNT;
+                // Session callbacks are observations, not proof a prior launch failed.
+                return source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT;
             default:
                 return false;
         }
@@ -102,12 +102,11 @@ final class StartupReadinessPolicy {
         r.state = State.STARTING;
         r.method = method;
         r.trigger = trigger;
-        r.generation++;
+        r.generation = ++nextGeneration;
         r.attempts++;
         r.startedMs = now;
         r.finishedMs = -1L;
         r.firstFailingBoundary = "";
-        if (trigger == Trigger.SESSION_LOST) r.activityLaunchAccepted = false;
         return r.generation;
     }
 
@@ -153,7 +152,14 @@ final class StartupReadinessPolicy {
         if (r.state == State.READY || r.state == State.ACTIVE) {
             r.state = State.UNAVAILABLE;
             r.attempts = 0;
+            r.activityLaunchAccepted = false;
         }
+    }
+
+    void configurationChanged(Source source) {
+        Record replacement = new Record();
+        replacement.generation = ++nextGeneration;
+        records.put(source, replacement);
     }
 
     boolean markActivityLaunch(Source source) {

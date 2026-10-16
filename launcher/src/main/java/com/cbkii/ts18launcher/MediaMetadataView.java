@@ -15,16 +15,13 @@ import android.widget.TextView;
  * status, readiness messages and app labels are diagnostics, not now-playing metadata, and therefore
  * never replace the ticker contents.
  */
-final class MediaMetadataView extends LinearLayout implements MediaListenerService.Observer {
+final class MediaMetadataView extends LinearLayout {
     private final SlowMarqueeTextView primary;
     private final TextView secondary;
     private String lastPrimary;
     private String lastSecondary;
     private String lastSourceIdentity;
-    private MediaListenerService.Snapshot genericSnapshot =
-            new MediaListenerService.Snapshot("", "", "", false);
-    private MediaListenerService.Snapshot radioSnapshot =
-            new MediaListenerService.Snapshot("", "", "", false);
+    private String selectedSource = MediaSelection.MUSIC;
 
     MediaMetadataView(Context context) {
         super(context);
@@ -52,24 +49,10 @@ final class MediaMetadataView extends LinearLayout implements MediaListenerServi
         addView(secondary, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.85f));
     }
 
-    @Override protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        MediaListenerService.addObserver(this);
-        renderCurrentSnapshot();
-    }
-
-    @Override protected void onDetachedFromWindow() {
-        MediaListenerService.removeObserver(this);
-        super.onDetachedFromWindow();
-    }
-
-    @Override public void onMediaStateChanged(MediaListenerService.Snapshot genericMedia,
-                                               MediaListenerService.Snapshot radio) {
-        genericSnapshot = genericMedia == null
-                ? new MediaListenerService.Snapshot("", "", "", false) : genericMedia;
-        radioSnapshot = radio == null
-                ? new MediaListenerService.Snapshot("", "", "", false) : radio;
-        post(this::renderCurrentSnapshot);
+    /** The Activity supplies the same reconciled source used by transport icons. */
+    void setSnapshot(MediaListenerService.Snapshot snapshot, String selected) {
+        selectedSource = selected;
+        renderSnapshot(snapshot);
     }
 
     void applyAppearance() {
@@ -77,19 +60,11 @@ final class MediaMetadataView extends LinearLayout implements MediaListenerServi
         secondary.setTextColor(AutomotiveUi.color(getContext(), R.color.ui_text_secondary));
     }
 
-    /**
-     * LauncherActivity historically used this method for command/readiness status as well as real
-     * metadata. Keep the call surface for compatibility, but ignore those supplied strings and
-     * re-render from the authoritative media snapshot instead.
-     */
-    void setMetadata(String ignoredTitle, String ignoredContext) {
-        renderCurrentSnapshot();
-    }
+    /** Command/readiness diagnostics must never replace now-playing metadata. */
+    void setMetadata(String ignoredTitle, String ignoredContext) { }
 
-    private void renderCurrentSnapshot() {
-        String selected = LauncherPrefs.lastSource(getContext());
-        MediaListenerService.Snapshot snapshot = MediaSelection.RADIO.equals(selected)
-                ? radioSnapshot : genericSnapshot;
+    private void renderSnapshot(MediaListenerService.Snapshot snapshot) {
+        String selected = selectedSource;
         String sourceIdentity = sourceIdentity(snapshot);
         String appLabel = snapshot == null || snapshot.packageName.isEmpty()
                 ? "" : AppResolver.labelFor(getContext(), snapshot.packageName, "");
@@ -115,7 +90,7 @@ final class MediaMetadataView extends LinearLayout implements MediaListenerServi
     }
 
     private String sourceIdentity(MediaListenerService.Snapshot snapshot) {
-        String selected = LauncherPrefs.lastSource(getContext());
+        String selected = selectedSource;
         String packageName = snapshot == null ? "" : snapshot.packageName;
         if (packageName.isEmpty()) {
             if (MediaSelection.RADIO.equals(selected)) {

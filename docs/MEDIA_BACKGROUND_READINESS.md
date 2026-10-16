@@ -1,5 +1,7 @@
 # Background media readiness adapters
 
+> **Current implementation vs requested fix (16 October 2026):** This file describes the existing PR #17 background-only adapter. The owner reports that all Music, Radio and Maps cold-start profiles fail on the exact TS18. Automatic car-start readiness, application-scoped orchestration and controlled foreground Activity staging are **requested design, not current code**. See [automatic car-start readiness handoff](AUTOMATIC_CAR_START_READINESS_PLAN.md). The strict foreground ban below has been updated to authorise a gated implementation, not to claim it has shipped.
+
 This note records the evidence and implementation boundary for standalone-launcher fast media readiness. Vendor APK bytes are not committed. Static APK inspection establishes component contracts only; it does not replace installed-build/runtime qualification.
 
 ## Readiness model
@@ -10,7 +12,7 @@ The launcher keeps service start, controller connection, Play capability and pla
 - `IDLE`: no preparation is in flight.
 - `STARTING`: a bounded service/browser/session/command transaction is in flight.
 - `CONNECTED`: a service/session surface exists, but Play capability is not yet proven.
-- `READY`: the exact controller is reachable and advertises a usable Play action.
+- `READY` (current adapter semantics): the exact controller is reachable and advertises a usable Play action. **Not sufficient** to prove the restored Auxio queue/USB library or radio tuner/audio path is operational; the new coordinator must track source-specific operational readiness separately.
 - `PLAYING`: playback state has acknowledged the requested Play.
 - `BLOCKED`: the installed source has no qualified background route or a required prerequisite is absent.
 - `FAILED`: a bounded attempt ended without satisfying the requested contract.
@@ -71,9 +73,17 @@ The launcher Application dynamically observes public removable-media availabilit
 
 Root service commands run off the UI thread and target the launcher's current Android user rather than hard-coding user 0. Root does not imply platform signing, UID 1000 or OEM vehicle-service authority. Root acceptance, normal-Android fallback and final readiness are separately recorded in the local event trace.
 
-## Masked Activity fallback
+## Foreground fallback — authorised next design, NOT_IMPLEMENTED
 
-Readiness and transport contain no source-Activity fallback. Cold startup, dead-controller recovery and explicit Play remain background-only; masked priming is not a future fallback under the current product contract. App/source icons are intentional foreground requests.
+PR #17 contains **no source-Activity bootstrap or loader**; current service/session warm-up remains background-only, and source icons remain intentional foreground requests. The earlier absolute prohibition is superseded **for the separately reviewed car-start reliability change only**:
+
+- Prefer source-owned silent Browser/PREPARE or qualified exported foreground-service readiness first. Do not replay a root admission after an accepted/uncertain result.
+- When demonstrably insufficient, allow **one** authorised normal/root-assisted source Activity initialisation with genuine service/queue/tuner readiness observation; restore the already-owned ts-theme HOME task, preserve original source authority and do not auto-Play.
+- Never take focus from a foreign user-selected app or hide an active permission/settings screen. Calls/reverse camera/SystemUI take priority. Preserve exact task and Android user; no task clear, force-stop or injected taps.
+- A loader is a later **optional** presentation technique, not a startup contract, and requires overlay app-op and physical safety qualification. Without it, use visible staging or truthful BLOCKED.
+- Do not enable passive NavRadio tuning/routing, stock-radio startup or aggressive mode by default until qualified on the installed build.
+
+Boot, ACC wake and HOME resume are separate triggers. The current launcher manifest has no boot receiver, and this document does not claim car-start orchestration is implemented.
 
 ## Metadata/ticker
 
@@ -90,36 +100,54 @@ All output is under `/storage/emulated/0/Download/ts-theme/`.
 
 ## Physical qualification
 
+**New release blocker (owner observation, 15 October 2026):** the PR #17 Music/Radio/Maps methods do not reliably initialise cold; extended validation is deferred until an automatic three-source car-start smoke gate succeeds. Current CI and diagnostic-method options are not physical readiness evidence. Preserve and capture the original first failure, not a chain of repeated retries. The existing guided kit does not yet exercise an automatic boot/ACC-ready contract; see the handoff plan.
+
 Physical audible onset, installed NavRadio service side effects, stock TW Radio cold-control authority and ACC lifecycle are not claimed by repository CI. Treat a failed root/source prerequisite as BLOCKED for dependent tests, not as proof that every downstream media contract failed.
 
 For audible-latency work, use the monotonic `TS18Media` events to measure HOME lifecycle, readiness request, root/browser/service result, exact-session observation, command dispatch, playback acknowledgement and metadata render; record physical audible onset separately by observation. For launcher/process death and notification-listener restart, capture the smallest lifecycle scenario rather than using force-stop as a substitute for ordinary process death.
 
 Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; explicit listener refresh requests have a 15-second minimum spacing; no periodic timer is scheduled and storage events can request refresh while HOME is hidden. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
 
-## Startup Readiness Coordinator (cold-start reliability)
+## Startup readiness after physical validation (PR #24)
 
-Service-only readiness repeatedly failed on the exact TS18 after cold boot. `StartupReadinessCoordinator`
-(application-scoped, event-driven, bounded) now reconciles Music, Radio and Navigation independently.
+The process-owned startup ledger uses **the same** application-owned media bootstrapper
+as HOME transport, USB reconciliation and on-demand recovery. It owns no playback service,
+queue, focus, tuner, Maps Activity or window. Confirmed T11/T13/T14 repairs from PR #25
+are inherited without rewriting either branch. See
+[the startup repair ledger](STARTUP_VALIDATION_REPAIRS_2026-10-16.md).
 
-Triggers: `BOOT_COMPLETED` signal (never launches an Activity), process restart (classified by
-`Settings.Global.BOOT_COUNT`), HOME resume, screen-on/user-present (a wake observation only —
-**not** verified ACC-on), removable-storage mount (late USB for Auxio) and source session loss.
-Overlapping triggers are debounced; each source has one in-flight admission; healthy sources are not
-disturbed; failed sources retry at most 3 times per boot (late USB mount excepted).
+| Source | Preferred preparation | Bounded alternative |
+| --- | --- | --- |
+| Auxio-TS | Exported MediaBrowser + advertised PREPARE; require a non-empty queue or media ID/title plus Play capability | One normal entry-Activity stage when HOME owns the foreground and no source is playing |
+| NavRadio+ | Observe exact source session; require station/content and Play capability; no passive service start | One guarded normal entry-Activity stage, with one unwanted-playback Pause attempt and observed settlement |
+| Organic Maps | Existing navigation controller adopts/verifies a warm task | N1 direct compact or N2 once-normal-then-same-task compact; no second coordinator launch, fixed Splash timer or parallel claim |
 
-Per-source chain:
+`BOOT_COMPLETED` (non-exported signal-only receiver), process creation, HOME resume,
+screen-on/user-present, late USB and authoritative session changes request reconciliation.
+Screen-on is a wake hint, **not proof of ACC-on**. No proprietary ACC broadcast is invented.
+A late BOOT_COMPLETED does not reset in-flight work already admitted in the same boot.
+Missing boot counts do not manufacture reboot epochs. Retry admission is bounded within
+this process/observed boot; it is not a persistent hardware boot counter.
 
-| Source | Background phase | Foreground fallback (mode permitting) |
-|---|---|---|
-| Music (Auxio-TS) | Existing exported MediaBrowser contract; READY requires a usable queue/metadata plus Play support, not a token | Normal Activity launch once, wait for usable queue, restore HOME |
-| Radio (NavRadio+) | Observe exact session only (passive service start is unproven; Play-time service start unchanged, with the cold-play guard now extending the command deadline instead of being dropped) | Normal Activity launch once, wait for session, restore HOME; unrequested playback is paused once |
-| Navigation (Organic Maps) | Reuse a known healthy task | Normal Activity launch once (Splash/permissions allowed, no root), dwell, restore HOME, then the existing controller converts the **same task** to compact (N2 semantics). The controller is held so it cannot cold-launch concurrently; an accepted launch is never repeated |
+Background preparation is independent across sources. Foreground media stages are
+sequential, expire if not admitted, and yield after HOME interaction until a subsequent
+wake. They require an unlocked interactive screen, normal audio mode, default HOME,
+no playing opposite source and corroborated resumed-Activity/window-focus identity.
+Read-only root probes are bounded and run off the main thread. A source must remain in
+the same task and exact entry Activity before the launcher restores **its existing task**.
+Permission/setup screens, changed task/component, missing focus, calls, screen-off,
+new HOME transport intent, configuration changes or missing HOME yield safely.
+`REORDER_TASKS` supports restoring the launcher's own existing task; there is no root
+`am start` retry or force-stop. Task return and physical source behaviour remain unqualified.
 
-Testing choices (Settings → Testing methods → Startup): `Background only`, `Automatic fallback`
-(default), `Aggressive` (also root-assisted `am start` launch/HOME restore only after the normal route
-fails; no transient loader is implemented). The foreground pipeline yields on user interaction, calls
-(audio mode), or failure to regain HOME, and never kills/clears source apps.
+Settings → Testing methods → Startup: Background only disables media foreground staging;
+Automatic fallback enables the guarded path. The legacy Aggressive selection deliberately
+uses the same safe path; root replay is disabled. The separate N0/N1/N2 navigation profile
+still controls Maps. There is no loader. The preparation switch applies to media/startup
+reconciliation; it does not disable the existing native Maps surface.
 
-States: UNAVAILABLE, STARTING, READY, ACTIVE, FAILED, BLOCKED, UNCERTAIN, recorded with method,
-generation, first failing boundary and elapsed time in the `TS18Media` `startup/*` trace. READY means
-service/session or task observation only; audibility, ACC and cold boot remain physical checks.
+READY is source content/capability or verified compact-task presentation evidence,
+**not audible/tuner/GNSS/renderer/touch proof**. Startup Activity launch may have OEM or
+app side effects before a Pause is observable; a Pause dispatch cannot guarantee silence.
+No code-only result qualifies non-disruption. Keep all boot/cold-boot/ACC, late USB,
+phone/camera, startup silence and one-press audible gates NOT_RUN until physically tested.

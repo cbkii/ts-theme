@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix TS18 cold-start reliability: add an application-scoped Startup Readiness Coordinator (boot/wake/resume/USB/session-loss triggers, per-source state ledger, one in-flight admission, bounded foreground Activity bootstrap with HOME restoration and `Background only`/`Automatic fallback`/`Aggressive` testing choices); a pending explicit app launch is no longer lost when HOME stops or Maps parking fails; the NavRadio cold-Play guard extends the command deadline instead of being silently dropped; Maps is cold-started once normally and adopted into the compact window while the HOME controller is held. Physical boot/ACC qualification remains `NOT_RUN`.
+- Improve PR #24 startup using the physical T11/T13/T14 evidence and PR #25 repairs: one shared media owner, content-based readiness, event-driven recovery, guarded same-task HOME restoration, boot/source generation invalidation and cancellation on user/system interruption. Delegate Maps acquisition exclusively to the repaired N0/N1/N2 controller; remove timer-based Maps staging and duplicate root launch/return. Add beginner B1–B10 startup checks without rebooting a live Termux capture. Physical three-source boot/ACC acceptance remains NOT_RUN.
 
 - Merge PR #10's background-ready media contract into the native-navigation branch: Auxio-TS uses its exported MediaBrowser wrapper with bounded root priming, NavRadio+ uses its runtime-verified exported Media3 RadioService with root-first start and normal fallback, and exact stock `com.tw.radio` remains session-only. Media readiness never foreground-launches a source Activity; metadata is display-only and HOME start/resume/focus re-reconciles readiness.
 
