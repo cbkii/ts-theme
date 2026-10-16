@@ -252,8 +252,8 @@ public final class SettingsActivity extends Activity {
     private void renderMedia() {
         addSection("Playback");
         addSwitchRow(R.drawable.ic_power, "Prepare music and radio at startup",
-                "Keeps supported media sources ready through background service and MediaSession contracts. "
-                        + "It never opens a media app merely to prepare playback.",
+                "Prepares the selected sources automatically. The startup testing method may briefly open "
+                        + "an app and return HOME; physical readiness still needs testing.",
                 UiPersonalizationPrefs.mediaStartupWarmup(this),
                 checked -> UiPersonalizationPrefs.setMediaStartupWarmup(this, checked));
         addChoiceRow(R.drawable.ic_music, "Media control priority", mediaModeLabel(),
@@ -341,7 +341,8 @@ public final class SettingsActivity extends Activity {
                 "Task transition: " + TestingProfiles.transition(this),
                 "Departure: " + (TestingProfiles.retainCompact(this) ? "retain compact" : "background fullscreen"),
                 "Music: " + (TestingProfiles.prepareAuxio(this) ? "bind + supported PREPARE" : "bind only"),
-                "Radio: " + TestingProfiles.radio(this), "Open navigation normally", "Build and test identity"};
+                "Radio: " + TestingProfiles.radio(this), "Open navigation normally",
+                "Startup: " + TestingProfiles.startup(this), "Build and test identity"};
         new AlertDialog.Builder(this).setTitle("Testing methods")
                 .setItems(choices, (dialog, which) -> {
                     switch (which) {
@@ -363,8 +364,12 @@ public final class SettingsActivity extends Activity {
                             if (!NavigationProvider.open(this, navigationPackage, null))
                                 Toast.makeText(this, "Navigation could not open. Choose an installed Navigation app.", Toast.LENGTH_LONG).show();
                             break;
+                        case 6: chooseTesting("startup", new String[]{"background", "auto", "aggressive"},
+                                new String[]{"Background only · no foreground bootstrap", "Automatic fallback · foreground bootstrap then HOME restore",
+                                        "Aggressive · guarded root-first staging; no uncertain replay"}); break;
                         default: new AlertDialog.Builder(this).setTitle("Build and test identity")
                                 .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
+                                        + "\n\n" + StartupReadinessCoordinator.get(this).summary()
                                         + "\n\nReturn HOME after selecting a method. Keep the Maps APK fixed. "
                                         + "N2 starts once normally, then compacts the same map task; select Bridge. Complete any real permission/setup screens. "
                                         + "Use the guided collector for P/F/N results and export. No test clears app data.")

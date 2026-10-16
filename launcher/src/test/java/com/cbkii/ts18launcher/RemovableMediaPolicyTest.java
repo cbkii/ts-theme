@@ -34,4 +34,10 @@ public final class RemovableMediaPolicyTest {
         assertEquals(RemovableMediaPolicy.Event.IGNORE, event);
         assertFalse(RemovableMediaPolicy.shouldWarm(event, true, true));
     }
+    @org.junit.Test public void hiddenHomeDoesNotLoseLateUsbBackgroundReconciliation() {
+        org.junit.Assert.assertTrue(RemovableMediaPolicy.shouldReconcile(RemovableMediaPolicy.Event.AVAILABLE, true));
+        org.junit.Assert.assertFalse(RemovableMediaPolicy.shouldReconcile(RemovableMediaPolicy.Event.UNAVAILABLE, true));
+        org.junit.Assert.assertFalse(RemovableMediaPolicy.shouldReconcile(RemovableMediaPolicy.Event.AVAILABLE, false));
+    }
+
 }

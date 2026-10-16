@@ -43,6 +43,8 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertNotIn("mediaBootstrapper.destroy()", launcher)
         self.assertIn("mediaStatusGeneration++;", launcher)
         self.assertIn("mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);", launcher)
+        reconcile = launcher.split("private void reconcileMediaConfiguration()", 1)[1].split("private void resetMediaBootstrapper()", 1)[0]
+        self.assertIn("resetMediaBootstrapper();", reconcile)
         self.assertIn("radioPackage.equals(mediaRadioPackage)", launcher)
         self.assertIn("musicPackage.equals(mediaMusicPackage)", launcher)
 
@@ -51,8 +53,8 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
         self.assertIn('android:name=".Ts18LauncherApplication"', manifest)
         self.assertIn("Intent.ACTION_MEDIA_MOUNTED", app)
-        self.assertIn("RemovableMediaPolicy.shouldWarm", app)
-        self.assertIn("bootstrapper.warm(target);", app)
+        self.assertIn("RemovableMediaPolicy.shouldReconcile", app)
+        self.assertIn("StartupReadinessPolicy.Trigger.STORAGE_MOUNT", app)
         self.assertNotIn("bootstrapper.command", app)
         self.assertNotIn("startActivity", app)
         self.assertNotIn("forceStopPackage", app)

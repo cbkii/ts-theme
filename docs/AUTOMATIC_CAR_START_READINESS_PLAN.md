@@ -9,19 +9,28 @@
 - The user reported on 15 October that **cold Music, Radio and Maps all fail across profiles**, so the full testing campaign should not be repeated unchanged. This is direct physical user observation; a single shared root cause has **not** been proven.
 - Exact unit: Topway TS18 Android 10/API29, 1280×720, Magisk-capable. Actual user/HOME/firmware/installed source APKs, SELinux/caller namespace and vehicle ACC contracts must be rechecked, not inferred from static donors.
 
-## Current code: do not misrepresent as the proposed implementation
+## Historical PR #17 baseline and current implementation
+
+
+PR #25 adds normal N2 cold bootstrap and the single process media owner. PR #24 adds
+the three-source startup coordinator, signal-only boot receiver and guarded normal/root
+Activity staging; see [current startup ledger](STARTUP_VALIDATION_REPAIRS_2026-10-16.md)
+and [root guards](ROOT_READINESS_FALLBACKS.md). The table below describes the historical
+PR #17 baseline, not missing code at the current head. All physical acceptance remains
+NOT_RUN until a matching signed APK is exercised. Remaining qualification is tracked in
+[the finalisation ledger](STARTUP_FINALISATION_2026-10-16.md).
 
 | Component | Implemented in PR #17 | Missing for the requested outcome |
 | --- | --- | --- |
 | `LauncherActivity` + `Ts18LauncherApplication` | HOME-bound media warm-up and removable-storage reconciliation | Single application-owned boot/wake/source readiness transaction; retained ownership when HOME stops |
 | `MediaSourceBootstrapper` / adapters | Auxio Browser/PREPARE and interactive NavRadio service admission | Verified playable Auxio queue/USB library, silent Radio tuner/session readiness, separate admission/command/ack budgets |
-| `NavigationWindowController`, `nav-window.sh` | N0 ordinary open, N1 direct freeform, N2 normal cold bootstrap then compact (post-validation repair; physically unqualified); bounded observation and atomic uncertain launch claims | Automatic *real* cold Activity/renderer readiness then same-task compact conversion, regardless of N1 helper suitability |
+| `NavigationWindowController`, `nav-window.sh` | N0 ordinary open, N1 direct freeform, N2 required manual normal opening before compact (PR #17 only); bounded observation and atomic uncertain launch claims | Automatic *real* cold Activity/renderer readiness then same-task compact conversion, regardless of N1 helper suitability |
 | `NavigationOverlayGate` / source icons | Pending launch gate and focus/lifecycle cancellation | Unrelated Music/Radio app icons must work even if Maps is blocked; inspect cancellation path first |
 | `TestingProfiles`, `ts18-validate.sh` | N0/N1/N2, Bridge/Intent, M0/M1, Radio root/normal, P/F/N guided comparisons, exact-head build identity | Unattended automatic car-start smoke gate and final-head evidence of three ready sources together |
 
-The current manifest does **not** declare a boot receiver; `SYSTEM_ALERT_WINDOW` declaration is not evidence of a functioning loader. The existing PR #17 code deliberately does **not** launch source Activities for readiness. CI passing, installed APK, running process, accepted `am start`, MediaSession token or WMS visibility does not establish usable cold start.
+The historical PR #17 manifest did **not** declare a boot receiver; `SYSTEM_ALERT_WINDOW` declaration is not evidence of a functioning loader. The existing PR #17 code deliberately does **not** launch source Activities for readiness. CI passing, installed APK, running process, accepted `am start`, MediaSession token or WMS visibility does not establish usable cold start.
 
-## Required code outcome (future PR)
+## Required outcome and physical acceptance
 
 From a genuine Android boot or verified ACC wake, automatically prepare **all three** configured integrations, while HOME remains responsive:
 

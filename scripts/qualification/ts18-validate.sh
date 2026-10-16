@@ -5,7 +5,7 @@ set -u
 umask 077
 usage() {
 cat <<'HELP'
-TS18 consolidated qualification 2026-10-11 — repair candidate
+TS18 consolidated qualification 2026-10-16 — PR24 startup candidate
   help
   guide                     interactive, resumable one-letter test flow
   cases                     show every case and latest manual result
@@ -34,7 +34,7 @@ BB=/data/adb/magisk/busybox
 [ -x "$BB" ] || { echo 'STOPPED FOR SAFETY: enter the established Termux Kit s/st root lane; Magisk BusyBox is required.'; exit 1; }
 [ "$("$BB" id -u)" = 0 ] || { echo 'STOPPED FOR SAFETY: this comprehensive collector requires the explicit s/st root lane. It never calls su.'; exit 1; }
 SELF=$("$BB" readlink -f "$0") || exit 1
-ROOT=/data/data/com.termux/files/home/.ts18-pr-validation-repair-20261011-v3
+ROOT=/data/data/com.termux/files/home/.ts18-pr-validation-startup-pr24-20261016-v2
 BASE=$ROOT/toolkit
 EXPORT=/storage/emulated/0/Download/TS18-PR-Validation
 valid_label() {
@@ -631,14 +631,15 @@ group_flow() {
 }
 
 smoke_flow() {
-  echo 'SHORT SMOKE GATE: one continuous capture; no long repetition campaign.'
+  echo 'Before this guide: record a genuine boot/wake on phone video, leave HOME untouched for 90 s.'
+  echo 'Do not reboot a running collector. S0 is that prior observation; the new trace is post-boot.'
   echo 'Keep Maps fixed. Prepare music/storage/station normally. No force-stop or data clearing.'
   echo 'Use Settings > Diagnostics & system > Testing methods to choose N1, Bridge and L2.'
   echo 'Cold state is recorded from tasks/processes; do not guess that reboot means cold.'
   ask 'Enter=start capture, b=back:'
   [ "$answer" != b ] || return
   start_trace mapwindow 300 || return
-  for id in S1 S2 S3 S4 S5 S6 S7 S8 S9; do
+  for id in S0 S1 S2 S3 S4 S5 S6 S7 S8 S9; do
     line=$("$BB" awk -F '\t' -v id="$id" '$1==id {print $3 "\n" $4 "\nPASS: " $5}' "$CASES")
     printf '\n%s\nSwitch to HOME, do this action once, then return here.\n' "$line"
     ask 'p=Pass, f=Fail, n=Not Run/uncertain, b=stop:'
@@ -669,7 +670,7 @@ smoke_flow() {
 }
 screen_flow() {
   echo 'Select one method in Settings > Diagnostics & system > Testing methods, then return here.'
-  echo 'N0: normal opening only. N1: direct compact. N2: normal open first, then HOME; Bridge required.'
+  echo 'N0: normal opening only. N1: direct compact. N2: automatic normal cold bootstrap then compact; Bridge required. Do not manually prime the cold trial.'
   echo 'Hold launch method fixed when comparing Bridge vs Intent (N1 only), then L1 vs L2.'
   echo 'Compare M0/M1 or R1/R2 separately. Keep APKs, media/storage and permissions unchanged.'
   echo 'Profiles and exact installed hashes are read automatically for every trial.'
@@ -680,11 +681,12 @@ echo 'TS18 TESTING guided validation — one key plus Enter; no case ID to type.
 echo 'This guide never installs apps, changes HOME/settings or decides physical success for you.'
 echo 'Use it while parked. A passenger must handle any capture in a moving vehicle.'
 while :; do
-  printf '\n1 Baseline / APK identity  2 Launcher  3 Organic Maps  4 Diagnostics  5 Integration\n6 Cases/progress  7 Export archive  8 Status  9 Map-window trials  s Smoke gate  c Screening  0 Exit\n'
+  printf '\n1 Baseline / APK identity  2 Launcher  3 Organic Maps  4 Diagnostics  5 Integration\n6 Cases/progress  7 Export archive  8 Status  9 Map-window trials  s Smoke gate  c Screening  b Startup B1-B10  0 Exit\n'
   ask 'Choose one number:'
   case "$answer" in
     s) smoke_flow ;;
     c) screen_flow ;;
+    b) group_flow Startup ;;
     1) baseline ;;
     2) group_flow Launcher ;;
     3) group_flow 'Organic Maps' ;;
@@ -698,7 +700,7 @@ while :; do
     7) echo 'Export copies current evidence to Downloads. Incomplete trials stay incomplete.'; run export; pause ;;
     8) run status; pause ;;
     0) exit 0 ;;
-    *) echo 'Choose 0 through 9, s or c.' ;;
+    *) echo 'Choose 0 through 9, s, c or b.' ;;
   esac
 done
 TS18_EMBEDDED_PAYLOAD_2_END
@@ -740,6 +742,7 @@ W5	Map window	Bootstrap and permission ownership	Only when a real download/permi
 W6	Map window	Matched failed and recovered map	When the map is blank, frozen, cropped or touch is misplaced: do not press Retry. Run this trace while leaving failure visible 30 seconds. With phone video running use Retry ONCE only after the first 30 seconds, wait and test pan/menu. Do not reboot/clear data.	This is diagnostic comparison, not a recovery acceptance pass: record FAIL for original failure even if Retry recovers. Note whether capture began before or after failure.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
 W7	Map window	Overlay return and touch	One naturally available overlay at a time: SystemUI shade, regular phone call or reverse camera while parked. Dismiss it normally, return HOME, wait, pan and open menu. Record each overlay separately.	Overlay owns focus while active; map returns and touch is aligned afterwards. Unavailable variants Not Run.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
 W8	Map window	Layout and day/night lifecycle	Through ordinary launcher settings change rail/radio-side once; return HOME and test pan/menu. Use fullscreen and return. Change Maps day/night once through normal UI, test again. Restore original settings.	Map geometry, pixels and touch agree; unchanged mode returns do not lose route; real theme change remains usable. Record each variant separately.	During-transition screenshot/ATM/WMS/input/layer samples; full checkpoint; phone video and exact candidate hashes.
+S0	Smoke	Automatic cold-start readiness	Before opening Termux/this guide, record genuine boot or verified ACC wake on phone video; leave HOME untouched for 90 seconds without opening source apps (Startup=Automatic fallback). Now record that observation. Do NOT reboot a live collector.	All three become usable without manual opening: Music and Radio respond to one HOME Play, compact Maps is interactive; HOME returns each time; no unwanted audio.	Phone video spans boot/wake; post-boot capture reads retained logcat history and installed/profile identity. Not a continuous pre/post-reboot Termux trace.
 S1	Smoke	Music Play	Press Music Play once. Listen for music.	Audible music; opposite source is not interrupted before music starts.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S2	Smoke	Radio Play	Press Radio Play once. Listen for radio.	Audible radio with one tap; no repeated hidden service starts.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S3	Smoke	Music app icon	Tap the Music app icon once, including while Maps is starting.	Music app opens within the bounded handoff, even if compact Maps fails.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
@@ -749,7 +752,17 @@ S6	Smoke	Compact map	Return HOME. Wait at most 45 seconds; pan map and tap My Po
 S7	Smoke	Navigation rail	Tap the bottom Navigation rail button once.	Fullscreen request remains fullscreen; visible map accepts touch.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S8	Smoke	HOME return	Press HOME once; wait at most 45 seconds; pan compact map.	Compact map returns without Retry and without duplicated launch.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
 S9	Smoke	Retry acknowledgement	If a natural failure exists, tap Retry twice quickly and wait. Otherwise select n; this conditional case is not required on a healthy run.	Visible queued/recovery result; no silent tap loss, duplicate cold launch or unbounded loop.	Continuous trace and automatic installed/profile identity; phone video for touch/audio.
-C1	Screening	Selected method trial	Select one method through the app UI. Note the recorded starting state. For N0 use normal open; N1 use HOME compact; N2 open normally until map is ready then HOME. Pan and open menu. For media press one Play. Repeat this case twice from comparable recorded states, using r; use a third trial if results differ.	Requested method completes visibly/audibly; no hidden fallback. A blocked method is N/Blocked, not a fail of a different method. Warm and cold trials are separate.	Automatic profile, installed hashes, initial tasks/processes, correlated navigation/media events, window/input samples.
+C1	Screening	Selected method trial	Select one method through the app UI. Note the recorded starting state. For N0 use normal open; N1 use HOME compact; N2 cold: leave Maps unopened and let HOME bootstrap once (Bridge); warm: separately open normally then HOME. Pan and open menu. For media press one Play. Repeat this case twice from comparable recorded states, using r; use a third trial if results differ.	Requested method completes visibly/audibly; no hidden fallback. A blocked method is N/Blocked, not a fail of a different method. Warm and cold trials are separate.	Automatic profile, installed hashes, initial tasks/processes, correlated navigation/media events, window/input samples.
+B1	Startup	Full Android boot	Before opening this guide, film one genuine Android boot; leave HOME untouched for 90 seconds without opening any source. Now record that observation; never reboot a live collector.	Music, Radio and compact Maps ready without manual source opening; no unprompted audio. Phone video and post-boot history required.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B2	Startup	Cold power-on	Use a normally available safe full device power-on while parked, BEFORE this guide. Film startup and wait at HOME for 90 seconds. If cold power state cannot be established choose N.	Same three-source result as B1; record cold power state separately from ordinary Android reboot.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B3	Startup	Verified ACC wake	Using the normal parked vehicle controls, observe a genuine ACC sleep/wake on phone video. After wake leave HOME untouched 90 seconds, then start/resume the guide.	All three recover without manual opening; no duplicate launch or audio. Screen-on alone is not proof of ACC.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B4	Startup	Screen wake only	From a normal screen-off state wake the display without cycling ACC. If no such safe normal control exists choose N.	Healthy sources retained; no extra Activity takeover, automatic audio or claim of full reboot.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B5	Startup	Late music USB	Start at HOME with the normal music USB initially unavailable. Connect it using normal controls, wait 30 seconds, press Music Play once.	Audible music from the intended queue; no duplicate Play or unexpected Radio interruption.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B6	Startup	Playing source protection	With Music audibly playing return HOME and wait 20 seconds. Repeat separately with Radio playing. Do not press a second source Play during preparation.	Existing audio continues unchanged; no foreground preparation or source switch disrupts it.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B7	Startup	Natural permission/setup	If Maps or a media source naturally opens a permission, download or setup page during startup, leave it visible 10 seconds, complete it normally and return HOME. Do not revoke permissions to manufacture it.	Page remains usable with no forced HOME return or duplicate launch. Unavailable page is N/Not Run.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B8	Startup	Normal process recreation	Only if a safe ordinary app/process restart is naturally available, return HOME after launcher or source process recreation. Never clear data or force-stop from Termux.	Session/task adopted or recovered once; queue and navigation preserved. Unavailable restart is N.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B9	Startup	Call/camera non-disruption	One naturally available phone call or reverse-camera display at a time while parked; dismiss it normally then return HOME. Record each variant separately.	Protected UI remains visible/usable; no startup HOME theft or unsolicited audio. Unavailable variant is N.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+B10	Startup	User override during startup	During a fresh startup/loading phase tap a Music/Radio app icon or normal HOME control once. Return HOME normally and wait 20 seconds.	Requested action responds immediately; no stale startup action later steals the screen or pauses user-requested playback.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
 TS18_EMBEDDED_PAYLOAD_3_END
     cat > "$stage/pr-heads.json" <<'TS18_EMBEDDED_PAYLOAD_4_END'
 [
@@ -829,7 +842,7 @@ TS18_EMBEDDED_PAYLOAD_4_END
     cat > "$stage/candidates.tsv" <<'TS18_EMBEDDED_PAYLOAD_5_END'
 # package	allowed_sha256_comma_separated	source_in_same_order
 app.organicmaps.incar	debc44fd7ef096e8796be2911cb9580b732800a77c27afe92de6d6241532994a,205586cbecad377ad605eacd8ec04eed3d4b6ac1b1157aea562e4064da2fcf13	db57091f5daa0cb53b481b4205fad6db0ccb1c6f,c454a66e040f92a96ebaf4f4d20c8038bfc984ce
-com.cbkii.ts18launcher	FROM_SIGNED_HANDOFF	fix/testing-integration-recovery
+com.cbkii.ts18launcher	FROM_SIGNED_HANDOFF	copilot/fix-cold-start-reliability
 TS18_EMBEDDED_PAYLOAD_5_END
     cat > "$stage/ts18-startup-1.3.sh" <<'TS18_EMBEDDED_PAYLOAD_6_END'
 #!/system/bin/sh
@@ -1170,10 +1183,10 @@ TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
 cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
-f6a7186f100ac4487f4fa45198779a870ab7ffe2d94ef9efde409f284cd0da02  guide.sh
-57f467701a6923ea72fffc8ceca36dea1a5845a0982e77bbc9f4828dd5ad5f49  cases.tsv
+5a9633354a01e031f13dcbcdb4fe7e19244d46e7054795d890d7c1a3e26a25fb  guide.sh
+1e5c9c56df4ec0e74afafd82a447f9aa999ef175f6f328963522e2c2da544e03  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json
-f27eb0ba7c2b5f22e139627a9c4a03ad405c32ae5b983f5de369ece7a52cad79  candidates.tsv
+792384359fcb97ef695c5be56a516340e3baa309cdcae7dca04704e573309b80  candidates.tsv
 49e7cffda51dbf04adc863f69435bedf670111d4ebb3c48cfcc8cabe7cfd5f77  ts18-startup-1.3.sh
 TS18_EMBEDDED_PAYLOAD_7_END
 

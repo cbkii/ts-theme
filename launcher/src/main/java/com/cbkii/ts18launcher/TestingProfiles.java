@@ -10,6 +10,7 @@ final class TestingProfiles {
     static String navigation(Context c) { return choice(c, "navigation", "N1", "N0", "N1", "N2"); }
     static String transition(Context c) { return choice(c, "transition", "bridge", "bridge", "intent"); }
     static String radio(Context c) { return choice(c, "radio", "auto", "auto", "root", "normal"); }
+    static String startup(Context c) { return choice(c, "startup", "auto", "background", "auto", "aggressive"); }
     static boolean prepareAuxio(Context c) { return "prepare".equals(choice(c, "music", "prepare", "prepare", "bind")); }
     static boolean retainCompact(Context c) { return "retain".equals(choice(c, "departure", "fullscreen", "fullscreen", "retain")); }
     private static String choice(Context c, String key, String fallback, String... allowed) {
@@ -24,6 +25,6 @@ final class TestingProfiles {
     static String summary(Context c) {
         return "nav=" + navigation(c) + " transition=" + transition(c)
                 + " departure=" + (retainCompact(c) ? "retain" : "fullscreen")
-                + " music=" + (prepareAuxio(c) ? "prepare" : "bind") + " radio=" + radio(c);
+                + " music=" + (prepareAuxio(c) ? "prepare" : "bind") + " radio=" + radio(c) + " startup=" + startup(c);
     }
 }

@@ -14,18 +14,27 @@ final class AppResolver {
         return launched;
     }
 
+    enum LaunchOutcome { ACCEPTED, REJECTED, UNCERTAIN }
+
+    /** A SecurityException is a definite admission refusal; arbitrary runtime errors are not. */
+    static LaunchOutcome launchForStartup(Context context, String packageName) {
+        if (packageName == null || packageName.isEmpty()) return LaunchOutcome.REJECTED;
+        try {
+            Intent intent = context.getPackageManager().getLaunchIntentForPackage(packageName);
+            if (intent == null) return LaunchOutcome.REJECTED;
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+            return LaunchOutcome.ACCEPTED;
+        } catch (SecurityException | android.content.ActivityNotFoundException rejected) {
+            return LaunchOutcome.REJECTED;
+        } catch (RuntimeException uncertain) {
+            return LaunchOutcome.UNCERTAIN;
+        }
+    }
+
     /** Startup preparation must not change the user's selected media source merely by launching it. */
     static boolean launchPackageQuietly(Context context, String packageName) {
-        if (packageName == null || packageName.isEmpty()) return false;
-        Intent intent = context.getPackageManager().getLaunchIntentForPackage(packageName);
-        if (intent == null) return false;
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            context.startActivity(intent);
-            return true;
-        } catch (RuntimeException ignored) {
-            return false;
-        }
+        return launchForStartup(context, packageName) == LaunchOutcome.ACCEPTED;
     }
 
     static boolean launchComponent(Context context, String packageName, String activityName) {

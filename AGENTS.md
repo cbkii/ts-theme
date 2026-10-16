@@ -63,3 +63,30 @@
 - Treat the rolling **000 Testing Only Version** draft as an explicit engineering checkpoint, not per-commit CI. Request a TESTING snapshot by adding `testing-apk`, putting `/testing-apk` in the newest PR commit message, commenting `/testing-apk` in the PR conversation, or manually dispatching **Refresh Testing APK Draft** with the exact PR/ref/SHA. Inline review-thread comments are intentionally not a signing trigger. Request one whenever an installable artifact is needed for exact TS18 physical validation, especially before/after map, media/radio, HOME/lifecycle, SystemUI/geometry, root/integration or other device-only changes; when reproducing a hardware-only defect; when handing a build to a physical tester; or before a risky follow-up change where preserving the current device-testable point is useful. Do not trigger TESTING merely for docs-only/trivial edits that do not need installation or physical evidence. The draft retains two snapshot groups; its release notes are authoritative for PR/head/built SHA identity.
 - For source changes run `python3 tools/ts18_theme.py validate` and `python3 -m unittest discover -s tests -v`, relevant Bash/sh syntax and ShellCheck, and for standalone Android code `:launcher:lintDebug`, `:launcher:testDebugUnitTest`, `:launcher:assembleDebug` in the available CI/toolchain. Qualify one-DEX/runtime envelope against the signed/minified release, not debug. For **docs-only** changes, review Markdown links/contracts and the final diff; do not create a TESTING APK or claim Android tests executed solely for documentation.
 - Media observation is event-driven through the main-looper ProcessMediaSessionMonitor and notification listener, with explicit defensive refresh requests throttled to a 15-second minimum spacing. Notification-access authorisation is mandatory; neither browser tokens nor root bypass it. Geometry updates coalesce and compare root size, residual insets and rail/radio preferences; preserve the unchanged-placement guard and invalidate for newly added child views.
+
+## PR #24 startup follow-up (16 October 2026)
+
+PR #24 may use the owner-authorised, bounded foreground preparation path for configured
+Auxio-TS/NavRadio+ only after background readiness is insufficient. It must share
+`Ts18LauncherApplication.mediaSources`, yield to user/protected/permission flows, check
+foreground task/component ownership, and restore only the existing HOME task. Maps cold
+acquisition belongs exclusively to the navigation controller/helper claim. No second
+Maps launcher, fixed Splash dwell or root duplicate launch. The root-fallback follow-up
+allows only guarded root Activity admission after definite refusal (or explicit
+Aggressive root-first comparison), and exact existing-HOME task focus after a definite
+API SecurityException. Accepted/uncertain starts and uncertain HOME returns are never
+replayed; no root component relaunch is allowed for HOME. Physical
+non-disruption, silence and three-source boot/ACC readiness remain mandatory acceptance
+gates; automatic testing-profile staging is not a qualified production feature.
+
+
+## Integrated PR #24 finalisation
+
+The earlier “next work” paragraphs describe the frozen PR #17/#19 baseline. PR #24
+now implements the coordinator, signal-only boot receiver, one shared source owner,
+and bounded normal/root staging described above. Its finalisation fixes delayed N2
+claim adoption, cancellation ownership, effective source identity and separate Play/
+Pause handover budgets. See `docs/STARTUP_FINALISATION_2026-10-16.md`. Keep #19/#25
+ancestry and do not merge the parent independently: inherited review fixes live in
+#24. Software readiness is not audible/tuner/map-input qualification. Use one signed
+exact-head TESTING candidate and its hash-pinned P/F/N kit for the physical smoke gate.

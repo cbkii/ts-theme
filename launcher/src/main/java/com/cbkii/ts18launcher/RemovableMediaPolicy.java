@@ -21,6 +21,11 @@ final class RemovableMediaPolicy {
         return Event.IGNORE;
     }
 
+    /** Background reconciliation does not require HOME visibility; it cannot admit an Activity. */
+    static boolean shouldReconcile(Event event, boolean warmupEnabled) {
+        return event == Event.AVAILABLE && warmupEnabled;
+    }
+
     static boolean shouldWarm(Event event, boolean launcherResumed, boolean warmupEnabled) {
         return event == Event.AVAILABLE && launcherResumed && warmupEnabled;
     }

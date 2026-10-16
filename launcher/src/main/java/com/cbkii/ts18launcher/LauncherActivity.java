@@ -67,6 +67,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppDrawerPanel appDrawerPanel;
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
+    private StartupReadinessCoordinator.NavigationHook startupHook;
     private boolean launchedAsHome;
     private boolean redirectingToHome;
     private boolean locationPermissionRequested;
@@ -97,6 +98,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         nativeNavigationPanel = new NativeNavigationPanel(this);
         root.addView(nativeNavigationPanel);
         navigationWindowController = new NavigationWindowController(this, nativeNavigationPanel);
+        navigationWindowController.setStartupListener((ready, boundary) ->
+                StartupReadinessCoordinator.get(this).reportNavigation(ready, boundary));
+        startupHook = new StartupReadinessCoordinator.NavigationHook() {
+            @Override public boolean ready() { return navigationWindowController.startupNavigationReady(); }
+            @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
+            @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
+            @Override public void deferAutomaticPresentation(boolean defer) {
+                navigationWindowController.deferAutomaticStartupPresentation(defer);
+            }
+        };
+        StartupReadinessCoordinator.get(this).attachNavigationHook(startupHook);
 
         buildRail();
         buildRadioPanel();
@@ -206,7 +218,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onStop();
     }
 
+    @Override public void onUserInteraction() {
+        super.onUserInteraction();
+        StartupReadinessCoordinator.get(this).noteUserInteraction();
+    }
+
     @Override protected void onDestroy() {
+        StartupReadinessCoordinator.get(this).detachNavigationHook(startupHook);
         if (root != null) root.removeCallbacks(geometryUpdate);
         mediaRefreshHandler.removeCallbacksAndMessages(null);
         if (appDrawerPanel != null) appDrawerPanel.destroy();
@@ -223,7 +241,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void runMediaReadiness() {
         if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-            mediaBootstrapper.warmConfiguredSources();
+            StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.HOME_RESUME);
         }
     }
 
@@ -237,7 +255,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private void reconcileMediaConfiguration() {
         String radioPackage = RadioProvider.resolvePackage(this);
         String musicPackage = configuredMusicPackage();
-        if (radioPackage.equals(mediaRadioPackage) && musicPackage.equals(mediaMusicPackage)) return;
+        MediaSourceBootstrapper current = Ts18LauncherApplication.mediaSources(this);
+        if (current == mediaBootstrapper && radioPackage.equals(mediaRadioPackage)
+                && musicPackage.equals(mediaMusicPackage)) return;
         mediaStatusGeneration++;
         mediaStatusActive = false;
         resetMediaBootstrapper();
@@ -373,6 +393,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void radioCommand(MediaListenerService.Command command) {
+        reconcileMediaConfiguration();
         selectSource(MediaSelection.RADIO);
         String radioPackage = RadioProvider.resolvePackage(this);
         if (radioPackage.isEmpty()) { openPicker(LauncherPrefs.KEY_RADIO); return; }
@@ -384,6 +405,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void musicCommand(MediaListenerService.Command command) {
+        reconcileMediaConfiguration();
         selectSource(MediaSelection.MUSIC);
         String musicPackage = musicControlPackage();
         if (musicPackage.isEmpty()) { openPicker(LauncherPrefs.KEY_MUSIC); return; }

@@ -19,7 +19,7 @@ final class NavigationRootHelper {
     private static final Pattern COMPONENT = Pattern.compile(
             "[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+/(?:\\.[A-Za-z0-9_.$]+|[A-Za-z0-9_.$]+(?:\\.[A-Za-z0-9_.$]+)*)");
     private static final Pattern ACTION = Pattern.compile(
-            "probe|status|present-native|verify-native|resume-windowed|fullscreen|park-windowed|background-fullscreen|probe-task-mode");
+            "probe|status|present-native|verify-native|resume-windowed|fullscreen|park-windowed|background-fullscreen|probe-task-mode|startup-source|startup-home");
     private static final String ASSET = "nav/nav-window.sh";
     private static final String ROOT_DIR = "/data/adb/ts18-launcher";
     private static final String ROOT_HELPER = ROOT_DIR + "/nav-window.sh";

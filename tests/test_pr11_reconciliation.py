@@ -13,7 +13,7 @@ class Pr11ReconciliationTests(unittest.TestCase):
         self.assertIn("appDrawerPanel.preload()", launcher)
         self.assertIn("appsButton.setOnLongClickListener", launcher)
         self.assertIn("new Intent(this, SettingsActivity.class)", launcher)
-        self.assertIn("mediaBootstrapper.warmConfiguredSources()", launcher)
+        self.assertIn("StartupReadinessCoordinator.get(this).onTrigger", launcher)
         self.assertNotIn("STARTUP_BOOTSTRAP_CLAIMED", launcher)
         self.assertNotIn("StartupBootstrapCoordinator", launcher)
         self.assertNotIn("launchMediaBootstrap", launcher)

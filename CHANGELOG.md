@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Improve PR #24 startup using the physical T11/T13/T14 evidence and PR #25 repairs: one shared media owner, content-based readiness, event-driven recovery, guarded same-task HOME restoration, boot/source generation invalidation and cancellation on user/system interruption. Delegate Maps acquisition exclusively to the repaired N0/N1/N2 controller; remove timer-based Maps staging and duplicate root launch/return. Add beginner B1–B10 startup checks without rebooting a live Termux capture. Physical three-source boot/ACC acceptance remains NOT_RUN.
+
 - Merge PR #10's background-ready media contract into the native-navigation branch: Auxio-TS uses its exported MediaBrowser wrapper with bounded root priming, NavRadio+ uses its runtime-verified exported Media3 RadioService with root-first start and normal fallback, and exact stock `com.tw.radio` remains session-only. Media readiness never foreground-launches a source Activity; metadata is display-only and HOME start/resume/focus re-reconciles readiness.
 
 - Repair PR #11 after bounded-map rendering was physically demonstrated: validate HOME independently during suspension, explicitly restore existing fullscreen tasks to mode 5 before resizing/focusing, gate drawer and HOME app handoffs on completed suspension, and redirect ordinary launcher entry to the selected HOME alias. Restore sentinel-based Termux root capture, preserve command errors and rolling lifecycle logs, retain broad alternate-route discovery, and add stateful helper/capture and JVM handoff tests. Repeated warm recovery and touch remain physical validation gates.

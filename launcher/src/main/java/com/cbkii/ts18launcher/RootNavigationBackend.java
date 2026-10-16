@@ -11,7 +11,7 @@ import java.util.concurrent.Executors;
 abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private static final long KNOWN_TASK_RECHECK_DELAY_MS = 180L;
 
-    private enum AbsenceEvidence { PRESENT_IN_RECENTS, ABSENT, UNKNOWN }
+    private enum AbsenceEvidence { TASK_PRESENT, ABSENT, UNKNOWN }
 
     private final Context context;
     private final NavigationRootHelper helper;
@@ -217,7 +217,7 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
         // Do not let a weaker package process or empty historical Recents entry veto it.
         if (remaining() < 1500L || destroyed) return AbsenceEvidence.UNKNOWN;
         NavigationHelperResult live = helper.run("status", packageName, "0");
-        if (live.success) return AbsenceEvidence.PRESENT_IN_RECENTS;
+        if (live.success) return AbsenceEvidence.TASK_PRESENT;
         return "TASK_NOT_FOUND".equals(live.code) ? AbsenceEvidence.ABSENT : AbsenceEvidence.UNKNOWN;
     }
 
