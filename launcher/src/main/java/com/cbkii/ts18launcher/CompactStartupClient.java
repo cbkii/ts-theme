@@ -35,7 +35,9 @@ final class CompactStartupClient {
     private int request;
     private long until;
     private CancellationSignal cancel;
-    private final Runnable poll = this::refresh;
+    private final Runnable poll = () -> {
+        if (SystemClock.elapsedRealtime() < until) refresh();
+    };
 
     CompactStartupClient(Context context, java.util.function.Consumer<Snapshot> callback) {
         this.context = context.getApplicationContext(); this.callback = callback;
@@ -162,7 +164,7 @@ final class CompactStartupClient {
         failures = snapshot.compatible ? 0 : failures + 1;
         // The time limit bounds automatic polling. Authenticated lifecycle/preference
         // invalidations remain live after it so disabling startup or losing a surface is seen.
-        if (dirty) main.post(poll);
+        if (dirty) main.post(this::refresh);
         else if (SystemClock.elapsedRealtime() < until
                 && (snapshot.compatible && !snapshot.rendererReady || failures > 0))
             main.postDelayed(poll, snapshot.compatible ? 500L : Math.min(3000L, 500L * failures));

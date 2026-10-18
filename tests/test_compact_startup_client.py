@@ -68,7 +68,16 @@ c.close();c.close();ContentResolver.release.countDown();Thread.sleep(20);Handler
 // Invalidation authentication must leave the main looper and ignore untrusted UIDs.
 ContentResolver.block=false;int initial=CompactStartupPeer.auth.get();CompactStartupClient d=new CompactStartupClient(new Context(),s->{});
 Message m=new Message();m.what=1;m.sendingUid=123;Messenger.handler.handleMessage(m);waitFor(()->CompactStartupPeer.auth.get()>initial);
-Handler.until(7500);check(ContentResolver.observes.get()==3);d.close();d.close();
+Handler.until(7500);check(ContentResolver.observes.get()==3);
+// A timer scheduled just before expiry cannot initiate a query after the window.
+var until=CompactStartupClient.class.getDeclaredField("until");until.setAccessible(true);until.setLong(d,10000);
+var schedule=CompactStartupClient.class.getDeclaredMethod("scheduleNext",CompactStartupClient.Snapshot.class);schedule.setAccessible(true);
+SystemClock.now=9999;schedule.invoke(d,CompactStartupClient.Snapshot.unknown());Handler.until(11000);
+Thread.sleep(10);check(ContentResolver.observes.get()==3);
+// Genuine authenticated events remain observable after the periodic window expires.
+m=new Message();m.what=1;m.sendingUid=24000;Messenger.handler.handleMessage(m);
+var dpool=(java.util.concurrent.ThreadPoolExecutor)field.get(d);waitFor(()->dpool.getActiveCount()==0);Handler.until(11000);
+waitFor(()->ContentResolver.observes.get()==4);waitFor(()->dpool.getActiveCount()==0);Handler.until(11000);d.close();d.close();
 System.out.println("PASS actual client timeout/replacement/saturation/off-main-auth/double-close");}}
 ''',
         }
