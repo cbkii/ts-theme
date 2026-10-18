@@ -74,9 +74,11 @@ final class NavigationWindowController {
         CompactStartupClient.suppressForBoot(activity);
         cancelRecovery();
         if (activeOperationId != 0) {
-            // Cancel queued/unfinished work. The shell keeps any uncertain admission claim.
-            cancelActiveOperation(); pendingReconcile = false;
-            state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
+            // Keep the bounded transaction owned until its result/deadline. Destroying an
+            // executor cannot prove every privileged child has stopped. Its accepted/uncertain
+            // claim remains intact; late completion cannot trigger presentation or recovery.
+            pendingReconcile = false;
+            needsValidation = true; needsPresentation = true;
         }
         updateColdPolicy();
     }
@@ -343,6 +345,7 @@ final class NavigationWindowController {
             // Known tasks are read-only verified before any repair transaction.
             startVerify(configuredPackage, component, target, activeTaskId);
         } else {
+            if (automaticColdYielded && !explicitColdRequest) return;
             if (NavigationProvider.ORGANIC_MAPS_INCAR.equals(configuredPackage) && !explicitColdRequest && !compactResolved) {
                 panel.showStarting(label(configuredPackage), "Checking compact startup preference"); return;
             }
@@ -624,6 +627,12 @@ final class NavigationWindowController {
         operationTimeout = null;
         if (recovery.expired(SystemClock.elapsedRealtime())) {
             latchFailure(selectedPackage(), configuredMode, "ACTION_TIMEOUT"); drainPendingWork(); return false;
+        }
+        if (automaticColdYielded && !explicitColdRequest) {
+            state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
+            pendingReconcile = false;
+            finishPresentationCallback(false);
+            return false;
         }
         // A queued explicit action supersedes this result, including a success from the old goal.
         if (retryRequested || fullscreenRequested) {

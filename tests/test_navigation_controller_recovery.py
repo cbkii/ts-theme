@@ -175,8 +175,10 @@ public static void main(String[] args)throws Exception{
  android.view.View.drain();check(p.configured==1&&RawFreeformTaskBackend.presents==2,"queued Retry lost or duplicated");
  // User interaction cancels an unfinished automatic operation; a late result cannot win.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
- c.cancelAutomaticColdStart();RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
- android.view.View.drain();check(p.configured==0,"late automatic result won after user interaction");
+ c.cancelAutomaticColdStart();check(c.startupNavigationBusy(),"in-flight ownership discarded on yield");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
+ android.view.View.drain();check(p.configured==0&&!c.startupNavigationBusy(),"late automatic result won after user interaction");
+ int yieldedPresents=RawFreeformTaskBackend.presents;c.onHomeVisible();CompactStartupClient.deliver();android.view.View.drain();
+ check(RawFreeformTaskBackend.presents==yieldedPresents,"HOME/peer callback replayed yielded admission");c.destroy();
  // Source icons remain independent; superseded map callback cannot change the new action.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  int[] opened={0};c.launchAfterSuspension(()->opened[0]++);check(opened[0]==1,"source icon waits for callback");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
@@ -202,7 +204,7 @@ public static void main(String[] args)throws Exception{
  check("deny".equals(RawFreeformTaskBackend.coldPolicy),"disabled preference admitted automatic cold launch");c.destroy();
  RawFreeformTaskBackend.reset();CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,true,99);p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
  check(!c.startupNavigationReady(),"wrong renderer task was ready");c.destroy();
- RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);boolean[] ready={false};c.setStartupListener((ok,why)->ready[0]=ok);android.view.View.drain();
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();boolean[] ready={false};c=new NavigationWindowController(new android.app.Activity(),p);c.setStartupListener((ok,why)->ready[0]=ok);c.onHomeVisible();CompactStartupClient.deliver();android.view.View.drain();
  check(ready[0],"known renderer not ready");CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);CompactStartupClient.deliver();
  check(!ready[0]&&!c.startupNavigationReady(),"renderer readiness loss was not reported");c.destroy();
  check("N1".equals(NavigationHelperResult.parse("OK method=N1 naviName=foo_method=N2").method),"vendor metadata overrode exact method token");

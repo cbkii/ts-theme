@@ -26,8 +26,8 @@ stack is merged, rewritten or replaced.
   + compatible selected navigation package. This is not root or physical proof.
   The setting explains the requirement for authorised task control; root is
   verified by the existing helper at execution, with truthful refusal on failure.
-- Queries run off HOME's main thread, have cancellation/deadlines and never
-  accumulate parallel blocked Binder requests. Authenticated Messenger invalidations drive updates;
+- Queries and peer callback authentication run off HOME's main thread. Deadlines
+  invalidate late evidence; a non-queued two-worker pool bounds blocked Binder calls. Authenticated Messenger invalidations drive updates;
   500ms observation is limited to a 45s startup window. Missing, old, locked,
   stale or wrong-signer peers deny automatic cold launch. Warm task adoption and
   explicit user opening remain available.
@@ -133,7 +133,9 @@ Observer registration is limited to the authenticated peer and boot, and accepts
 Messenger Binder for invalidation. Callbacks carry no state and their sending UID is checked;
 there are no public renderer notifications. Provider authorities are resolved to the pinned
 package before querying/registering. Capability probes use a bounded two-worker pool with no
-queue; one stalled Binder cannot starve all future checks, and saturation fails closed.
+queue. One stalled call leaves a second slot available; two stalled calls fail closed
+until a worker returns. Registration and cleanup use the same bounded capacity; cleanup
+is idempotent and never blocks HOME. Android Binder calls are not assumed interruptible.
 
 The first attempted rollback archive returned HTTP403 bytes instead of the draft APK.
 The corrected workflow uploads only after verified complete preservation. No signed-pair
@@ -145,3 +147,22 @@ signed request while rollback remains unavailable; a successful source check is 
 that rollback bytes were preserved. User suppression is immediate in memory and uses Android's
 normal lifecycle-flushed preference write; abrupt kill before that flush is unqualified.
 Accepted/uncertain Activity admission remains protected by the durable root claim.
+
+## Resume hardening
+
+Authenticated event invalidations remain live after the 45-second automatic polling window;
+this is necessary to observe opt-out and renderer loss. The limit bounds periodic polling,
+not genuine peer events. Changes during callback delivery are drained by a version counter.
+New Activity creation publishes invalidation immediately.
+
+User yield retains ownership of an in-flight bounded root transaction until completion or
+its deadline; a late result cannot resume automatic presentation or admission. It does not
+claim that destroying a Java executor proves all privileged descendants stopped. Existing
+shell foreground guards and accepted/uncertain launch claims remain authoritative.
+Media foreground deferral invalidates the navigation wait epoch and starts a fresh bounded
+observation wait after release. Each Compact guide visit requires a new A0 smoke result;
+a retained PASS from another installed candidate cannot unlock A1–A16.
+
+Android Check on Maps f71a3aa compiled arm64 and passed lint, then exhausted the default
+2 GiB Java heap while merging x86 debug resources. The x86 packaging invocation now uses
+a 4 GiB heap and two Gradle workers; canonical final-head CI must verify the change.

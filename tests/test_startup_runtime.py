@@ -161,6 +161,13 @@ check(android.app.ActivityManager.moves==0&&Ts18LauncherApplication.shared.pause
 UiPersonalizationPrefs.enabled=false;
 StartupReadinessCoordinator navOnly=create(false);Handler.until(15000);
 check(navigationStarts==1&&AppResolver.launches==0,"media opt-out suppressed navigation or staged media");navOnly.destroy();
+// An active media lane invalidates the old wait; navigation gets a fresh budget on release.
+StartupReadinessCoordinator deferred=create(false);navReady=false;
+Field busy=deferred.getClass().getDeclaredField("foregroundBusy");busy.setAccessible(true);busy.setBoolean(deferred,true);
+java.lang.reflect.Method update=deferred.getClass().getDeclaredMethod("updateNavigationAdmission");update.setAccessible(true);update.invoke(deferred);
+Handler.until(22000);check(ledger(deferred).record(Source.NAVIGATION).state==State.STARTING,"deferred navigation wait expired");
+busy.setBoolean(deferred,false);update.invoke(deferred);check(navigationStarts==2,"navigation observation not restarted after deferral");
+Handler.until(22500);check(ledger(deferred).record(Source.NAVIGATION).state==State.READY,"released navigation did not become ready");deferred.destroy();
 UiPersonalizationPrefs.enabled=true;
 StartupReadinessCoordinator lost=create();lost.reportNavigation(true,"");lost.reportNavigation(false,"surface-detached");
 check(ledger(lost).record(Source.NAVIGATION).state==State.UNCERTAIN,"readiness loss retained READY");lost.destroy();

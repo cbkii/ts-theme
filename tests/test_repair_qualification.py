@@ -82,6 +82,24 @@ pause() { :; }
             self.assertNotIn('CASE A1', result.stdout)
             self.assertNotIn('CASE A3', result.stdout)
 
+    def test_compact_previous_pair_pass_cannot_skip_fresh_smoke(self):
+        source = (ROOT / 'scripts/qualification/ts18-validate.sh').read_text()
+        flow = source[source.index('group_flow() {'):source.index('smoke_flow() {')]
+        with tempfile.TemporaryDirectory() as directory:
+            cases = Path(directory) / 'cases.tsv'
+            cases.write_text('A0\tCompact\tSmoke\nA1\tCompact\tNext\n')
+            harness = """BB=/usr/bin/env
+CASES=$1
+verdict=PASS
+result_for() { [ "$1" != A0 ] || printf '%s' "$verdict"; }
+case_action() { echo "CASE $1"; verdict=FAIL; }
+pause() { :; }
+""" + flow + '\ngroup_flow Compact\n'
+            result = subprocess.run(['sh', '-c', harness, 'harness', str(cases)],
+                                    capture_output=True, text=True, check=True, timeout=5)
+            self.assertIn('CASE A0', result.stdout)
+            self.assertNotIn('CASE A1', result.stdout)
+
     @unittest.skipUnless(has_java_compiler(), 'Java required')
     def test_service_admission_does_not_replay_uncertain_results(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -610,12 +610,17 @@ EOF
 }
 group_flow() {
   group=$1
+  compact_smoke_passed=0
   for id in $("$BB" awk -F '\t' -v group="$group" '$2==group {print $1}' "$CASES"); do
-    if [ "$group" = Compact ] && [ "$id" != A0 ] && [ "$(result_for A0)" != PASS ]; then
+    if [ "$group" = Compact ] && [ "$id" != A0 ] && [ "$compact_smoke_passed" != 1 ]; then
       echo 'Compact smoke A0 has not passed. Result retained; returning to menu before long trials.'
       return
     fi
     previous=$(result_for "$id")
+    if [ "$group" = Compact ] && [ "$id" = A0 ]; then
+      echo 'A fresh A0 is required on every Compact guide visit for the current installed pair.'
+      previous=''
+    fi
     if [ -n "$previous" ]; then
       printf '\n%s already recorded: %s. Enter=next, r=repeat, b=menu: ' "$id" "$previous"
       IFS= read -r reply || exit 0
@@ -623,6 +628,9 @@ group_flow() {
     fi
     while :; do
       case_action "$id"; rc=$?
+      if [ "$group" = Compact ] && [ "$id" = A0 ] && [ "$rc" = 0 ] && [ "$(result_for A0)" = PASS ]; then
+        compact_smoke_passed=1
+      fi
       [ "$rc" != 2 ] || return
       [ "$group" = 'Map window' ] || [ "$group" = Screening ] || break
       echo 'One row is one observed trial; target counts apply separately to each exact APK pair.'
@@ -1205,7 +1213,7 @@ TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
 cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
-b55f17af40b3a8b5ea76defb874d3ad5797ea4507b2cd9126751588ba79d09d0  guide.sh
+3886ea78d402d783e62d5b3fdecf80780ed9780584a7ffb6f6708250fa433fad  guide.sh
 1f20cc78cf555a9cd77f620858c71d36161e34964374ef40e5803e7693e4e8a9  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json
 792384359fcb97ef695c5be56a516340e3baa309cdcae7dca04704e573309b80  candidates.tsv

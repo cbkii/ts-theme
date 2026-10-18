@@ -50,6 +50,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private long stagedCommands;
     private boolean pauseSent;
     private int navigationWaitGeneration = -1;
+    private int navigationWaitEpoch;
     private java.util.concurrent.atomic.AtomicBoolean stageLease = new java.util.concurrent.atomic.AtomicBoolean(false);
     private final StartupRootFallback rootFallback;
 
@@ -121,6 +122,12 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         // holds the presentation lane; a failed player never holds Maps behind its deadline.
         boolean defer = foregroundBusy;
         navigation.deferAutomaticPresentation(defer);
+        if (defer) {
+            // A media Activity owns the lane. Invalidate the old wait, then give navigation
+            // its full observation budget when foreground staging releases it.
+            navigationWaitGeneration = -1;
+            navigationWaitEpoch++;
+        }
         StartupReadinessPolicy.Record r = policy.record(Source.NAVIGATION);
         if (!defer && !yielded && r.state == State.STARTING && navigationWaitGeneration != r.generation) {
             navigationWaitGeneration = r.generation;
@@ -164,8 +171,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         return media().hasUsableQueue(pkg);
     }
     private void await(Source source, int g, String pkg, long deadline) {
+        final int waitEpoch = navigationWaitEpoch;
         handler.postDelayed(new Runnable() {
             @Override public void run() {
+                if (source == Source.NAVIGATION && waitEpoch != navigationWaitEpoch) return;
                 StartupReadinessPolicy.Record r = policy.record(source);
                 if (destroyed || r.generation != g || r.state != State.STARTING || !pkg.equals(packageFor(source))) return;
                 long now = SystemClock.uptimeMillis();

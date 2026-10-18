@@ -9,7 +9,7 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /** Preference/evidence observation only. NavigationWindowController retains task authority. */
 final class CompactStartupClient {
@@ -24,9 +24,10 @@ final class CompactStartupClient {
     }
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "compact-startup-query"); t.setDaemon(true); return t;
-    });
+    private final ExecutorService worker = new java.util.concurrent.ThreadPoolExecutor(
+            0, 2, 15L, TimeUnit.SECONDS, new java.util.concurrent.SynchronousQueue<>(), r -> {
+                Thread t = new Thread(r, "compact-startup-query"); t.setDaemon(true); return t;
+            });
     private final java.util.function.Consumer<Snapshot> callback;
     private final android.os.Messenger messenger;
     private boolean busy, closed, dirty;
@@ -45,8 +46,20 @@ final class CompactStartupClient {
         PeerHandler(CompactStartupClient client) { super(Looper.getMainLooper()); owner = new java.lang.ref.WeakReference<>(client); }
         @Override public void handleMessage(android.os.Message message) {
             CompactStartupClient client = owner.get();
-            if (client != null && !client.closed && message.what == 1
-                    && CompactStartupPeer.trusted(client.context, message.sendingUid)) client.refresh();
+            if (client != null && !client.closed && message.what == 1)
+                client.refreshFromPeer(message.sendingUid);
+        }
+    }
+
+    private void refreshFromPeer(int uid) {
+        if (closed) return;
+        try {
+            worker.execute(() -> {
+                boolean trusted = CompactStartupPeer.trusted(context, uid);
+                if (trusted) main.post(() -> { if (!closed) refresh(); });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException full) {
+            MediaEventTrace.record("compact-startup", "peer-auth-saturated");
         }
     }
 
@@ -89,13 +102,16 @@ final class CompactStartupClient {
         CancellationSignal signal = new CancellationSignal(); cancel = signal;
         Runnable timeout = () -> {
             if (!closed && busy && request == token) {
+                // Invalidate late evidence and release the request slot. At most two Binder
+                // workers can remain stuck; saturation fails closed without an unbounded queue.
+                request++; busy = false;
                 callback.accept(Snapshot.unknown());
-                // Remains busy until Binder returns; never accumulate parallel stuck queries.
                 workerCancel(signal);
+                scheduleNext(Snapshot.unknown());
             }
         };
         main.postDelayed(timeout, 2000L);
-        worker.execute(() -> {
+        try { worker.execute(() -> {
             Snapshot result = Snapshot.unknown();
             try {
                 int uid = context.getPackageManager().getApplicationInfo(CompactStartupPeer.PACKAGE, 0).uid;
@@ -130,17 +146,26 @@ final class CompactStartupClient {
             final Snapshot snapshot = signal.isCanceled() ? Snapshot.unknown() : result;
             main.post(() -> {
                 main.removeCallbacks(timeout);
-                busy = false;
                 if (closed || request != token) return;
+                busy = false;
                 callback.accept(snapshot);
-                main.removeCallbacks(poll);
-                failures = snapshot.compatible ? 0 : failures + 1;
-                if (dirty) main.post(poll);
-                else if (SystemClock.elapsedRealtime() < until
-                        && (snapshot.compatible && !snapshot.rendererReady || failures > 0 && failures < 3))
-                    main.postDelayed(poll, 500L);
+                scheduleNext(snapshot);
             });
-        });
+        }); } catch (java.util.concurrent.RejectedExecutionException full) {
+            main.removeCallbacks(timeout); busy = false;
+            callback.accept(Snapshot.unknown());
+            scheduleNext(Snapshot.unknown());
+        }
+    }
+    private void scheduleNext(Snapshot snapshot) {
+        main.removeCallbacks(poll);
+        failures = snapshot.compatible ? 0 : failures + 1;
+        // The time limit bounds automatic polling. Authenticated lifecycle/preference
+        // invalidations remain live after it so disabling startup or losing a surface is seen.
+        if (dirty) main.post(poll);
+        else if (SystemClock.elapsedRealtime() < until
+                && (snapshot.compatible && !snapshot.rendererReady || failures > 0 && failures < 3))
+            main.postDelayed(poll, 500L);
     }
     // Cancellation may itself cross Binder; do not block HOME's main thread.
     private void workerCancel(CancellationSignal signal) {
@@ -148,9 +173,10 @@ final class CompactStartupClient {
     }
     private static int number(Cursor c, String key) { return c.getInt(c.getColumnIndexOrThrow(key)); }
     void close() {
+        if (closed) return;
         closed = true; request++; main.removeCallbacksAndMessages(null);
         if (cancel != null) workerCancel(cancel);
-        worker.execute(() -> {
+        try { worker.execute(() -> {
             try {
                 if (CompactStartupPeer.ownsProvider(context, "app.organicmaps.incar.compact.startup")) {
                     android.os.Bundle observation = new android.os.Bundle();
@@ -159,7 +185,10 @@ final class CompactStartupClient {
                     context.getContentResolver().call(URI, "unobserve", "1", observation);
                 }
             } catch (RuntimeException unavailable) { MediaEventTrace.record("compact-startup", "unsubscribe-unavailable"); }
-        });
+        }); } catch (java.util.concurrent.RejectedExecutionException full) {
+            // The peer holds only a Binder to a weak handler. Cleanup must not block HOME.
+            MediaEventTrace.record("compact-startup", "unsubscribe-saturated");
+        }
         worker.shutdown();
     }
 }
