@@ -85,7 +85,7 @@ elif cmd == 'app_process':
     print('FOUND 42 4 0 %s %s %s unknown' % (s['mode'], ','.join(map(str,s['bounds'])), component))
 elif cmd == 'am':
     if a == ['help']:
-        print('start' if s.get('no_direct_options') else 'start --windowingMode --display'); sys.exit(0)
+        print('start' if s.get('no_direct_options') else 'start --windowingMode --display'); sys.exit(s.get('help_exit', 0))
     if a[:2] == ['stack', 'list']:
         print('Stack id=4 bounds=[0,0][1280,720] displayId=0 userId=0')
         if s.get('nav_alive', True): print('taskId=42: app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity')
@@ -219,6 +219,13 @@ class NavigationLifecycleTest(unittest.TestCase):
                 exception_launch=True, replays=2)
         self.assertEqual(1, state['start_dispatches'])
         self.assertEqual(1, state['automatic_claims'])
+
+    def test_inconclusive_help_never_selects_an_activity_method(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        result, state = self.run_helper(args, nav_alive=False, focus=7, cold_policy='automatic', help_exit=1, no_direct_options=True)
+        self.assertIn('LAUNCH_CAPABILITY_UNCERTAIN', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
 
     def test_missing_direct_options_uses_one_normal_n2_admission(self):
         args = ['present-native', '0', 'app.organicmaps.incar',

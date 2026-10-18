@@ -138,3 +138,10 @@ queue; one stalled Binder cannot starve all future checks, and saturation fails 
 The first attempted rollback archive returned HTTP403 bytes instead of the draft APK.
 The corrected workflow uploads only after verified complete preservation. No signed-pair
 request should prune PR17 until its bytes are retained or the owner authorises rotation.
+
+The archive attempt is optional source-CI evidence, not a newly enforced publisher dependency.
+The existing trusted signing/publishing workflow is unchanged. This execution withholds the
+signed request while rollback remains unavailable; a successful source check is not proof
+that rollback bytes were preserved. User suppression is immediate in memory and uses Android's
+normal lifecycle-flushed preference write; abrupt kill before that flush is unqualified.
+Accepted/uncertain Activity admission remains protected by the durable root claim.

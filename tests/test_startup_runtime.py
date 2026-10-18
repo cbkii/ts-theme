@@ -30,8 +30,8 @@ public static void reset(){jobs.clear();SystemClock.now=100;}}
             'android/app/KeyguardManager.java': 'package android.app;public class KeyguardManager {public boolean isKeyguardLocked(){return false;}}',
             'android/media/AudioManager.java': 'package android.media;public class AudioManager {public static final int MODE_NORMAL=0;public int getMode(){return 0;}}',
             'android/content/SharedPreferences.java': '''package android.content;public class SharedPreferences {
-long value=-1;public long getLong(String k,long d){return value;}public Editor edit(){return new Editor();}
-public class Editor {public Editor putLong(String k,long v){value=v;return this;}public void apply(){}}}''',
+long value=-1;public int getInt(String k,int d){return d;}public long getLong(String k,long d){return value;}public Editor edit(){return new Editor();}
+public class Editor {public Editor remove(String k){return this;}public Editor putLong(String k,long v){value=v;return this;}public void apply(){}}}''',
             'android/content/Context.java': '''package android.content;public class Context {
 public static final String POWER_SERVICE="power",KEYGUARD_SERVICE="key",AUDIO_SERVICE="audio",ACTIVITY_SERVICE="activity";public static final int MODE_PRIVATE=0;
 SharedPreferences prefs=new SharedPreferences();public Context getApplicationContext(){return this;}
@@ -111,7 +111,7 @@ check(!top.matches(1,10,"com.cbkii.ts18launcher/.LauncherActivity"),"wrong user"
 StartupReadinessCoordinator s=create();int g=ledger(s).record(Source.RADIO).generation;
 s.onTrigger(Trigger.BOOT);check(ledger(s).record(Source.RADIO).generation==g,"late boot reset active generation");
 check(!navigationDeferred,"Maps incorrectly waited on read-only media preparation");
-Handler.until(4000);check(AppResolver.launches==1,"radio not staged once");
+Handler.until(4000);check(AppResolver.launches==1&&navigationDeferred,"radio stage did not hold navigation presentation");
 Ts18LauncherApplication.shared.radioReady=true;
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);s.onHomeResumed(new android.app.Activity());};
 Handler.until(8000);check(android.app.ActivityManager.moves==1,"exact HOME not restored");check(ledger(s).record(Source.RADIO).state==State.READY,"content not ready");check(!navigationDeferred,"Maps stayed deferred after media");s.destroy();
@@ -162,6 +162,8 @@ UiPersonalizationPrefs.enabled=false;
 StartupReadinessCoordinator navOnly=create(false);Handler.until(15000);
 check(navigationStarts==1&&AppResolver.launches==0,"media opt-out suppressed navigation or staged media");navOnly.destroy();
 UiPersonalizationPrefs.enabled=true;
+StartupReadinessCoordinator lost=create();lost.reportNavigation(true,"");lost.reportNavigation(false,"surface-detached");
+check(ledger(lost).record(Source.NAVIGATION).state==State.UNCERTAIN,"readiness loss retained READY");lost.destroy();
 System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
 }}
 '''

@@ -572,6 +572,7 @@ launch_freeform_once() {
   # using ordinary Activity admission followed by the existing same-task bridge.
   direct_options=1
   if ! native_launch_supported; then
+    [ "$HELP_EXIT" = 0 ] || fail LAUNCH_CAPABILITY_UNCERTAIN
     METHOD=N2
     TRANSITION=bridge
     direct_options=0
@@ -620,7 +621,10 @@ claim_cold_launch() {
     # Durable once-per-boot admission, retained after renderer/task success and process loss.
     # Existing tasks are adopted before reaching this boundary. Explicit Retry remains separate.
     mkdir "$automatic_marker" 2>/dev/null || fail AUTOSTART_ALREADY_CLAIMED
-    printf 'version=1 boot=%s user=%s package=%s generation=1\n' "$current_boot" "$ANDROID_USER" "$PKG" > "$automatic_marker/identity" || fail LAUNCH_JOURNAL_FAILED
+    printf 'version=1 boot=%s user=%s package=%s generation=1\n' "$current_boot" "$ANDROID_USER" "$PKG" > "$automatic_marker/identity" || {
+      clear_automatic_refusal
+      fail LAUNCH_JOURNAL_FAILED
+    }
   fi
   # Atomic across every cold-launch path and helper process. Time alone cannot
   # resolve an accepted/uncertain dispatch, including an explicit fullscreen one.

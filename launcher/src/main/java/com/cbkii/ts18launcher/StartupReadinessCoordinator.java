@@ -66,6 +66,11 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         long now = SystemClock.uptimeMillis(), boot = bootCount();
         SharedPreferences prefs = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
         long seen = prefs.getLong("boot_count", -1L);
+        int pendingBoot = prefs.getInt("pending_boot_v1", -1);
+        if (trigger == Trigger.HOME_RESUME && pendingBoot >= 0) {
+            prefs.edit().remove("pending_boot_v1").apply();
+            MediaEventTrace.record("startup", "durable-boot-reconcile", "pending=" + pendingBoot + " current=" + boot);
+        }
         Kind kind = StartupReadinessPolicy.classify(trigger, boot, seen);
         // BOOT_COMPLETED can arrive after process/HOME startup: never reset active admissions twice.
         if (boot >= 0 && boot != seen) {
@@ -139,8 +144,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         StartupReadinessPolicy.Record r = policy.record(Source.NAVIGATION);
         if (success) policy.observedReady(Source.NAVIGATION, SystemClock.uptimeMillis());
         else {
-            policy.block(Source.NAVIGATION, r.generation, boundary, SystemClock.uptimeMillis());
-            if (r.state == State.READY) policy.sessionLost(Source.NAVIGATION);
+            if (r.state == State.READY || r.state == State.ACTIVE)
+                policy.observedUnavailable(Source.NAVIGATION, boundary, SystemClock.uptimeMillis());
+            else policy.block(Source.NAVIGATION, r.generation, boundary, SystemClock.uptimeMillis());
         }
         MediaEventTrace.record("startup", "navigation", summary());
     }
@@ -222,6 +228,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             policy.block(source, r.generation, "entry-unavailable", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
         }
         foregroundBusy = true; foregroundSource = source;
+        updateNavigationAdmission();
         stageLease = new java.util.concurrent.atomic.AtomicBoolean(true);
         int token = ++foregroundToken, g = r.generation;
         homeTask = activity.getTaskId(); stagedTask = -1;

@@ -156,6 +156,14 @@ final class StartupReadinessPolicy {
         }
     }
 
+    /** Evidence loss does not revoke an accepted Activity claim or authorise another admission. */
+    void observedUnavailable(Source source, String boundary, long now) {
+        Record r = records.get(source);
+        r.state = State.UNCERTAIN;
+        r.finishedMs = now;
+        if (r.firstFailingBoundary.isEmpty()) r.firstFailingBoundary = boundary;
+    }
+
     void configurationChanged(Source source) {
         Record replacement = new Record();
         replacement.generation = ++nextGeneration;

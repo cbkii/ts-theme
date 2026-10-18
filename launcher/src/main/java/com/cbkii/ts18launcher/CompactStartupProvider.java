@@ -21,7 +21,8 @@ public final class CompactStartupProvider extends ContentProvider {
         boolean available = android.os.Build.VERSION.SDK_INT == 29 && HomeMode.isDefaultHome(context)
                 && HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(HomeNavigationSurfacePolicy.mode(context));
         String configured = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_NAV);
-        available &= configured.isEmpty() || CompactStartupPeer.PACKAGE.equals(configured);
+        available &= (configured.isEmpty() || CompactStartupPeer.PACKAGE.equals(configured))
+                && NavigationProvider.hasLauncherActivity(context, CompactStartupPeer.PACKAGE);
         MatrixCursor cursor = new MatrixCursor(new String[] {"protocol", "available", "root_qualified", "boot", "user"});
         cursor.addRow(new Object[] {1, available ? 1 : 0, 0, boot, android.os.Process.myUid() / 100000});
         return cursor;

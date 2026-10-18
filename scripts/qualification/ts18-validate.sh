@@ -578,7 +578,7 @@ EOF
   else
     trace_mode=forensic
     [ "$id" != D15c ] || trace_mode=performance
-    case "$id" in W*|C*) trace_mode=mapwindow ;; esac
+    case "$id" in W*|C*|A*) trace_mode=mapwindow ;; esac
     trial_seconds=300; [ "$group" != Screening ] || trial_seconds=90
     printf 'Prepare the app before the %s trace. The 300-second measurement window begins after initial probes.\n' "$trace_mode"
     echo 'A long sleep/boot/idle sequence may exceed it. Note the actual boundary and use N for uncovered variants.'
@@ -611,6 +611,10 @@ EOF
 group_flow() {
   group=$1
   for id in $("$BB" awk -F '\t' -v group="$group" '$2==group {print $1}' "$CASES"); do
+    if [ "$group" = Compact ] && [ "$id" != A0 ] && [ "$(result_for A0)" != PASS ]; then
+      echo 'Compact smoke A0 has not passed. Result retained; returning to menu before long trials.'
+      return
+    fi
     previous=$(result_for "$id")
     if [ -n "$previous" ]; then
       printf '\n%s already recorded: %s. Enter=next, r=repeat, b=menu: ' "$id" "$previous"
@@ -1201,7 +1205,7 @@ TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
 cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
-ce2c03d8138a46a298fab314463c70667525b8352892713c20e137ff32bfa95a  guide.sh
+b55f17af40b3a8b5ea76defb874d3ad5797ea4507b2cd9126751588ba79d09d0  guide.sh
 1f20cc78cf555a9cd77f620858c71d36161e34964374ef40e5803e7693e4e8a9  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json
 792384359fcb97ef695c5be56a516340e3baa309cdcae7dca04704e573309b80  candidates.tsv

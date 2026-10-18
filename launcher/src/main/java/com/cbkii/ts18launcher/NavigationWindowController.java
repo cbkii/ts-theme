@@ -64,6 +64,7 @@ final class NavigationWindowController {
     private final CompactStartupClient compactStartup;
     private CompactStartupClient.Snapshot compactSnapshot = CompactStartupClient.Snapshot.unknown();
     private boolean compactResolved;
+    private boolean reportedStartupReady;
     private boolean explicitColdRequest;
     private boolean automaticColdYielded;
 
@@ -108,6 +109,14 @@ final class NavigationWindowController {
                     || compactSnapshot.compatible && compactSnapshot.rendererReady && compactSnapshot.task == activeTaskId);
     }
 
+    private void reportStartupReadiness(String boundary) {
+        boolean ready = startupNavigationReady();
+        if (ready != reportedStartupReady) {
+            reportedStartupReady = ready;
+            if (startupListener != null) startupListener.accept(ready, ready ? "" : boundary);
+        }
+    }
+
     boolean startupNavigationBusy() { return activeOperationId != 0 || normalBootstrapInFlight; }
 
     /** The existing controller owns the only Maps launch claim and all task/window verification. */
@@ -124,7 +133,7 @@ final class NavigationWindowController {
             compactResolved = true;
             if (changed) clearFailureLatch();
             updateColdPolicy();
-            if (startupNavigationReady() && startupListener != null) startupListener.accept(true, "");
+            reportStartupReadiness("renderer-or-task-evidence-lost");
             if (state != State.DESTROYED && uiState.canPresentNavigation() && state != State.WINDOWED)
                 reconcile(false);
         });
@@ -334,7 +343,7 @@ final class NavigationWindowController {
             // Known tasks are read-only verified before any repair transaction.
             startVerify(configuredPackage, component, target, activeTaskId);
         } else {
-            if (NavigationProvider.ORGANIC_MAPS_INCAR.equals(configuredPackage) && !explicitColdRequest && !compactResolved && !compactSnapshot.compatible) {
+            if (NavigationProvider.ORGANIC_MAPS_INCAR.equals(configuredPackage) && !explicitColdRequest && !compactResolved) {
                 panel.showStarting(label(configuredPackage), "Checking compact startup preference"); return;
             }
             startPresent(configuredPackage, component, target, -1);
@@ -642,7 +651,7 @@ final class NavigationWindowController {
     private static boolean acceptIdentity(NavigationHelperResult result, String pkg, int expectedTask) { if (!result.success || result.userId != AndroidUserId.current() || result.taskId <= 0 || !pkg.equals(result.packageName)) return false; if (expectedTask > 0 && result.taskId != expectedTask) return false; return componentMatches(result.component, pkg); }
     private static boolean componentMatches(String component, String pkg) { return component != null && !component.isEmpty() && !"unknown".equals(component) && component.startsWith(pkg + "/"); }
     private void retainObservedTask(NavigationHelperResult result, String pkg) { if (result != null) Log.i(TAG, "observation attempt=" + nextTransactionId + " code=" + result.code + " phase=" + result.phase + " task=" + result.taskId + " mode=" + result.windowingMode + " visible=" + result.windowVisible + " drawn=" + result.windowDrawn); if (result == null || (!result.success && !NavigationRecoveryPolicy.recoverable(result.code))) return; if (result.userId == AndroidUserId.current() && result.taskId > 0 && pkg.equals(result.packageName) && componentMatches(result.component, pkg)) { activePackage = pkg; activeTaskId = result.taskId; } }
-    private void markWindowed(NavigationHelperResult result, String pkg, NavigationWindowBounds target) { normalBootstrapInFlight = false; if (!target.equals(bounds)) { needsValidation = true; needsPresentation = true; pendingReconcile = true; return; } activePackage = pkg; activeTaskId = result.taskId; backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW; state = State.WINDOWED; lastHelperCode = ""; observationOnly = false; repairedObservation = ""; cancelRecovery(); recovery.reset(); appliedBounds = target; needsValidation = false; needsPresentation = false; clearFailureLatch(); if (startupListener != null) startupListener.accept(startupNavigationReady(), "renderer-evidence-pending"); compactStartup.refresh(); if (uiState.canPresentNavigation()) { showWindowedStatus(pkg, result.taskId, target); finishPresentationCallback(true); } Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack=" + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds + " launched=" + result.launched + " transaction=" + result.transactionId); }
+    private void markWindowed(NavigationHelperResult result, String pkg, NavigationWindowBounds target) { normalBootstrapInFlight = false; if (!target.equals(bounds)) { needsValidation = true; needsPresentation = true; pendingReconcile = true; return; } activePackage = pkg; activeTaskId = result.taskId; backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW; state = State.WINDOWED; lastHelperCode = ""; observationOnly = false; repairedObservation = ""; cancelRecovery(); recovery.reset(); appliedBounds = target; needsValidation = false; needsPresentation = false; clearFailureLatch(); reportStartupReadiness("renderer-evidence-pending"); compactStartup.refresh(); if (uiState.canPresentNavigation()) { showWindowedStatus(pkg, result.taskId, target); finishPresentationCallback(true); } Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack=" + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds + " launched=" + result.launched + " transaction=" + result.transactionId); }
     private static void logCapabilityEvidence(NavigationHelperResult result) { if (!result.success) Log.w(TAG, "helper failure: " + result.raw); if (result.helpExit < 0 && result.launchExit < 0) return; Log.i(TAG, "native launch evidence code=" + result.code + " helpExit=" + result.helpExit + " helpWindowingMode=" + result.helpWindowingMode + " helpDisplay=" + result.helpDisplay + " launchExit=" + result.launchExit); }
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) { // Physical visibility and touch are not inferred from Android task identity/bounds alone; exact-device qualification remains required.
         panel.showConfigured("", () -> openFullscreen(null)); }

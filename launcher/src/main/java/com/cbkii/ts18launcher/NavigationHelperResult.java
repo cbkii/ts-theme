@@ -18,7 +18,12 @@ final class NavigationHelperResult {
             String packageName,
             String component, String bounds, String pinnedPackage, String raw, int windowVisible, int windowDrawn, String phase) {
         String protocol = lastProtocolLine(raw);
-        this.method = protocol.contains("method=N2") ? "N2" : protocol.contains("method=N1") ? "N1" : "";
+        String parsedMethod = "";
+        for (String token : protocol.split("\\s+")) {
+            if (token.equals("method=N1")) parsedMethod = "N1";
+            else if (token.equals("method=N2")) parsedMethod = "N2";
+        }
+        this.method = parsedMethod;
         this.windowVisible=windowVisible; this.windowDrawn=windowDrawn; this.phase=phase;
         this.success=success; this.code=code; this.userId=userId; this.taskId=taskId; this.stackId=stackId;
         this.displayId=displayId; this.windowingMode=windowingMode; this.supportsPip=supportsPip;

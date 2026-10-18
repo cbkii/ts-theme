@@ -24,6 +24,10 @@ public final class StartupBootReceiver extends BroadcastReceiver {
                 if (!context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE).edit()
                         .putInt("pending_boot_v1", boot).commit())
                     MediaEventTrace.record("startup", "boot-signal-not-persisted");
+                // Best-effort live reconciliation complements the durable signal; HOME may already
+                // be visible when BOOT_COMPLETED arrives. Future HOME still works if this process dies.
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
+                        StartupReadinessCoordinator.get(context).onTrigger(StartupReadinessPolicy.Trigger.BOOT));
             } catch (RuntimeException unavailable) {
                 MediaEventTrace.record("startup", "boot-signal-unavailable", unavailable.getClass().getSimpleName());
             } finally { pending.finish(); }
