@@ -1,0 +1,20 @@
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #0 (activities from top to bottom):
+
+  Stack #4: type=standard mode=fullscreen
+  isSleeping=false
+  mBounds=Rect(0, 0 - 0, 0)
+    Task id #9258
+    mBounds=Rect(0, 0 - 0, 0)
+    mLastNonFullscreenBounds=Rect(475, 72 - 1211, 459)
+    * TaskRecord{fixture #9258 A=app.organicmaps.incar U=0 StackId=4 sz=1}
+      intent={act=android.intent.action.MAIN cmp=app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity}
+      mActivityComponent=app.organicmaps.incar/app.organicmaps.SplashActivity
+      stackId=4
+      hasBeenVisible=true mResizeMode=RESIZE_MODE_RESIZEABLE mSupportsPictureInPicture=false isResizeable=true
+      * Hist #0: ActivityRecord{fixture u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9258}
+          packageName=app.organicmaps.incar processName=app.organicmaps.incar
+          mActivityComponent=app.organicmaps.incar/app.organicmaps.MwmActivity
+          mGlobalConfig={winConfig={ mBounds=Rect(0, 0 - 1280, 720) mWindowingMode=1 }}
+  mResumedActivity: ActivityRecord{fixture u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9258}
+  topResumedActivity=ActivityRecord{fixture u0 app.organicmaps.incar/app.organicmaps.MwmActivity t9258}
