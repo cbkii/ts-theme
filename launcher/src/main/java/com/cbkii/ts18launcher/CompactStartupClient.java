@@ -164,8 +164,8 @@ final class CompactStartupClient {
         // invalidations remain live after it so disabling startup or losing a surface is seen.
         if (dirty) main.post(poll);
         else if (SystemClock.elapsedRealtime() < until
-                && (snapshot.compatible && !snapshot.rendererReady || failures > 0 && failures < 3))
-            main.postDelayed(poll, 500L);
+                && (snapshot.compatible && !snapshot.rendererReady || failures > 0))
+            main.postDelayed(poll, snapshot.compatible ? 500L : Math.min(3000L, 500L * failures));
     }
     // Cancellation may itself cross Binder; do not block HOME's main thread.
     private void workerCancel(CancellationSignal signal) {

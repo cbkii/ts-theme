@@ -56,13 +56,19 @@ public static void main(String[] args)throws Exception{
 int[] callbacks={0};CompactStartupClient c=new CompactStartupClient(new Context(),s->{check(!s.compatible);callbacks[0]++;});
 ContentResolver.block=true;c.watch();waitFor(()->ContentResolver.observes.get()==1);
 Handler.until(2000);check(callbacks[0]==1);Handler.until(2500);waitFor(()->ContentResolver.observes.get()==2);
-Handler.until(4500);Handler.until(5000);check(callbacks[0]==3);check(ContentResolver.observes.get()==2);
+Handler.until(4500);Handler.until(5500);check(callbacks[0]==3);check(ContentResolver.observes.get()==2);
+// Both timed-out calls may recover after several failures. Observation must resume
+// inside the boot window rather than stopping permanently after the third refusal.
+ContentResolver.block=false;ContentResolver.release.countDown();
+var field=CompactStartupClient.class.getDeclaredField("worker");field.setAccessible(true);
+var pool=(java.util.concurrent.ThreadPoolExecutor)field.get(c);waitFor(()->pool.getActiveCount()==0);Handler.until(7000);
+waitFor(()->ContentResolver.observes.get()==3);waitFor(()->pool.getActiveCount()==0);Handler.until(7000);check(callbacks[0]==4);
 // Saturated cleanup is harmless, as is canonical HOME redirect followed by onDestroy.
-c.close();c.close();ContentResolver.release.countDown();Thread.sleep(20);Handler.until(6000);check(callbacks[0]==3);
+c.close();c.close();ContentResolver.release.countDown();Thread.sleep(20);Handler.until(7500);check(callbacks[0]==4);
 // Invalidation authentication must leave the main looper and ignore untrusted UIDs.
 ContentResolver.block=false;int initial=CompactStartupPeer.auth.get();CompactStartupClient d=new CompactStartupClient(new Context(),s->{});
 Message m=new Message();m.what=1;m.sendingUid=123;Messenger.handler.handleMessage(m);waitFor(()->CompactStartupPeer.auth.get()>initial);
-Handler.until(6000);check(ContentResolver.observes.get()==2);d.close();d.close();
+Handler.until(7500);check(ContentResolver.observes.get()==3);d.close();d.close();
 System.out.println("PASS actual client timeout/replacement/saturation/off-main-auth/double-close");}}
 ''',
         }

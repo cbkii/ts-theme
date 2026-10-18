@@ -141,8 +141,9 @@ The attempted optional PR17 archive could not read draft release assets with the
 workflow token (HTTP403). It is removed from source CI; no archive is claimed. The live
 managed draft also contains the immediate-parent PR24-96c128d signed candidate, APK SHA-256
 `c7a53fa0ecc9d1876f10c64a38210b9d508d14c5538715c83399b10d6e37c590`.
-The existing two-snapshot publisher retains that immediate-parent rollback when adding PR26;
-the older PR17 snapshot rotates out under the existing authorised TESTING policy. No
+The first PR26-c9d758e snapshot retained that parent and rotated older PR17 under the
+existing authorised TESTING policy. Subsequent qualified PR26 snapshots retain their
+immediate predecessor (c9d758e) as rollback under that same two-snapshot policy. No
 publisher, signing permission or retention-policy change is required. PR24 remains a
 rollback candidate, not a physically qualified cold-start success.
 
@@ -168,3 +169,10 @@ a retained PASS from another installed candidate cannot unlock A1–A16.
 Android Check on Maps f71a3aa compiled arm64 and passed lint, then exhausted the default
 2 GiB Java heap while merging x86 debug resources. The x86 packaging invocation now uses
 a 4 GiB heap and two Gradle workers; canonical final-head CI must verify the change.
+
+A slow provider can recover after the initial query failures. Failed IPC observations now
+continue with bounded backoff (at most three seconds) until the 45-second startup deadline,
+rather than stopping after three failures. The non-queued worker cap remains two, and this
+never grants another Activity admission. A production-client regression blocks both calls,
+advances through saturation, releases the provider, and verifies a fresh query within the
+same observation window.
