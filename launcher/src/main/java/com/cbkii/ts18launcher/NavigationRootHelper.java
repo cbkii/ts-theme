@@ -29,6 +29,10 @@ final class NavigationRootHelper {
     private final Context context;
     private boolean installedThisProcess;
     private long deadline;
+    private volatile String coldPolicy = "manual";
+    void setColdLaunchPolicy(String policy) {
+        coldPolicy = "automatic".equals(policy) || "manual".equals(policy) ? policy : "deny";
+    }
     void setDeadline(long elapsedDeadlineMs) { deadline = elapsedDeadlineMs; }
     private long remaining() {
         return deadline <= 0L ? COMMAND_TIMEOUT_MS
@@ -57,6 +61,7 @@ final class NavigationRootHelper {
         if (budget < 1000L) return NavigationHelperResult.failure("ACTION_TIMEOUT", "after helper installation");
         long shellDeadline = (android.os.SystemClock.elapsedRealtime() + budget) / 1000L;
         StringBuilder command = new StringBuilder("TS18_DEADLINE_S=").append(shellDeadline)
+                .append(" TS18_COLD_POLICY=").append(coldPolicy)
                 .append(" TS18_METHOD=").append(TestingProfiles.navigation(context))
                 .append(" TS18_TRANSITION=").append(TestingProfiles.transition(context))
                 .append(' ').append(ROOT_HELPER).append(' ').append(action)

@@ -104,6 +104,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             @Override public boolean ready() { return navigationWindowController.startupNavigationReady(); }
             @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
             @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
+            @Override public void cancelAutomaticColdStart() { navigationWindowController.cancelAutomaticColdStart(); }
             @Override public void deferAutomaticPresentation(boolean defer) {
                 navigationWindowController.deferAutomaticStartupPresentation(defer);
             }
@@ -240,16 +241,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void runMediaReadiness() {
-        if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+        if (mediaBootstrapper != null) {
             StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.HOME_RESUME);
         }
     }
 
     private void scheduleMediaReadiness() {
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        if (UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-            mediaRefreshHandler.postDelayed(mediaReadyReconcile, MEDIA_READY_RECONCILE_DELAY_MS);
-        }
+        mediaRefreshHandler.postDelayed(mediaReadyReconcile, MEDIA_READY_RECONCILE_DELAY_MS);
     }
 
     private void reconcileMediaConfiguration() {

@@ -54,7 +54,7 @@ class MediaSourceBootstrapper {boolean musicReady,radioReady,musicPlaying;long c
 boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radioReady;}
 boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
 long userCommandGeneration(){return commands;}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
-class UiPersonalizationPrefs {static boolean mediaStartupWarmup(android.content.Context c){return true;}}
+class UiPersonalizationPrefs {static boolean enabled=true;static boolean mediaStartupWarmup(android.content.Context c){return enabled;}}
 class TestingProfiles {static String mode="auto";static String startup(android.content.Context c){return mode;}}
 class LauncherPrefs {static String KEY_MUSIC="music",KEY_NAV="nav";static String music="com.tw.media";
 static String packageFor(android.content.Context c,String k){return k.equals("music")?music:"app.organicmaps.incar";}}
@@ -110,13 +110,13 @@ check(StartupForegroundPolicy.parse(RootShell.forComponent("p/.A",1)+RootShell.f
 check(!top.matches(1,10,"com.cbkii.ts18launcher/.LauncherActivity"),"wrong user");
 StartupReadinessCoordinator s=create();int g=ledger(s).record(Source.RADIO).generation;
 s.onTrigger(Trigger.BOOT);check(ledger(s).record(Source.RADIO).generation==g,"late boot reset active generation");
-check(navigationDeferred,"Maps could take focus before media staging");
+check(!navigationDeferred,"Maps incorrectly waited on read-only media preparation");
 Handler.until(4000);check(AppResolver.launches==1,"radio not staged once");
 Ts18LauncherApplication.shared.radioReady=true;
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);s.onHomeResumed(new android.app.Activity());};
 Handler.until(8000);check(android.app.ActivityManager.moves==1,"exact HOME not restored");check(ledger(s).record(Source.RADIO).state==State.READY,"content not ready");check(!navigationDeferred,"Maps stayed deferred after media");s.destroy();
 StartupReadinessCoordinator ordered=create(false);Handler.until(4000);
-check(navigationStarts==0&&AppResolver.launches==1,"Maps focus starved media admission");
+check(navigationStarts==1&&AppResolver.launches==1,"independent Maps admission or media stage lost");
 Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.moved=()->ordered.onHomeResumed(new android.app.Activity());
 Handler.until(8000);check(navigationStarts==1&&!navigationDeferred,"Maps not admitted once after media");ordered.destroy();
 StartupReadinessCoordinator root=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;Handler.until(4000);
@@ -158,6 +158,10 @@ StartupReadinessCoordinator denied=create();MediaListenerService.access=false;Ha
 check(AppResolver.launches==0,"unobservable radio launched");denied.destroy();
 StartupReadinessCoordinator commands=create();Handler.until(4000);Ts18LauncherApplication.shared.commands++;Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
 check(android.app.ActivityManager.moves==0&&Ts18LauncherApplication.shared.pauses==0,"transport request overwritten");commands.destroy();
+UiPersonalizationPrefs.enabled=false;
+StartupReadinessCoordinator navOnly=create(false);Handler.until(15000);
+check(navigationStarts==1&&AppResolver.launches==0,"media opt-out suppressed navigation or staged media");navOnly.destroy();
+UiPersonalizationPrefs.enabled=true;
 System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
 }}
 '''

@@ -9,7 +9,7 @@ final class NavigationHelperResult {
     final int displayId; final int windowingMode; final int supportsPip;
     final int launched; final int transactionId;
     final int helpExit; final int helpWindowingMode; final int helpDisplay; final int launchExit;
-    final int windowVisible; final int windowDrawn; final String phase;
+    final int windowVisible; final int windowDrawn; final String phase; final String method;
     final String packageName; final String component; final String bounds; final String pinnedPackage; final String raw;
 
     private NavigationHelperResult(boolean success, String code, int userId, int taskId, int stackId,
@@ -17,6 +17,8 @@ final class NavigationHelperResult {
             int helpExit, int helpWindowingMode, int helpDisplay, int launchExit,
             String packageName,
             String component, String bounds, String pinnedPackage, String raw, int windowVisible, int windowDrawn, String phase) {
+        String protocol = lastProtocolLine(raw);
+        this.method = protocol.contains("method=N2") ? "N2" : protocol.contains("method=N1") ? "N1" : "";
         this.windowVisible=windowVisible; this.windowDrawn=windowDrawn; this.phase=phase;
         this.success=success; this.code=code; this.userId=userId; this.taskId=taskId; this.stackId=stackId;
         this.displayId=displayId; this.windowingMode=windowingMode; this.supportsPip=supportsPip;

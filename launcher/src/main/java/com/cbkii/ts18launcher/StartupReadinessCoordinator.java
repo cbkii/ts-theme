@@ -23,6 +23,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         boolean busy();
         void reconcile();
         default void deferAutomaticPresentation(boolean defer) { }
+        default void cancelAutomaticColdStart() { }
     }
     private static StartupReadinessCoordinator instance;
     static synchronized StartupReadinessCoordinator get(Context context) {
@@ -75,10 +76,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON) yielded = false;
         MediaEventTrace.record("startup", "trigger", trigger + " kind=" + kind + " mode=" + mode()
                 + (trigger == Trigger.SCREEN_ON ? " acc=unverified" : ""));
-        if (!UiPersonalizationPrefs.mediaStartupWarmup(context)) {
-            cancelForeground("disabled-by-preference"); return;
-        }
+        if (!UiPersonalizationPrefs.mediaStartupWarmup(context))
+            cancelForeground("media-disabled-by-preference");
         for (Source source : Source.values()) {
+            if (source != Source.NAVIGATION && !UiPersonalizationPrefs.mediaStartupWarmup(context)) continue;
             String pkg = packageFor(source);
             int index = source.ordinal();
             if (!pkg.equals(packages[index])) {
@@ -111,10 +112,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
 
     private void updateNavigationAdmission() {
         if (navigation == null) return;
-        boolean mediaPending = foregroundBusy || !foregroundQueue.isEmpty()
-                || policy.record(Source.MUSIC).state == State.STARTING
-                || policy.record(Source.RADIO).state == State.STARTING;
-        boolean defer = foregroundAllowed() && mediaPending;
+        // Read-only media preparation does not compete for foreground. Only a live Activity stage
+        // holds the presentation lane; a failed player never holds Maps behind its deadline.
+        boolean defer = foregroundBusy;
         navigation.deferAutomaticPresentation(defer);
         StartupReadinessPolicy.Record r = policy.record(Source.NAVIGATION);
         if (!defer && !yielded && r.state == State.STARTING && navigationWaitGeneration != r.generation) {
@@ -131,7 +131,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
     void onHomePaused() { homeResumed = false; }
     void onScreenOff() { yielded = true; cancelForeground("screen-off"); }
-    void noteUserInteraction() { yielded = true; cancelForeground("user-interaction"); }
+    void noteUserInteraction() { yielded = true; if (navigation != null) navigation.cancelAutomaticColdStart(); cancelForeground("user-interaction"); }
     void reportNavigation(boolean success, String boundary) {
         recordResultNavigation(success, boundary);
     }

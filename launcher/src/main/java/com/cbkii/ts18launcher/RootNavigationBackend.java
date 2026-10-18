@@ -21,6 +21,8 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private volatile long requestedDeadline;
     private long runningDeadline;
 
+    @Override public void setColdLaunchPolicy(String policy) { helper.setColdLaunchPolicy(policy); }
+
     @Override public void setDeadline(long deadline) { requestedDeadline = deadline; }
     private long remaining() { return Math.max(0L, runningDeadline - android.os.SystemClock.elapsedRealtime()); }
     private volatile NavigationHelperResult lastKnownTaskObservation;

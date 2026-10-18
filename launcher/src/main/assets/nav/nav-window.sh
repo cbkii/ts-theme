@@ -24,6 +24,8 @@ METHOD=${TS18_METHOD:-N1}
 TRANSITION=${TS18_TRANSITION:-intent}
 case "$METHOD" in N0|N1|N2) ;; *) METHOD=N1 ;; esac
 case "$TRANSITION" in bridge|intent) ;; *) TRANSITION=bridge ;; esac
+COLD_POLICY=${TS18_COLD_POLICY:-manual}
+case "$COLD_POLICY" in manual|automatic|deny) ;; *) COLD_POLICY=deny ;; esac
 PHASE=admission
 VISIBLE=unknown
 DRAWN=unknown
@@ -566,15 +568,37 @@ launch_freeform_once() {
     *) fail COMPONENT_PACKAGE_MISMATCH ;;
   esac
   PHASE=launch
-  native_launch_supported || fail FREEFORM_LAUNCH_UNSUPPORTED
+  # Unsupported direct launch options are a pre-admission refusal: compare N2 once,
+  # using ordinary Activity admission followed by the existing same-task bridge.
+  direct_options=1
+  if ! native_launch_supported; then
+    METHOD=N2
+    TRANSITION=bridge
+    direct_options=0
+  fi
   claim_cold_launch
   journal_launch dispatching
   cold_mode=5
   [ "$METHOD" != N2 ] || cold_mode=1
-  bounded am start --user "$ANDROID_USER" --display 0 --windowingMode "$cold_mode" \
-    -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
-    -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
-  LAUNCH_EXIT=$?
+  if [ "$direct_options" = 1 ]; then
+    bounded am start --user "$ANDROID_USER" --display 0 --windowingMode "$cold_mode" \
+      -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+      -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
+    LAUNCH_EXIT=$?
+    if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
+      # Framework parser refusal proves the first command did not admit an Activity.
+      METHOD=N2
+      TRANSITION=bridge
+      direct_options=0
+      journal_launch dispatching
+    fi
+  fi
+  if [ "$direct_options" = 0 ]; then
+    bounded am start --user "$ANDROID_USER" \
+      -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+      -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
+    LAUNCH_EXIT=$?
+  fi
   check_cold_launch_result FREEFORM_LAUNCH_FAILED FREEFORM_LAUNCH_UNSUPPORTED
   LAUNCHED=1
   PHASE=bootstrap
@@ -588,7 +612,16 @@ launch_claim_path() {
 }
 
 claim_cold_launch() {
+  [ "$COLD_POLICY" != deny ] || fail AUTOSTART_DISABLED_OR_UNAVAILABLE
   launch_claim_path || fail LAUNCH_MARKER_FAILED
+  automatic_marker="$ROOT_DIR/auto-v1-$ANDROID_USER-$PKG-$current_boot"
+  if [ "$COLD_POLICY" = automatic ]; then
+    require_startup_window_focus com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity
+    # Durable once-per-boot admission, retained after renderer/task success and process loss.
+    # Existing tasks are adopted before reaching this boundary. Explicit Retry remains separate.
+    mkdir "$automatic_marker" 2>/dev/null || fail AUTOSTART_ALREADY_CLAIMED
+    printf 'version=1 boot=%s user=%s package=%s generation=1\n' "$current_boot" "$ANDROID_USER" "$PKG" > "$automatic_marker/identity" || fail LAUNCH_JOURNAL_FAILED
+  fi
   # Atomic across every cold-launch path and helper process. Time alone cannot
   # resolve an accepted/uncertain dispatch, including an explicit fullscreen one.
   mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING
@@ -608,11 +641,18 @@ clear_launch_claim() {
   rmdir "$launch_marker" 2>/dev/null || true
 }
 
+clear_automatic_refusal() {
+  [ "$COLD_POLICY" = automatic ] || return 0
+  rm -f "$automatic_marker/identity"
+  rmdir "$automatic_marker" 2>/dev/null || true
+}
+
 check_cold_launch_result() {
   failure_code="$1"
   unsupported_code="$2"
   if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
     clear_launch_claim
+    clear_automatic_refusal
     fail "$unsupported_code"
   fi
   if [ "$LAUNCH_EXIT" -ne 0 ] || grep -Eq '^(Error:|Error type|Exception|Security exception:)' "$LAUNCH_OUTPUT"; then
@@ -621,6 +661,7 @@ check_cold_launch_result() {
     # a nonzero producer exit alone does not prove server-side cancellation.
     if grep -Eq '^(Error type|Error: Activity not started|Error: [Uu]nable to resolve Intent|Security exception:|Permission Denial:)' "$LAUNCH_OUTPUT"; then
       clear_launch_claim
+      clear_automatic_refusal
       fail "$failure_code"
     fi
     journal_launch uncertain
@@ -839,7 +880,9 @@ case "$action" in
 
     wanted_task="$TASK_ID"
     restore_home=0
-    if [ "$METHOD" = N2 ] && launch_claim_path && [ -r "$launch_marker/state" ]; then
+    if launch_claim_path && [ -r "$launch_marker/state" ] && grep -q ' method=N2 ' "$launch_marker/state"; then
+      METHOD=N2
+      TRANSITION=bridge
       # A delayed launch may first become visible in this invocation. Preserve the
       # original admission identity while adopting its unique current-user renderer.
       # Reserved/dispatching or different-task claims never grant HOME restoration.

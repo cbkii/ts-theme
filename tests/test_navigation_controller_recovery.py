@@ -66,6 +66,13 @@ NavigationWindowBounds currentBounds(){return new NavigationWindowBounds();} voi
 void setRecoveryActions(Runnable r,Runnable f){} void showStarting(String l,String b){} void showConfigured(String d,Runnable r){configured++;fullscreen=r;}
 void showFailure(String d,Runnable r,Runnable f){error=d;retry=r;fullscreen=f;} void showUnavailable(String d,Runnable r){}
 void showFullscreenOnly(String d,Runnable r){} }
+class CompactStartupClient {static void suppressForBoot(android.app.Activity a){} static boolean automaticAllowed(android.app.Activity a){return true;}
+static final class Snapshot {final boolean compatible=true,enabled=true,rendererReady=true;final int task=42;
+static Snapshot unknown(){return new Snapshot();}}
+private final java.util.function.Consumer<Snapshot> callback;
+CompactStartupClient(android.app.Activity a,java.util.function.Consumer<Snapshot> c){callback=c;}
+void watch(){} void refresh(){} void close(){}
+}
 class HomeNavigationSurfacePolicy {static final String NATIVE_WINDOW="native",LEAFLET="leaflet",FULLSCREEN="full";
 static String mode(android.app.Activity a){return NATIVE_WINDOW;}}
 class LauncherPrefs {static final String KEY_NAV="nav";static String packageFor(android.app.Activity a,String k){return "app.organicmaps.incar";}}

@@ -6,7 +6,7 @@ import test_navigation_lifecycle as nav
 
 class StartupRootShellTests(unittest.TestCase):
     def run_root(self, action, package='com.navimods.radio', **changes):
-        source = nav.ANDROID.replace("if a[0] == 'window':", '''if a[0] == 'window':
+        source = nav.ANDROID.replace("        print('mCurrentFocus=Window{fake u0 ' + focus_component + '}')\n", "").replace("if a[0] == 'window':", '''if a[0] == 'window':
         focused = s.get('startup_focus', (s.get('nav_component','com.navimods.radio/.RadioActivity') if s['focus']==42 else 'com.cbkii.ts18launcher/.HomeAlias'))
         print('  mCurrentFocus=' + ('null' if s.get('blank_startup_focus') else 'Window{abc u0 '+focused+'}'))''')
         source = source.replace("print('      * Hist #0: ActivityRecord{fake u0 %s t%s}' % (component, task))",
