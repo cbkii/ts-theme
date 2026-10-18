@@ -1,7 +1,6 @@
 package com.cbkii.ts18launcher;
 
 import android.content.Context;
-import android.database.ContentObserver;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.CancellationSignal;
@@ -29,8 +28,8 @@ final class CompactStartupClient {
         Thread t = new Thread(r, "compact-startup-query"); t.setDaemon(true); return t;
     });
     private final java.util.function.Consumer<Snapshot> callback;
-    private final ContentObserver observer;
-    private boolean busy, closed, registered, dirty;
+    private final android.os.Messenger messenger;
+    private boolean busy, closed, dirty;
     private int failures;
     private int request;
     private long until;
@@ -39,14 +38,26 @@ final class CompactStartupClient {
 
     CompactStartupClient(Context context, java.util.function.Consumer<Snapshot> callback) {
         this.context = context.getApplicationContext(); this.callback = callback;
-        observer = new ContentObserver(main) {
-            @Override public void onChange(boolean selfChange) { refresh(); }
-        };
+        messenger = new android.os.Messenger(new PeerHandler(this));
     }
+    private static final class PeerHandler extends Handler {
+        private final java.lang.ref.WeakReference<CompactStartupClient> owner;
+        PeerHandler(CompactStartupClient client) { super(Looper.getMainLooper()); owner = new java.lang.ref.WeakReference<>(client); }
+        @Override public void handleMessage(android.os.Message message) {
+            CompactStartupClient client = owner.get();
+            if (client != null && !client.closed && message.what == 1
+                    && CompactStartupPeer.trusted(client.context, message.sendingUid)) client.refresh();
+        }
+    }
+
     static void suppressForBoot(Context context) {
-        int boot = Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
-        if (boot >= 0) context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE).edit()
-                .putInt("compact_user_override_v1", boot).apply();
+        try {
+            int boot = Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+            if (boot >= 0) context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE).edit()
+                    .putInt("compact_user_override_v1", boot).apply();
+        } catch (RuntimeException unavailable) {
+            MediaEventTrace.record("compact-startup", "override-journal-unavailable");
+        }
     }
     static boolean automaticAllowed(Context context) {
         try {
@@ -67,10 +78,6 @@ final class CompactStartupClient {
         if (closed) return;
         until = SystemClock.elapsedRealtime() + 45000L;
         failures = 0;
-        if (!registered) {
-            try { context.getContentResolver().registerContentObserver(URI, false, observer); registered = true; }
-            catch (RuntimeException unavailable) { MediaEventTrace.record("compact-startup", "observer-unavailable"); }
-        }
         refresh();
     }
     void refresh() {
@@ -93,9 +100,14 @@ final class CompactStartupClient {
             try {
                 int uid = context.getPackageManager().getApplicationInfo(CompactStartupPeer.PACKAGE, 0).uid;
                 int boot = Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
-                if (CompactStartupPeer.trusted(context, uid) && boot >= 0) {
+                if (CompactStartupPeer.trusted(context, uid) && boot >= 0
+                        && CompactStartupPeer.ownsProvider(context, "app.organicmaps.incar.compact.startup")) {
                     Uri uri = URI.buildUpon().appendQueryParameter("v", "1")
                             .appendQueryParameter("boot", Integer.toString(boot)).build();
+                    android.os.Bundle observation = new android.os.Bundle();
+                    observation.putInt("boot", boot);
+                    observation.putBinder("observer", messenger.getBinder());
+                    context.getContentResolver().call(URI, "observe", "1", observation);
                     try (Cursor c = context.getContentResolver().query(uri, null, null, null, null, signal)) {
                         if (c != null && c.moveToFirst() && number(c, "protocol") == 1
                                 && CompactStartupPeer.PACKAGE.equals(c.getString(c.getColumnIndexOrThrow("package")))
@@ -137,8 +149,17 @@ final class CompactStartupClient {
     private static int number(Cursor c, String key) { return c.getInt(c.getColumnIndexOrThrow(key)); }
     void close() {
         closed = true; request++; main.removeCallbacksAndMessages(null);
-        if (registered) context.getContentResolver().unregisterContentObserver(observer);
         if (cancel != null) workerCancel(cancel);
-        worker.shutdownNow();
+        worker.execute(() -> {
+            try {
+                if (CompactStartupPeer.ownsProvider(context, "app.organicmaps.incar.compact.startup")) {
+                    android.os.Bundle observation = new android.os.Bundle();
+                    observation.putInt("boot", Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1));
+                    observation.putBinder("observer", messenger.getBinder());
+                    context.getContentResolver().call(URI, "unobserve", "1", observation);
+                }
+            } catch (RuntimeException unavailable) { MediaEventTrace.record("compact-startup", "unsubscribe-unavailable"); }
+        });
+        worker.shutdown();
     }
 }

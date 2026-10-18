@@ -31,6 +31,7 @@ jobs:
       # Read-only preservation before the rolling draft can retire PR17. Downloaded APKs
       # are hashed and archived only; no downloaded code is executed.
       - name: Preserve signed PR17 rollback
+        id: rollback
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -52,6 +53,7 @@ jobs:
           sha256sum -c MANIFEST.sha256
 
       - name: Archive verified signed rollback
+        if: steps.rollback.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: signed-rollback-PR17-bc06111

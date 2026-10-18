@@ -170,6 +170,10 @@ public static void main(String[] args)throws Exception{
  java.lang.reflect.Method retry=NavigationWindowController.class.getDeclaredMethod("retry");retry.setAccessible(true);
  retry.invoke(c);retry.invoke(c);RawFreeformTaskBackend.delayed=false;RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
  android.view.View.drain();check(p.configured==1&&RawFreeformTaskBackend.presents==2,"queued Retry lost or duplicated");
+ // User interaction cancels an unfinished automatic operation; a late result cannot win.
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
+ c.cancelAutomaticColdStart();RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
+ android.view.View.drain();check(p.configured==0,"late automatic result won after user interaction");
  // Source icons remain independent; superseded map callback cannot change the new action.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  int[] opened={0};c.launchAfterSuspension(()->opened[0]++);check(opened[0]==1,"source icon waits for callback");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());

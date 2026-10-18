@@ -14,14 +14,16 @@ public final class CompactStartupProvider extends ContentProvider {
         android.content.Context context = getContext();
         if (context == null || !CompactStartupPeer.trusted(context, Binder.getCallingUid()))
             throw new SecurityException("Untrusted compact startup peer");
-        if (!"/status".equals(uri.getPath()) || !"1".equals(uri.getQueryParameter("v")))
+        int boot = android.provider.Settings.Global.getInt(context.getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, -1);
+        if (!"/status".equals(uri.getPath()) || !"1".equals(uri.getQueryParameter("v"))
+                || boot < 0 || !Integer.toString(boot).equals(uri.getQueryParameter("boot")))
             throw new IllegalArgumentException("Unsupported compact startup protocol");
         boolean available = android.os.Build.VERSION.SDK_INT == 29 && HomeMode.isDefaultHome(context)
                 && HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(HomeNavigationSurfacePolicy.mode(context));
         String configured = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_NAV);
         available &= configured.isEmpty() || CompactStartupPeer.PACKAGE.equals(configured);
-        MatrixCursor cursor = new MatrixCursor(new String[] {"protocol", "available", "root_qualified"});
-        cursor.addRow(new Object[] {1, available ? 1 : 0, 0});
+        MatrixCursor cursor = new MatrixCursor(new String[] {"protocol", "available", "root_qualified", "boot", "user"});
+        cursor.addRow(new Object[] {1, available ? 1 : 0, 0, boot, android.os.Process.myUid() / 100000});
         return cursor;
     }
     @Override public String getType(Uri uri) { return "vnd.android.cursor.item/compact-startup"; }

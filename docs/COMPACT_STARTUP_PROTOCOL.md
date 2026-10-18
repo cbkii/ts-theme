@@ -20,19 +20,20 @@ stack is merged, rewritten or replaced.
 - Pins: launcher certificate from signing run 38877410241; Maps certificate
   `40ad32351bf55902c617df2351a5761bb5e5462cc2f2ed268503082331139780`
   from publish job 116853941672, run 38863163942. A signer rotation requires a
-  reviewed pin/lineage update. Ordinary debug builds are intentionally not an
+  verified Android signing lineage back to the pinned identity, or a reviewed pin update. Ordinary debug builds are intentionally not an
   authenticated install pair.
 - Launcher capability reports API29 + actual default HOME + native-window mode
   + compatible selected navigation package. This is not root or physical proof.
   The setting explains the requirement for authorised task control; root is
   verified by the existing helper at execution, with truthful refusal on failure.
 - Queries run off HOME's main thread, have cancellation/deadlines and never
-  accumulate parallel blocked Binder requests. ContentObserver drives updates;
+  accumulate parallel blocked Binder requests. Authenticated Messenger invalidations drive updates;
   500ms observation is limited to a 45s startup window. Missing, old, locked,
   stale or wrong-signer peers deny automatic cold launch. Warm task adoption and
   explicit user opening remain available.
 - Boot receivers persist only a credential-unlocked boot signal using goAsync;
-  they do not launch Activities or rely on a surviving singleton. HOME queries
+  they do not launch Activities or rely on a surviving singleton. The Maps boot signal is
+  exposed as authenticated diagnostic evidence, not a prerequisite that delays early HOME. HOME queries
   the true preference and reconciles independently, before or after BOOT_COMPLETED.
   There is no direct-boot access to credential-protected preferences.
 - Navigation readiness no longer depends on media warm-up. Background media
@@ -74,9 +75,10 @@ Neither method is physically preferred by these source changes.
 
 Organic Maps emits monotonic `InCarCompactStartup` events for Splash, core,
 map resume/pause, renderer attachment/detachment, native initialisation and
-surface/native-size convergence. Renderer evidence is process-local and reset
-by detachment/new Activity dimensions; a stale Activity pause cannot invalidate
-its replacement. It does not call routing, camera, GNSS, task or focus APIs.
+surface/native-size convergence. Core/native flags are process-local; core initialisation
+and native state reused by a restored surface are retained. A newly created renderer resets
+native readiness until its own callback. Detach, replacement and geometry epochs invalidate
+attachment/dimensions; stale Activity callbacks cannot ready or invalidate a replacement. It does not call routing, camera, GNSS, task or focus APIs.
 
 Launcher logs `compact-startup` observations with boot/task/stage/native/surface
 size/resume/renderer state and elapsed time. Its ready state requires both the
@@ -126,3 +128,13 @@ CI/JVM/shell checks cannot qualify TS18 cold boot, real ACC, pixels/touch,
 call/reverse, startup flash, route preservation or timings. All physical levels
 remain NOT_RUN until exact-device results arrive. A failed A0 should lead to a
 focused fix, not another full validation campaign.
+
+Observer registration is limited to the authenticated peer and boot, and accepts only a
+Messenger Binder for invalidation. Callbacks carry no state and their sending UID is checked;
+there are no public renderer notifications. Provider authorities are resolved to the pinned
+package before querying/registering. Capability probes use a bounded two-worker pool with no
+queue; one stalled Binder cannot starve all future checks, and saturation fails closed.
+
+The first attempted rollback archive returned HTTP403 bytes instead of the draft APK.
+The corrected workflow uploads only after verified complete preservation. No signed-pair
+request should prune PR17 until its bytes are retained or the owner authorises rotation.

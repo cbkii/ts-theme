@@ -71,6 +71,12 @@ final class NavigationWindowController {
         automaticColdYielded = true;
         explicitColdRequest = false;
         CompactStartupClient.suppressForBoot(activity);
+        cancelRecovery();
+        if (activeOperationId != 0) {
+            // Cancel queued/unfinished work. The shell keeps any uncertain admission claim.
+            cancelActiveOperation(); pendingReconcile = false;
+            state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
+        }
         updateColdPolicy();
     }
 

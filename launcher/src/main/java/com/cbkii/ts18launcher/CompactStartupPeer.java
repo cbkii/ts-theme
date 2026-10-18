@@ -20,6 +20,12 @@ final class CompactStartupPeer {
                     && pm.hasSigningCertificate(PACKAGE, CERT, PackageManager.CERT_INPUT_SHA256);
         } catch (PackageManager.NameNotFoundException | RuntimeException unavailable) { return false; }
     }
+    static boolean ownsProvider(Context context, String authority) {
+        android.content.pm.ProviderInfo provider = context.getPackageManager().resolveContentProvider(authority, 0);
+        return provider != null && PACKAGE.equals(provider.packageName) && provider.applicationInfo != null
+                && trusted(context, provider.applicationInfo.uid);
+    }
+
     private static byte[] hex(String text) {
         byte[] bytes = new byte[text.length() / 2];
         for (int i = 0; i < bytes.length; i++) bytes[i] = (byte) Integer.parseInt(text.substring(i * 2, i * 2 + 2), 16);
