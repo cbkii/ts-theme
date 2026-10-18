@@ -182,6 +182,14 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();check(p.configured>0,"initial warm task missing");
  c.cancelAutomaticColdStart();c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
  check(c.startupNavigationReady(),"user yield prevented healthy warm-task HOME reuse");c.destroy();
+ // Yielded N2 completion must release bootstrap ownership and adopt the accepted task.
+ RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
+ check(bootstrap.getBoolean(c),"N2 bootstrap not entered");c.cancelAutomaticColdStart();RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
+ java.lang.reflect.Field adopted=NavigationWindowController.class.getDeclaredField("activeTaskId");adopted.setAccessible(true);
+ check(!bootstrap.getBoolean(c)&&!c.startupNavigationBusy()&&p.configured==0,"yielded N2 kept bootstrap or presented");
+ check(adopted.getInt(c)==42,"yielded admission lost its accepted task identity");
+ RawFreeformTaskBackend.delayed=false;c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
+ check(RawFreeformTaskBackend.presents==1&&c.startupNavigationReady(),"yielded N2 did not reuse the same task");c.destroy();
  // Source icons remain independent; superseded map callback cannot change the new action.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  int[] opened={0};c.launchAfterSuspension(()->opened[0]++);check(opened[0]==1,"source icon waits for callback");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());

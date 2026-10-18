@@ -212,7 +212,7 @@ final class NavigationWindowController {
         if (operation == 0) { pendingDeparture = true; return; }
         backend.backgroundFullscreen(pkg, task, activity.getPackageName(), activity.getTaskId(),
                 externalOnly, result -> {
-            if (!finishOperation(operation)) return;
+            if (!finishOperation(operation, result, pkg)) return;
             if (acceptIdentity(result, pkg, task) && result.windowingMode == 1) {
                 needsValidation = true; needsPresentation = true; state = State.SUSPENDED;
                 Log.i(TAG, "HOME departure fullscreen task=" + task + " toTop=false");
@@ -360,7 +360,7 @@ final class NavigationWindowController {
         final String pkg = selectedPackage();
         int operation = beginOperation(); if (operation == 0) return;
         backend.status(pkg, activeTaskId, result -> {
-            if (!finishOperation(operation)) return;
+            if (!finishOperation(operation, result, pkg)) return;
             retainObservedTask(result, pkg);
             if ("TASK_NOT_FOUND".equals(result.code)) {
                 // The helper has corroborated live-task absence, not just a parser miss.
@@ -384,7 +384,7 @@ final class NavigationWindowController {
                 int verifyOperation = beginOperation(); if (verifyOperation == 0) return;
                 NavigationWindowBounds target = bounds;
                 backend.verify(pkg, target, result.taskId, verified -> {
-                    if (!finishOperation(verifyOperation)) return;
+                    if (!finishOperation(verifyOperation, verified, pkg)) return;
                     if (acceptWindowedResult(verified, pkg, target, result.taskId) && verified.presentationConfirmed())
                         markWindowed(verified, pkg, target);
                     else scheduleRecovery(pkg, "PRESENTATION_UNCONFIRMED");
@@ -410,7 +410,7 @@ final class NavigationWindowController {
         int operation = beginOperation(); if (operation == 0) return; state = State.PRESENTING;
         panel.showStarting(label(pkg), "Verifying task " + taskId + " at HOME bounds");
         backend.verify(pkg, target, taskId, result -> {
-            if (!finishOperation(operation)) return; retainObservedTask(result, pkg);
+            if (!finishOperation(operation, result, pkg)) return; retainObservedTask(result, pkg);
             if (deferUncertainTaskObservation(result, pkg, "verify")) { drainPendingWork(); return; }
             if (acceptWindowedResult(result, pkg, target, taskId)) {
                 if (needsPresentation) startResume(pkg, component, target, taskId);
@@ -432,7 +432,7 @@ final class NavigationWindowController {
         int operation = beginOperation(); if (operation == 0) return;
         state = State.PRESENTING;
         backend.resume(pkg, target, taskId, activity.getPackageName(), activity.getTaskId(), result -> {
-            if (!finishOperation(operation)) return;
+            if (!finishOperation(operation, result, pkg)) return;
             retainObservedTask(result, pkg);
             if ("RESUMED_NATIVE".equals(result.code)
                     && acceptWindowedResult(result, pkg, target, taskId)) {
@@ -463,7 +463,7 @@ final class NavigationWindowController {
         panel.showStarting(label(pkg), acquisition ? "Acquiring one configured task · transaction " + operation : "Repairing task " + taskHint + " · transaction " + operation);
         updateColdPolicy();
         backend.present(pkg, component, target, taskHint, operation, result -> {
-            if (!finishOperation(operation)) return;
+            if (!finishOperation(operation, result, pkg)) return;
             if ("N2".equals(result.method) && (result.launched == 1 || "BOOTSTRAP_PENDING".equals(result.code)))
                 normalBootstrapInFlight = true;
             logCapabilityEvidence(result); retainObservedTask(result, pkg);
@@ -491,7 +491,7 @@ final class NavigationWindowController {
         final String managedPackage = activePackage; final int managedTask = activeTaskId; int operation = beginOperation(); if (operation == 0) return; state = State.SUSPENDING;
         panel.showStarting(label(managedPackage), "Leaving native navigation window");
         backend.suspend(managedPackage, managedTask, activity.getPackageName(), activity.getTaskId(), result -> {
-            if (!finishOperation(operation)) return; boolean missing = "TASK_NOT_FOUND".equals(result.code);
+            if (!finishOperation(operation, result, managedPackage)) return; boolean missing = "TASK_NOT_FOUND".equals(result.code);
             if (!missing && !(acceptIdentity(result, managedPackage, managedTask) && result.windowingMode == 5)) { adoptAuthority(nextMode, nextPackage); latchFailure(nextPackage, nextMode, "Could not leave previous navigation task · " + result.code); drainPendingWork(); return; }
             if (missing || !managedPackage.equals(nextPackage)) { activeTaskId = -1; activePackage = nextPackage; } else activeTaskId = result.taskId;
             adoptAuthority(nextMode, nextPackage); state = State.SUSPENDED; reconcile(true); drainPendingWork();
@@ -503,7 +503,7 @@ final class NavigationWindowController {
         if (!hasManagedNativeTask()) { state = State.SUSPENDED; Log.i(TAG, "suspend " + reason + " without managed task"); overlayGate.onSettled(); return; }
         ensureNativeBackend(); if (backend == null) return; final String pkg = activePackage; final int task = activeTaskId; int operation = beginOperation(); if (operation == 0) return; state = State.SUSPENDING;
         backend.suspend(pkg, task, activity.getPackageName(), activity.getTaskId(), result -> {
-            if (!finishOperation(operation)) return; if (!result.success) Log.w(TAG, "suspend helper failure: " + result.raw);
+            if (!finishOperation(operation, result, pkg)) return; if (!result.success) Log.w(TAG, "suspend helper failure: " + result.raw);
             if ("TASK_NOT_FOUND".equals(result.code)) activeTaskId = -1;
             else if (acceptIdentity(result, pkg, task) && result.windowingMode == 5) activeTaskId = result.taskId;
             else latchFailure(pkg, configuredMode, "Could not suspend navigation · " + result.code);
@@ -526,7 +526,7 @@ final class NavigationWindowController {
         state = State.FULLSCREEN_HANDOFF;
         panel.showStarting(label(pkg), "Resolving navigation task for fullscreen");
         backend.fullscreen(pkg, component, task, result -> {
-            if (!finishOperation(operation)) return;
+            if (!finishOperation(operation, result, pkg)) return;
             retainObservedTask(result, pkg);
             if (acceptIdentity(result, pkg, 0) && result.displayId == 0 && result.windowingMode == 1
                     && "0,0,0,0".equals(result.bounds)) {
@@ -622,20 +622,26 @@ final class NavigationWindowController {
                 + " goal=" + (fullscreenGoal ? "fullscreen" : "compact") + " deadline=" + deadline + " task=" + activeTaskId);
         return operation;
     }
-    private boolean finishOperation(int operation) {
+    private boolean finishOperation(int operation, NavigationHelperResult result, String pkg) {
         if (state == State.DESTROYED || operation != activeOperationId) return false;
         activeOperationId = 0;
         if (operationTimeout != null) activity.getWindow().getDecorView().removeCallbacks(operationTimeout);
         operationTimeout = null;
+        if (operation == yieldedOperationId) {
+            yieldedOperationId = 0;
+            normalBootstrapInFlight = false;
+            // Completion may prove an Activity was admitted even though the user yielded.
+            // Retain its verified identity before suppressing presentation or serving Retry.
+            retainObservedTask(result, pkg);
+            if (!explicitColdRequest) {
+                state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
+                pendingReconcile = false;
+                finishPresentationCallback(false);
+                return false;
+            }
+        }
         if (recovery.expired(SystemClock.elapsedRealtime())) {
             latchFailure(selectedPackage(), configuredMode, "ACTION_TIMEOUT"); drainPendingWork(); return false;
-        }
-        if (operation == yieldedOperationId && !explicitColdRequest) {
-            yieldedOperationId = 0;
-            state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
-            pendingReconcile = false;
-            finishPresentationCallback(false);
-            return false;
         }
         // A queued explicit action supersedes this result, including a success from the old goal.
         if (retryRequested || fullscreenRequested) {

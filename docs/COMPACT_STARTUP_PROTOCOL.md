@@ -176,3 +176,8 @@ rather than stopping after three failures. The non-queued worker cap remains two
 never grants another Activity admission. A production-client regression blocks both calls,
 advances through saturation, releases the provider, and verifies a fresh query within the
 same observation window.
+
+Yielded completion clears the N2 bootstrap flag and retains the helper's validated task
+identity before suppressing presentation. This also applies before serving a queued explicit
+action. A regression verifies N2 completion remains unpresented until a later HOME return,
+then reuses that same accepted task without a second acquisition.
