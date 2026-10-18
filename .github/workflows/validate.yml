@@ -28,39 +28,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Read-only preservation before the rolling draft can retire PR17. Downloaded APKs
-      # are hashed and archived only; no downloaded code is executed.
-      - name: Preserve signed PR17 rollback
-        id: rollback
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rollback="$RUNNER_TEMP/signed-rollback-PR17-bc06111"
-          mkdir -p "$rollback"
-          gh api -H 'Accept: application/octet-stream' repos/cbkii/ts-theme/releases/assets/629997863 > "$rollback/TS18-Standalone-Launcher-TESTING-PR17-bc06111.apk"
-          gh api -H 'Accept: application/octet-stream' repos/cbkii/ts-theme/releases/assets/629997970 > "$rollback/BUILD_INFO-PR17-bc06111.txt"
-          gh api -H 'Accept: application/octet-stream' repos/cbkii/ts-theme/releases/assets/629997921 > "$rollback/SIGNER-PR17-bc06111.txt"
-          gh api -H 'Accept: application/octet-stream' repos/cbkii/ts-theme/releases/assets/629997955 > "$rollback/SHA256SUMS-PR17-bc06111.txt"
-          cd "$rollback"
-          printf '%s\n' \
-            'f7e0fd5f5e05e607a87ac2f9ea813067403f73d4b1baaba8dd1ec92e6a5fdc9d  TS18-Standalone-Launcher-TESTING-PR17-bc06111.apk' \
-            '86b11d69b1e0386226e9038239cbcbe1e3eba5eca4eb48f75324b4615c178750  BUILD_INFO-PR17-bc06111.txt' \
-            'f098cb005c4eff8ddfbb90112a0c8addb72174aab5bb59fc6339f78a7092d7e6  SIGNER-PR17-bc06111.txt' \
-            '54a75806acfdbbb82319862825ef416843e3ac7739a4521f5f99297454682c89  SHA256SUMS-PR17-bc06111.txt' > MANIFEST.sha256
-          sha256sum -c MANIFEST.sha256
-
-      - name: Archive verified signed rollback
-        if: steps.rollback.outcome == 'success'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: signed-rollback-PR17-bc06111
-          path: ${{ runner.temp }}/signed-rollback-PR17-bc06111/
-          if-no-files-found: warn
-          retention-days: 90
-
       - name: Set up Java 17
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:

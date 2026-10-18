@@ -67,6 +67,7 @@ final class NavigationWindowController {
     private boolean reportedStartupReady;
     private boolean explicitColdRequest;
     private boolean automaticColdYielded;
+    private int yieldedOperationId;
 
     void cancelAutomaticColdStart() {
         automaticColdYielded = true;
@@ -77,6 +78,7 @@ final class NavigationWindowController {
             // Keep the bounded transaction owned until its result/deadline. Destroying an
             // executor cannot prove every privileged child has stopped. Its accepted/uncertain
             // claim remains intact; late completion cannot trigger presentation or recovery.
+            yieldedOperationId = activeOperationId;
             pendingReconcile = false;
             needsValidation = true; needsPresentation = true;
         }
@@ -628,7 +630,8 @@ final class NavigationWindowController {
         if (recovery.expired(SystemClock.elapsedRealtime())) {
             latchFailure(selectedPackage(), configuredMode, "ACTION_TIMEOUT"); drainPendingWork(); return false;
         }
-        if (automaticColdYielded && !explicitColdRequest) {
+        if (operation == yieldedOperationId && !explicitColdRequest) {
+            yieldedOperationId = 0;
             state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
             pendingReconcile = false;
             finishPresentationCallback(false);
@@ -641,6 +644,7 @@ final class NavigationWindowController {
         return true;
     }
     private void cancelActiveOperation() {
+        yieldedOperationId = 0;
         normalBootstrapInFlight = false;
         activeOperationId = 0;
         if (operationTimeout != null) activity.getWindow().getDecorView().removeCallbacks(operationTimeout);

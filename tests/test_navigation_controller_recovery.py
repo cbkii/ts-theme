@@ -179,6 +179,9 @@ public static void main(String[] args)throws Exception{
  android.view.View.drain();check(p.configured==0&&!c.startupNavigationBusy(),"late automatic result won after user interaction");
  int yieldedPresents=RawFreeformTaskBackend.presents;c.onHomeVisible();CompactStartupClient.deliver();android.view.View.drain();
  check(RawFreeformTaskBackend.presents==yieldedPresents,"HOME/peer callback replayed yielded admission");c.destroy();
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();check(p.configured>0,"initial warm task missing");
+ c.cancelAutomaticColdStart();c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
+ check(c.startupNavigationReady(),"user yield prevented healthy warm-task HOME reuse");c.destroy();
  // Source icons remain independent; superseded map callback cannot change the new action.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  int[] opened={0};c.launchAfterSuspension(()->opened[0]++);check(opened[0]==1,"source icon waits for callback");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());

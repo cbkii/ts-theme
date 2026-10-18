@@ -137,16 +137,18 @@ queue. One stalled call leaves a second slot available; two stalled calls fail c
 until a worker returns. Registration and cleanup use the same bounded capacity; cleanup
 is idempotent and never blocks HOME. Android Binder calls are not assumed interruptible.
 
-The first attempted rollback archive returned HTTP403 bytes instead of the draft APK.
-The corrected workflow uploads only after verified complete preservation. No signed-pair
-request should prune PR17 until its bytes are retained or the owner authorises rotation.
+The attempted optional PR17 archive could not read draft release assets with the PR
+workflow token (HTTP403). It is removed from source CI; no archive is claimed. The live
+managed draft also contains the immediate-parent PR24-96c128d signed candidate, APK SHA-256
+`c7a53fa0ecc9d1876f10c64a38210b9d508d14c5538715c83399b10d6e37c590`.
+The existing two-snapshot publisher retains that immediate-parent rollback when adding PR26;
+the older PR17 snapshot rotates out under the existing authorised TESTING policy. No
+publisher, signing permission or retention-policy change is required. PR24 remains a
+rollback candidate, not a physically qualified cold-start success.
 
-The archive attempt is optional source-CI evidence, not a newly enforced publisher dependency.
-The existing trusted signing/publishing workflow is unchanged. This execution withholds the
-signed request while rollback remains unavailable; a successful source check is not proof
-that rollback bytes were preserved. User suppression is immediate in memory and uses Android's
-normal lifecycle-flushed preference write; abrupt kill before that flush is unqualified.
-Accepted/uncertain Activity admission remains protected by the durable root claim.
+User suppression is immediate in memory with Android's normal lifecycle-flushed preference
+write; abrupt kill before that flush is unqualified. Accepted/uncertain Activity admission
+remains protected by the durable root claim.
 
 ## Resume hardening
 
