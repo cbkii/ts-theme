@@ -108,6 +108,8 @@ public final class SettingsActivity extends Activity {
         super.onStop();
     }
 
+    AppearanceDialogs appearanceDialogs() { return appearanceDialogs; }
+
     private void applyAppearance() {
         if (root == null) return;
         setTheme(AutomotiveUi.activityTheme(this));
@@ -526,6 +528,7 @@ public final class SettingsActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (appearanceDialogs != null) appearanceDialogs.close();
         configurationIo.shutdownNow();
         super.onDestroy();
     }

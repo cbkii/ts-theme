@@ -20,7 +20,8 @@ Target: confirmed TS18 Android 10/API29, 1280×720 landscape touchscreen, no lux
   Drawer refreshes preserve primary/secondary labels, search icons and actual app identity.
 - Day uses light surfaces and dark text/glyphs, including the rail and source controls.
   Bright accent fills retain black glyphs; accent-only foregrounds use a darker tone.
-  Framework dialogs use the local policy. An open time picker is rebuilt on transition
+  Framework dialogs and all three shortcut-editor popups share the local policy and
+  live appearance updates, preserving Auto app identity and selected icons. An open time picker is rebuilt on transition
   with its selected hour/minute retained, so framework internals use the correct theme.
 - Organic Maps owns its policy and renderer independently. No cross-package IPC, global
   night-mode write, root theme injection or shared setting is introduced.

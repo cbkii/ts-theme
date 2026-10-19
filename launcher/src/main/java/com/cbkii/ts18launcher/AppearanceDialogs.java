@@ -3,7 +3,6 @@ package com.cbkii.ts18launcher;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.TimePickerDialog;
-import android.widget.TimePicker;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.drawable.ColorDrawable;
@@ -13,16 +12,20 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.TimePicker;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 /** Framework dialogs use the same local policy without changing global Android night mode. */
 final class AppearanceDialogs {
     private final Context context;
     private final List<WeakReference<Dialog>> dialogs = new ArrayList<>();
+    private final Map<Dialog, Runnable> bindings = new HashMap<>();
     AppearanceDialogs(Context context) { this.context = context; }
 
     Context themedContext() {
@@ -33,17 +36,31 @@ final class AppearanceDialogs {
 
     AlertDialog.Builder builder() {
         return new AlertDialog.Builder(themedContext()) {
-            @Override public AlertDialog show() {
-                AlertDialog dialog = super.show();
-                track(dialog);
+            @Override public AlertDialog create() {
+                AlertDialog dialog = super.create();
+                dialog.setOnShowListener(ignored -> track(dialog));
                 return dialog;
             }
         };
     }
 
+    void bind(Dialog dialog, Runnable update) {
+        bindings.put(dialog, update);
+        dialog.setOnDismissListener(ignored -> bindings.remove(dialog));
+    }
+
     void track(Dialog dialog) {
         dialogs.add(new WeakReference<>(dialog));
         apply(dialog);
+    }
+
+    void close() {
+        for (WeakReference<Dialog> reference : dialogs) {
+            Dialog dialog = reference.get();
+            if (dialog != null && dialog.isShowing()) dialog.dismiss();
+        }
+        dialogs.clear();
+        bindings.clear();
     }
 
     void refresh() {
@@ -91,6 +108,8 @@ final class AppearanceDialogs {
                         ? android.R.style.Theme_Material_Light_Dialog_Alert : android.R.style.Theme_Material_Dialog_Alert, true);
         dialog.getWindow().setBackgroundDrawable(new ColorDrawable(AutomotiveUi.color(context, R.color.ui_surface)));
         tint(dialog.getWindow().getDecorView());
+        Runnable binding = bindings.get(dialog);
+        if (binding != null) binding.run();
     }
 
     private void tint(View view) {

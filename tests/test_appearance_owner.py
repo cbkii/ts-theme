@@ -34,6 +34,18 @@ class AppearanceOwnerTest(unittest.TestCase):
             for bg in backgrounds:
                 self.assertGreaterEqual(contrast(foreground, bg), 4.5)
 
+    def test_shortcut_dialogs_share_live_binding_and_keep_app_identity(self):
+        source = (ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher/ShortcutEditorView.java').read_text()
+        self.assertNotIn('new AlertDialog.Builder', source)
+        self.assertEqual(3, source.count('dialogs.builder()'))
+        self.assertIn('dialogs.bind(dialog', source)
+        self.assertIn('tile.setTag(preview.tint)', source)
+        self.assertIn('else tile.clearColorFilter()', source)
+        manager = (ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher/AppearanceDialogs.java').read_text()
+        self.assertIn('public AlertDialog create()', manager)
+        self.assertIn('setOnShowListener', manager)
+        self.assertIn('bindings.remove(dialog)', manager)
+
     def test_shared_foreground_owner_and_binary_boundaries(self):
         java = shutil.which('java')
         if not java:
