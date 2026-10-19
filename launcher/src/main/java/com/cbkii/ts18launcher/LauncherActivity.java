@@ -182,7 +182,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         updateMediaPresentation();
         AutomotiveUi.styleRailButton(this, appsButton, true);
         AutomotiveUi.styleRailButton(this, navigationButton, true);
-        for (ImageButton button : quickButtons) AutomotiveUi.styleRailButton(this, button);
+        for (ImageButton button : quickButtons) AutomotiveUi.styleRailButton(this, button, false);
         applyRailConfiguration();
         if (nativeNavigationPanel != null) nativeNavigationPanel.applyAppearance(this);
         if (appDrawerPanel != null) appDrawerPanel.applyAppearance();
@@ -325,7 +325,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         ImageButton button = new ImageButton(this);
         button.setImageResource(icon);
         button.setContentDescription(description);
-        AutomotiveUi.styleRailButton(this, button);
+        AutomotiveUi.styleRailButton(this, button, false);
         return button;
     }
 
@@ -339,7 +339,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             quickCells[i].setVisibility(visible ? View.VISIBLE : View.GONE);
             if (visible) {
                 ShortcutSlot.bind(this, quickButtons[i], LauncherPrefs.QUICK_KEYS[i]);
-                AutomotiveUi.styleRailButton(this, quickButtons[i]);
+                AutomotiveUi.styleRailButton(this, quickButtons[i], false);
                 focus.add(quickButtons[i]);
             }
         }

@@ -255,7 +255,14 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private void recolour(View view) {
         if (view instanceof TextView) ((TextView) view).setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
         if (view instanceof EditText) ((EditText) view).setHintTextColor(AutomotiveUi.color(activity, R.color.ui_text_secondary));
-        if (view instanceof ImageButton) AutomotiveUi.styleRailButton(activity, (ImageButton) view);
+        if (view instanceof ImageButton) {
+            ImageButton button = (ImageButton) view;
+            AutomotiveUi.styleRailButton(activity, button);
+            // Styling must not monochrome an Auto app identity after an appearance change.
+            Object key = button.getTag();
+            if (key instanceof String && ShortcutSlot.isSlotKey((String) key))
+                ShortcutSlot.bind(activity, button, (String) key);
+        }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) recolour(group.getChildAt(i));
@@ -284,6 +291,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             cell.setGravity(Gravity.CENTER);
             String role = LauncherPrefs.drawerQuickRole(activity, i);
             ImageButton button = iconButton(RoleIconCatalog.icon(role), RoleIconCatalog.label(role));
+            button.setTag(LauncherPrefs.DRAWER_QUICK_KEYS[i]);
             ShortcutSlot.bind(activity, button, LauncherPrefs.DRAWER_QUICK_KEYS[i]);
             button.setOnClickListener(v -> openDrawerQuick(index));
             button.setOnLongClickListener(v -> { openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]); return true; });

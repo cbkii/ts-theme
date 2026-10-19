@@ -65,6 +65,13 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertIn("ShortcutSlot.iconAppearance(activity, key)", DRAWER)
         self.assertIn('quickSignature = "";', DRAWER)
 
+    def test_drawer_appearance_restores_auto_app_identity_after_shared_styling(self):
+        recolour = DRAWER.split("private void recolour(View view)", 1)[1].split("void applyVoiceSearch", 1)[0]
+        self.assertIn("button.setTag(LauncherPrefs.DRAWER_QUICK_KEYS[i])", DRAWER)
+        self.assertLess(recolour.index("AutomotiveUi.styleRailButton"), recolour.index("ShortcutSlot.bind"))
+        self.assertIn("ShortcutSlot.isSlotKey((String) key)", recolour)
+        self.assertIn("styleRailButton(this, quickButtons[i], false)", LAUNCHER)
+
     def test_drawer_grid_long_press_opens_android_app_info(self):
         self.assertIn("grid.setOnItemLongClickListener", DRAWER)
         self.assertIn("android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS", DRAWER)

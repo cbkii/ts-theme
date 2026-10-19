@@ -184,7 +184,7 @@ final class AutomotiveUi {
         attachFeedback(button);
     }
 
-    static void styleRailButton(Context context, ImageButton button) { styleRailButton(context, button, false); }
+    static void styleRailButton(Context context, ImageButton button) { styleRailButton(context, button, true); }
 
     static void styleRailButton(Context context, ImageButton button, boolean endpoint) {
         button.setBackground(transparentActionBackground(context));
