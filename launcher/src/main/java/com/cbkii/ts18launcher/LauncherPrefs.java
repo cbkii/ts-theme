@@ -154,26 +154,25 @@ final class LauncherPrefs {
 
     static String appearanceMode(Context context) {
         String value = prefs(context).getString(KEY_APPEARANCE_MODE, APPEARANCE_AUTO);
-        if (APPEARANCE_DAY.equals(value) || APPEARANCE_HIGH_CONTRAST.equals(value)
-                || APPEARANCE_DIM.equals(value) || APPEARANCE_NIGHT.equals(value)) return value;
+        return canonicalAppearance(value);
+    }
+    static String canonicalAppearance(String value) {
+        if (APPEARANCE_DAY.equals(value) || APPEARANCE_HIGH_CONTRAST.equals(value)) return APPEARANCE_DAY;
+        if (APPEARANCE_NIGHT.equals(value) || APPEARANCE_DIM.equals(value)) return APPEARANCE_NIGHT;
         return APPEARANCE_AUTO;
     }
     static void setAppearanceMode(Context context, String value) {
-        String safe = APPEARANCE_AUTO;
-        if (APPEARANCE_DAY.equals(value) || APPEARANCE_HIGH_CONTRAST.equals(value)
-                || APPEARANCE_DIM.equals(value) || APPEARANCE_NIGHT.equals(value)) safe = value;
-        prefs(context).edit().putString(KEY_APPEARANCE_MODE, safe).apply();
+        prefs(context).edit().putString(KEY_APPEARANCE_MODE, canonicalAppearance(value)).apply();
     }
     static String mapAppearance(Context context) { return appearanceMode(context); }
     static void setMapAppearance(Context context, String value) { setAppearanceMode(context, value); }
 
     static String appearanceAutoSource(Context context) {
-        return AUTO_SOURCE_SCHEDULE.equals(prefs(context).getString(KEY_APPEARANCE_AUTO_SOURCE, AUTO_SOURCE_SENSOR))
-                ? AUTO_SOURCE_SCHEDULE : AUTO_SOURCE_SENSOR;
+        // Legacy sensor preferences migrate to the schedule on this sensorless product.
+        return AUTO_SOURCE_SCHEDULE;
     }
     static void setAppearanceAutoSource(Context context, String value) {
-        prefs(context).edit().putString(KEY_APPEARANCE_AUTO_SOURCE,
-                AUTO_SOURCE_SCHEDULE.equals(value) ? AUTO_SOURCE_SCHEDULE : AUTO_SOURCE_SENSOR).apply();
+        prefs(context).edit().putString(KEY_APPEARANCE_AUTO_SOURCE, AUTO_SOURCE_SCHEDULE).apply();
     }
     static int appearanceDayStartMinutes(Context context) { return prefs(context).getInt(KEY_APPEARANCE_DAY_START, SCHEDULE_UNSET); }
     static int appearanceNightStartMinutes(Context context) { return prefs(context).getInt(KEY_APPEARANCE_NIGHT_START, SCHEDULE_UNSET); }

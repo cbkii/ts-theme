@@ -43,6 +43,10 @@ import java.util.concurrent.Executors;
 /** In-HOME app list. It overlays only the map surface, leaving the media strip visible. */
 @SuppressLint({"SetTextI18n", "ViewConstructor"})
 final class AppDrawerPanel extends android.widget.FrameLayout {
+    private TextView title;
+    private LinearLayout searchRow;
+    private ImageView searchIcon;
+    private final List<ImageButton> headerButtons = new ArrayList<>();
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "ts18-app-drawer-loader");
         thread.setDaemon(true);
@@ -97,7 +101,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
         LinearLayout header = new LinearLayout(activity);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(activity);
+        title = new TextView(activity);
         title.setText("Apps");
         title.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
         title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
@@ -107,9 +111,11 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         ImageButton settings = iconButton(R.drawable.ic_settings, "Settings");
         settings.setOnClickListener(v -> activity.startActivity(new Intent(activity, SettingsActivity.class)));
+        headerButtons.add(settings);
         header.addView(settings, new LinearLayout.LayoutParams(target, target));
         ImageButton close = iconButton(R.drawable.ic_close, "Close apps");
         close.setOnClickListener(v -> hidePanel());
+        headerButtons.add(close);
         header.addView(close, new LinearLayout.LayoutParams(target, target));
         AutomotiveUi.linkHorizontal(java.util.Arrays.asList(settings, close));
         root.addView(header, new LinearLayout.LayoutParams(
@@ -122,10 +128,10 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(activity, R.dimen.ui_drawer_quick_height)));
 
-        LinearLayout searchRow = new LinearLayout(activity);
+        searchRow = new LinearLayout(activity);
         searchRow.setGravity(Gravity.CENTER_VERTICAL);
         searchRow.setBackground(AutomotiveUi.cardBackground(activity));
-        ImageView searchIcon = new ImageView(activity);
+        searchIcon = new ImageView(activity);
         searchIcon.setImageResource(R.drawable.ic_search);
         searchIcon.setColorFilter(AutomotiveUi.color(activity, R.color.ui_icon));
         searchIcon.setPadding(gap, gap, gap, gap);
@@ -152,6 +158,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         voice.setEnabled(voiceAvailable);
         voice.setContentDescription(voiceAvailable ? "Voice search" : "Voice search unavailable");
         voice.setOnClickListener(v -> activity.startActivityForResult(VoiceSearch.intent(), VoiceSearch.REQUEST_CODE));
+        headerButtons.add(voice);
         searchRow.addView(voice, new LinearLayout.LayoutParams(target, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(searchRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -247,26 +254,15 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     void applyAppearance() {
         setBackgroundColor(AutomotiveUi.color(activity, R.color.ui_black));
-        recolour(this);
+        title.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
+        search.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
+        search.setHintTextColor(AutomotiveUi.color(activity, R.color.ui_text_secondary));
+        searchIcon.setColorFilter(AutomotiveUi.color(activity, R.color.ui_icon));
+        searchRow.setBackground(AutomotiveUi.cardBackground(activity));
+        for (ImageButton button : headerButtons) AutomotiveUi.styleRailButton(activity, button);
+        quickSignature = "";
         refreshPreferences();
         adapter.notifyDataSetChanged();
-    }
-
-    private void recolour(View view) {
-        if (view instanceof TextView) ((TextView) view).setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
-        if (view instanceof EditText) ((EditText) view).setHintTextColor(AutomotiveUi.color(activity, R.color.ui_text_secondary));
-        if (view instanceof ImageButton) {
-            ImageButton button = (ImageButton) view;
-            AutomotiveUi.styleRailButton(activity, button);
-            // Styling must not monochrome an Auto app identity after an appearance change.
-            Object key = button.getTag();
-            if (key instanceof String && ShortcutSlot.isSlotKey((String) key))
-                ShortcutSlot.bind(activity, button, (String) key);
-        }
-        if (view instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) recolour(group.getChildAt(i));
-        }
     }
 
     void applyVoiceSearch(String query) {
@@ -494,6 +490,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             Entry entry = visibleEntries.get(position);
             icon.setImageDrawable(entry.icon == null
                     ? activity.getDrawable(R.drawable.ic_launcher) : entry.icon);
+            label.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
             label.setText(entry.label);
             cell.setMinimumHeight(116);
             return cell;

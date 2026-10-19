@@ -1,52 +1,26 @@
 package com.cbkii.ts18launcher;
 
-/** Pure schedule resolver kept Android-free for deterministic JVM tests. */
+/** Binary wall-clock schedule: inclusive dawn, exclusive dusk, including overnight windows. */
 final class AppearanceSchedule {
-    static final int TRANSITION_MINUTES = 45;
-    static final int GLARE_INSET_MINUTES = 180;
-
     private AppearanceSchedule() {}
 
+    static boolean valid(int day, int night) {
+        return anchor(day, LauncherPrefs.DEFAULT_DAY_START_MINUTES)
+                != anchor(night, LauncherPrefs.DEFAULT_NIGHT_START_MINUTES);
+    }
+
     static String resolve(int minuteOfDay, int dayStart, int nightStart) {
-        int now = normalize(minuteOfDay);
-        int day = dayStart < 0 ? LauncherPrefs.DEFAULT_DAY_START_MINUTES : normalize(dayStart);
-        int night = nightStart < 0 ? LauncherPrefs.DEFAULT_NIGHT_START_MINUTES : normalize(nightStart);
-        int daylight = forwardDistance(day, night);
-        if (daylight < 240) return LauncherPrefs.APPEARANCE_DIM;
-
-        if (circularDistance(now, day) <= TRANSITION_MINUTES
-                || circularDistance(now, night) <= TRANSITION_MINUTES) {
-            return LauncherPrefs.APPEARANCE_DIM;
+        int day = anchor(dayStart, LauncherPrefs.DEFAULT_DAY_START_MINUTES);
+        int night = anchor(nightStart, LauncherPrefs.DEFAULT_NIGHT_START_MINUTES);
+        // Recover corrupt/old equal anchors without trapping the display in a third mode.
+        if (day == night) {
+            day = LauncherPrefs.DEFAULT_DAY_START_MINUTES;
+            night = LauncherPrefs.DEFAULT_NIGHT_START_MINUTES;
         }
-
-        if (!inForwardWindow(now, day, night)) return LauncherPrefs.APPEARANCE_NIGHT;
-
-        int glareInset = Math.min(GLARE_INSET_MINUTES, Math.max(60, daylight / 4));
-        int glareStart = normalize(day + glareInset);
-        int glareEnd = normalize(night - glareInset);
-        if (inForwardWindow(now, glareStart, glareEnd)) {
-            return LauncherPrefs.APPEARANCE_HIGH_CONTRAST;
-        }
-        return LauncherPrefs.APPEARANCE_DAY;
+        return normalize(minuteOfDay - day) < normalize(night - day)
+                ? LauncherPrefs.APPEARANCE_DAY : LauncherPrefs.APPEARANCE_NIGHT;
     }
 
-    private static int normalize(int minutes) {
-        int result = minutes % 1440;
-        return result < 0 ? result + 1440 : result;
-    }
-
-    private static int forwardDistance(int from, int to) {
-        return normalize(to - from);
-    }
-
-    private static int circularDistance(int left, int right) {
-        int forward = forwardDistance(left, right);
-        return Math.min(forward, 1440 - forward);
-    }
-
-    private static boolean inForwardWindow(int value, int start, int end) {
-        int span = forwardDistance(start, end);
-        int offset = forwardDistance(start, value);
-        return span > 0 && offset < span;
-    }
+    private static int anchor(int value, int fallback) { return value < 0 ? fallback : normalize(value); }
+    private static int normalize(int value) { return ((value % 1440) + 1440) % 1440; }
 }

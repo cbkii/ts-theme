@@ -20,10 +20,12 @@
     <color name="ui_night_secondary">#A0A0A0</color>
     <color name="ui_night_accent">#E65F38</color>
 
-    <color name="ui_high_black">#000000</color>
-    <color name="ui_high_surface">#080808</color>
-    <color name="ui_high_surface_elevated">#1B1B1B</color>
-    <color name="ui_high_text">#FFFFFF</color>
-    <color name="ui_high_secondary">#E6E6E6</color>
+    <color name="ui_high_black">#FFFFFF</color>
+    <color name="ui_high_surface">#F2F4F6</color>
+    <color name="ui_high_surface_elevated">#DEE3E8</color>
+    <color name="ui_high_text">#101820</color>
+    <color name="ui_high_secondary">#33424D</color>
     <color name="ui_high_accent">#FF7043</color>
+    <color name="ui_day_destructive">#B3261E</color>
+    <color name="ui_day_ripple">#33000000</color>
 </resources>

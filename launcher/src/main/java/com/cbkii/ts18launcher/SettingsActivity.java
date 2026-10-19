@@ -3,8 +3,6 @@ package com.cbkii.ts18launcher;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -42,6 +40,9 @@ public final class SettingsActivity extends Activity {
 
     private final java.util.concurrent.ExecutorService configurationIo =
             java.util.concurrent.Executors.newSingleThreadExecutor();
+    private LinearLayout root;
+    private AppearanceController appearanceController;
+    private AppearanceDialogs appearanceDialogs;
     private LinearLayout navigation;
     private ScrollView contentScroll;
     private LinearLayout content;
@@ -49,13 +50,16 @@ public final class SettingsActivity extends Activity {
     private int selectedCategory = CATEGORY_HOME;
 
     @Override protected void onCreate(Bundle state) {
+        setTheme(AutomotiveUi.activityTheme(this));
         super.onCreate(state);
         if (state != null) {
             selectedCategory = Math.max(CATEGORY_HOME,
                     Math.min(CATEGORY_ADVANCED, state.getInt(STATE_CATEGORY, CATEGORY_HOME)));
         }
 
-        LinearLayout root = new LinearLayout(this);
+        appearanceDialogs = new AppearanceDialogs(this);
+        appearanceController = new AppearanceController(this, mode -> applyAppearance());
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         int gap = AutomotiveUi.dimen(this, R.dimen.driver_gap);
@@ -94,6 +98,26 @@ public final class SettingsActivity extends Activity {
         if (content != null) render();
     }
 
+    @Override protected void onStart() {
+        super.onStart();
+        appearanceController.start();
+    }
+
+    @Override protected void onStop() {
+        appearanceController.stop();
+        super.onStop();
+    }
+
+    private void applyAppearance() {
+        if (root == null) return;
+        setTheme(AutomotiveUi.activityTheme(this));
+        int scroll = contentScroll.getScrollY();
+        root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
+        render();
+        contentScroll.post(() -> contentScroll.scrollTo(0, scroll));
+        appearanceDialogs.refresh();
+    }
+
     private void render() {
         renderNavigation();
         content.removeAllViews();
@@ -119,8 +143,8 @@ public final class SettingsActivity extends Activity {
             item.setText(CATEGORY_LABELS[i]);
             item.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                     getResources().getDimension(R.dimen.ui_settings_label));
-            item.setTextColor(AutomotiveUi.color(this,
-                    selectedCategory == i ? R.color.ui_accent : R.color.ui_text));
+            item.setTextColor(selectedCategory == i ? AutomotiveUi.accentForeground(this)
+                    : AutomotiveUi.color(this, R.color.ui_text));
             item.setGravity(Gravity.CENTER_VERTICAL);
             item.setSingleLine(true);
             item.setMaxLines(1);
@@ -217,35 +241,22 @@ public final class SettingsActivity extends Activity {
     }
 
     private void renderAppearance() {
-        addChoiceRow(R.drawable.ic_settings, "Display mode", appearanceLabel(),
-                v -> choose("Display mode",
-                        new String[] {"Automatic", "Day", "High contrast", "Dim", "Night"},
+        addChoiceRow(R.drawable.ic_settings, getString(R.string.display_mode), appearanceLabel(),
+                v -> choose(getString(R.string.display_mode),
+                        new String[] {getString(R.string.appearance_scheduled), getString(R.string.appearance_day),
+                                getString(R.string.appearance_night)},
                         new String[] {LauncherPrefs.APPEARANCE_AUTO, LauncherPrefs.APPEARANCE_DAY,
-                                LauncherPrefs.APPEARANCE_HIGH_CONTRAST, LauncherPrefs.APPEARANCE_DIM,
                                 LauncherPrefs.APPEARANCE_NIGHT},
                         LauncherPrefs.appearanceMode(this), value -> {
-                            LauncherPrefs.setAppearanceMode(this, value); recreate();
+                            LauncherPrefs.setAppearanceMode(this, value); applyAppearance();
                         }));
         addAccentPaletteRow();
-
         if (LauncherPrefs.APPEARANCE_AUTO.equals(LauncherPrefs.appearanceMode(this))) {
-            addChoiceRow(R.drawable.ic_utility, "Automatic switching", autoSourceLabel(),
-                    v -> choose("Automatic switching",
-                            new String[] {"Ambient light", "Schedule"},
-                            new String[] {LauncherPrefs.AUTO_SOURCE_SENSOR, LauncherPrefs.AUTO_SOURCE_SCHEDULE},
-                            LauncherPrefs.appearanceAutoSource(this), value -> {
-                                LauncherPrefs.setAppearanceAutoSource(this, value); render();
-                            }));
-            if (LauncherPrefs.AUTO_SOURCE_SENSOR.equals(LauncherPrefs.appearanceAutoSource(this))) {
-                addInfoRow(R.drawable.ic_lightbulb, "Ambient light",
-                        AppearanceController.sensorAvailable(this) ? "Available" : "Unavailable");
-            } else {
-                addChoiceRow(R.drawable.ic_utility, "Day starts", scheduleValue(true), v -> chooseTime(true));
-                addChoiceRow(R.drawable.ic_utility, "Night starts", scheduleValue(false), v -> chooseTime(false));
-                addActionRow(R.drawable.ic_close, "Reset schedule",
-                        "Use 07:00 for day and 19:00 for night.",
-                        v -> { LauncherPrefs.clearAppearanceSchedule(this); render(); });
-            }
+            addChoiceRow(R.drawable.ic_utility, getString(R.string.appearance_dawn), scheduleValue(true), v -> chooseTime(true));
+            addChoiceRow(R.drawable.ic_utility, getString(R.string.appearance_dusk), scheduleValue(false), v -> chooseTime(false));
+            addActionRow(R.drawable.ic_close, getString(R.string.appearance_reset),
+                    getString(R.string.appearance_defaults),
+                    v -> { LauncherPrefs.clearAppearanceSchedule(this); render(); });
         }
     }
 
@@ -309,7 +320,7 @@ public final class SettingsActivity extends Activity {
                 v -> chooseConfigurationDocument(false));
         addDestructiveRow(R.drawable.ic_close, "Reset settings",
                 "Restore launcher settings to their defaults.",
-                v -> new AlertDialog.Builder(this).setTitle("Reset settings?")
+                v -> appearanceDialogs.builder().setTitle("Reset settings?")
                         .setMessage("This resets Home apps, shortcuts, layout, media and appearance. "
                                 + "Your Android Home app choice will not change.")
                         .setNegativeButton("Cancel", null).setPositiveButton("Reset", (dialog, which) ->
@@ -343,7 +354,7 @@ public final class SettingsActivity extends Activity {
                 "Music: " + (TestingProfiles.prepareAuxio(this) ? "bind + supported PREPARE" : "bind only"),
                 "Radio: " + TestingProfiles.radio(this), "Open navigation normally",
                 "Startup: " + TestingProfiles.startup(this), "Build and test identity"};
-        new AlertDialog.Builder(this).setTitle("Testing methods")
+        appearanceDialogs.builder().setTitle("Testing methods")
                 .setItems(choices, (dialog, which) -> {
                     switch (which) {
                         case 0: chooseTesting("navigation", new String[]{"N0", "N1", "N2"},
@@ -367,7 +378,7 @@ public final class SettingsActivity extends Activity {
                         case 6: chooseTesting("startup", new String[]{"background", "auto", "aggressive"},
                                 new String[]{"Background only · no foreground bootstrap", "Automatic fallback · foreground bootstrap then HOME restore",
                                         "Aggressive · guarded root-first staging; no uncertain replay"}); break;
-                        default: new AlertDialog.Builder(this).setTitle("Build and test identity")
+                        default: appearanceDialogs.builder().setTitle("Build and test identity")
                                 .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
                                         + "\n\n" + StartupReadinessCoordinator.get(this).summary()
                                         + "\n\nReturn HOME after selecting a method. Keep the Maps APK fixed. "
@@ -379,7 +390,7 @@ public final class SettingsActivity extends Activity {
     }
 
     private void chooseTesting(String key, String[] values, String[] labels) {
-        new AlertDialog.Builder(this).setTitle("Select " + key + " method")
+        appearanceDialogs.builder().setTitle("Select " + key + " method")
                 .setItems(labels, (dialog, which) -> {
                     TestingProfiles.set(this, key, values[which]);
                     Toast.makeText(this, "Method saved · return HOME to test", Toast.LENGTH_LONG).show();
@@ -458,7 +469,7 @@ public final class SettingsActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         TextView detail = text(importSummary(preview), R.dimen.ui_settings_value, R.color.ui_text);
         scroll.addView(detail);
-        new AlertDialog.Builder(this).setTitle("Import settings?").setView(scroll)
+        appearanceDialogs.builder().setTitle("Import settings?").setView(scroll)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Import", (dialog, which) -> commitConfiguration(preview.values, false)).show();
     }
@@ -523,12 +534,18 @@ public final class SettingsActivity extends Activity {
         int stored = day ? LauncherPrefs.appearanceDayStartMinutes(this) : LauncherPrefs.appearanceNightStartMinutes(this);
         int fallback = day ? LauncherPrefs.DEFAULT_DAY_START_MINUTES : LauncherPrefs.DEFAULT_NIGHT_START_MINUTES;
         int initial = stored < 0 ? fallback : stored;
-        new TimePickerDialog(this, (view, hour, minute) -> {
+        appearanceDialogs.showTimePicker((view, hour, minute) -> {
             int value = hour * 60 + minute;
+            int other = day ? LauncherPrefs.appearanceNightStartMinutes(this) : LauncherPrefs.appearanceDayStartMinutes(this);
+            if (!AppearanceSchedule.valid(day ? value : other, day ? other : value)) {
+                appearanceDialogs.builder().setMessage(R.string.appearance_invalid_schedule)
+                        .setPositiveButton(android.R.string.ok, null).show();
+                return;
+            }
             if (day) LauncherPrefs.setAppearanceDayStartMinutes(this, value);
             else LauncherPrefs.setAppearanceNightStartMinutes(this, value);
             render();
-        }, initial / 60, initial % 60, true).show();
+        }, initial / 60, initial % 60);
     }
 
     private void addSection(String title) {
@@ -542,6 +559,11 @@ public final class SettingsActivity extends Activity {
         LinearLayout row = baseRow(icon, title, value);
         Switch toggle = new Switch(this);
         toggle.setChecked(checked); toggle.setShowText(false);
+        android.content.res.ColorStateList switchColours = new android.content.res.ColorStateList(
+                new int[][] {new int[] {android.R.attr.state_checked}, new int[] {}},
+                new int[] {AutomotiveUi.accentForeground(this), AutomotiveUi.color(this, R.color.ui_text_secondary)});
+        toggle.setThumbTintList(switchColours);
+        toggle.setTrackTintList(switchColours);
         toggle.setOnCheckedChangeListener((buttonView, isChecked) -> listener.set(isChecked));
         row.addView(toggle, new LinearLayout.LayoutParams(88, ViewGroup.LayoutParams.MATCH_PARENT));
         makeInteractive(row, v -> toggle.setChecked(!toggle.isChecked()));
@@ -594,7 +616,8 @@ public final class SettingsActivity extends Activity {
     private void addTrailingIcon(LinearLayout row, int drawable, int color) {
         ImageView trailing = new ImageView(this);
         trailing.setImageResource(drawable);
-        trailing.setColorFilter(AutomotiveUi.color(this, color));
+        trailing.setColorFilter(color == R.color.ui_accent ? AutomotiveUi.accentForeground(this)
+                : AutomotiveUi.color(this, color));
         int pad = AutomotiveUi.dimen(this, R.dimen.driver_gap) * 2;
         trailing.setPadding(pad, pad, pad, pad);
         row.addView(trailing, new LinearLayout.LayoutParams(64, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -641,7 +664,8 @@ public final class SettingsActivity extends Activity {
 
     private TextView text(String value, int dimenId, int colorId) {
         TextView view = new TextView(this); view.setText(value);
-        view.setTextColor(AutomotiveUi.color(this, colorId));
+        view.setTextColor(colorId == R.color.ui_accent ? AutomotiveUi.accentForeground(this)
+                : AutomotiveUi.color(this, colorId));
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(dimenId));
         view.setPadding(0, 4, 0, 4); return view;
     }
@@ -649,7 +673,7 @@ public final class SettingsActivity extends Activity {
     private void choose(String title, String[] labels, String[] values, String current, ChoiceSetter setter) {
         int checked = -1;
         for (int i = 0; i < values.length; i++) if (values[i].equals(current)) checked = i;
-        new AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, checked, (dialog, which) -> {
+        appearanceDialogs.builder().setTitle(title).setSingleChoiceItems(labels, checked, (dialog, which) -> {
             setter.set(values[which]); dialog.dismiss();
         }).setNegativeButton("Cancel", null).show();
     }
@@ -663,16 +687,9 @@ public final class SettingsActivity extends Activity {
 
     private String appearanceLabel() {
         String value = LauncherPrefs.appearanceMode(this);
-        if (LauncherPrefs.APPEARANCE_DAY.equals(value)) return "Day";
-        if (LauncherPrefs.APPEARANCE_HIGH_CONTRAST.equals(value)) return "High contrast";
-        if (LauncherPrefs.APPEARANCE_DIM.equals(value)) return "Dim";
-        if (LauncherPrefs.APPEARANCE_NIGHT.equals(value)) return "Night";
-        return "Automatic";
-    }
-
-    private String autoSourceLabel() {
-        return LauncherPrefs.AUTO_SOURCE_SCHEDULE.equals(LauncherPrefs.appearanceAutoSource(this))
-                ? "Schedule" : "Ambient light";
+        if (LauncherPrefs.APPEARANCE_DAY.equals(value)) return getString(R.string.appearance_day);
+        if (LauncherPrefs.APPEARANCE_NIGHT.equals(value)) return getString(R.string.appearance_night);
+        return getString(R.string.appearance_scheduled);
     }
 
     private String scheduleValue(boolean day) {
@@ -706,7 +723,7 @@ public final class SettingsActivity extends Activity {
         MediaListenerService.refreshActiveSessions();
         String sessions = MediaListenerService.sessionDiagnostics(this);
         String trace = MediaEventTrace.dump(40);
-        new AlertDialog.Builder(this).setTitle("Media diagnostics")
+        appearanceDialogs.builder().setTitle("Media diagnostics")
                 .setMessage(sessions
                         + "\n\nRecent media events"
                         + "\nPlayback acknowledgement is not audible-output proof.\n"
@@ -715,14 +732,14 @@ public final class SettingsActivity extends Activity {
     }
 
     private void confirmRootHome() {
-        new AlertDialog.Builder(this).setTitle("Set TS18 Launcher as Home?")
+        appearanceDialogs.builder().setTitle("Set TS18 Launcher as Home?")
                 .setMessage("This uses Magisk root to set TS18 Launcher as the default Home app. "
                         + "DoFun stays installed for recovery.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Continue", (dialog, which) -> setHomeWithRoot()).show();
     }
 
     private void confirmDisableHome() {
-        new AlertDialog.Builder(this).setTitle("Disable TS18 Launcher as a Home app?")
+        appearanceDialogs.builder().setTitle("Disable TS18 Launcher as a Home app?")
                 .setMessage("The app stays installed. DoFun remains available as a recovery Home app.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Disable", (dialog, which) -> {
                     HomeMode.setHomeAliasEnabled(this, false);

@@ -172,24 +172,19 @@ class AutomotiveUiStateTests(unittest.TestCase):
             luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
             self.assertGreaterEqual((luminance + 0.05) / 0.05, 4.5, value)
 
-    def test_appearance_supports_sensor_schedule_high_contrast_dim_and_night(self):
-        prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
+    def test_appearance_is_binary_schedule_owned_and_sensorless(self):
         controller = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppearanceController.java")
         schedule = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppearanceSchedule.java")
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
-        html = self.read("launcher/src/main/assets/map/map.html")
-        for marker in ("APPEARANCE_DAY", "APPEARANCE_HIGH_CONTRAST", "APPEARANCE_DIM", "APPEARANCE_NIGHT"):
-            self.assertIn(marker, prefs)
-        self.assertIn("Sensor.TYPE_LIGHT", controller)
-        self.assertIn("SENSOR_STALE_MS", controller)
+        self.assertNotIn("SensorManager", controller)
+        self.assertNotIn("APPEARANCE_DIM", schedule)
+        self.assertNotIn("TRANSITION_MINUTES", schedule)
         self.assertIn("AppearanceSchedule.resolve", controller)
-        self.assertIn("DEFAULT_DAY_START_MINUTES = 7 * 60", prefs)
-        self.assertIn("DEFAULT_NIGHT_START_MINUTES = 19 * 60", prefs)
-        self.assertIn("TRANSITION_MINUTES = 45", schedule)
-        self.assertIn('"Ambient light", "Schedule"', settings)
+        self.assertIn("ACTION_TIMEZONE_CHANGED", controller)
+        self.assertIn("registerOnSharedPreferenceChangeListener", controller)
+        self.assertNotIn('"Ambient light", "Schedule"', settings)
         self.assertIn("LauncherPrefs.APPEARANCE_AUTO.equals", settings)
-        self.assertIn("setMapAppearance", html)
-        self.assertIn("contrast(1.18)", html)
+        self.assertIn("AppearanceSchedule.valid", settings)
 
     def test_map_controls_are_opposite_rail_no_duplicate_navigation_and_experimental_default_off(self):
         panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")

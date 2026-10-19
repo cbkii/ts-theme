@@ -84,6 +84,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private MediaListenerService.Snapshot radioSnapshot = emptyMediaSnapshot();
 
     @Override protected void onCreate(Bundle state) {
+        setTheme(AutomotiveUi.activityTheme(this));
         super.onCreate(state);
         if (redirectToCanonicalHome()) return;
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
@@ -663,10 +664,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         musicPanel.setBackground(AutomotiveUi.mediaGroupBackground(this, !radioActive, radioOnRight));
         AutomotiveUi.styleSourcePrimaryButton(this, radioPlayPause, radioActive);
         AutomotiveUi.styleSourcePrimaryButton(this, playPause, !radioActive);
-        radioRole.setImageTintList(ColorStateList.valueOf(AutomotiveUi.color(this,
-                radioActive ? R.color.ui_accent : R.color.ui_text_secondary)));
-        musicRole.setImageTintList(ColorStateList.valueOf(AutomotiveUi.color(this,
-                radioActive ? R.color.ui_text_secondary : R.color.ui_accent)));
+        radioRole.setImageTintList(ColorStateList.valueOf(radioActive ? AutomotiveUi.accentForeground(this)
+                : AutomotiveUi.color(this, R.color.ui_text_secondary)));
+        musicRole.setImageTintList(ColorStateList.valueOf(radioActive ? AutomotiveUi.color(this, R.color.ui_text_secondary)
+                : AutomotiveUi.accentForeground(this)));
     }
 
     private void setMediaButtonsReady(ImageButton... buttons) {

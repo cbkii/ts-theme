@@ -2,4 +2,13 @@
 <resources>
     <string name="app_name">TS18 Launcher</string>
     <string name="media_listener_label">TS18 Launcher media access</string>
+    <string name="display_mode">Display mode</string>
+    <string name="appearance_scheduled">Scheduled (default)</string>
+    <string name="appearance_day">Day / high contrast</string>
+    <string name="appearance_night">Night</string>
+    <string name="appearance_dawn">Day starts</string>
+    <string name="appearance_dusk">Night starts</string>
+    <string name="appearance_reset">Reset schedule</string>
+    <string name="appearance_defaults">Day at 07:00; night at 19:00. Switches directly at each anchor.</string>
+    <string name="appearance_invalid_schedule">Day and night must start at different times. The previous schedule is unchanged.</string>
 </resources>

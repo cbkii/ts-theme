@@ -238,7 +238,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('"Shortcut count"', settings)
         self.assertIn("if (homeShortcuts)", settings)
         self.assertIn('addSection("App drawer shortcuts")', settings)
-        self.assertIn('"Display mode"', settings)
+        self.assertIn("R.string.display_mode", settings)
         self.assertIn('"Automatic switching"', settings)
         self.assertIn("LauncherPrefs.APPEARANCE_AUTO.equals", settings)
         self.assertIn('addSection("Experimental map")', settings)

@@ -17,6 +17,7 @@ import android.widget.ImageView;
 final class NativeNavigationPanel extends FrameLayout {
     interface BoundsListener { void onBoundsChanged(NavigationWindowBounds bounds); }
     private final ImageButton openNavigation;
+    private final GradientDrawable actionCircle = new GradientDrawable();
     private BoundsListener boundsListener;
     private NavigationWindowBounds lastBounds;
     private Runnable openAction;
@@ -31,7 +32,7 @@ final class NativeNavigationPanel extends FrameLayout {
         openNavigation.setImageResource(R.drawable.ic_navigation_filled);
         openNavigation.setImageTintList(ColorStateList.valueOf(Color.BLACK));
         openNavigation.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        GradientDrawable circle = new GradientDrawable();
+        GradientDrawable circle = actionCircle;
         circle.setShape(GradientDrawable.OVAL);
         circle.setColor(Color.WHITE);
         GradientDrawable mask = new GradientDrawable();
@@ -45,6 +46,7 @@ final class NativeNavigationPanel extends FrameLayout {
         openNavigation.setOnClickListener(v -> { if (openAction != null) openAction.run(); });
         openNavigation.setVisibility(View.GONE);
         addView(openNavigation, new LayoutParams(0, 0, Gravity.CENTER));
+        applyAppearance(activity);
     }
 
     void setBoundsListener(BoundsListener listener) { boundsListener = listener; }
@@ -62,7 +64,11 @@ final class NativeNavigationPanel extends FrameLayout {
     void showFailure(String detail, Runnable retry, Runnable openFullscreen) { showAction(detail, openFullscreen); }
     void showUnavailable(String detail, Runnable openFullscreen) { showAction(detail, openFullscreen); }
     void showFullscreenOnly(String label, Runnable openFullscreen) { showAction(label, openFullscreen); }
-    void applyAppearance(Activity activity) { setBackgroundColor(Color.BLACK); }
+    void applyAppearance(Activity activity) {
+        setBackgroundColor(AutomotiveUi.color(activity, R.color.ui_black));
+        actionCircle.setColor(AutomotiveUi.color(activity, R.color.ui_text));
+        openNavigation.setImageTintList(ColorStateList.valueOf(AutomotiveUi.color(activity, R.color.ui_black)));
+    }
 
     @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);

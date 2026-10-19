@@ -18,6 +18,8 @@ final class ConfigurationStore {
             switch (entry.getValue()) {
                 case BOOLEAN: result.put(key, prefs.getBoolean(key, false)); break;
                 case COUNT: case MINUTES: result.put(key, prefs.getInt(key, 0)); break;
+                case APPEARANCE: result.put(key, LauncherPrefs.appearanceMode(context)); break;
+                case AUTO_SOURCE: result.put(key, LauncherPrefs.AUTO_SOURCE_SCHEDULE); break;
                 default: result.put(key, prefs.getString(key, "")); break;
             }
         }
