@@ -20,6 +20,11 @@ final class RadioFrequency {
                 : Integer.toString(khz)) + " " + band;
     }
 
+    static boolean needsDirectory(String pkg, String title, String subtitle) {
+        return NAVRADIO.equals(pkg) && !containsExplicitFrequency(pkg, title)
+                && !containsExplicitFrequency(pkg, subtitle);
+    }
+
     static boolean containsExplicitFrequency(String pkg, String value) {
         if (!NAVRADIO.equals(pkg) || value == null || value.length() > 2048) return false;
         Matcher matcher = VALUE.matcher(value);

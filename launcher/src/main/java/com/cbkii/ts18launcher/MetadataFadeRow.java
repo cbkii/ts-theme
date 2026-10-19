@@ -1,6 +1,7 @@
 package com.cbkii.ts18launcher;
 
 import android.content.Context;
+import android.annotation.SuppressLint;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
@@ -10,6 +11,8 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 /** Gradient is painted in row coordinates, independent of the child's marquee scroll. */
+// Programmatic wrapper around an existing TextView; never inflated from XML.
+@SuppressLint("ViewConstructor")
 final class MetadataFadeRow extends FrameLayout {
     private final TextView text;
     private final Paint fade = new Paint();

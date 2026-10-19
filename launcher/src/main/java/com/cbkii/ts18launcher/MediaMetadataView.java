@@ -17,6 +17,7 @@ import android.widget.TextView;
 final class MediaMetadataView extends LinearLayout {
     private final SlowMarqueeTextView primary;
     private final TextView secondary;
+    private final MetadataFadeRow primaryRow;
     private final MetadataFadeRow secondaryRow;
     private final RadioMetadataResolver radioResolver;
     private MediaListenerService.Snapshot currentSnapshot;
@@ -38,7 +39,8 @@ final class MediaMetadataView extends LinearLayout {
                 context.getResources().getDimension(R.dimen.ui_metadata_text));
         primary.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         primary.setGravity(Gravity.BOTTOM);
-        addView(new MetadataFadeRow(context, primary), new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1.15f));
+        primaryRow = new MetadataFadeRow(context, primary);
+        addView(primaryRow, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1.15f));
 
         secondary = new TextView(context);
         secondary.setTextColor(AutomotiveUi.color(context, R.color.ui_text_secondary));
@@ -64,7 +66,7 @@ final class MediaMetadataView extends LinearLayout {
     void applyAppearance() {
         primary.setTextColor(AutomotiveUi.color(getContext(), R.color.ui_text));
         secondary.setTextColor(AutomotiveUi.color(getContext(), R.color.ui_text_secondary));
-        invalidate();
+        primaryRow.invalidate();
         secondaryRow.invalidate();
     }
 
@@ -117,7 +119,8 @@ final class MediaMetadataView extends LinearLayout {
 
     private void updateRadioObservation() {
         if (isAttachedToWindow() && isShown() && MediaSelection.RADIO.equals(selectedSource)
-                && currentSnapshot != null && RadioFrequency.NAVRADIO.equals(currentSnapshot.packageName)) {
+                && currentSnapshot != null && RadioFrequency.needsDirectory(currentSnapshot.packageName,
+                        currentSnapshot.title, currentSnapshot.artist)) {
             radioResolver.start();
         } else radioResolver.stop();
     }

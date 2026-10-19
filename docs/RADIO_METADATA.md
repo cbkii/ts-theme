@@ -62,7 +62,7 @@ is exact. Confidence labels describe evidence categories, not probabilities.
 
 No additional permission, permission prompt, active GPS request, foreground
 service, wake lock, root access, network request or polling loop is introduced.
-Only visible HOME with selected NavRadio subscribes to Android's **PASSIVE**
+Only visible HOME with selected NavRadio and no explicit frequency subscribes to Android's **PASSIVE**
 provider using an already-granted fine-location permission. It can observe fixes
 produced by an already-running navigation app. On entry, existing last-known
 provider fixes are checked. A fix must be at most 15 minutes old using monotonic

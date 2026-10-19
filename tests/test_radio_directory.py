@@ -31,6 +31,9 @@ public static void main(String[] a)throws Exception{
  check(freq("105.9 FM","106.3 FM").isEmpty(),"conflicting observations");
  check(RadioFrequency.containsExplicitFrequency(RadioFrequency.NAVRADIO,"105.9 FM / 106.3 FM"),"conflict cannot fall back");
  check(RadioFrequency.observed("com.tw.media","105.9 FM")==null,"music isolation");
+ check(!RadioFrequency.needsDirectory(RadioFrequency.NAVRADIO,"Station","105.9 FM"),"observed frequency needs no directory/location");
+ check(!RadioFrequency.needsDirectory(RadioFrequency.NAVRADIO,"105.9 FM / 106.3 FM",""),"conflict needs no directory/location");
+ check(RadioFrequency.needsDirectory(RadioFrequency.NAVRADIO,"2CA",""),"station-only uses fallback");
  AustralianRadioDirectory d;
  try(Reader s=new InputStreamReader(new FileInputStream(a[0]+"/au-stations.tsv"),StandardCharsets.UTF_8);
  Reader b=new InputStreamReader(new java.util.zip.GZIPInputStream(new FileInputStream(a[0]+"/au-state-rings.tsv.gz")),StandardCharsets.UTF_8)){d=new AustralianRadioDirectory(s,b);}

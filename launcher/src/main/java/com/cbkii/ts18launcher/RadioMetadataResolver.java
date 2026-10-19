@@ -78,7 +78,9 @@ final class RadioMetadataResolver implements LocationListener {
         if (snapshot.radioFrequency != null) return resolved(snapshot.radioFrequency.display(), "observed-text");
         // Conflicting explicit observations must not be replaced by a reference guess.
         if (RadioFrequency.containsExplicitFrequency(snapshot.packageName, snapshot.title)
-                || RadioFrequency.containsExplicitFrequency(snapshot.packageName, snapshot.artist)) return "";
+                || RadioFrequency.containsExplicitFrequency(snapshot.packageName, snapshot.artist)) {
+            return resolved("", "conflicting-observation");
+        }
         AustralianRadioDirectory data = directory;
         if (data == null) return "";
         boolean fresh = usable(location);
