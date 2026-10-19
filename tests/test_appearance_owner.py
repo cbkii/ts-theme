@@ -46,6 +46,74 @@ class AppearanceOwnerTest(unittest.TestCase):
         self.assertIn('setOnShowListener', manager)
         self.assertIn('bindings.remove(dialog)', manager)
 
+    def test_actual_preferences_recover_and_export_legacy_anchors_atomically(self):
+        java = shutil.which('java')
+        if not java:
+            self.skipTest('Java required')
+        stubs = {
+            'android/content/SharedPreferences.java': '''package android.content; public interface SharedPreferences {
+                String getString(String k,String d); int getInt(String k,int d); boolean getBoolean(String k,boolean d);
+                boolean contains(String k); Editor edit(); interface Editor {
+                Editor putString(String k,String v); Editor putInt(String k,int v); Editor putBoolean(String k,boolean v);
+                Editor remove(String k); void apply(); boolean commit();} }''',
+            'android/content/Context.java': '''package android.content; import java.util.*;
+                public class Context {public static final int MODE_PRIVATE=0; public final Prefs data=new Prefs();
+                public SharedPreferences getSharedPreferences(String f,int m){return data;}
+                public static class Prefs implements SharedPreferences {public Map<String,Object> values=new HashMap<>(); public int writes;
+                public String getString(String k,String d){return (String)values.getOrDefault(k,d);}
+                public int getInt(String k,int d){return (Integer)values.getOrDefault(k,d);}
+                public boolean getBoolean(String k,boolean d){return (Boolean)values.getOrDefault(k,d);}
+                public boolean contains(String k){return values.containsKey(k);}
+                public Editor edit(){return new Editor(){Map<String,Object> pending=new HashMap<>();
+                public Editor putString(String k,String v){pending.put(k,v);return this;}
+                public Editor putInt(String k,int v){pending.put(k,v);return this;}
+                public Editor putBoolean(String k,boolean v){pending.put(k,v);return this;}
+                public Editor remove(String k){pending.put(k,null);return this;}
+                public void apply(){commit();} public boolean commit(){writes++;pending.forEach((k,v)->{if(v==null)values.remove(k);else values.put(k,v);});return true;}};} } }''',
+            'com/cbkii/ts18launcher/RoleIconCatalog.java': '''package com.cbkii.ts18launcher; class RoleIconCatalog {
+                static boolean isKnown(String r){return true;} static String defaultQuickRole(int i){return "role";}
+                static String defaultDrawerRole(int i){return "role";} }''',
+            'com/cbkii/ts18launcher/MediaSelection.java': '''package com.cbkii.ts18launcher; class MediaSelection {
+                static final String RADIO="radio",MUSIC="music"; }''',
+            'com/cbkii/ts18launcher/ConfigurationCodec.java': '''package com.cbkii.ts18launcher; import java.util.*;
+                class ConfigurationCodec {enum Type{BOOLEAN,COUNT,MINUTES,APPEARANCE,AUTO_SOURCE}
+                static final Map<String,Type> KEYS=Map.of(LauncherPrefs.KEY_APPEARANCE_DAY_START,Type.MINUTES,
+                LauncherPrefs.KEY_APPEARANCE_NIGHT_START,Type.MINUTES,LauncherPrefs.KEY_APPEARANCE_MODE,Type.APPEARANCE,
+                LauncherPrefs.KEY_APPEARANCE_AUTO_SOURCE,Type.AUTO_SOURCE);}''',
+            'com/cbkii/ts18launcher/PrefsHarness.java': '''package com.cbkii.ts18launcher; import android.content.*;
+                public class PrefsHarness {static void check(boolean v){if(!v)throw new AssertionError();}
+                public static void main(String[] args){Context c=new Context(); var p=c.data.values;
+                String day=LauncherPrefs.KEY_APPEARANCE_DAY_START,night=LauncherPrefs.KEY_APPEARANCE_NIGHT_START;
+                p.put(day,420);p.put(night,420);p.put(LauncherPrefs.KEY_APPEARANCE_MODE,"dim");
+                p.put(LauncherPrefs.KEY_APPEARANCE_AUTO_SOURCE,"sensor");
+                check(LauncherPrefs.appearanceDayStartMinutes(c)==420);check(LauncherPrefs.appearanceNightStartMinutes(c)==1140);
+                var exported=ConfigurationStore.read(c); check(exported.get(day).equals(420));check(exported.get(night).equals(1140));
+                check(exported.get(LauncherPrefs.KEY_APPEARANCE_MODE).equals("night"));
+                check(exported.get(LauncherPrefs.KEY_APPEARANCE_AUTO_SOURCE).equals("schedule"));
+                LauncherPrefs.setAppearanceDayStartMinutes(c,480);
+                check(c.data.writes==1);check(p.get(day).equals(480));check(p.get(night).equals(1140));
+                LauncherPrefs.setAppearanceNightStartMinutes(c,480);check(c.data.writes==1);check(p.get(night).equals(1140));
+                LauncherPrefs.clearAppearanceSchedule(c);check(LauncherPrefs.appearanceNightStartMinutes(c)==1140);
+                p.put(day,-1);p.put(night,420);LauncherPrefs.setAppearanceNightStartMinutes(c,1200);
+                check(p.get(day).equals(420));check(p.get(night).equals(1200));
+                p.put(LauncherPrefs.KEY_APPEARANCE_MODE,"high_contrast");check(LauncherPrefs.appearanceMode(c).equals("day"));
+                System.out.println("PASS production preference pair recovery/atomic save/canonical export");} }''',
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = pathlib.Path(directory)
+            paths = []
+            for name, content in stubs.items():
+                target = tmp / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content)
+                paths.append(str(target))
+            sources = [ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher' / name
+                       for name in ('LauncherPrefs.java', 'AppearanceSchedule.java', 'ConfigurationStore.java')]
+            compiled = subprocess.run([java, '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-d', str(tmp / 'classes'), *paths, *map(str, sources)], capture_output=True, text=True)
+            self.assertEqual(0, compiled.returncode, compiled.stderr)
+            ran = subprocess.run([java, '-cp', str(tmp / 'classes'), 'com.cbkii.ts18launcher.PrefsHarness'], capture_output=True, text=True)
+            self.assertEqual(0, ran.returncode, ran.stderr)
+
     def test_shared_foreground_owner_and_binary_boundaries(self):
         java = shutil.which('java')
         if not java:
@@ -92,6 +160,9 @@ class AppearanceOwnerTest(unittest.TestCase):
                 public class Harness {static void check(boolean b){if(!b)throw new AssertionError();}
                 public static void main(String[] args){
                 check(AppearanceSchedule.valid(420,421)); check(!AppearanceSchedule.valid(-1,420));
+                check(AppearanceSchedule.effectiveDayStart(420,420)==420);
+                check(AppearanceSchedule.effectiveNightStart(420,420)==1140);
+                check(AppearanceSchedule.effectiveNightStart(-1,420)==1140);
                 check(!AppearanceSchedule.valid(1140,-1)); check(!AppearanceSchedule.valid(420,420));
                 for(int m=0;m<1440;m++)check(AppearanceSchedule.resolve(m,-1,-1).equals(m>=420&&m<1140?"day":"night"));
                 check(AppearanceSchedule.resolve(360,1200,360).equals("night"));

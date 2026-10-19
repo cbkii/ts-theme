@@ -10,7 +10,8 @@ Target: confirmed TS18 Android 10/API29, 1280×720 landscape touchscreen, no lux
 - Scheduled is the clean-install default. Dawn is inclusive; dusk immediately starts Night.
   Default anchors are 07:00 and 19:00 local time. Overnight and short day windows are valid.
 - Equal anchors are rejected, including imports where the other anchor uses its default.
-  Already-corrupt equal stored anchors resolve with the default schedule.
+  Already-corrupt equal stored anchors resolve with the default schedule; Settings and exports
+  use the same effective anchors, so the displayed/portable schedule agrees with the resolver.
 - Manual Day and Night remain authoritative. Legacy `high_contrast` maps to Day;
   legacy `dim` maps to Night. Legacy sensor selection resolves to Schedule.
 - One process-owned foreground controller caches the effective mode. HOME, Settings and

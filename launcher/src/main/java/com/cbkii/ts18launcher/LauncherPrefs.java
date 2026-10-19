@@ -174,10 +174,28 @@ final class LauncherPrefs {
     static void setAppearanceAutoSource(Context context, String value) {
         prefs(context).edit().putString(KEY_APPEARANCE_AUTO_SOURCE, AUTO_SOURCE_SCHEDULE).apply();
     }
-    static int appearanceDayStartMinutes(Context context) { return prefs(context).getInt(KEY_APPEARANCE_DAY_START, SCHEDULE_UNSET); }
-    static int appearanceNightStartMinutes(Context context) { return prefs(context).getInt(KEY_APPEARANCE_NIGHT_START, SCHEDULE_UNSET); }
-    static void setAppearanceDayStartMinutes(Context context, int minutes) { prefs(context).edit().putInt(KEY_APPEARANCE_DAY_START, clampMinutes(minutes)).apply(); }
-    static void setAppearanceNightStartMinutes(Context context, int minutes) { prefs(context).edit().putInt(KEY_APPEARANCE_NIGHT_START, clampMinutes(minutes)).apply(); }
+    static int appearanceDayStartMinutes(Context context) {
+        SharedPreferences stored = prefs(context);
+        return AppearanceSchedule.effectiveDayStart(stored.getInt(KEY_APPEARANCE_DAY_START, SCHEDULE_UNSET),
+                stored.getInt(KEY_APPEARANCE_NIGHT_START, SCHEDULE_UNSET));
+    }
+    static int appearanceNightStartMinutes(Context context) {
+        SharedPreferences stored = prefs(context);
+        return AppearanceSchedule.effectiveNightStart(stored.getInt(KEY_APPEARANCE_DAY_START, SCHEDULE_UNSET),
+                stored.getInt(KEY_APPEARANCE_NIGHT_START, SCHEDULE_UNSET));
+    }
+    static void setAppearanceDayStartMinutes(Context context, int minutes) {
+        setAppearanceAnchors(context, clampMinutes(minutes), appearanceNightStartMinutes(context));
+    }
+    static void setAppearanceNightStartMinutes(Context context, int minutes) {
+        setAppearanceAnchors(context, appearanceDayStartMinutes(context), clampMinutes(minutes));
+    }
+    private static void setAppearanceAnchors(Context context, int day, int night) {
+        if (!AppearanceSchedule.valid(day, night)) return;
+        // Save the pair atomically, including recovery of a legacy invalid counterpart.
+        prefs(context).edit().putInt(KEY_APPEARANCE_DAY_START, day)
+                .putInt(KEY_APPEARANCE_NIGHT_START, night).apply();
+    }
     static void clearAppearanceSchedule(Context context) {
         prefs(context).edit().remove(KEY_APPEARANCE_DAY_START).remove(KEY_APPEARANCE_NIGHT_START).apply();
     }

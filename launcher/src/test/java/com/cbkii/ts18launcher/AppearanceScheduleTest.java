@@ -26,6 +26,10 @@ public class AppearanceScheduleTest {
         assertEquals("night", AppearanceSchedule.resolve(422, 420, 422));
     }
     @Test public void equalAndPartialDefaultAnchorsAreValidated() {
+        assertEquals(420, AppearanceSchedule.effectiveDayStart(420, 420));
+        assertEquals(1140, AppearanceSchedule.effectiveNightStart(420, 420));
+        assertEquals(420, AppearanceSchedule.effectiveDayStart(-1, 420));
+        assertEquals(1140, AppearanceSchedule.effectiveNightStart(-1, 420));
         assertFalse(AppearanceSchedule.valid(420, 420));
         assertFalse(AppearanceSchedule.valid(-1, 420));
         assertFalse(AppearanceSchedule.valid(1140, -1));

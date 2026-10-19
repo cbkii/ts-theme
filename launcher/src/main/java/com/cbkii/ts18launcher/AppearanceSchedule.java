@@ -9,14 +9,19 @@ final class AppearanceSchedule {
                 != anchor(night, LauncherPrefs.DEFAULT_NIGHT_START_MINUTES);
     }
 
+    static int effectiveDayStart(int day, int night) {
+        return valid(day, night) ? anchor(day, LauncherPrefs.DEFAULT_DAY_START_MINUTES)
+                : LauncherPrefs.DEFAULT_DAY_START_MINUTES;
+    }
+
+    static int effectiveNightStart(int day, int night) {
+        return valid(day, night) ? anchor(night, LauncherPrefs.DEFAULT_NIGHT_START_MINUTES)
+                : LauncherPrefs.DEFAULT_NIGHT_START_MINUTES;
+    }
+
     static String resolve(int minuteOfDay, int dayStart, int nightStart) {
-        int day = anchor(dayStart, LauncherPrefs.DEFAULT_DAY_START_MINUTES);
-        int night = anchor(nightStart, LauncherPrefs.DEFAULT_NIGHT_START_MINUTES);
-        // Recover corrupt/old equal anchors without trapping the display in a third mode.
-        if (day == night) {
-            day = LauncherPrefs.DEFAULT_DAY_START_MINUTES;
-            night = LauncherPrefs.DEFAULT_NIGHT_START_MINUTES;
-        }
+        int day = effectiveDayStart(dayStart, nightStart);
+        int night = effectiveNightStart(dayStart, nightStart);
         return normalize(minuteOfDay - day) < normalize(night - day)
                 ? LauncherPrefs.APPEARANCE_DAY : LauncherPrefs.APPEARANCE_NIGHT;
     }

@@ -17,7 +17,10 @@ final class ConfigurationStore {
             if (!prefs.contains(key)) continue;
             switch (entry.getValue()) {
                 case BOOLEAN: result.put(key, prefs.getBoolean(key, false)); break;
-                case COUNT: case MINUTES: result.put(key, prefs.getInt(key, 0)); break;
+                case COUNT: result.put(key, prefs.getInt(key, 0)); break;
+                case MINUTES: result.put(key, LauncherPrefs.KEY_APPEARANCE_DAY_START.equals(key)
+                        ? LauncherPrefs.appearanceDayStartMinutes(context)
+                        : LauncherPrefs.appearanceNightStartMinutes(context)); break;
                 case APPEARANCE: result.put(key, LauncherPrefs.appearanceMode(context)); break;
                 case AUTO_SOURCE: result.put(key, LauncherPrefs.AUTO_SOURCE_SCHEDULE); break;
                 default: result.put(key, prefs.getString(key, "")); break;
