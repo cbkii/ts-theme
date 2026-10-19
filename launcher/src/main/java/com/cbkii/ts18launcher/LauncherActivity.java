@@ -101,6 +101,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         navigationWindowController.setStartupListener((ready, boundary) ->
                 StartupReadinessCoordinator.get(this).reportNavigation(ready, boundary));
         startupHook = new StartupReadinessCoordinator.NavigationHook() {
+            @Override public void refreshEvidence() { navigationWindowController.reconcileStartupEvidence(); }
             @Override public boolean ready() { return navigationWindowController.startupNavigationReady(); }
             @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
             @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
@@ -160,6 +161,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        StartupReadinessCoordinator.get(this).onHomeFocusChanged();
+        if (hasFocus && navigationWindowController != null) navigationWindowController.reconcileStartupEvidence();
         if (!hasFocus && navigationWindowController != null)
             navigationWindowController.onHomeFocusLost();
         if (root != null && hasFocus) scheduleGeometry();

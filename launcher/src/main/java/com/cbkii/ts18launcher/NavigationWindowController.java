@@ -127,20 +127,32 @@ final class NavigationWindowController {
     boolean startupNavigationBusy() { return activeOperationId != 0 || normalBootstrapInFlight; }
 
     /** The existing controller owns the only Maps launch claim and all task/window verification. */
+    void reconcileStartupEvidence() {
+        if (state != State.DESTROYED) compactStartup.refresh();
+    }
+
     void reconcileStartup() {
+        reconcileStartupEvidence();
         if (uiState.canPresentNavigation()) reconcile(false);
     }
 
     NavigationWindowController(Activity activity, NativeNavigationPanel panel) {
         this.activity = activity; this.panel = panel;
         compactStartup = new CompactStartupClient(activity, snapshot -> {
+            boolean lostRenderer = compactSnapshot.rendererReady && (!snapshot.compatible
+                    || !snapshot.rendererReady || snapshot.task != activeTaskId);
             boolean changed = compactSnapshot.compatible != snapshot.compatible
-                    || compactSnapshot.enabled != snapshot.enabled;
+                    || compactSnapshot.enabled != snapshot.enabled
+                    || compactSnapshot.rendererReady != snapshot.rendererReady || compactSnapshot.task != snapshot.task;
             compactSnapshot = snapshot;
             compactResolved = true;
             if (changed) clearFailureLatch();
             updateColdPolicy();
             reportStartupReadiness("renderer-or-task-evidence-lost");
+            if (state == State.WINDOWED && lostRenderer) {
+                needsValidation = true; needsPresentation = true;
+                latchFailure(activePackage, configuredMode, "renderer-or-task-evidence-lost");
+            }
             if (state != State.DESTROYED && uiState.canPresentNavigation() && state != State.WINDOWED)
                 reconcile(false);
         });
@@ -181,6 +193,7 @@ final class NavigationWindowController {
 
     /** Focus loss can be our healthy native map, or a direct SystemUI/Recents handoff. */
     void onHomeFocusLost() {
+        reconcileStartupEvidence();
         final int generation = ++focusGeneration;
         activity.getWindow().getDecorView().postDelayed(() -> {
             if (state == State.DESTROYED || generation != focusGeneration

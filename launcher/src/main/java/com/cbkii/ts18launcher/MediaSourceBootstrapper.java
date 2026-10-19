@@ -29,7 +29,7 @@ import java.util.concurrent.Executors;
  * deliberately distinct. Root activation is bounded/off-main-thread and never expands the original
  * command deadline. No path in this class launches an Activity or owns audio focus/queue/session.
  */
-final class MediaSourceBootstrapper {
+final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observer {
     interface ResultCallback { void onResult(boolean success, String message); }
 
     static final long COMMAND_TIMEOUT_MS = 4500L;
@@ -79,6 +79,7 @@ final class MediaSourceBootstrapper {
                 (MediaSessionManager) this.context.getSystemService(Context.MEDIA_SESSION_SERVICE);
         listenerComponent = new ComponentName(this.context, MediaListenerService.class);
         MediaEventTrace.record("coordinator", "created");
+        ProcessMediaSessionMonitor.addObserver(this.context, this);
     }
 
     void warmConfiguredSources() {
@@ -97,6 +98,7 @@ final class MediaSourceBootstrapper {
 
     void warm(String packageName) {
         if (destroyed || packageName == null || packageName.isEmpty()) return;
+        refreshStartupObservation();
         MediaEventTrace.record("readiness", "warm-request", packageName);
         MediaController controller = controllerForPackage(packageName);
         if (controller != null) {
@@ -150,23 +152,88 @@ final class MediaSourceBootstrapper {
 
     long userCommandGeneration() { return userCommandGeneration; }
 
-    /** Session capability plus non-empty source content; a token or empty metadata is insufficient. */
-    boolean hasUsableQueue(String pkg) {
-        MediaController c = controllerForPackage(pkg);
-        if (!controllerReadyForPlay(c)) return false;
-        try {
-            java.util.List<android.media.session.MediaSession.QueueItem> queue = c.getQueue();
-            if (queue != null && !queue.isEmpty()) return true;
-            android.media.MediaMetadata m = c.getMetadata();
-            return m != null && (hasText(m, android.media.MediaMetadata.METADATA_KEY_MEDIA_ID)
-                    || hasText(m, android.media.MediaMetadata.METADATA_KEY_TITLE)
-                    || hasText(m, android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE));
-        } catch (RuntimeException ignored) { return false; }
+    // Main-looper-owned immutable observations. Readiness ticks never cross Binder.
+    private final Map<String, StartupMediaObservation> startupObservations = new HashMap<>();
+    private final ExecutorService readinessWorker = new java.util.concurrent.ThreadPoolExecutor(
+            0, 2, 15L, java.util.concurrent.TimeUnit.SECONDS,
+            new java.util.concurrent.SynchronousQueue<>(), r -> {
+                Thread t = new Thread(r, "ts18-media-observe"); t.setDaemon(true); return t;
+            });
+    private Runnable startupObserver = () -> { };
+    void setStartupObserver(Runnable observer) { startupObserver = observer; }
+    private int readinessGeneration;
+    private boolean readinessBusy, readinessDirty, readinessAuthoritative;
+
+    boolean hasUsableQueue(String pkg) { return startupObservation(pkg).ready; }
+    boolean startupPlaying(String pkg) { return startupObservation(pkg).playing; }
+    boolean startupSessionAbsent(String pkg) {
+        return readinessAuthoritative && MediaListenerService.hasNotificationAccess(context)
+                && !startupObservations.containsKey(pkg);
     }
 
-    private static boolean hasText(android.media.MediaMetadata m, String key) {
-        String text = m.getString(key);
-        return text != null && !text.trim().isEmpty();
+    private StartupMediaObservation startupObservation(String pkg) {
+        if (!MediaListenerService.hasNotificationAccess(context)) return StartupMediaObservation.UNKNOWN;
+        StartupMediaObservation value = startupObservations.get(pkg);
+        return value == null ? StartupMediaObservation.UNKNOWN : value;
+    }
+
+    @Override public void onProcessMediaStateChanged(MediaListenerService.Snapshot music,
+            MediaListenerService.Snapshot radio, boolean authoritative) {
+        refreshStartupObservation();
+    }
+
+    /** Only connection/membership/metadata/queue events or explicit warm requests refresh this cache. */
+    void refreshStartupObservation() {
+        if (destroyed) return;
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post(this::refreshStartupObservation); return;
+        }
+        if (readinessBusy) { readinessDirty = true; return; }
+        readinessBusy = true; readinessDirty = false;
+        final int ticket = ++readinessGeneration;
+        final Map<String, MediaController> bound = new HashMap<>();
+        for (Connection c : connections.values()) {
+            if (c.controller != null) bound.put(c.adapter.packageName, c.controller);
+        }
+        Runnable timeout = () -> {
+            if (destroyed || ticket != readinessGeneration) return;
+            readinessGeneration++; readinessBusy = false; readinessDirty = false;
+            readinessAuthoritative = false;
+            startupObservations.clear(); // Unknown is not evidence of source death.
+        };
+        handler.postDelayed(timeout, 2000L);
+        try {
+            readinessWorker.execute(() -> {
+                Map<String, StartupMediaObservation> next = new HashMap<>();
+                boolean complete = false;
+                try {
+                    if (sessionManager != null && MediaListenerService.hasNotificationAccess(context)) {
+                        Map<String, MediaController> selected = new HashMap<>(bound);
+                        for (MediaController c : sessionManager.getActiveSessions(listenerComponent)) {
+                            if (c == null) continue;
+                            String pkg = c.getPackageName();
+                            if (!selected.containsKey(pkg) || isPlaying(c)) selected.put(pkg, c);
+                        }
+                        complete = true;
+                        for (Map.Entry<String, MediaController> entry : selected.entrySet())
+                            next.put(entry.getKey(), StartupMediaObservation.read(entry.getKey(), entry.getValue()));
+                    }
+                } catch (RuntimeException unavailable) { next.clear(); complete = false; }
+                final boolean known = complete;
+                handler.post(() -> {
+                    handler.removeCallbacks(timeout);
+                    if (destroyed || ticket != readinessGeneration) return;
+                    readinessBusy = false;
+                    if (readinessDirty) { refreshStartupObservation(); return; }
+                    startupObservations.clear();
+                    readinessAuthoritative = known && MediaListenerService.hasNotificationAccess(context);
+                    if (MediaListenerService.hasNotificationAccess(context)) startupObservations.putAll(next);
+                    startupObserver.run();
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException saturated) {
+            handler.removeCallbacks(timeout); readinessBusy = false; readinessAuthoritative = false; startupObservations.clear();
+        }
     }
 
     /** Suppress startup playback once; never override a later HOME transport request. */
@@ -262,6 +329,9 @@ final class MediaSourceBootstrapper {
     void destroy() {
         if (destroyed) return;
         destroyed = true;
+        readinessGeneration++; startupObservations.clear();
+        ProcessMediaSessionMonitor.removeObserver(this);
+        readinessWorker.shutdownNow();
         MediaEventTrace.record("coordinator", "destroyed");
         handler.removeCallbacksAndMessages(null);
         for (Connection connection : new ArrayList<>(connections.values())) {
@@ -368,6 +438,7 @@ final class MediaSourceBootstrapper {
                     connection.controller =
                             new MediaController(context, connection.browser.getSessionToken());
                     attachBrowserController(connection, generation);
+                    refreshStartupObservation();
                     connection.preparing = false;
                     MediaListenerService.observeExternalController(connection.controller);
                     MediaEventTrace.record("browser", "connected", packageName);
@@ -436,8 +507,15 @@ final class MediaSourceBootstrapper {
         MediaController.Callback callback = new MediaController.Callback() {
             @Override public void onPlaybackStateChanged(PlaybackState state) {
                 if (!valid(connection, generation)) return;
+                refreshStartupObservation();
                 maybePrepareAuxio(connection.controller);
                 markController(connection.adapter.packageName, connection.controller);
+            }
+            @Override public void onMetadataChanged(android.media.MediaMetadata metadata) {
+                if (valid(connection, generation)) refreshStartupObservation();
+            }
+            @Override public void onQueueChanged(List<android.media.session.MediaSession.QueueItem> queue) {
+                if (valid(connection, generation)) refreshStartupObservation();
             }
             @Override public void onSessionDestroyed() {
                 handler.post(() -> browserSessionDestroyed(connection, generation));
@@ -455,6 +533,8 @@ final class MediaSourceBootstrapper {
         connection.pending.clear();
         connections.remove(packageName);
         disconnect(connection);
+        startupObservations.remove(packageName);
+        refreshStartupObservation();
         MediaEventTrace.record("session", "bound-destroyed", packageName);
         mark(packageName, MediaCommandPolicy.Phase.FAILED,
                 "Bound MediaSession ended; a future request will reconnect");
@@ -483,6 +563,8 @@ final class MediaSourceBootstrapper {
         connection.pending.clear();
         connections.remove(packageName);
         disconnect(connection);
+        startupObservations.remove(packageName);
+        refreshStartupObservation();
         MediaEventTrace.record("browser", "failed", packageName + " · " + message);
         mark(packageName, MediaCommandPolicy.Phase.FAILED, message);
         for (Pending command : pending) retryExact(command);
