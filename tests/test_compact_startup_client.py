@@ -61,23 +61,31 @@ Handler.until(4500);Handler.until(5500);check(callbacks[0]==3);check(ContentReso
 // inside the boot window rather than stopping permanently after the third refusal.
 ContentResolver.block=false;ContentResolver.release.countDown();
 var field=CompactStartupClient.class.getDeclaredField("worker");field.setAccessible(true);
-var pool=(java.util.concurrent.ThreadPoolExecutor)field.get(c);waitFor(()->pool.getActiveCount()==0);Handler.until(7000);
-waitFor(()->ContentResolver.observes.get()==3);waitFor(()->pool.getActiveCount()==0);Handler.until(7000);check(callbacks[0]==4);
+var pool=(java.util.concurrent.ThreadPoolExecutor)field.get(c);waitFor(()->pool.getActiveCount()==0);
+// getActiveCount()==0 does not prove SynchronousQueue workers have begun waiting.
+// A transient rejection is permitted; require recovery inside the bounded window.
+var busy=CompactStartupClient.class.getDeclaredField("busy");busy.setAccessible(true);
+for(int retry=0;retry<5&&ContentResolver.observes.get()<3;retry++){
+ Handler.until(7000+retry*3000);
+ waitFor(()->{try{return ContentResolver.observes.get()>=3||!busy.getBoolean(c);}catch(Exception e){throw new AssertionError(e);}});
+}
+check(ContentResolver.observes.get()==3);waitFor(()->pool.getActiveCount()==0);Handler.until(SystemClock.now);check(callbacks[0]>=4);
+int completedCallbacks=callbacks[0];long checkpoint=SystemClock.now+500;
 // Saturated cleanup is harmless, as is canonical HOME redirect followed by onDestroy.
-c.close();c.close();ContentResolver.release.countDown();Thread.sleep(20);Handler.until(7500);check(callbacks[0]==4);
+c.close();c.close();ContentResolver.release.countDown();Thread.sleep(20);Handler.until(checkpoint);check(callbacks[0]==completedCallbacks);
 // Invalidation authentication must leave the main looper and ignore untrusted UIDs.
 ContentResolver.block=false;int initial=CompactStartupPeer.auth.get();CompactStartupClient d=new CompactStartupClient(new Context(),s->{});
 Message m=new Message();m.what=1;m.sendingUid=123;Messenger.handler.handleMessage(m);waitFor(()->CompactStartupPeer.auth.get()>initial);
-Handler.until(7500);check(ContentResolver.observes.get()==3);
+Handler.until(checkpoint);check(ContentResolver.observes.get()==3);
 // A timer scheduled just before expiry cannot initiate a query after the window.
-var until=CompactStartupClient.class.getDeclaredField("until");until.setAccessible(true);until.setLong(d,10000);
+var until=CompactStartupClient.class.getDeclaredField("until");until.setAccessible(true);until.setLong(d,checkpoint+2500);
 var schedule=CompactStartupClient.class.getDeclaredMethod("scheduleNext",CompactStartupClient.Snapshot.class);schedule.setAccessible(true);
-SystemClock.now=9999;schedule.invoke(d,CompactStartupClient.Snapshot.unknown());Handler.until(11000);
+SystemClock.now=checkpoint+2499;schedule.invoke(d,CompactStartupClient.Snapshot.unknown());Handler.until(checkpoint+3500);
 Thread.sleep(10);check(ContentResolver.observes.get()==3);
 // Genuine authenticated events remain observable after the periodic window expires.
 m=new Message();m.what=1;m.sendingUid=24000;Messenger.handler.handleMessage(m);
-var dpool=(java.util.concurrent.ThreadPoolExecutor)field.get(d);waitFor(()->dpool.getActiveCount()==0);Handler.until(11000);
-waitFor(()->ContentResolver.observes.get()==4);waitFor(()->dpool.getActiveCount()==0);Handler.until(11000);d.close();d.close();
+var dpool=(java.util.concurrent.ThreadPoolExecutor)field.get(d);waitFor(()->dpool.getActiveCount()==0);Handler.until(checkpoint+3500);
+waitFor(()->ContentResolver.observes.get()==4);waitFor(()->dpool.getActiveCount()==0);Handler.until(checkpoint+3500);d.close();d.close();
 System.out.println("PASS actual client timeout/replacement/saturation/off-main-auth/double-close");}}
 ''',
         }

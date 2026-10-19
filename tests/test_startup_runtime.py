@@ -30,8 +30,8 @@ public static void reset(){jobs.clear();SystemClock.now=100;}}
             'android/app/KeyguardManager.java': 'package android.app;public class KeyguardManager {public boolean isKeyguardLocked(){return false;}}',
             'android/media/AudioManager.java': 'package android.media;public class AudioManager {public static final int MODE_NORMAL=0;public int getMode(){return 0;}}',
             'android/content/SharedPreferences.java': '''package android.content;public class SharedPreferences {
-long value=-1;public int getInt(String k,int d){return d;}public long getLong(String k,long d){return value;}public Editor edit(){return new Editor();}
-public class Editor {public Editor remove(String k){return this;}public Editor putLong(String k,long v){value=v;return this;}public void apply(){}}}''',
+public static boolean commitOk=true;public static java.util.Map<String,String> strings=new java.util.HashMap<>();public String getString(String k,String d){return strings.getOrDefault(k,d);}long value=-1;public int getInt(String k,int d){return d;}public long getLong(String k,long d){return value;}public Editor edit(){return new Editor();}
+public class Editor {public Editor remove(String k){strings.remove(k);return this;}public Editor putString(String k,String v){strings.put(k,v);return this;}public boolean commit(){return commitOk;}public Editor putLong(String k,long v){value=v;return this;}public void apply(){}}}''',
             'android/content/Context.java': '''package android.content;public class Context {
 public static final String POWER_SERVICE="power",KEYGUARD_SERVICE="key",AUDIO_SERVICE="audio",ACTIVITY_SERVICE="activity";public static final int MODE_PRIVATE=0;
 SharedPreferences prefs=new SharedPreferences();public Context getApplicationContext(){return this;}
@@ -53,7 +53,7 @@ class Ts18LauncherApplication {static MediaSourceBootstrapper shared=new MediaSo
 class MediaSourceBootstrapper {boolean musicReady,radioReady,musicPlaying;long commands;int warms,pauses;
 boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radioReady;}
 boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
-long userCommandGeneration(){return commands;}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
+boolean startupSessionAbsent(String p){return !hasUsableQueue(p);}boolean startupPlaying(String p){return isPlaying(p);}void setStartupObserver(Runnable r){}long userCommandGeneration(){return commands;}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
 class UiPersonalizationPrefs {static boolean enabled=true;static boolean mediaStartupWarmup(android.content.Context c){return enabled;}}
 class TestingProfiles {static String mode="auto";static String startup(android.content.Context c){return mode;}}
 class LauncherPrefs {static String KEY_MUSIC="music",KEY_NAV="nav";static String music="com.tw.media";
@@ -87,9 +87,10 @@ static boolean navigationDeferred, navReady;
 static int navigationStarts;
 static class Inline extends AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,TimeUnit u){return true;}}
 static StartupReadinessCoordinator create()throws Exception{return create(true);}
-static StartupReadinessCoordinator create(boolean ready)throws Exception{
+static StartupReadinessCoordinator create(boolean ready)throws Exception{return create(ready,true);}
+static StartupReadinessCoordinator create(boolean ready,boolean clear)throws Exception{
 navReady=ready;navigationStarts=0;
-Handler.reset();android.app.Activity.focused=true;navigationDeferred=false;TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
+Handler.reset();if(clear)android.content.SharedPreferences.strings.clear();android.content.SharedPreferences.commitOk=true;android.app.Activity.focused=true;navigationDeferred=false;TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
 StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
 StartupRootFallback.code="STARTUP_SOURCE_DISPATCHED";StartupRootFallback.starts=0;StartupRootFallback.returns=0;StartupRootFallback.before=()->{};
 android.app.ActivityManager.reject=false;android.app.ActivityManager.uncertain=false;
@@ -171,6 +172,15 @@ Handler.until(22500);check(ledger(deferred).record(Source.NAVIGATION).state==Sta
 UiPersonalizationPrefs.enabled=true;
 StartupReadinessCoordinator lost=create();lost.reportNavigation(true,"");lost.reportNavigation(false,"surface-detached");
 check(ledger(lost).record(Source.NAVIGATION).state==State.UNCERTAIN,"readiness loss retained READY");lost.destroy();
+// A new process loses its in-memory ledger, but must retain an uncertain admission.
+StartupReadinessCoordinator died=create();Handler.until(4000);check(AppResolver.launches==1,"first admission missing");died.destroy();
+StartupReadinessCoordinator reborn=create(true,false);Handler.until(30000);
+check(AppResolver.launches==0&&StartupRootFallback.starts==0,"process death replayed claimed Activity");
+reborn.onTrigger(Trigger.STORAGE_MOUNT);Handler.until(35000);check(AppResolver.launches==0,"late storage replayed uncertain radio admission");reborn.destroy();
+StartupReadinessCoordinator diskFailure=create();android.content.SharedPreferences.commitOk=false;Handler.until(15000);
+check(AppResolver.launches==0&&StartupRootFallback.starts==0,"journal failure admitted Activity");diskFailure.destroy();
+StartupReadinessCoordinator noFocus=create(false);android.app.Activity.focused=false;noFocus.onHomeFocusChanged();
+check(!navigationDeferred&&navigationStarts==1,"ineligible media kept navigation reserved");noFocus.destroy();
 System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
 }}
 '''

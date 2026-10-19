@@ -4,9 +4,6 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -16,8 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Visible-HOME passive observation only: no permission prompt or active GPS request. */
-final class RadioMetadataResolver implements LocationListener {
+/** Visible HOME uses an already-observed in-process fix; no location-service IPC or subscription. */
+final class RadioMetadataResolver {
     private static volatile AustralianRadioDirectory directory;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     private final Context context;
@@ -36,7 +33,16 @@ final class RadioMetadataResolver implements LocationListener {
     }
 
     void start() {
-        if (started) return;
+        if (started) {
+            Location observed = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED ? MapPanel.observedLocationSnapshot() : null;
+            if (observed == null && location != null) { location = null; updateRegions(); }
+            if (usable(observed) && (location == null
+                    || observed.getElapsedRealtimeNanos() > location.getElapsedRealtimeNanos())) {
+                location = observed; updateRegions();
+            }
+            return;
+        }
         started = true;
         final int request = ++generation;
         if (directory == null) LOADER.execute(() -> {
@@ -47,28 +53,14 @@ final class RadioMetadataResolver implements LocationListener {
                 main.post(() -> { if (started && generation == request) updateRegions(); });
             } catch (java.io.IOException | RuntimeException ignored) { /* fail empty */ }
         });
-        LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
-        if (manager == null || context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            location = null; regionRanks = null; changed.run(); return;
-        }
-        try {
-            for (String provider : manager.getAllProviders()) {
-                Location last = manager.getLastKnownLocation(provider);
-                if (usable(last) && (location == null || last.getElapsedRealtimeNanos() > location.getElapsedRealtimeNanos())) location = new Location(last);
-            }
-            manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 30000L, 1000f, this, Looper.getMainLooper());
-        } catch (SecurityException | IllegalArgumentException ignored) { location = null; }
+        location = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED ? MapPanel.observedLocationSnapshot() : null;
         updateRegions();
     }
 
     void stop() {
         if (!started) return;
         started = false; generation++; locationGeneration++;
-        LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
-        if (manager != null) {
-            try { manager.removeUpdates(this); } catch (SecurityException ignored) { }
-        }
         main.removeCallbacksAndMessages(null);
         location = null; regionRanks = null;
     }
@@ -83,7 +75,8 @@ final class RadioMetadataResolver implements LocationListener {
         }
         AustralianRadioDirectory data = directory;
         if (data == null) return "";
-        boolean fresh = usable(location);
+        boolean fresh = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED && usable(location);
         if (fresh && regionRanks == null) return "";
         AustralianRadioDirectory.Match match = data.match(snapshot.title, snapshot.artist,
                 fresh ? regionRanks : data.regionRanks(null, null), !fresh);
@@ -101,15 +94,14 @@ final class RadioMetadataResolver implements LocationListener {
     }
 
     private static boolean usable(Location fix) {
-        if (fix == null || !fix.hasAccuracy() || fix.getAccuracy() > 10000f) return false;
+        if (fix == null || !fix.hasAccuracy() || !Float.isFinite(fix.getAccuracy())
+                || fix.getAccuracy() < 0 || fix.getAccuracy() > 10000f
+                || !Double.isFinite(fix.getLatitude()) || !Double.isFinite(fix.getLongitude())
+                || Math.abs(fix.getLatitude()) > 90 || Math.abs(fix.getLongitude()) > 180) return false;
         long age = SystemClock.elapsedRealtimeNanos() - fix.getElapsedRealtimeNanos();
         return age >= 0 && age <= 15L * 60 * 1000000000L;
     }
 
-    @Override public void onLocationChanged(Location fix) {
-        if (!started || !usable(fix)) return;
-        location = new Location(fix); updateRegions();
-    }
     private void expireLocation() {
         location = null; regionRanks = null; locationGeneration++;
         if (started) changed.run();
@@ -136,7 +128,4 @@ final class RadioMetadataResolver implements LocationListener {
         });
     }
 
-    @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
-    @Override public void onProviderEnabled(String provider) { }
-    @Override public void onProviderDisabled(String provider) { location = null; if (started) updateRegions(); }
 }

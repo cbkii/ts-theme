@@ -62,19 +62,19 @@ is exact. Confidence labels describe evidence categories, not probabilities.
 
 No additional permission, permission prompt, active GPS request, foreground
 service, wake lock, root access, network request or polling loop is introduced.
-Only visible HOME with selected NavRadio and no explicit frequency subscribes to Android's **PASSIVE**
-provider using an already-granted fine-location permission. It can observe fixes
-produced by an already-running navigation app. On entry, existing last-known
-provider fixes are checked. A fix must be at most 15 minutes old using monotonic
-time and have reported accuracy <=10 km. Otherwise use default-region ranking.
-Location and listeners are cleared on stop/detach, source switching, or hiding
-HOME. An expiring fix has a single lifecycle-bound expiry callback.
+Only visible HOME with selected NavRadio and no explicit frequency reuses a
+fresh in-process location previously observed by the experimental `MapPanel`,
+when fine-location permission is already granted. It does not query providers
+or register a second listener. Native Organic Maps does not populate that
+snapshot; default-region ranking is therefore expected when no fix is available.
+A fix must be at most 15 minutes old, have finite valid coordinates and reported
+accuracy <=10 km. State clears on detach/source switching/hidden HOME and a
+single expiry callback revokes old regional ranking.
 
 The immutable reference is loaded once per process on a serial worker. Border
 classification also runs on that worker, with generation checks before the UI
-uses a result. No raw location is written to logs or persisted. The only Android
-location behaviour change authorised by this request is passive metadata
-ranking; the existing map permission policy remains the authority for prompts.
+uses a result. No raw location is written to logs or persisted. The Android
+location policy is reuse of an existing observation only; the existing map permission policy remains the authority for prompts.
 
 The ABS polygons retain holes and disconnected rings. Distances use a local
 longitude-scaled kilometre projection and a 99 km inclusion threshold. Source
@@ -138,3 +138,13 @@ Physical tests are **NOT_RUN** until the signed exact-head TESTING APK is used:
   activation. Verify two foreground station changes without opening HOME again.
 - Preserve all PR #26 cold-start/readiness, actual audible output and navigation
   acceptance gates; this metadata feature does not satisfy those gates.
+
+## Second-pass hardening
+
+Station-to-placeholder transitions invalidate older notification enrichment even
+when the MediaSession token stays the same. A delayed old-station notification
+cannot refresh that association. Direct named-station updates retain the existing
+exact-title and conflicting-frequency safeguards. Frequency-only subtitles stay
+on the second row, including through notification fallback. Overflow eligibility
+uses TextView's cached shaped layout width; no per-frame string allocation or
+text measurement is needed. No measured frame-time improvement is claimed.

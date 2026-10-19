@@ -119,6 +119,7 @@ public final class MediaListenerService extends NotificationListenerService {
     private String radioNotificationTitle = "";
     private String radioNotificationText = "";
     private String radioNotificationStation = "";
+    private final RadioStationAssociation radioAssociation = new RadioStationAssociation();
 
     private final MediaController.Callback callback = new MediaController.Callback() {
         @Override public void onMetadataChanged(MediaMetadata metadata) { refresh(); }
@@ -192,7 +193,9 @@ public final class MediaListenerService extends NotificationListenerService {
         radioNotificationTitle = title;
         radioNotificationText = text;
         Snapshot currentRadio = snapshotOf(findRadioController());
+        radioAssociation.observe(currentRadio.sessionIdentity, meaningfulRadioTitle(currentRadio));
         radioNotificationStation = notificationStation(title, currentRadio);
+        radioAssociation.notification(radioNotificationStation);
         MediaEventTrace.record("metadata", "radio-notification", sbn.getPackageName());
         refresh();
     }
@@ -267,8 +270,10 @@ public final class MediaListenerService extends NotificationListenerService {
         Snapshot previousGeneric = lastGeneric;
         Snapshot previousRadio = lastRadio;
         Snapshot rawRadio = snapshotOf(radioController);
-        boolean notificationMatches = notificationMatchesRadioSnapshot(
-                radioNotificationStation, rawRadio);
+        boolean navRadio = "com.navimods.radio".equals(rawRadio.packageName);
+        radioAssociation.observe(rawRadio.sessionIdentity, meaningfulRadioTitle(rawRadio));
+        boolean notificationMatches = (!navRadio || radioAssociation.current())
+                && notificationMatchesRadioSnapshot(radioNotificationStation, rawRadio);
         if (!notificationMatches
                 && (!radioNotificationTitle.isEmpty() || !radioNotificationText.isEmpty())) {
             MediaEventTrace.record("metadata", "radio-notification-mismatch",
@@ -276,10 +281,12 @@ public final class MediaListenerService extends NotificationListenerService {
                             + " sessionStation=" + meaningfulRadioTitle(rawRadio));
         }
         Snapshot nextGeneric = stabiliseSnapshot(previousGeneric, snapshotOf(genericController));
-        Snapshot nextRadio = stabiliseSnapshot(previousRadio,
-                applyRadioFallback(rawRadio,
-                        notificationMatches ? radioNotificationTitle : "",
-                        notificationMatches ? radioNotificationText : ""));
+        Snapshot fallbackRadio = applyRadioFallback(rawRadio,
+                notificationMatches ? radioNotificationTitle : "",
+                notificationMatches ? radioNotificationText : "");
+        // An identity gap is meaningful. Do not resurrect the previous station through stability.
+        Snapshot nextRadio = navRadio && meaningfulRadioTitle(rawRadio).isEmpty() && !notificationMatches
+                ? fallbackRadio : stabiliseSnapshot(previousRadio, fallbackRadio);
         boolean genericChanged = !sameSnapshot(previousGeneric, nextGeneric);
         boolean radioChanged = !sameSnapshot(previousRadio, nextRadio);
         lastGeneric = nextGeneric;
@@ -532,6 +539,8 @@ public final class MediaListenerService extends NotificationListenerService {
         String primary = snapshot.title;
         String secondary = snapshot.artist;
         boolean placeholder = isRadioPlaceholder(primary);
+        if (placeholder && RadioFrequency.isFrequencyOnly(snapshot.packageName, secondary)
+                && cleanTitle.isEmpty() && cleanText.isEmpty()) return snapshot;
         if (placeholder && cleanTitle.isEmpty() && cleanText.isEmpty()
                 && !secondary.isEmpty() && !isRadioPlaceholder(secondary)) {
             primary = secondary;

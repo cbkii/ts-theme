@@ -32,13 +32,14 @@ class RadioSnapshotMergeTest(unittest.TestCase):
             'private static MediaListenerService.Snapshot normaliseSnapshot(',
             'private static MediaListenerService.Snapshot emptyMediaSnapshot('))
         station = '\n'.join(method(listener, sig) for sig in (
-            'static String meaningfulRadioTitle(', 'private static boolean isRadioPlaceholder(',
+            'static String meaningfulRadioTitle(', 'static Snapshot applyRadioFallback(', 'private static boolean isRadioPlaceholder(',
             'private static String normalise('))
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             pkg = work / 'com/cbkii/ts18launcher'
             pkg.mkdir(parents=True)
             shutil.copyfile(SRC / 'RadioFrequency.java', pkg / 'RadioFrequency.java')
+            shutil.copyfile(SRC / 'RadioStationAssociation.java', pkg / 'RadioStationAssociation.java')
             (pkg / 'Harness.java').write_text('''package com.cbkii.ts18launcher;
 class MediaListenerService {
 static class Snapshot {
@@ -51,7 +52,16 @@ public class Harness {
 static MediaListenerService.Snapshot snap(String p,String t,String a){return new MediaListenerService.Snapshot(p,t,a,3,1,"same-token");}
 static void check(boolean b,String m){if(!b)throw new AssertionError(m);}
 public static void main(String[] args){
+RadioStationAssociation association=new RadioStationAssociation();
+association.observe("token","Station A");association.notification("Station A");check(association.current(),"fresh association missing");
+association.observe("token","");check(!association.current(),"placeholder retained old station association");
+association.notification("Station A");check(!association.current(),"delayed old notification crossed placeholder epoch");
+association.observe("token","Station B");check(!association.current(),"new station inherited old notification");
+association.notification("Station B");check(association.current(),"new matching notification refused");
+association.observe("another-token","Station B");check(!association.current(),"token replacement retained association");
 String radio=RadioFrequency.NAVRADIO;
+var frequencyOnly=MediaListenerService.applyRadioFallback(snap(radio,"NavRadio+","105.9 FM"),"","");
+check(frequencyOnly.title.equals("NavRadio+")&&frequencyOnly.artist.equals("105.9 FM"),"listener promoted frequency into station row");
 MediaListenerService.Snapshot current=snap(radio,"New station","");
 check(mergeSessionSnapshot(current,snap(radio,"Old station","105.9 FM"),true)==current,"new station cannot inherit old frequency");
 check(mergeSessionSnapshot(current,snap(radio,"","105.9 FM"),true)==current,"frequency needs station association");

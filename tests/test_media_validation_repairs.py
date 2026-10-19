@@ -53,11 +53,11 @@ public void registerCallback(Callback c){} public void unregisterCallback(Callba
 public Controls getTransportControls(){return new Controls();}public class Controls {
 public void play(){plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause){if(pauseDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=2,pauseDelay);else state.state=2;}}
 public void prepare(){}public void skipToPrevious(){}public void skipToNext(){}}
-public static class Callback {public void onPlaybackStateChanged(PlaybackState p){}public void onSessionDestroyed(){}} }
+public static class Callback {public void onPlaybackStateChanged(PlaybackState p){}public void onMetadataChanged(android.media.MediaMetadata m){}public void onQueueChanged(java.util.List<MediaSession.QueueItem> q){}public void onSessionDestroyed(){}} }
 ''',
             "android/media/session/MediaSessionManager.java": '''package android.media.session;import java.util.*;
-public class MediaSessionManager {public static List<MediaController> sessions=new ArrayList<>();
-public List<MediaController> getActiveSessions(android.content.ComponentName n){return sessions;}}''',
+public class MediaSessionManager {public static int queries;public static List<MediaController> sessions=new ArrayList<>();
+public List<MediaController> getActiveSessions(android.content.ComponentName n){queries++;return sessions;}}''',
             "android/media/browse/MediaBrowser.java": '''package android.media.browse;public class MediaBrowser {
 public MediaBrowser(android.content.Context c,android.content.ComponentName n,ConnectionCallback cb,android.os.Bundle b){}
 public boolean isConnected(){return false;}public void connect(){}public void disconnect(){}
@@ -65,7 +65,8 @@ public android.media.session.MediaSession.Token getSessionToken(){return null;}
 public static class ConnectionCallback {public void onConnected(){}public void onConnectionSuspended(){}public void onConnectionFailed(){}}}''',
             "com/cbkii/ts18launcher/platform/TopwayAdapter.java": "package com.cbkii.ts18launcher.platform;public class TopwayAdapter {public static String defaultMusicPackage(android.content.Context c){return \"com.tw.media\";}}",
             "com/cbkii/ts18launcher/Doubles.java": '''package com.cbkii.ts18launcher;
-class MediaListenerService {enum Command {PLAY_PAUSE,PREVIOUS,NEXT}
+class ProcessMediaSessionMonitor {interface Observer {void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
+class MediaListenerService {static class Snapshot {}enum Command {PLAY_PAUSE,PREVIOUS,NEXT}
 static boolean hasNotificationAccess(android.content.Context c){return true;} static void refreshActiveSessions(){}
 static void observeExternalController(android.media.session.MediaController c){} static void forgetExternalController(android.media.session.MediaController c){} }
 class MediaSourceAdapter {enum Kind{SESSION_ONLY,MEDIA_BROWSER,EXPLICIT_SERVICE} Kind kind=Kind.SESSION_ONLY;
@@ -86,7 +87,9 @@ static Result runMillis(String s,long t){return new Result(false,-1,"");}static 
 import android.media.session.*;import android.os.*;import java.lang.reflect.*;import java.util.*;
 public class Harness {
 static void check(boolean b,String m){if(!b)throw new AssertionError(m);}
-static MediaSourceBootstrapper create(){SystemClock.now=1000;Handler.jobs.clear();return new MediaSourceBootstrapper(new android.content.Context());}
+static class Inline extends java.util.concurrent.AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,java.util.concurrent.TimeUnit u){return true;}}
+static class Holding extends Inline {java.util.List<Runnable> pending=new java.util.ArrayList<>();public void execute(Runnable r){pending.add(r);}}
+static MediaSourceBootstrapper create()throws Exception{SystemClock.now=1000;Handler.jobs.clear();var b=new MediaSourceBootstrapper(new android.content.Context());var f=b.getClass().getDeclaredField("readinessWorker");f.setAccessible(true);((java.util.concurrent.ExecutorService)f.get(b)).shutdownNow();f.set(b,new Inline());return b;}
 static void seedCold(MediaSourceBootstrapper b)throws Exception{
  Class<?> s=Class.forName("com.cbkii.ts18launcher.MediaSourceBootstrapper$ServiceStart");
  Constructor<?> c=s.getDeclaredConstructors()[0];c.setAccessible(true);Object start=c.newInstance(MediaSourceAdapter.resolve(null,MediaSourceAdapter.NAVRADIO_PACKAGE));
@@ -123,8 +126,17 @@ public static void main(String[] args)throws Exception {
  Handler.until(11400);check(result[0]==1&&radio.plays==playsBefore+1&&music.pauses==pausesBefore+1,"late Play starved opposite Pause");b.destroy();
  radio.playDelay=music.pauseDelay=0;
  b=create();radio.state.state=2;radio.metadata=new android.media.MediaMetadata();
- check(!b.hasUsableQueue(radio.pkg),"empty metadata marked ready");
- radio.metadata.text="ArtSound";check(b.hasUsableQueue(radio.pkg),"real station content not ready");
+ b.refreshStartupObservation();check(!b.hasUsableQueue(radio.pkg),"empty metadata marked ready");
+ radio.metadata.text="ArtSound";b.refreshStartupObservation();check(b.hasUsableQueue(radio.pkg),"real station content not ready");
+ radio.metadata.text="NavRadio+";b.refreshStartupObservation();check(!b.hasUsableQueue(radio.pkg),"placeholder marked ready");
+ radio.metadata.text="Radio";b.refreshStartupObservation();check(!b.hasUsableQueue(radio.pkg),"generic placeholder marked ready");
+ radio.metadata.text="ArtSound";b.refreshStartupObservation();int queries=MediaSessionManager.queries;
+ for(int tick=0;tick<20;tick++){check(b.hasUsableQueue(radio.pkg),"cached readiness missing");b.startupPlaying(radio.pkg);b.startupSessionAbsent(music.pkg);}
+ check(MediaSessionManager.queries==queries,"readiness tick issued Binder query");
+ Holding delayed=new Holding();var worker=MediaSourceBootstrapper.class.getDeclaredField("readinessWorker");worker.setAccessible(true);worker.set(b,delayed);
+ b.refreshStartupObservation();Handler.until(SystemClock.now+2000);check(!b.hasUsableQueue(radio.pkg),"timeout retained ready evidence");
+ delayed.pending.remove(0).run();check(!b.hasUsableQueue(radio.pkg),"late timed-out completion restored readiness");
+ worker.set(b,new Inline());b.refreshStartupObservation();check(b.hasUsableQueue(radio.pkg),"new observation did not recover");
  int before=radio.pauses;long commands=b.userCommandGeneration();
  b.command("Radio",radio.pkg,MediaListenerService.Command.NEXT,(ok,m)->{});
  check(!b.pauseUnrequestedPlayback(radio.pkg,commands)&&radio.pauses==before,"startup overwrote newer user command");b.destroy();
@@ -138,7 +150,7 @@ public static void main(String[] args)throws Exception {
                 p = root / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(text)
-            for name in ("MediaSourceBootstrapper", "MediaCommandPolicy", "MediaPreparationPolicy", "MediaAdmissionPolicy"):
+            for name in ("MediaSourceBootstrapper", "StartupMediaObservation", "MediaCommandPolicy", "MediaPreparationPolicy", "MediaAdmissionPolicy"):
                 shutil.copyfile(SRC / (name + ".java"), root / "com/cbkii/ts18launcher" / (name + ".java"))
             subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "-d", str(root),
                             *map(str, root.rglob("*.java"))], check=True)

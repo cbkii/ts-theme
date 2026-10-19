@@ -226,8 +226,9 @@ final class ProcessMediaSessionMonitor {
         if (changed || authorityChanged) {
             MediaEventTrace.record("session-monitor", "state",
                     "music=" + nextGeneric.packageName + " radio=" + nextRadio.packageName);
-            notifyObservers();
         }
+        // Queue/capability changes can matter to readiness even when visible text is unchanged.
+        notifyObservers();
     }
 
     private MediaController pickGeneric(List<MediaController> controllers, String radioPackage) {

@@ -33,7 +33,9 @@ final class MediaTickerPolicy {
                            String packageName, String radioFrequency) {
         Display normal = resolve(title, artist, appLabel, selectedSource);
         if (MediaSelection.RADIO.equals(selectedSource) && RadioFrequency.NAVRADIO.equals(packageName)) {
-            return new Display(normal.primary, radioFrequency);
+            boolean frequencyOnly = isSourcePlaceholder(clean(title), clean(appLabel), selectedSource)
+                    && RadioFrequency.isFrequencyOnly(packageName, artist);
+            return new Display(frequencyOnly ? "" : normal.primary, radioFrequency);
         }
         return normal;
     }

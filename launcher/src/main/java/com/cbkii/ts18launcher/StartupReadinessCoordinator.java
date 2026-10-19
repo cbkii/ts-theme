@@ -23,6 +23,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         boolean busy();
         void reconcile();
         default void deferAutomaticPresentation(boolean defer) { }
+        default void refreshEvidence() { }
         default void cancelAutomaticColdStart() { }
     }
     private static StartupReadinessCoordinator instance;
@@ -59,11 +60,17 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         rootFallback = new StartupRootFallback(this.context);
         ProcessMediaSessionMonitor.addObserver(this.context, this);
     }
-    private MediaSourceBootstrapper media() { return Ts18LauncherApplication.mediaSources(context); }
+    private MediaSourceBootstrapper media() {
+        MediaSourceBootstrapper owner = Ts18LauncherApplication.mediaSources(context);
+        owner.setStartupObserver(() -> onTrigger(Trigger.SESSION_LOST));
+        return owner;
+    }
 
     void onTrigger(Trigger trigger) {
         if (Looper.myLooper() != Looper.getMainLooper()) { handler.post(() -> onTrigger(trigger)); return; }
         if (destroyed) return;
+        if (navigation != null && (trigger == Trigger.HOME_RESUME || trigger == Trigger.SCREEN_ON
+                || trigger == Trigger.ACC_ON)) navigation.refreshEvidence();
         long now = SystemClock.uptimeMillis(), boot = bootCount();
         SharedPreferences prefs = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
         long seen = prefs.getLong("boot_count", -1L);
@@ -78,7 +85,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             cancelForeground("new-boot"); policy.resetForBoot(); yielded = false;
             prefs.edit().putLong("boot_count", boot).apply();
         }
-        if (!policy.acceptTrigger(trigger, now)) return;
+        if (trigger != Trigger.SESSION_LOST && !policy.acceptTrigger(trigger, now)) return;
         if (trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON) yielded = false;
         MediaEventTrace.record("startup", "trigger", trigger + " kind=" + kind + " mode=" + mode()
                 + (trigger == Trigger.SCREEN_ON ? " acc=unverified" : ""));
@@ -94,11 +101,16 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             }
             if (pkg.isEmpty()) continue;
             if (foregroundSource == source) continue;
-            if (ready(source, pkg)) { policy.observedReady(source, now); continue; }
+            if (source != Source.NAVIGATION) restoreMediaAdmission(source, pkg);
+            if (ready(source, pkg)) {
+                policy.observedReady(source, now);
+                if (source != Source.NAVIGATION) noteMediaReady(source, pkg);
+                continue;
+            }
             State state = policy.record(source).state;
             if (state == State.READY || state == State.ACTIVE) {
                 // Metadata/queue churn is not session death and must not trigger Activity replay.
-                if (source != Source.NAVIGATION && media().hasSessionIdentity(pkg)) continue;
+                if (source != Source.NAVIGATION && !media().startupSessionAbsent(pkg)) continue;
                 policy.sessionLost(source);
             }
             if (!policy.admit(source, trigger, now)) continue;
@@ -138,10 +150,13 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
 
     private boolean needsForegroundReservation() {
-        if (!foregroundAllowed()) return false;
+        Activity activity = home.get();
+        if (!foregroundAllowed() || !homeResumed || activity == null || activity.isFinishing()
+                || !activity.hasWindowFocus() || !safeScreen() || !HomeMode.isDefaultHome(context)) return false;
         for (Source source : new Source[] {Source.RADIO, Source.MUSIC}) {
             String pkg = packageFor(source);
-            if (policy.record(source).state != State.STARTING || ready(source, pkg)) continue;
+            if (policy.record(source).state != State.STARTING || policy.record(source).activityLaunchAccepted
+                    || ready(source, pkg)) continue;
             if (MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg)
                     || MediaSourceAdapter.NAVRADIO_PACKAGE.equals(pkg)
                         && MediaListenerService.hasNotificationAccess(context)) return true;
@@ -154,7 +169,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     void onHomeResumed(Activity activity) {
         home = new WeakReference<>(activity); homeResumed = true; onTrigger(Trigger.HOME_RESUME);
     }
-    void onHomePaused() { homeResumed = false; }
+    void onHomePaused() { homeResumed = false; updateNavigationAdmission(); }
+    void onHomeFocusChanged() { updateNavigationAdmission(); runForegroundSoon(); }
     void onScreenOff() { yielded = true; cancelForeground("screen-off"); }
     void noteUserInteraction() { yielded = true; if (navigation != null) navigation.cancelAutomaticColdStart(); cancelForeground("user-interaction"); }
     void reportNavigation(boolean success, String boundary) {
@@ -175,7 +191,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
 
     @Override public void onProcessMediaStateChanged(MediaListenerService.Snapshot music,
             MediaListenerService.Snapshot radio, boolean authoritative) {
-        if (!destroyed && authoritative) onTrigger(Trigger.SESSION_LOST);
+        if (!destroyed) onTrigger(Trigger.SESSION_LOST);
     }
 
     private boolean ready(Source source, String pkg) {
@@ -193,6 +209,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 long now = SystemClock.uptimeMillis();
                 if (ready(source, pkg)) {
                     policy.ready(source, g, now);
+                    if (source != Source.NAVIGATION) noteMediaReady(source, pkg);
                     MediaEventTrace.record("startup", "ready", summary()); updateNavigationAdmission(); return;
                 }
                 if (now < deadline) { handler.postDelayed(this, 500L); return; }
@@ -237,7 +254,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             policy.block(source, r.generation, "notification-access-required", SystemClock.uptimeMillis());
             updateNavigationAdmission(); runForegroundSoon(); return;
         }
-        if (media().isPlaying(pkg) || media().isPlaying(opposite)) {
+        if (media().startupPlaying(pkg) || media().startupPlaying(opposite)) {
             policy.block(source, r.generation, "playing-source-protected", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
         }
         final Intent entry;
@@ -255,7 +272,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         int token = ++foregroundToken, g = r.generation;
         homeTask = activity.getTaskId(); stagedTask = -1;
         stagedEntry = entry.getComponent().flattenToShortString(); stagedCommands = media().userCommandGeneration(); pauseSent = false;
-        observe(token, top -> {
+        claimMediaAdmission(source, pkg, token, () -> observe(token, top -> {
             if (!homeResumed || !foregroundAllowed() || !safeScreen() || top == null
                     || !(top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.LauncherActivity")
                             || top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.HomeAlias"))) {
@@ -271,8 +288,57 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             MediaEventTrace.record("startup", "foreground-launch", source + " " + stagedEntry);
             if (mode() == Mode.AGGRESSIVE) startWithRoot(source, g, pkg, token, true);
             else startNormally(source, g, pkg, token, true);
+        }));
+    }
+
+    private String mediaJournalPrefix(String pkg) {
+        long boot = bootCount();
+        return boot < 0 ? "" : boot + ":" + AndroidUserId.current() + ":" + pkg + ":";
+    }
+    private String mediaJournalKey(Source source) { return "media_admission_v1_" + source.name(); }
+    private void restoreMediaAdmission(Source source, String pkg) {
+        SharedPreferences prefs = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
+        String prefix = mediaJournalPrefix(pkg);
+        String value = prefs.getString(mediaJournalKey(source), "");
+        boolean claimed = !prefix.isEmpty() && value.startsWith(prefix);
+        if (claimed && value.equals(prefix + "ready") && media().startupSessionAbsent(pkg)) {
+            // A previously usable session is now authoritatively absent: legitimate source recovery.
+            prefs.edit().remove(mediaJournalKey(source)).apply(); claimed = false;
+            policy.sessionLost(source);
+        }
+        if (claimed || prefix.isEmpty()) policy.record(source).activityLaunchAccepted = true;
+    }
+    private void noteMediaReady(Source source, String pkg) {
+        SharedPreferences prefs = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
+        String prefix = mediaJournalPrefix(pkg);
+        if (!prefix.isEmpty() && policy.record(source).activityLaunchAccepted
+                && !prefs.getString(mediaJournalKey(source), "").equals(prefix + "ready"))
+            prefs.edit().putString(mediaJournalKey(source), prefix + "ready").apply();
+    }
+    private void claimMediaAdmission(Source source, String pkg, int token, Runnable admitted) {
+        String prefix = mediaJournalPrefix(pkg);
+        if (prefix.isEmpty() || policy.record(source).activityLaunchAccepted) {
+            yieldStage(source, policy.record(source).generation, "media-admission-retained"); return;
+        }
+        final java.util.concurrent.atomic.AtomicBoolean lease = stageLease;
+        observer.execute(() -> {
+            if (!lease.get()) return;
+            boolean saved = false;
+            try {
+                SharedPreferences prefs = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
+                // Commit before dispatch, off-main. Uncertain persistence never admits an Activity.
+                saved = !prefs.getString(mediaJournalKey(source), "").startsWith(prefix)
+                        && prefs.edit().putString(mediaJournalKey(source), prefix + "claimed").commit();
+            } catch (RuntimeException unavailable) { /* fail closed */ }
+            final boolean accepted = saved;
+            handler.post(() -> {
+                if (destroyed || token != foregroundToken || !lease.get()) return;
+                if (accepted) admitted.run();
+                else yieldStage(source, policy.record(source).generation, "media-journal-unavailable");
+            });
         });
     }
+
     private void startNormally(Source source, int g, String pkg, int token, boolean allowRoot) {
         if (!validStage(token) || !homeResumed) { yieldStage(source, g, "normal-admission-cancelled"); return; }
         AppResolver.LaunchOutcome outcome = AppResolver.launchForStartup(context, pkg);
@@ -326,12 +392,12 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (token != foregroundToken) return;
         if (!validStage(token)) { yieldStage(source, g, "user-or-system-interruption"); return; }
         // Do not pause a newly observed player without rechecking foreground ownership first.
-        if (ready(source, pkg) || media().isPlaying(pkg) || SystemClock.uptimeMillis() >= deadline) {
+        if (ready(source, pkg) || media().startupPlaying(pkg) || SystemClock.uptimeMillis() >= deadline) {
             observe(token, top -> {
                 if (!validStage(token) || top == null || !top.matches(AndroidUserId.current(), stagedTask, stagedEntry)) {
                     yieldStage(source, g, "foreground-owner-changed"); return;
                 }
-                if (!pauseSent && media().isPlaying(pkg)) {
+                if (!pauseSent && media().startupPlaying(pkg)) {
                     pauseSent = media().pauseUnrequestedPlayback(pkg, stagedCommands);
                     awaitSilence(source, g, pkg, token, SystemClock.uptimeMillis() + 1600L);
                 } else finishStage(source, g, pkg, token);
@@ -341,7 +407,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private void awaitSilence(Source source, int g, String pkg, int token, long deadline) {
         if (token != foregroundToken) return;
         if (!validStage(token)) { yieldStage(source, g, "silence-check-interrupted"); return; }
-        if (media().isPlaying(pkg) && SystemClock.uptimeMillis() < deadline) {
+        if (media().startupPlaying(pkg) && SystemClock.uptimeMillis() < deadline) {
             handler.postDelayed(() -> awaitSilence(source, g, pkg, token, deadline), 250L);
         } else finishStage(source, g, pkg, token);
     }
@@ -390,7 +456,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 yieldStage(source, g, "home-return-unconfirmed"); return;
             }
             String pkg = packageFor(source);
-            if (ready(source, pkg) && !media().isPlaying(pkg)) policy.ready(source, g, SystemClock.uptimeMillis());
+            if (ready(source, pkg) && !media().isPlaying(pkg)) {
+                policy.ready(source, g, SystemClock.uptimeMillis()); noteMediaReady(source, pkg);
+            }
             else policy.uncertain(source, g, "content-or-silence-unconfirmed", SystemClock.uptimeMillis());
             stageLease.set(false);
             foregroundBusy = false; foregroundSource = null; updateNavigationAdmission(); runForegroundSoon();
@@ -455,6 +523,6 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
     void destroy() {
         destroyed = true; cancelForeground("destroyed"); handler.removeCallbacksAndMessages(null);
-        ProcessMediaSessionMonitor.removeObserver(this); observer.shutdownNow();
+        ProcessMediaSessionMonitor.removeObserver(this); media().setStartupObserver(() -> { }); observer.shutdownNow();
     }
 }

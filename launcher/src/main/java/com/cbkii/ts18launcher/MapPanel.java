@@ -52,6 +52,9 @@ final class MapPanel extends FrameLayout implements LocationListener {
     private static final MapState MAP_STATE = new MapState();
     private final RendererRecovery recovery = new RendererRecovery();
     private static Location processLastLocation;
+    static Location observedLocationSnapshot() {
+        return processLastLocation == null ? null : new Location(processLastLocation);
+    }
     private final Button retry;
     private boolean active;
     private boolean recoveryPending;

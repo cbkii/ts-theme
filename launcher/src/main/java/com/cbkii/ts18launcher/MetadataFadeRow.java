@@ -35,7 +35,8 @@ final class MetadataFadeRow extends FrameLayout {
         int width = getWidth();
         int available = text.getWidth() - text.getPaddingLeft() - text.getPaddingRight();
         if (width <= 0 || text.getVisibility() != View.VISIBLE || available <= 0
-                || text.getPaint().measureText(text.getText().toString()) <= available) return;
+                || text.getLayout() == null || text.getLayout().getLineCount() == 0
+                || text.getLayout().getLineWidth(0) <= available) return;
         int black = AutomotiveUi.color(getContext(), R.color.ui_black);
         int start = Math.max(0, width - fadeWidth);
         if (shaderWidth != width || shaderColor != black) {
