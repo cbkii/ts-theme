@@ -20,19 +20,21 @@ class EffectiveTickerTest(unittest.TestCase):
             "android/text/TextUtils.java": "package android.text;public class TextUtils{public enum TruncateAt{END}}",
             "android/util/TypedValue.java": "package android.util;public class TypedValue{public static int COMPLEX_UNIT_PX=0;}",
             "android/view/Gravity.java": "package android.view;public class Gravity{public static int CENTER_VERTICAL=1,BOTTOM=2,TOP=3;}",
-            "android/view/View.java": "package android.view;public class View{public static int GONE=8,VISIBLE=0;public void setVisibility(int v){}protected void onAttachedToWindow(){}protected void onDetachedFromWindow(){}public boolean post(Runnable r){r.run();return true;}}",
+            "android/view/View.java": "package android.view;public class View{public static int GONE=8,VISIBLE=0;public void setVisibility(int v){}protected void onAttachedToWindow(){}protected void onDetachedFromWindow(){}protected void onWindowVisibilityChanged(int v){}public boolean isAttachedToWindow(){return true;}public boolean isShown(){return true;}public void invalidate(){}public boolean post(Runnable r){r.run();return true;}}",
             "android/widget/TextView.java": '''package android.widget;public class TextView extends android.view.View {
 public String text="";public TextView(android.content.Context c){}public void setText(String s){text=s;}public void setTextColor(int c){}
 public void setTextSize(int u,float s){}public void setTypeface(android.graphics.Typeface t){}public void setSingleLine(boolean b){}
-public void setEllipsize(android.text.TextUtils.TruncateAt t){}public void setGravity(int g){}}''',
+public void setHorizontallyScrolling(boolean b){}public void setEllipsize(android.text.TextUtils.TruncateAt t){}public void setGravity(int g){}}''',
             "android/widget/LinearLayout.java": '''package android.widget;public class LinearLayout extends android.view.View {
 android.content.Context c;public LinearLayout(android.content.Context c){this.c=c;}public static int VERTICAL=1;
 public android.content.Context getContext(){return c;}public void setOrientation(int o){}public void setGravity(int g){}
 public void setPadding(int a,int b,int c,int d){}public void addView(android.view.View v,LayoutParams l){}
 public static class LayoutParams{public static int MATCH_PARENT=-1;public LayoutParams(int a,int b,float f){}}}''',
             "com/cbkii/ts18launcher/Doubles.java": '''package com.cbkii.ts18launcher;
+class MetadataFadeRow extends android.view.View {MetadataFadeRow(android.content.Context c,android.widget.TextView t){}}
+class RadioMetadataResolver {RadioMetadataResolver(android.content.Context c,Runnable r){}void start(){}void stop(){}String frequency(MediaListenerService.Snapshot s){return "";}}
 class SlowMarqueeTextView extends android.widget.TextView{SlowMarqueeTextView(android.content.Context c){super(c);}}
-class R{static class dimen{static int driver_gap,ui_metadata_text,ui_metadata_secondary_text;}static class color{static int ui_text,ui_text_secondary;}}
+class R{static class dimen{static int ui_metadata_padding_horizontal,driver_gap,ui_metadata_text,ui_metadata_secondary_text;}static class color{static int ui_text,ui_text_secondary;}}
 class AutomotiveUi{static int dimen(android.content.Context c,int n){return 1;}static int color(android.content.Context c,int n){return 1;}}
 class MediaSelection{static String MUSIC="music",RADIO="radio";}
 class MediaListenerService {interface Observer {void onMediaStateChanged(Snapshot m,Snapshot r);}static void addObserver(Observer o){}static void removeObserver(Observer o){}
@@ -63,7 +65,7 @@ System.out.println("PASS process ticker/source switch/session removal");}}
                 p = root / name
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(text)
-            for name in ("MediaMetadataView", "MediaTickerPolicy", "MediaMetadataPolicy"):
+            for name in ("MediaMetadataView", "MediaTickerPolicy", "MediaMetadataPolicy", "RadioFrequency"):
                 shutil.copyfile(SRC / (name + ".java"), root / "com/cbkii/ts18launcher" / (name + ".java"))
             subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "-d", str(root),
                             *map(str, root.rglob("*.java"))], check=True)

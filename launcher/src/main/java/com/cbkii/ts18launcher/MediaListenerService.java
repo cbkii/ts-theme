@@ -34,6 +34,7 @@ public final class MediaListenerService extends NotificationListenerService {
         public final String packageName;
         public final String title;
         public final String artist;
+        final RadioFrequency radioFrequency;
         public final boolean playing;
         public final int state;
         public final long actions;
@@ -54,6 +55,7 @@ public final class MediaListenerService extends NotificationListenerService {
             this.packageName = packageName == null ? "" : packageName;
             this.title = normalise(title);
             this.artist = normalise(artist);
+            this.radioFrequency = RadioFrequency.observed(this.packageName, this.title, this.artist);
             this.state = state;
             this.actions = actions;
             this.sessionIdentity = sessionIdentity;

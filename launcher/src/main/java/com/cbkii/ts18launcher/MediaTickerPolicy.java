@@ -29,6 +29,15 @@ final class MediaTickerPolicy {
         return new Display(primary, secondary);
     }
 
+    static Display resolve(String title, String artist, String appLabel, String selectedSource,
+                           String packageName, String radioFrequency) {
+        Display normal = resolve(title, artist, appLabel, selectedSource);
+        if (MediaSelection.RADIO.equals(selectedSource) && RadioFrequency.NAVRADIO.equals(packageName)) {
+            return new Display(normal.primary, radioFrequency);
+        }
+        return normal;
+    }
+
     private static boolean isSourcePlaceholder(String title, String appLabel, String selectedSource) {
         if (title.isEmpty()) return false;
         if (!appLabel.isEmpty() && title.equalsIgnoreCase(appLabel)) return true;

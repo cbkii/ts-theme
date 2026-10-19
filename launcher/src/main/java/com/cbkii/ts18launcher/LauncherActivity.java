@@ -766,6 +766,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 && !primary.sessionIdentity.equals(secondary.sessionIdentity)) {
             return primary;
         }
+        String primaryStation = MediaListenerService.meaningfulRadioTitle(primary);
+        if (RadioFrequency.NAVRADIO.equals(primary.packageName)
+                && !primaryStation.isEmpty()
+                && !primaryStation.equalsIgnoreCase(secondary.title)) return primary;
+        if (RadioFrequency.NAVRADIO.equals(primary.packageName)
+                && primary.radioFrequency != null && secondary.radioFrequency != null
+                && !primary.radioFrequency.display().equals(secondary.radioFrequency.display())) return primary;
         String title = secondary.title.isEmpty() ? primary.title : secondary.title;
         String artist = secondary.artist.isEmpty() ? primary.artist : secondary.artist;
         return new MediaListenerService.Snapshot(primary.packageName, title, artist,
