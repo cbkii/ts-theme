@@ -180,7 +180,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         for (ImageButton button : new ImageButton[] {radioRole, radioPrevious, radioNext,
                 musicRole, mediaPrevious, mediaNext}) AutomotiveUi.styleTransportButton(this, button, false);
         updateMediaPresentation();
-        AutomotiveUi.styleRailButton(this, appsButton);
+        AutomotiveUi.styleRailButton(this, appsButton, true);
         AutomotiveUi.styleRailButton(this, navigationButton, true);
         for (ImageButton button : quickButtons) AutomotiveUi.styleRailButton(this, button);
         applyRailConfiguration();
@@ -283,6 +283,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         rail.setGravity(Gravity.CENTER_HORIZONTAL);
         rail.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         appsButton = railButton(R.drawable.ic_apps, "Apps");
+        AutomotiveUi.styleRailButton(this, appsButton, true);
         appsButton.setOnClickListener(v -> toggleAppDrawer());
         appsButton.setOnLongClickListener(v -> {
             startActivity(new Intent(this, SettingsActivity.class));
@@ -312,7 +313,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         }
 
-        navigationButton = railButton(R.drawable.ic_navigation, "Navigation");
+        navigationButton = railButton(R.drawable.ic_navigation_filled, "Navigation");
         AutomotiveUi.styleRailButton(this, navigationButton, true);
         navigationButton.setOnClickListener(v -> openNavigation(null));
         rail.addView(navigationButton, new LinearLayout.LayoutParams(
@@ -338,6 +339,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             quickCells[i].setVisibility(visible ? View.VISIBLE : View.GONE);
             if (visible) {
                 ShortcutSlot.bind(this, quickButtons[i], LauncherPrefs.QUICK_KEYS[i]);
+                AutomotiveUi.styleRailButton(this, quickButtons[i]);
                 focus.add(quickButtons[i]);
             }
         }

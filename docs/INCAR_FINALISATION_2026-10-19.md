@@ -48,3 +48,11 @@ parents. Film genuine boot/ACC before collecting; never reboot a live collector.
 All physical TS18 startup, audio, silent tuner, real compact pixels/touch, installed identity,
 performance/thermal, process/reboot/cold boot and ACC acceptance is **NOT_RUN**. No installation,
 production release, default merge or protected write is part of this implementation.
+
+## Additional HOME UI scope
+
+The map fallback now presents one accessible icon-only Open navigation action: a white circle sized to 75% of available panel height (clamped to width), with a large black filled navigation glyph. Visible Retry/fullscreen text buttons are removed. The existing controller retains transaction and recovery authority; the circle uses its existing explicit open path.
+
+Apps and Navigation rail endpoints are filled white. Intermediate rail shortcuts use the selected palette base tone, all of which exceed 4.5:1 contrast against black, including Night mode. An explicit app assignment retains its real Auto icon and launch target, now tinted on the HOME rail; the drawer preserves full-colour app identity. Curated overrides keep the existing outlined glyphs. The scrollable five-column picker shows 40 actual icon choices with selection, focus, accessibility labels and long-press tooltips. Added choices reuse the pinned licensed family.
+
+Physical rendering, focus, touch and failed-map fallback checks on the final signed pair remain NOT_RUN. This UI supersedes earlier validation instructions referring to a visible Retry button; capture the original failure before tapping the circle or rail Navigation.

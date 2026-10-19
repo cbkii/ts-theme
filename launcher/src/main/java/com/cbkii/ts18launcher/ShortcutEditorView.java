@@ -10,6 +10,9 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.ImageButton;
+import android.widget.GridLayout;
+import android.widget.ScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -150,13 +153,42 @@ final class ShortcutEditorView extends LinearLayout {
     private void chooseIcon() {
         String current = drawer ? UiPersonalizationPrefs.drawerQuickIcon(activity, index)
                 : UiPersonalizationPrefs.quickIcon(activity, index);
-        new AlertDialog.Builder(activity).setTitle("Choose icon")
-                .setSingleChoiceItems(SlotIconCatalog.LABELS, indexOf(SlotIconCatalog.VALUES, current), (dialog, which) -> {
-                    if (drawer) UiPersonalizationPrefs.setDrawerQuickIcon(activity, index, SlotIconCatalog.VALUES[which]);
-                    else UiPersonalizationPrefs.setQuickIcon(activity, index, SlotIconCatalog.VALUES[which]);
-                    dialog.dismiss();
-                    refresh.run();
-                }).setNegativeButton("Cancel", null).show();
+        GridLayout grid = new GridLayout(activity);
+        grid.setColumnCount(5);
+        int gap = AutomotiveUi.dimen(activity, R.dimen.driver_gap);
+        grid.setPadding(gap, gap, gap, gap);
+        ScrollView scroll = new ScrollView(activity);
+        scroll.addView(grid);
+        AlertDialog dialog = new AlertDialog.Builder(activity).setTitle("Choose icon")
+                .setView(scroll).setNegativeButton("Cancel", null).create();
+        for (String value : SlotIconCatalog.VALUES) {
+            ImageButton tile = new ImageButton(activity);
+            PreviewIcon preview = SlotIconCatalog.AUTO.equals(value)
+                    ? targetPreview(packageKey(), role()) : resourcePreview(SlotIconCatalog.icon(value));
+            tile.setImageDrawable(preview.drawable);
+            if (preview.tint) tile.setColorFilter(AccentPalette.color(activity, false));
+            tile.setContentDescription(SlotIconCatalog.label(value));
+            tile.setTooltipText(SlotIconCatalog.label(value));
+            tile.setSelected(value.equals(current));
+            tile.setBackground(AutomotiveUi.followModeBackground(activity));
+            tile.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            tile.setPadding(gap, gap, gap, gap);
+            tile.setFocusable(true);
+            AutomotiveUi.attachFeedback(tile);
+            GridLayout.LayoutParams params = new GridLayout.LayoutParams();
+            params.width = 0;
+            params.height = AutomotiveUi.dimen(activity, R.dimen.driver_target_min);
+            params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+            params.setMargins(gap / 2, gap / 2, gap / 2, gap / 2);
+            grid.addView(tile, params);
+            tile.setOnClickListener(v -> {
+                if (drawer) UiPersonalizationPrefs.setDrawerQuickIcon(activity, index, value);
+                else UiPersonalizationPrefs.setQuickIcon(activity, index, value);
+                dialog.dismiss();
+                refresh.run();
+            });
+        }
+        dialog.show();
     }
 
     private String packageKey() {

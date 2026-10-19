@@ -186,9 +186,9 @@ final class AutomotiveUi {
 
     static void styleRailButton(Context context, ImageButton button) { styleRailButton(context, button, false); }
 
-    static void styleRailButton(Context context, ImageButton button, boolean accent) {
+    static void styleRailButton(Context context, ImageButton button, boolean endpoint) {
         button.setBackground(transparentActionBackground(context));
-        button.setImageTintList(ColorStateList.valueOf(color(context, accent ? R.color.ui_accent : R.color.ui_icon)));
+        button.setImageTintList(ColorStateList.valueOf(endpoint ? Color.WHITE : AccentPalette.color(context, false)));
         int pad = dimen(context, R.dimen.driver_gap_large);
         button.setPadding(pad, pad, pad, pad);
         button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);

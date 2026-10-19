@@ -66,3 +66,5 @@ The upstream vector path geometry is retained. Local copies remove the theme-lev
 The repository root `LICENSE` contains the Apache License 2.0 terms. The launcher also packages `assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt` with the upstream revision and modification notice.
 
 The application launcher badge (`ic_launcher.xml`) is project branding, not a functional UI glyph, and is intentionally not sourced from Material Symbols.
+
+The filled navigation endpoint/fallback (`ic_navigation_filled.xml`) is a local modification of the pinned navigation glyph: the inner cutout is removed. The original outlined glyph remains available for quick shortcuts. The icon grid now offers 40 choices (Auto plus 39 glyphs), including the already-vendored microphone, location, transport, zoom and Apps glyphs.
