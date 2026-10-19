@@ -10,6 +10,7 @@ import android.content.pm.PackageManager;
  */
 public final class TopwayAdapter {
     public static final String DOFUN_PACKAGE = "com.dofun.variety";
+    public static final String AUXIO_PACKAGE = "com.tw.media";
     public static final String STOCK_MUSIC_PACKAGE = "com.tw.music";
 
     private TopwayAdapter() {}
@@ -19,6 +20,9 @@ public final class TopwayAdapter {
     }
 
     public static String defaultMusicPackage(Context context) {
+        // Package identity, not Auxio's retained com.tw.music component namespace.
+        // This only resolves an unset preference; every caller preserves an explicit choice.
+        if (isInstalled(context, AUXIO_PACKAGE)) return AUXIO_PACKAGE;
         return isInstalled(context, STOCK_MUSIC_PACKAGE) ? STOCK_MUSIC_PACKAGE : "";
     }
 
@@ -26,7 +30,7 @@ public final class TopwayAdapter {
         try {
             context.getPackageManager().getApplicationInfo(packageName, 0);
             return true;
-        } catch (PackageManager.NameNotFoundException e) {
+        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
             return false;
         }
     }

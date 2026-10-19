@@ -118,9 +118,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
 
     private void updateNavigationAdmission() {
         if (navigation == null) return;
-        // Read-only media preparation does not compete for foreground. Only a live Activity stage
-        // holds the presentation lane; a failed player never holds Maps behind its deadline.
-        boolean defer = foregroundBusy;
+        // The native Maps helper takes focus. Reserve the lane before presenting Maps when
+        // a qualified source may need a bounded Activity stage after its background deadline.
+        // Read-only preparation stays concurrent; unqualified/disabled sources hold no lease.
+        boolean defer = foregroundBusy || needsForegroundReservation();
         navigation.deferAutomaticPresentation(defer);
         if (defer) {
             // A media Activity owns the lane. Invalidate the old wait, then give navigation
@@ -134,6 +135,18 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             navigation.reconcile();
             await(Source.NAVIGATION, r.generation, packageFor(Source.NAVIGATION), SystemClock.uptimeMillis() + 18000L);
         }
+    }
+
+    private boolean needsForegroundReservation() {
+        if (!foregroundAllowed()) return false;
+        for (Source source : new Source[] {Source.RADIO, Source.MUSIC}) {
+            String pkg = packageFor(source);
+            if (policy.record(source).state != State.STARTING || ready(source, pkg)) continue;
+            if (MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg)
+                    || MediaSourceAdapter.NAVRADIO_PACKAGE.equals(pkg)
+                        && MediaListenerService.hasNotificationAccess(context)) return true;
+        }
+        return false;
     }
 
     void attachNavigationHook(NavigationHook hook) { navigation = hook; updateNavigationAdmission(); }

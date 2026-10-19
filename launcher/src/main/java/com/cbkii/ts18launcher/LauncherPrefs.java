@@ -98,7 +98,7 @@ final class LauncherPrefs {
     static String drawerQuickRole(Context context, int index) { return roleFor(context, DRAWER_ROLE_KEYS[index], RoleIconCatalog.defaultDrawerRole(index)); }
 
     static String mediaMode(Context context) {
-        String value = prefs(context).getString(KEY_MEDIA_MODE, MEDIA_MODE_AUTO);
+        String value = prefs(context).getString(KEY_MEDIA_MODE, MEDIA_MODE_PREFER_MUSIC);
         return MEDIA_MODE_PREFER_MUSIC.equals(value) ? MEDIA_MODE_PREFER_MUSIC : MEDIA_MODE_AUTO;
     }
     static void setMediaMode(Context context, String mode) {

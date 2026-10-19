@@ -190,6 +190,11 @@ public static void main(String[] args)throws Exception{
  check(adopted.getInt(c)==42,"yielded admission lost its accepted task identity");
  RawFreeformTaskBackend.delayed=false;c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
  check(RawFreeformTaskBackend.presents==1&&c.startupNavigationReady(),"yielded N2 did not reuse the same task");c.destroy();
+ // Manual authority expires with its explicit dispatch, including successful warm fullscreen.
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.fullscreenCode="SUCCESS";p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ c.openFullscreen(null);CompactStartupClient.next=new CompactStartupClient.Snapshot(true,false,true,42);CompactStartupClient.deliver();
+ c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
+ check("deny".equals(RawFreeformTaskBackend.coldPolicy),"completed explicit action leaked manual cold authority after opt-out");c.destroy();
  // Source icons remain independent; superseded map callback cannot change the new action.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  int[] opened={0};c.launchAfterSuspension(()->opened[0]++);check(opened[0]==1,"source icon waits for callback");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());

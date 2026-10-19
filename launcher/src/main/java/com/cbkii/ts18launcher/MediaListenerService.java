@@ -390,7 +390,7 @@ public final class MediaListenerService extends NotificationListenerService {
                 LauncherPrefs.mediaMode(this));
         if (preferConfigured) {
             MediaController configured = pickExactPackage(controllers, preferredPackage);
-            if (configured != null && !excludedFromGenericMedia(configured, radioPackage)) return configured;
+            return configured != null && !excludedFromGenericMedia(configured, radioPackage) ? configured : null;
         }
         return pickPrimary(controllers, radioPackage, preferredPackage, preferConfigured,
                 LauncherPrefs.lastMusicPackage(this));

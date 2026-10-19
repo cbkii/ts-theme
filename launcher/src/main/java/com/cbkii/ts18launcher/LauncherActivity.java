@@ -417,7 +417,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private String musicControlPackage() {
-        if (!genericSnapshot.packageName.isEmpty()) return genericSnapshot.packageName;
+        if (LauncherPrefs.MEDIA_MODE_AUTO.equals(LauncherPrefs.mediaMode(this))
+                && !genericSnapshot.packageName.isEmpty()) return genericSnapshot.packageName;
         return configuredMusicPackage();
     }
 
@@ -612,6 +613,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void updateLabels() {
+        if (LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(LauncherPrefs.mediaMode(this))
+                && !configuredMusicPackage().equals(genericSnapshot.packageName))
+            genericSnapshot = emptyMediaSnapshot();
         boolean tickerRadio = MediaSelection.RADIO.equals(mediaSelection.displayed());
         mediaText.setSnapshot(tickerRadio ? radioSnapshot : genericSnapshot, mediaSelection.displayed());
         String radioPackage = RadioProvider.resolvePackage(this);

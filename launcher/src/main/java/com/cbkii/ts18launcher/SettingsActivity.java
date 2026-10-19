@@ -258,7 +258,7 @@ public final class SettingsActivity extends Activity {
                 checked -> UiPersonalizationPrefs.setMediaStartupWarmup(this, checked));
         addChoiceRow(R.drawable.ic_music, "Media control priority", mediaModeLabel(),
                 v -> choose("Media control priority",
-                        new String[] {"Automatic", "Prefer music"},
+                        new String[] {"Follow active media", "Configured Music only"},
                         new String[] {LauncherPrefs.MEDIA_MODE_AUTO, LauncherPrefs.MEDIA_MODE_PREFER_MUSIC},
                         LauncherPrefs.mediaMode(this), value -> {
                             LauncherPrefs.setMediaMode(this, value);
@@ -683,7 +683,7 @@ public final class SettingsActivity extends Activity {
 
     private String mediaModeLabel() {
         return LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(LauncherPrefs.mediaMode(this))
-                ? "Prefer music" : "Automatic";
+                ? "Configured Music only" : "Follow active media";
     }
 
     private String pickerFallback(String key) {

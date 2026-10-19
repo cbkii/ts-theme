@@ -235,6 +235,11 @@ final class ProcessMediaSessionMonitor {
         if (preferred.isEmpty()) preferred = TopwayAdapter.defaultMusicPackage(context);
         boolean preferConfigured = LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(
                 LauncherPrefs.mediaMode(context));
+        // Dedicated Music must remain the configured source, including while its session is absent.
+        if (preferConfigured) {
+            MediaController selected = pickExact(controllers, preferred);
+            return selected != null && !excludedFromGenericMedia(selected, radioPackage) ? selected : null;
+        }
         String remembered = LauncherPrefs.lastMusicPackage(context);
         List<MediaSelection.Candidate> candidates = new ArrayList<>();
         for (MediaController controller : controllers) {

@@ -65,13 +65,16 @@ final class NavigationWindowController {
     private CompactStartupClient.Snapshot compactSnapshot = CompactStartupClient.Snapshot.unknown();
     private boolean compactResolved;
     private boolean reportedStartupReady;
-    private boolean explicitColdRequest;
+    // A queued user request and the one dispatch consuming it have separate identities.
+    private int nextExplicitRequest;
+    private int pendingExplicitRequest;
+    private int manualOperationId;
     private boolean automaticColdYielded;
     private int yieldedOperationId;
 
     void cancelAutomaticColdStart() {
         automaticColdYielded = true;
-        explicitColdRequest = false;
+        pendingExplicitRequest = 0; manualOperationId = 0;
         CompactStartupClient.suppressForBoot(activity);
         cancelRecovery();
         if (activeOperationId != 0) {
@@ -87,7 +90,7 @@ final class NavigationWindowController {
 
     private void updateColdPolicy() {
         if (backend == null) return;
-        String policy = explicitColdRequest ? "manual"
+        String policy = (activeOperationId != 0 && manualOperationId == activeOperationId) ? "manual"
                 : !NavigationProvider.ORGANIC_MAPS_INCAR.equals(selectedPackage()) ? "manual"
                 : !automaticColdYielded && CompactStartupClient.automaticAllowed(activity)
                         && compactSnapshot.compatible && compactSnapshot.enabled
@@ -248,7 +251,7 @@ final class NavigationWindowController {
     /** A user app launch owns focus immediately; map maintenance is never its prerequisite. */
     void launchAfterSuspension(Runnable launch) {
         if (state == State.DESTROYED || launch == null) return;
-        cancelRecovery(); cancelActiveOperation(); overlayGate.cancel();
+        clearExplicitAdmission(); cancelRecovery(); cancelActiveOperation(); overlayGate.cancel();
         normalBootstrapInFlight = false;
         fullscreenGoal = false; fullscreenRequested = false; retryRequested = false;
         pendingReconcile = false; pendingDeparture = false; pendingSuspendReason = "";
@@ -262,9 +265,9 @@ final class NavigationWindowController {
 
     /** Explicit independent escape route. Never used by automatic map recovery. */
     boolean openNormally(Location location) {
-        explicitColdRequest = true; updateColdPolicy();
+        pendingExplicitRequest = ++nextExplicitRequest;
         String pkg = selectedPackage();
-        if (pkg.isEmpty() || state == State.DESTROYED) return false;
+        if (pkg.isEmpty() || state == State.DESTROYED) { clearExplicitAdmission(); return false; }
         launchAfterSuspension(() -> openOrdinaryFullscreen(pkg, location, "explicit-normal-open"));
         return true;
     }
@@ -272,21 +275,21 @@ final class NavigationWindowController {
     void suspendForExperimentalMap() { if (state != State.DESTROYED) { uiState.onLauncherOverlayOpened(); suspendForLauncherSurface("legacy online map fallback active"); } }
 
     boolean openFullscreen(Location location) {
-        explicitColdRequest = true; updateColdPolicy();
-        if (state == State.DESTROYED) return false;
+        pendingExplicitRequest = ++nextExplicitRequest;
+        if (state == State.DESTROYED) { clearExplicitAdmission(); return false; }
         if ("N0".equals(TestingProfiles.navigation(activity))) return openNormally(location);
         cancelRecovery(); overlayGate.cancel(); externalLaunchGeneration++;
         normalBootstrapInFlight = false;
         fullscreenGoal = true; retryRequested = false; observationOnly = false; repairedObservation = ""; pendingDeparture = false;
         pendingFullscreenLocation = location;
         pendingSuspendReason = ""; String pkg = selectedPackage();
-        if (pkg.isEmpty()) { panel.showUnavailable("Choose a Navigation app in Settings", null); return false; }
+        if (pkg.isEmpty()) { clearExplicitAdmission(); panel.showUnavailable("Choose a Navigation app in Settings", null); return false; }
         if (activeOperationId != 0) { fullscreenRequested = true; pendingFullscreenLocation = location; panel.showStarting(label(pkg), "Finishing the current navigation transaction"); return true; }
         recovery.reset(); clearFailureLatch();
         return openFullscreenNow(pkg, location);
     }
 
-    void destroy() { compactStartup.close(); cancelActiveOperation(); cancelRecovery(); overlayGate.cancel(); finishPresentationCallback(false); authorityGeneration++; activeOperationId = 0; state = State.DESTROYED; destroyBackendInstance(); }
+    void destroy() { clearExplicitAdmission(); compactStartup.close(); cancelActiveOperation(); cancelRecovery(); overlayGate.cancel(); finishPresentationCallback(false); authorityGeneration++; activeOperationId = 0; state = State.DESTROYED; destroyBackendInstance(); }
 
     void whenHomePresented(java.util.function.Consumer<Boolean> callback) {
         if (callback == null) return;
@@ -347,8 +350,8 @@ final class NavigationWindowController {
             // Known tasks are read-only verified before any repair transaction.
             startVerify(configuredPackage, component, target, activeTaskId);
         } else {
-            if (automaticColdYielded && !explicitColdRequest) return;
-            if (NavigationProvider.ORGANIC_MAPS_INCAR.equals(configuredPackage) && !explicitColdRequest && !compactResolved) {
+            if (automaticColdYielded && pendingExplicitRequest == 0) return;
+            if (NavigationProvider.ORGANIC_MAPS_INCAR.equals(configuredPackage) && pendingExplicitRequest == 0 && !compactResolved) {
                 panel.showStarting(label(configuredPackage), "Checking compact startup preference"); return;
             }
             startPresent(configuredPackage, component, target, -1);
@@ -461,7 +464,7 @@ final class NavigationWindowController {
         if (acquisition && "N2".equals(TestingProfiles.navigation(activity))) normalBootstrapInFlight = true;
         state = acquisition ? State.ACQUIRING : State.PRESENTING;
         panel.showStarting(label(pkg), acquisition ? "Acquiring one configured task · transaction " + operation : "Repairing task " + taskHint + " · transaction " + operation);
-        updateColdPolicy();
+        consumeExplicitDispatch(operation);
         backend.present(pkg, component, target, taskHint, operation, result -> {
             if (!finishOperation(operation, result, pkg)) return;
             if ("N2".equals(result.method) && (result.launched == 1 || "BOOTSTRAP_PENDING".equals(result.code)))
@@ -525,6 +528,7 @@ final class NavigationWindowController {
         focusGeneration++;
         state = State.FULLSCREEN_HANDOFF;
         panel.showStarting(label(pkg), "Resolving navigation task for fullscreen");
+        consumeExplicitDispatch(operation);
         backend.fullscreen(pkg, component, task, result -> {
             if (!finishOperation(operation, result, pkg)) return;
             retainObservedTask(result, pkg);
@@ -568,6 +572,7 @@ final class NavigationWindowController {
         // force-stop, synthetic input, automatic HOME replacement or permission bypass.
         cancelRecovery(); pendingReconcile = false; pendingDeparture = false;
         state = State.FULLSCREEN_HANDOFF; needsValidation = true; needsPresentation = true;
+        clearExplicitAdmission();
         boolean opened = NavigationProvider.open(activity, pkg, location);
         if (opened) fullscreenGoal = false;
         if (!opened) latchFailure(pkg, configuredMode, "Android launch unavailable");
@@ -604,6 +609,20 @@ final class NavigationWindowController {
         recoveryCallback = null;
     }
 
+    private void consumeExplicitDispatch(int operation) {
+        if (pendingExplicitRequest != 0) {
+            pendingExplicitRequest = 0;
+            manualOperationId = operation;
+        }
+        updateColdPolicy();
+    }
+
+    private void clearExplicitAdmission() {
+        pendingExplicitRequest = 0;
+        manualOperationId = 0;
+        updateColdPolicy();
+    }
+
     private int beginOperation() {
         if (activeOperationId != 0 || state == State.DESTROYED) { pendingReconcile = true; return 0; }
         long now = SystemClock.elapsedRealtime();
@@ -625,6 +644,8 @@ final class NavigationWindowController {
     private boolean finishOperation(int operation, NavigationHelperResult result, String pkg) {
         if (state == State.DESTROYED || operation != activeOperationId) return false;
         activeOperationId = 0;
+        if (manualOperationId == operation) manualOperationId = 0;
+        updateColdPolicy();
         if (operationTimeout != null) activity.getWindow().getDecorView().removeCallbacks(operationTimeout);
         operationTimeout = null;
         if (operation == yieldedOperationId) {
@@ -633,7 +654,7 @@ final class NavigationWindowController {
             // Completion may prove an Activity was admitted even though the user yielded.
             // Retain its verified identity before suppressing presentation or serving Retry.
             retainObservedTask(result, pkg);
-            if (!explicitColdRequest) {
+            if (pendingExplicitRequest == 0) {
                 state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
                 pendingReconcile = false;
                 finishPresentationCallback(false);
@@ -650,6 +671,7 @@ final class NavigationWindowController {
         return true;
     }
     private void cancelActiveOperation() {
+        manualOperationId = 0;
         yieldedOperationId = 0;
         normalBootstrapInFlight = false;
         activeOperationId = 0;
@@ -670,16 +692,16 @@ final class NavigationWindowController {
     private static boolean acceptIdentity(NavigationHelperResult result, String pkg, int expectedTask) { if (!result.success || result.userId != AndroidUserId.current() || result.taskId <= 0 || !pkg.equals(result.packageName)) return false; if (expectedTask > 0 && result.taskId != expectedTask) return false; return componentMatches(result.component, pkg); }
     private static boolean componentMatches(String component, String pkg) { return component != null && !component.isEmpty() && !"unknown".equals(component) && component.startsWith(pkg + "/"); }
     private void retainObservedTask(NavigationHelperResult result, String pkg) { if (result != null) Log.i(TAG, "observation attempt=" + nextTransactionId + " code=" + result.code + " phase=" + result.phase + " task=" + result.taskId + " mode=" + result.windowingMode + " visible=" + result.windowVisible + " drawn=" + result.windowDrawn); if (result == null || (!result.success && !NavigationRecoveryPolicy.recoverable(result.code))) return; if (result.userId == AndroidUserId.current() && result.taskId > 0 && pkg.equals(result.packageName) && componentMatches(result.component, pkg)) { activePackage = pkg; activeTaskId = result.taskId; } }
-    private void markWindowed(NavigationHelperResult result, String pkg, NavigationWindowBounds target) { normalBootstrapInFlight = false; if (!target.equals(bounds)) { needsValidation = true; needsPresentation = true; pendingReconcile = true; return; } activePackage = pkg; activeTaskId = result.taskId; backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW; state = State.WINDOWED; lastHelperCode = ""; observationOnly = false; repairedObservation = ""; cancelRecovery(); recovery.reset(); appliedBounds = target; needsValidation = false; needsPresentation = false; clearFailureLatch(); reportStartupReadiness("renderer-evidence-pending"); compactStartup.refresh(); if (uiState.canPresentNavigation()) { showWindowedStatus(pkg, result.taskId, target); finishPresentationCallback(true); } Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack=" + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds + " launched=" + result.launched + " transaction=" + result.transactionId); }
+    private void markWindowed(NavigationHelperResult result, String pkg, NavigationWindowBounds target) { clearExplicitAdmission(); normalBootstrapInFlight = false; if (!target.equals(bounds)) { needsValidation = true; needsPresentation = true; pendingReconcile = true; return; } activePackage = pkg; activeTaskId = result.taskId; backendMode = HomeNavigationSurfacePolicy.NATIVE_WINDOW; state = State.WINDOWED; lastHelperCode = ""; observationOnly = false; repairedObservation = ""; cancelRecovery(); recovery.reset(); appliedBounds = target; needsValidation = false; needsPresentation = false; clearFailureLatch(); reportStartupReadiness("renderer-evidence-pending"); compactStartup.refresh(); if (uiState.canPresentNavigation()) { showWindowedStatus(pkg, result.taskId, target); finishPresentationCallback(true); } Log.i(TAG, "windowed package=" + pkg + " task=" + result.taskId + " stack=" + result.stackId + " mode=" + result.windowingMode + " bounds=" + result.bounds + " launched=" + result.launched + " transaction=" + result.transactionId); }
     private static void logCapabilityEvidence(NavigationHelperResult result) { if (!result.success) Log.w(TAG, "helper failure: " + result.raw); if (result.helpExit < 0 && result.launchExit < 0) return; Log.i(TAG, "native launch evidence code=" + result.code + " helpExit=" + result.helpExit + " helpWindowingMode=" + result.helpWindowingMode + " helpDisplay=" + result.helpDisplay + " launchExit=" + result.launchExit); }
     private void showWindowedStatus(String pkg, int taskId, NavigationWindowBounds target) { // Physical visibility and touch are not inferred from Android task identity/bounds alone; exact-device qualification remains required.
         panel.showConfigured("", () -> openFullscreen(null)); }
-    private void latchFailure(String pkg, String mode, String detail) { normalBootstrapInFlight = false; failureGeneration = authorityGeneration; failurePackage = pkg == null ? "" : pkg; failureMode = mode == null ? "" : mode; failureDetail = detail == null || detail.isEmpty() ? "UNKNOWN" : detail; state = State.FAILED; finishPresentationCallback(!hasManagedNativeTask()); showLatchedFailure(); if (startupListener != null) startupListener.accept(false, failureDetail); Log.w(TAG, "native navigation failed package=" + failurePackage + " detail=" + failureDetail + " generation=" + failureGeneration); }
+    private void latchFailure(String pkg, String mode, String detail) { clearExplicitAdmission(); normalBootstrapInFlight = false; failureGeneration = authorityGeneration; failurePackage = pkg == null ? "" : pkg; failureMode = mode == null ? "" : mode; failureDetail = detail == null || detail.isEmpty() ? "UNKNOWN" : detail; state = State.FAILED; finishPresentationCallback(!hasManagedNativeTask()); showLatchedFailure(); if (startupListener != null) startupListener.accept(false, failureDetail); Log.w(TAG, "native navigation failed package=" + failurePackage + " detail=" + failureDetail + " generation=" + failureGeneration); }
     private boolean isFailureLatched() { return failureGeneration == authorityGeneration && failurePackage.equals(configuredPackage) && failureMode.equals(configuredMode); }
     private void showLatchedFailure() { if (uiState.canPresentNavigation()) panel.showFailure("Navigation unavailable · " + failureDetail + " · observation " + recovery.observations(), this::retry, () -> openNormally(null)); }
     private void clearFailureLatch() { failureGeneration = -1; failurePackage = ""; failureMode = ""; failureDetail = ""; }
     private void retry() {
-        explicitColdRequest = true; updateColdPolicy();
+        pendingExplicitRequest = ++nextExplicitRequest;
         if (state == State.DESTROYED) return;
         MediaEventTrace.record("navigation", "retry-request", "transaction=" + activeOperationId);
         if (activeOperationId != 0) {
