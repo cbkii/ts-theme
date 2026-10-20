@@ -783,8 +783,9 @@ final class NavigationWindowController {
     }
 
     private void returnHomeFromMaps(int task) {
-        if (state == State.DESTROYED || task <= 0 || !NavigationProvider.ORGANIC_MAPS_INCAR.equals(selectedPackage())
-                || activeTaskId > 0 && task != activeTaskId) return;
+        if (state == State.DESTROYED || task <= 0 || !NavigationProvider.ORGANIC_MAPS_INCAR.equals(selectedPackage())) return;
+        // The source may have been manually reopened after task/process loss while HOME
+        // was hidden. The root owner verifies the offered live task; our cache is not proof.
         desire(Presentation.COMPACT_HOME);
         fullscreenGoal = false; fullscreenRequested = false; pendingDeparture = false;
         if (activeOperationId != 0) { pendingHomeReturn = task; return; }
