@@ -85,13 +85,13 @@ import static com.cbkii.ts18launcher.StartupReadinessPolicy.*;
 public class Harness {
 static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
 static boolean navigationDeferred, navReady;
-static int navigationStarts;static boolean coldMusic;
+static int navigationStarts;static boolean coldMusic, coldHomeUnfocused;
 static class Inline extends AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,TimeUnit u){return true;}}
 static StartupReadinessCoordinator create()throws Exception{return create(true);}
 static StartupReadinessCoordinator create(boolean ready)throws Exception{return create(ready,true);}
 static StartupReadinessCoordinator create(boolean ready,boolean clear)throws Exception{
 navReady=ready;navigationStarts=0;AuxioPreparationContract.capability=true;
-Handler.reset();if(clear)android.content.SharedPreferences.strings.clear();android.content.SharedPreferences.commitOk=true;android.app.Activity.focused=true;navigationDeferred=false;TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
+Handler.reset();if(clear)android.content.SharedPreferences.strings.clear();android.content.SharedPreferences.commitOk=true;android.app.Activity.focused=!coldHomeUnfocused;navigationDeferred=false;TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
 StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
 StartupRootFallback.code="STARTUP_SOURCE_DISPATCHED";StartupRootFallback.starts=0;StartupRootFallback.returns=0;StartupRootFallback.before=()->{};
 android.app.ActivityManager.reject=false;android.app.ActivityManager.uncertain=false;
@@ -206,6 +206,16 @@ Handler.until(1500);check(StartupRootFallback.starts==1&&StartupRootFallback.ret
 StartupReadinessCoordinator absentEntry=create(false);
 StartupRootFallback.launched=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);};
 Handler.until(6000);check(StartupRootFallback.starts==1&&StartupRootFallback.returns==0&&!navigationDeferred,"absent accepted entry was replayed or waited forever");absentEntry.destroy();
+// Android resumes a new HOME before delivering its first real window-focus callback.
+coldHomeUnfocused=true;
+StartupReadinessCoordinator firstFocus=create(false);
+check(navigationDeferred&&navigationStarts==0,"Maps raced HOME resume before first focus");
+Handler.until(600);check(StartupRootFallback.starts==0&&navigationStarts==0,"unfocused HOME dispatched work");
+android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);firstFocus.onHomeResumed(new android.app.Activity());};
+android.app.Activity.focused=true;firstFocus.onHomeFocusChanged();Handler.until(1400);
+check(StartupRootFallback.starts==1&&StartupRootFallback.returns==1&&navigationStarts==1,"first HOME focus did not release Music then Maps");firstFocus.destroy();
+StartupReadinessCoordinator noFirstFocus=create(false);Handler.until(1800);
+check(StartupRootFallback.starts==0&&!navigationDeferred&&navigationStarts==1,"missing first focus held Maps indefinitely");noFirstFocus.destroy();coldHomeUnfocused=false;
 StartupReadinessCoordinator unsupported=create(false);AuxioPreparationContract.capability=false;Handler.until(800);
 check(StartupRootFallback.starts==0&&AppResolver.launches==0&&navigationStarts==1,"old Auxio was automated or blocked Maps");unsupported.destroy();
 StartupReadinessCoordinator explicitPlay=create(false);
