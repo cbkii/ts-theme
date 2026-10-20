@@ -19,7 +19,7 @@ No second startup launcher, player/session, root management app, injected key se
 
 ## Diagnostic kit
 
-Use `scripts/diagnostics/coldstart/START-HERE.md`. The collector runs from Magisk `service.d` for at most eight minutes and is read-only with respect to application behaviour. All generated logs, receipts, temporary files and archives go to Download. The collector is 22,872 bytes; two installed copies total 45,744 bytes, below 100 KB, with zero generated diagnostic output in Magisk. Existing v1 is recognised by its exact hash for upgrade; arbitrary service files are refused.
+Use `scripts/diagnostics/coldstart/START-HERE.md`. The collector runs from Magisk `service.d` for at most eight minutes and is read-only with respect to application behaviour. All generated logs, receipts, temporary files and archives go to Download. The collector is 22,950 bytes; two installed copies total 45,900 bytes, below 100 KB, with zero generated diagnostic output in Magisk. Existing v1 is recognised by its exact hash for upgrade; arbitrary service files are refused.
 
 The guide observes automatic cold startup before manual comparison and includes separate Maps/Auxio HOME and Back cases. P means functional and acceptably fast (including near-target overruns); S means working but noticeably slow; F failed; N unknown/unrun. It never fabricates an audio/pixel pass from structural logs.
 

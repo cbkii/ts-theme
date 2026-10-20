@@ -4,7 +4,7 @@ umask 077
 BB=/data/adb/magisk/busybox
 BASE=/storage/emulated/0/Download/TS18-ColdStart
 SERVICE=/data/adb/service.d/97-ts18-coldstart.sh
-EXPECTED_COLLECTOR=5bfb2bdf7ac88c37bab0833c3ed39931adbbcbab3fe689cadf0e091a415826f4
+EXPECTED_COLLECTOR=72d4a810dfec5338a853cf31002b5e49d52499d6708645bd1a52fe771d3f0767
 PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin
 export PATH
 unset LD_PRELOAD LD_LIBRARY_PATH

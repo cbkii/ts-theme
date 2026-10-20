@@ -16,6 +16,8 @@ Target packages: launcher `com.cbkii.ts18launcher`; Auxio-TS `com.tw.media`; Org
 
 Known launcher preference files read: `ts18_launcher.xml`, `testing_profiles.xml`, `startup_readiness.xml`, `compact_startup.xml`. The current Android user is resolved read-only; failure never defaults to user 0. No media database, bookmarks, downloaded maps, or arbitrary preference tree is copied. Existing navigation helper journal identity/state files are read with per-file/output limits. The new helper keeps runtime journals in launcher-private `no_backup/navigation-root`; legacy `/data/adb` journals are read only. The helper is never executed by this kit.
 
+Snapshots collect display-level focus separately from per-window surface state; windows-only output does not establish Android 10 focus.
+
 The diagnostic questions are: did a target process exist/start/restart; did the correct task/surface survive switching; did focus and embedding return; was music session discovery/binding/command dispatch delayed; did audio focus/route/output match the requested state; and was storage/CPU/memory/frame pressure involved? Raw observations and failure metadata are preserved. The scripts do not automatically assign a causal diagnosis or turn framework structural milestones into a pixel/audio PASS.
 
 ## Host validation

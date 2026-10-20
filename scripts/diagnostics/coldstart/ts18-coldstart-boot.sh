@@ -237,6 +237,7 @@ thread_state() {
 }
 snapshot() {
   sn=$1
+  probe "$sn-display-focus" 131072 2 /system/bin/dumpsys -t 2 window displays
   probe "$sn-activities" 196608 2 /system/bin/dumpsys -t 2 activity activities
   probe "$sn-windows" 196608 2 /system/bin/dumpsys -t 2 window windows
   probe "$sn-sessions" 262144 2 /system/bin/dumpsys -t 2 media_session
