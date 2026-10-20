@@ -60,6 +60,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private String lastMediaObservation = "";
     private boolean foregroundScheduled;
     private long interactionUntil;
+    private boolean homeHasReceivedFocus;
+    private long initialHomeFocusUntil;
 
     private StartupReadinessCoordinator(Context context) {
         this.context = context.getApplicationContext();
@@ -178,7 +180,17 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (activity == null && foregroundQueue.contains(Source.MUSIC)
                 && policy.record(Source.MUSIC).state == State.STARTING
                 && !policy.record(Source.MUSIC).activityLaunchAccepted) return true;
-        if (!homeResumed || activity == null || activity.isFinishing() || !activity.hasWindowFocus()) return false;
+        if (!homeResumed || activity == null || activity.isFinishing()) return false;
+        if (!activity.hasWindowFocus()) {
+            // onResume can precede a new HOME's first focus callback. Retain the already
+            // reserved Music turn across that gap, without authorising any Activity launch.
+            // A lost focus after the first callback, or a missing callback past the bound,
+            // is not an eligible media owner and must release Maps.
+            return !homeHasReceivedFocus && SystemClock.uptimeMillis() < initialHomeFocusUntil
+                    && foregroundQueue.contains(Source.MUSIC)
+                    && policy.record(Source.MUSIC).state == State.STARTING
+                    && !policy.record(Source.MUSIC).activityLaunchAccepted;
+        }
         for (Source source : new Source[] {Source.RADIO, Source.MUSIC}) {
             if (source == Source.RADIO && navigation != null && !navigation.ready()) continue;
             String pkg = packageFor(source);
@@ -194,10 +206,23 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     void attachNavigationHook(NavigationHook hook) { navigation = hook; updateNavigationAdmission(); }
     void detachNavigationHook(NavigationHook hook) { if (navigation == hook) navigation = null; }
     void onHomeResumed(Activity activity) {
+        if (home.get() != activity) {
+            homeHasReceivedFocus = activity.hasWindowFocus();
+            initialHomeFocusUntil = SystemClock.uptimeMillis() + 1000L;
+            handler.postDelayed(() -> {
+                if (!destroyed && home.get() == activity) {
+                    updateNavigationAdmission(); runForegroundSoon();
+                }
+            }, 1000L);
+        } else if (activity.hasWindowFocus()) homeHasReceivedFocus = true;
         home = new WeakReference<>(activity); homeResumed = true; onTrigger(Trigger.HOME_RESUME);
     }
     void onHomePaused() { homeResumed = false; updateNavigationAdmission(); }
-    void onHomeFocusChanged() { updateNavigationAdmission(); runForegroundSoon(); }
+    void onHomeFocusChanged() {
+        Activity activity = home.get();
+        if (activity != null && activity.hasWindowFocus()) homeHasReceivedFocus = true;
+        updateNavigationAdmission(); runForegroundSoon();
+    }
     void onScreenOff() { yielded = true; cancelForeground("screen-off"); }
     void noteUserInteraction() {
         // A transport/drawer tap is not permission to disable Maps for the rest of the boot.
