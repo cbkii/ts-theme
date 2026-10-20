@@ -135,6 +135,9 @@ def reconcile(repository, release_id, expected_group=''):
     body = release.get('body') or ''
     if MANAGED not in body:
         raise ValueError('Release is not workflow-managed')
+    tag = release.get('tag_name', '')
+    if tag != '000-testing-only' and not re.fullmatch(r'untagged-[0-9a-f]+', tag):
+        raise ValueError(f'Unexpected TESTING draft tag: {tag!r}')
     assets = gh(f'{release_path}/assets?per_page=100')
     by_name = {}
     for asset in assets:
