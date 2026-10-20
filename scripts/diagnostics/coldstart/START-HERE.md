@@ -70,7 +70,7 @@ An ACC wake, display wake, process restart and full Android boot are different s
 | MUSIC_BACK | Auxio Back: recover HOME and preserve playback intent. |
 | H3 | Ordinary Android Settings → HOME: both integrations and no late focus takeover. |
 | M3 | One Music Play/Pause action after returning HOME. |
-| R1 | Three Auxio → HOME → Maps fullscreen → HOME cycles; every return must meet the target. |
+| R1 | Three Auxio → HOME → Maps fullscreen → HOME cycles; every return must work reliably at an acceptable speed. |
 
 If boot film/current-boot evidence is missing, B0 is automatically N. Skipping a case also records N without asking for a success result. If the collector ends during testing, the guide offers a fresh **manual** capture; the original boot run is retained with its own ID. Export each relevant run before starting another if you need a separate archive; the menu exports the latest run.
 

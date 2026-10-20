@@ -19,7 +19,7 @@ No second startup launcher, player/session, root management app, injected key se
 
 ## Diagnostic kit
 
-Use `scripts/diagnostics/coldstart/START-HERE.md`. The collector runs from Magisk `service.d` for at most eight minutes and is read-only with respect to application behaviour. All generated logs, receipts, temporary files and archives go to Download. The collector is 22,125 bytes; two installed copies total 44,250 bytes, below 100 KB, with zero generated diagnostic output in Magisk. Existing v1 is recognised by its exact hash for upgrade; arbitrary service files are refused.
+Use `scripts/diagnostics/coldstart/START-HERE.md`. The collector runs from Magisk `service.d` for at most eight minutes and is read-only with respect to application behaviour. All generated logs, receipts, temporary files and archives go to Download. The collector is 22,872 bytes; two installed copies total 45,744 bytes, below 100 KB, with zero generated diagnostic output in Magisk. Existing v1 is recognised by its exact hash for upgrade; arbitrary service files are refused.
 
 The guide observes automatic cold startup before manual comparison and includes separate Maps/Auxio HOME and Back cases. P means functional and acceptably fast (including near-target overruns); S means working but noticeably slow; F failed; N unknown/unrun. It never fabricates an audio/pixel pass from structural logs.
 
@@ -36,7 +36,9 @@ The guide observes automatic cold startup before manual comparison and includes 
 | Diagnostic kit | 25 host tests PASS; shell syntax PASS |
 | Real Android29 production Java/resources | PASS; D8 produces one DEX (debug compilation only) |
 | Android Gradle lint/unit/build and signed/minified runtime envelope | Pending canonical CI; local full AGP toolchain unavailable |
-| ShellCheck | Unavailable on this host |
+| ShellCheck 0.10.0 | PASS for the root helper and both device scripts |
 | Physical cold boot, ACC, pixel/touch, silence/audibility and fastest measured timings | NOT RUN |
 
 The host doubles replace platform boundaries, not production reducers/owners. They cannot qualify OEM Binder/SELinux support, signer pairing or real window pixels. No APK is installed and no merge/public release is performed by this change. The signed TESTING snapshot must identify exact source head, package, signer and APK hash before physical qualification.
+
+CI run 39361089950 (attempt 1, initial head 0da30a8) exposed a host-test portability defect: the collector shim returned GitHub runner UID1001 rather than modelled Magisk UID0. The shim now models UID0 at that boundary and separately exercises production UID1000 refusal. No device guard is removed. Canonical final-head validation is required; rerunning the unchanged failing head is not a fix.

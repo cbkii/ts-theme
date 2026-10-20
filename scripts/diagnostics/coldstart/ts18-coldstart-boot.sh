@@ -5,7 +5,6 @@
 umask 077
 BB=/data/adb/magisk/busybox
 BASE=/storage/emulated/0/Download/TS18-ColdStart
-SERVICE=/data/adb/service.d/97-ts18-coldstart.sh
 APPS='com.cbkii.ts18launcher com.tw.media app.organicmaps.incar'
 PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin
 export PATH
@@ -35,6 +34,7 @@ identity() {
   [ -r "/proc/$1/stat" ] || return 1
   IFS= read -r stat_line < "/proc/$1/stat" || return 1
   stat_line=${stat_line##*) }
+  # shellcheck disable=SC2086 # Numeric token splitting, literal AWK or Magisk ash pipefail.
   set -- $stat_line
   [ "$1" != Z ] || return 1
   # state ppid pgrp session ... starttime (field 20 after the comm field)
@@ -55,6 +55,7 @@ safe_dir() {
 }
 event() { printf '%s\t%s\n' "$(ms)" "$*" >> "$OUT/events.tsv"; }
 room() {
+  # shellcheck disable=SC2016 # Numeric token splitting, literal AWK or Magisk ash pipefail.
   room_kb=$("$BB" df -Pk "$BASE" 2>/dev/null | "$BB" awk 'END {print $4}')
   case "$room_kb" in ''|*[!0-9]*) return 1;; esac
   [ "$room_kb" -ge 262144 ]
@@ -72,7 +73,7 @@ worker() {
   case "$w_cap:$w_seconds" in *[!0-9:]*|:*) exit 70;; esac
   [ "$w_cap" -ge 1 ] && [ "$w_cap" -le 33554432 ] || exit 70
   [ "$w_seconds" -ge 1 ] && [ "$w_seconds" -le 480 ] || exit 70
-  for w_name in output.txt ready done; do [ ! -L "$w_dir/$w_name" ] || exit 70; done
+  for w_name in output.txt ready 'done'; do [ ! -L "$w_dir/$w_name" ] || exit 70; done
   w_identity=$(identity "$$") || exit 70
   set -- "$w_dir" "$w_cap" "$w_seconds" "$w_identity" "$@"
   w_ticks=${w_identity%% *}; w_gs=${w_identity#* }
@@ -82,6 +83,7 @@ worker() {
   # This child remains in the owned group, keeping the PGID allocated even if its leader dies.
   ( "$BB" sleep "$((w_seconds + 2))"; "$BB" kill -KILL "-$$" ) </dev/null >/dev/null 2>&1 &
   shift 4
+  # shellcheck disable=SC3040 # Numeric token splitting, literal AWK or Magisk ash pipefail.
   set -o pipefail
   "$@" 2>&1 | "$BB" head -c "$w_cap" > "$w_dir/output.txt"
   w_rc=$?
@@ -120,7 +122,7 @@ start_worker() {
   LAST_WORKER="$sw_pid $sw_ticks $sw_dir $sw_end"
 }
 stop_worker() {
-  st_pid=$1; st_ticks=$2; st_dir=$3; st_end=$4
+  st_pid=$1; st_ticks=$2; st_dir=$3
   [ ! -f "$st_dir/closed" ] || return 0
   st_status=UNKNOWN; st_rc=UNKNOWN
   [ ! -r "$st_dir/done" ] || read -r st_rc < "$st_dir/done"
@@ -145,6 +147,7 @@ stop_worker() {
 probe() {
   [ ! -f "$BASE/active/STOP" ] || return 1
   start_worker "$@" || return 1
+  # shellcheck disable=SC2086 # Numeric token splitting, literal AWK or Magisk ash pipefail.
   set -- $LAST_WORKER
   pr_pid=$1; pr_ticks=$2; pr_dir=$3; pr_end=$4
   while [ ! -f "$pr_dir/done" ] && [ "$(ms)" -lt "$pr_end" ] && same "$pr_pid" "$pr_ticks"; do "$BB" sleep 0.1; done
@@ -170,6 +173,7 @@ sample() {
       [ -r "/proc/$sample_pid/stat" ] || continue
       IFS= read -r sample_stat < "/proc/$sample_pid/stat" || continue
       sample_stat=${sample_stat##*) }
+      # shellcheck disable=SC2086 # Numeric token splitting, literal AWK or Magisk ash pipefail.
       set -- $sample_stat
       sample_state=$1; sample_ppid=$2
       shift 11; sample_utime=$1; sample_stime=$2
@@ -179,7 +183,7 @@ sample() {
       [ ! -r "/proc/$sample_pid/wchan" ] || IFS= read -r sample_wchan < "/proc/$sample_pid/wchan"
       printf '%s\tPROC\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$sample_now" "$sample_pid" "$sample_start" "$sample_state" "$sample_ppid" "$sample_utime" "$sample_stime" "$sample_threads" "$sample_vsize" "$sample_rss" "$sample_wchan"
     done
-    read -r sample_load sample_rest < /proc/loadavg
+    read -r sample_load _sample_rest < /proc/loadavg
     printf '%s\tLOAD\t%s\n' "$sample_now" "$sample_load"
     if [ "$((sample_now - sample_begin))" -lt 60000 ]; then "$BB" sleep 0.25; else "$BB" sleep 1; fi
   done
@@ -197,13 +201,13 @@ private_state() {
     esac
     for ps_name in $ps_files; do
       ps_file=$ps_root/$ps_name
-      [ -f "$ps_file" ] && [ ! -L "$ps_file" ] || continue
+      if [ ! -f "$ps_file" ] || [ -L "$ps_file" ]; then continue; fi
       printf '\nFILE %s\n' "$ps_file"
       "$BB" head -c 32768 "$ps_file"
     done
   done
   for ps_dir in /data/user/0/com.cbkii.ts18launcher/no_backup/navigation-root/auto-v1-* /data/user/0/com.cbkii.ts18launcher/no_backup/navigation-root/launch-* /data/adb/ts18-launcher/auto-v1-* /data/adb/ts18-launcher/launch-*; do
-    [ -d "$ps_dir" ] && [ ! -L "$ps_dir" ] || continue
+    if [ ! -d "$ps_dir" ] || [ -L "$ps_dir" ]; then continue; fi
     printf '\nHELPER_JOURNAL %s\n' "$ps_dir"
     for ps_name in identity state ready-owner; do
       [ ! -f "$ps_dir/$ps_name" ] || "$BB" head -c 4096 "$ps_dir/$ps_name"
@@ -224,7 +228,7 @@ apk_hashes() {
 }
 thread_state() {
   for th_pid in $("$BB" pidof com.cbkii.ts18launcher com.tw.media app.organicmaps.incar 2>/dev/null); do
-    for th_dir in /proc/$th_pid/task/[0-9]*; do
+    for th_dir in "/proc/$th_pid/task"/[0-9]*; do
       [ -r "$th_dir/stat" ] || continue
       printf '\nUPTIME_MS %s PID %s TID %s\n' "$(ms)" "$th_pid" "${th_dir##*/}"
       "$BB" cat "$th_dir/stat" "$th_dir/wchan" 2>&1
@@ -288,13 +292,14 @@ finish() {
   [ ! -f "$OUT/CLEANUP_UNPROVEN" ] || printf 'cleanup=UNPROVEN_REVIEW_REQUIRED\n' >> "$OUT/STATUS.txt"
   # Hash small bounded capture files only; hashing is in the final reserved time.
   fi_hash_ok=0
+  # shellcheck disable=SC3040 # Numeric token splitting, literal AWK or Magisk ash pipefail.
   if (set -o pipefail; cd "$OUT" && "$BB" find . -type f ! -name SHA256SUMS ! -name COMPLETE.txt | "$BB" sort |
     while IFS= read -r fi_file; do "$BB" sha256sum "$fi_file" || exit 1; done) > "$OUT/SHA256SUMS"; then fi_hash_ok=1; fi
   if [ "$fi_hash_ok" = 1 ] && [ ! -f "$OUT/CLEANUP_UNPROVEN" ] && [ "$(ms)" -lt "$HARD_END" ]; then
     printf 'Writers closed; hashes recorded. Command failures/truncation are in meta.txt. This is not a physical PASS.\n' > "$OUT/COMPLETE.txt"
   fi
   if [ -r "$BASE/active/owner" ]; then
-    read -r fi_boot fi_pid fi_ticks fi_run < "$BASE/active/owner"
+    read -r _fi_boot fi_pid fi_ticks fi_run < "$BASE/active/owner"
     if [ "$fi_pid" = "$$" ] && [ "$fi_run" = "${OUT##*/}" ]; then
       "$BB" rm -f "$BASE/active/owner" "$BASE/active/STOP"
       "$BB" rmdir "$BASE/active" 2>/dev/null || :
@@ -313,7 +318,7 @@ collect() {
   cs_rem=$(((HARD_END - $(ms)) / 1000))
   [ "$cs_rem" -ge 2 ] || exit 73
   ( "$BB" sleep "$((cs_rem - 1))"; "$BB" kill -TERM "$$"; "$BB" sleep 1; "$BB" kill -KILL "-$$" ) </dev/null >/dev/null 2>&1 &
-  cs_watch=$!
+  _cs_watch=$!
   # No files are written before emulated Download already exists and is writable.
   while [ ! -d /storage/emulated/0/Download ] || [ ! -w /storage/emulated/0/Download ]; do
     [ "$(ms)" -lt "$WORK_END" ] || exit 73
@@ -321,8 +326,9 @@ collect() {
   done
   [ ! -L "$BASE" ] || exit 73
   "$BB" mkdir -p "$BASE" || exit 73
-  safe_dir "$BASE" && room || exit 73
+  if ! safe_dir "$BASE" || ! room; then exit 73; fi
   TMPDIR=$BASE; export TMPDIR
+  # shellcheck disable=SC2016 # Numeric token splitting, literal AWK or Magisk ash pipefail.
   cs_total=$("$BB" timeout -s KILL 2 "$BB" du -sk "$BASE" 2>/dev/null | "$BB" awk '{print $1}')
   case "$cs_total" in ''|*[!0-9]*) exit 73;; esac
   [ "$cs_total" -lt 655360 ] || exit 73
@@ -330,7 +336,7 @@ collect() {
   [ ! -L "$BASE/active" ] || exit 73
   if [ -d "$BASE/active" ]; then
     [ -f "$BASE/active/owner" ] && [ ! -L "$BASE/active/owner" ] || exit 73
-    read -r cs_boot cs_pid cs_ticks cs_run < "$BASE/active/owner"
+    read -r cs_boot cs_pid cs_ticks _cs_run < "$BASE/active/owner"
     case "$cs_pid:$cs_ticks" in *[!0-9:]*|:*) exit 73;; esac
     if [ "$cs_boot" = "$BOOT_ID" ] && same "$cs_pid" "$cs_ticks"; then "$BB" kill -KILL "-$$"; exit 0; fi
     "$BB" mv "$BASE/active" "$BASE/stale-active-$(ms)-$$" || exit 73
@@ -368,6 +374,7 @@ collect() {
     if [ "$cs_fallback" = 0 ] && [ "$cs_now" -ge "$((START_MS + 3000))" ]; then
       cs_fallback=1
       for cs_original in "$MAIN_LOG_WORKER" "$EVENT_LOG_WORKER"; do
+        # shellcheck disable=SC2086 # Numeric token splitting, literal AWK or Magisk ash pipefail.
         set -- $cs_original; cs_ldir=$3
         if [ -f "$cs_ldir/done" ] && "$BB" grep -Eqi 'unknown|invalid|unrecognized|unsupported' "$cs_ldir/output.txt"; then
           event 'logcat format/capability fallback to threadtime only (original error retained)'
@@ -382,9 +389,9 @@ collect() {
     # Public control records are DATA only. Never source/eval or execute a supplied command.
     for cs_req in "$OUT"/requests/req-*; do
       case "$cs_req" in *.processed*|*.pending*) continue;; esac
-      [ -f "$cs_req" ] && [ ! -L "$cs_req" ] || continue
+      if [ ! -f "$cs_req" ] || [ -L "$cs_req" ]; then continue; fi
       [ "$cs_requests" -lt 40 ] || break
-      IFS=' ' read -r cs_action cs_label cs_due cs_extra < "$cs_req"
+      IFS=' ' read -r cs_action cs_label cs_due _cs_extra < "$cs_req"
       case "$cs_label" in ''|*[!A-Za-z0-9_-]*) continue;; esac
       case "$cs_due" in ''|*[!0-9]*) continue;; esac
       case "$cs_action" in MARK|BURST|SHOT|QUIET) ;; *) continue;; esac

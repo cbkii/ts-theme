@@ -4,7 +4,7 @@ umask 077
 BB=/data/adb/magisk/busybox
 BASE=/storage/emulated/0/Download/TS18-ColdStart
 SERVICE=/data/adb/service.d/97-ts18-coldstart.sh
-EXPECTED_COLLECTOR=02aed183359c26c8ff07a876f6010a7ae9c535b1e817215b89810ddd81500bd9
+EXPECTED_COLLECTOR=5bfb2bdf7ac88c37bab0833c3ed39931adbbcbab3fe689cadf0e091a415826f4
 PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin
 export PATH
 unset LD_PRELOAD LD_LIBRARY_PATH
@@ -36,7 +36,7 @@ DIR=${SELF%/*}
 COLLECTOR=$DIR/ts18-coldstart-boot.sh
 die() { printf 'STOPPED: %s\n' "$*" >&2; exit 1; }
 ms() {
-  read -r vm_up vm_rest < /proc/uptime
+  read -r vm_up _vm_rest < /proc/uptime
   vm_s=${vm_up%%.*}; vm_f=${vm_up#*.}000; vm_f=${vm_f%"${vm_f#???}"}
   printf '%s\n' "$((vm_s * 1000 + 1$vm_f - 1000))"
 }
@@ -48,7 +48,7 @@ verify_collector() {
   [ "${vc_hash%% *}" = "$EXPECTED_COLLECTOR" ]
 }
 base_ready() {
-  [ -d /storage/emulated/0/Download ] && [ -w /storage/emulated/0/Download ] || die 'Unlock Android and make Download available first.'
+  if [ ! -d /storage/emulated/0/Download ] || [ ! -w /storage/emulated/0/Download ]; then die 'Unlock Android and make Download available first.'; fi
   [ ! -L "$BASE" ] || die 'Output folder is a symbolic link.'
   "$BB" mkdir -p "$BASE" || die 'Cannot create Download output folder.'
   TMPDIR=$BASE; export TMPDIR
@@ -74,7 +74,10 @@ is_active() {
   "$BB" grep -qx 'status=RUNNING' "$RP/STATUS.txt" || return 1
   [ -r "/proc/$ac_pid/stat" ] || return 1
   IFS= read -r ac_stat < "/proc/$ac_pid/stat"
-  ac_stat=${ac_stat##*) }; set -- $ac_stat
+  # shellcheck disable=SC2086 # Numeric token splitting, literal AWK or Magisk ash pipefail.
+  ac_stat=${ac_stat##*) }
+  # shellcheck disable=SC2086 # Split numeric /proc fields after removing comm.
+  set -- $ac_stat
   [ "$1" != Z ] || return 1
   shift 19
   [ "$1" = "$ac_ticks" ]
@@ -95,7 +98,7 @@ status() {
 }
 install() {
   verify_collector "$COLLECTOR" || die 'Collector missing, modified or over 48,000 bytes. Re-extract the matching kit.'
-  [ -d /data/adb ] && [ ! -L /data/adb ] || die 'Unexpected Magisk directory.'
+  if [ ! -d /data/adb ] || [ -L /data/adb ]; then die 'Unexpected Magisk directory.'; fi
   [ ! -L /data/adb/service.d ] || die 'service.d is a symbolic link.'
   "$BB" mkdir -p /data/adb/service.d || die 'Cannot create service.d.'
   [ "$("$BB" readlink -f /data/adb/service.d)" = /data/adb/service.d ] || die 'Unexpected service.d path.'
@@ -104,10 +107,10 @@ install() {
     if verify_collector "$SERVICE"; then echo 'This exact collector is already installed.'; return; fi
     old_size=$("$BB" stat -c %s "$SERVICE") || die 'Cannot identify installed collector.'
     old_hash=$("$BB" sha256sum "$SERVICE") || die 'Cannot hash installed collector.'
-    [ "$old_size" -le 48000 ] && [ "${old_hash%% *}" = 983b1ec7bb3500bbd40523e20eeb835ae8bce29de777714dd605f41d0918b2a1 ] || die 'A different file occupies the reserved service name; nothing overwritten.'
+    if [ "$old_size" -gt 48000 ] || [ "${old_hash%% *}" != 983b1ec7bb3500bbd40523e20eeb835ae8bce29de777714dd605f41d0918b2a1 ]; then die 'A different file occupies the reserved service name; nothing overwritten.'; fi
     echo 'Upgrading the recognised v1 collector; captures remain in Download.'
   fi
-  [ ! -e /data/adb/service.d/.ts18-coldstart.new ] && [ ! -L /data/adb/service.d/.ts18-coldstart.new ] || die 'Reserved installer staging name exists. Nothing overwritten.'
+  if [ -e /data/adb/service.d/.ts18-coldstart.new ] || [ -L /data/adb/service.d/.ts18-coldstart.new ]; then die 'Reserved installer staging name exists. Nothing overwritten.'; fi
   # One <=48k source file; at most <=96k for old+staged managed copies. No logs here.
   "$BB" cp "$COLLECTOR" /data/adb/service.d/.ts18-coldstart.new || die 'Copy failed.'
   if ! verify_collector /data/adb/service.d/.ts18-coldstart.new; then
@@ -199,7 +202,7 @@ trial() {
   echo 'Observe for at least 10 seconds after the action, then return here.'
   echo 'Phone video/audio provides the exact tap-to-pixels/tap-to-sound timing.'
   printf 'Press Enter when you have returned after observing: '
-  IFS= read -r tt_done || return 1
+  IFS= read -r _tt_done || return 1
   record "$tt_id"
 }
 guide() {
@@ -242,7 +245,7 @@ export_run() {
   run_path || die 'No capture to export.'
   if "$BB" grep -qx 'status=CLOSING' "$RP/STATUS.txt"; then echo 'Cleanup/hashing still running. Wait for CLOSED, then export.'; return 1; fi
   ex_name=${RP##*/}; ex_dest=$BASE/$ex_name.tar.gz
-  [ ! -L "$ex_dest" ] && [ ! -L "$ex_dest.partial" ] || die 'Unexpected archive path.'
+  if [ -L "$ex_dest" ] || [ -L "$ex_dest.partial" ]; then die 'Unexpected archive path.'; fi
   [ -f "$RP/COMPLETE.txt" ] || echo 'WARNING: incomplete/unsealed capture; archive is partial evidence, not a pass.'
   if [ -f "$RP/SHA256SUMS" ]; then
     (cd "$RP" && "$BB" sha256sum -c SHA256SUMS >/dev/null) || die 'Capture hashes changed. Retain files for investigation.'
@@ -261,7 +264,10 @@ export_run() {
   ex_rc=UNKNOWN; [ ! -f "$ex_work/done" ] || read -r ex_rc < "$ex_work/done"
   # The worker remains a live proven process-group leader until killed.
   if [ -r "/proc/$ex_pid/stat" ]; then
-    IFS= read -r ex_stat < "/proc/$ex_pid/stat"; ex_stat=${ex_stat##*) }; set -- $ex_stat; shift 19
+    # shellcheck disable=SC2086 # Numeric token splitting, literal AWK or Magisk ash pipefail.
+    IFS= read -r ex_stat < "/proc/$ex_pid/stat"; ex_stat=${ex_stat##*) }
+    # shellcheck disable=SC2086 # Split numeric /proc fields after removing comm.
+    set -- $ex_stat; shift 19
     [ "$1" = "$ex_ticks" ] || die 'Archive ownership changed; partial retained.'
     "$BB" kill -KILL "-$ex_pid" 2>/dev/null || die 'Archive cleanup unproven.'
     wait "$ex_pid" 2>/dev/null || :
@@ -294,6 +300,7 @@ case "${1:-guide}" in
     for pack_entry in validation-* INSTALL.txt; do
       [ -e "$pack_entry" ] && [ ! -L "$pack_entry" ] && set -- "$@" "$pack_entry"
     done
+    # shellcheck disable=SC3040 # Numeric token splitting, literal AWK or Magisk ash pipefail.
     set -o pipefail
     "$BB" tar -cf - "$@" | "$BB" gzip -c;;
   guide) menu;; install) install;; start) start;; status) status;; stop) stop;; export) export_run;; uninstall) uninstall;; *) help; exit 64;;

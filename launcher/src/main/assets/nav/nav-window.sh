@@ -625,8 +625,8 @@ claim_cold_launch() {
     if ! mkdir "$automatic_marker" 2>/dev/null; then
       [ -f "$automatic_marker/ready-owner" ] || fail AUTOSTART_ALREADY_CLAIMED
       read -r ready_pid ready_ticks ready_task < "$automatic_marker/ready-owner"
-      valid_uint "$ready_pid" && valid_uint "$ready_ticks" && valid_uint "$ready_task" || fail AUTOSTART_ALREADY_CLAIMED
-      [ "$ready_pid" -gt 0 ] && [ "$ready_task" -gt 0 ] || fail AUTOSTART_ALREADY_CLAIMED
+      if ! valid_uint "$ready_pid" || ! valid_uint "$ready_ticks" || ! valid_uint "$ready_task"; then fail AUTOSTART_ALREADY_CLAIMED; fi
+      if [ "$ready_pid" -le 0 ] || [ "$ready_task" -le 0 ]; then fail AUTOSTART_ALREADY_CLAIMED; fi
       live_ticks=$(awk '{sub(/^.*\) /, ""); print $20}' "/proc/$ready_pid/stat" 2>/dev/null)
       if [ -d "/proc/$ready_pid" ]; then
         valid_uint "$live_ticks" || fail AUTOSTART_ALREADY_CLAIMED
