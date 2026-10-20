@@ -299,7 +299,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         if (desired == MediaCommandPolicy.Desired.PLAY
                 || desired == MediaCommandPolicy.Desired.PAUSE) {
             Pending existing = inFlightToggle.get(packageName);
-            if (existing != null && !existing.settled && existing.desired == desired) {
+            if (existing != null && !existing.settled && existing.desired == desired && !expiredHomePlay(existing)) {
                 existing.callbacks.addAll(pending.callbacks);
                 if (existing.pauseOnPlayPackage.isEmpty()) {
                     existing.pauseOnPlayPackage = pending.pauseOnPlayPackage;
@@ -963,7 +963,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
     private boolean sendPending(MediaController controller, Pending pending) {
         if (MediaSourceAdapter.AUXIO_PACKAGE.equals(pending.packageName)
                 && pending.desired == MediaCommandPolicy.Desired.PLAY && AuxioPreparationContract.supported(context)) {
-            if (SystemClock.elapsedRealtime() >= pending.deadlineElapsedMs) return false;
+            if (expiredHomePlay(pending)) return false;
             try {
                 Bundle extras = new Bundle();
                 extras.putInt("protocol", 1);
@@ -973,6 +973,12 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
             } catch (RuntimeException rejected) { return false; }
         }
         return sendDesired(controller, pending.desired);
+    }
+
+    private static boolean expiredHomePlay(Pending pending) {
+        return MediaSourceAdapter.AUXIO_PACKAGE.equals(pending.packageName)
+                && pending.desired == MediaCommandPolicy.Desired.PLAY
+                && SystemClock.elapsedRealtime() >= pending.deadlineElapsedMs;
     }
 
     private static boolean sendDesired(MediaController controller, MediaCommandPolicy.Desired desired) {
@@ -1058,7 +1064,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         if (incoming.desired == MediaCommandPolicy.Desired.PLAY
                 || incoming.desired == MediaCommandPolicy.Desired.PAUSE) {
             for (Pending existing : queue) {
-                if (!existing.settled && !existing.dispatched
+                if (!existing.settled && !existing.dispatched && !expiredHomePlay(existing)
                         && existing.desired == incoming.desired) {
                     existing.callbacks.addAll(incoming.callbacks);
                     if (existing.pauseOnPlayPackage.isEmpty()) {

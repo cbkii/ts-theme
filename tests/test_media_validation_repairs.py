@@ -146,6 +146,10 @@ public static void main(String[] args)throws Exception {
  Method send=MediaSourceBootstrapper.class.getDeclaredMethod("sendPending",MediaController.class,pc);send.setAccessible(true);
  SystemClock.elapsedOffset=10000;int priorPlays=music.plays;
  check(!(Boolean)send.invoke(b,music,expired)&&music.plays==priorPlays,"suspend extended an old Play deadline");
+ Field toggles=MediaSourceBootstrapper.class.getDeclaredField("inFlightToggle");toggles.setAccessible(true);
+ ((Map)toggles.get(b)).put(music.pkg,expired);music.state.state=2;
+ b.command("Music",music.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->{});
+ check(music.plays==priorPlays+1,"fresh wake tap coalesced into an expired Play");priorPlays=music.plays;
  Object fresh=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,5500L);
  check((Boolean)send.invoke(b,music,fresh)&&music.plays==priorPlays+1,"fresh post-wake Play was rejected");b.destroy();SystemClock.elapsedOffset=0;
  System.out.println("PASS cold guard/coalescing/buffering/handover/content/newer intent");
