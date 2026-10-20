@@ -28,12 +28,12 @@ The guide observes automatic cold startup before manual comparison and includes 
 | Check | Result |
 |---|---|
 | `python3 tools/ts18_theme.py validate` | PASS |
-| Complete launcher Python suite | 390 tests, PASS; three unavailable-tool skips |
+| Complete launcher Python suite | 391 tests, PASS; three unavailable-tool skips |
 | Production startup runtime | PASS, including cold Music lane, old source capability refusal, live Play and pre-dispatch cancellation/re-entry |
 | Controller production model | PASS, including late fullscreen/HOME and OFF + existing task adoption |
 | Root bridge server | Five PASS, including task preservation, protected foreground and mid-operation epoch cancellation |
 | Compact client | PASS, including blocked Binder, off-main UID authentication, current-boot Back and double close |
-| Diagnostic kit | 24 host tests PASS; shell syntax PASS |
+| Diagnostic kit | 25 host tests PASS; shell syntax PASS |
 | Real Android29 production Java/resources | PASS; D8 produces one DEX (debug compilation only) |
 | Android Gradle lint/unit/build and signed/minified runtime envelope | Pending canonical CI; local full AGP toolchain unavailable |
 | ShellCheck | Unavailable on this host |

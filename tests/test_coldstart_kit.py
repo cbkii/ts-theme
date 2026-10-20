@@ -41,6 +41,7 @@ class KitTests(unittest.TestCase):
         self.bb.write_text('''#!/bin/bash
 applet=$1; shift
 case "$applet" in
+ id) if [[ "${1:-}" == -u ]]; then printf '%s\\n' "${TS18_TEST_UID:-0}"; else exec /usr/bin/id "$@"; fi;;
  sh) exec /bin/bash "$@";;
  kill) exec /usr/bin/python3 -c 'import os,signal,sys
 s=getattr(signal,"SIG"+sys.argv[1][1:]); os.kill(int(sys.argv[2]),s)' "$@";;
@@ -78,6 +79,15 @@ COLLECTOR='{self.boot}'
             subprocess.run(['/bin/sh', '-n', str(path)], check=True)
             r = subprocess.run(['/bin/sh', str(path), 'help'], capture_output=True, text=True, check=True)
             self.assertIn('Download', r.stdout)
+
+    def test_unprivileged_device_identity_is_refused_before_capture(self):
+        # The CI runner is unprivileged; the shim normally models Magisk UID0.
+        # Exercise the actual production guard separately without requiring host root.
+        for path in (self.boot, self.guide):
+            result = subprocess.run(['/bin/bash', str(path)], capture_output=True,
+                                    env={**os.environ, 'TS18_TEST_UID': '1000'}, timeout=3)
+            self.assertEqual(77, result.returncode)
+        self.assertFalse(list(self.base.glob('run-*')))
 
     def test_installed_source_and_double_copy_below_100000_bytes(self):
         size = len(BOOT.encode())
