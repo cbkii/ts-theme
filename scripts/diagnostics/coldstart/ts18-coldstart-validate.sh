@@ -1,16 +1,16 @@
 #!/system/bin/sh
-# TS18 cold-start / Music + Maps validation v2. No automatic app actions.
+# TS18 cold-start / Music + Maps + Radio validation v3. No automatic app actions.
 umask 077
 BB=/data/adb/magisk/busybox
 BASE=/storage/emulated/0/Download/TS18-ColdStart
 SERVICE=/data/adb/service.d/97-ts18-coldstart.sh
-EXPECTED_COLLECTOR=72d4a810dfec5338a853cf31002b5e49d52499d6708645bd1a52fe771d3f0767
+EXPECTED_COLLECTOR=658ce69f3a0ab15c08ba29a9005ab7e620212bb3083285f709a524b2f5688a12
 PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin
 export PATH
 unset LD_PRELOAD LD_LIBRARY_PATH
 help() {
   while IFS= read -r help_line; do printf '%s\n' "$help_line"; done <<'HELP'
-TS18 Music + Maps cold-start validation v2
+TS18 Music + Maps + Radio cold-start validation v3
   no argument / guide : beginner-friendly menu
   install             : install verified collector as Magisk service.d script
   start               : start one manual eight-minute capture (never called cold boot)
@@ -107,8 +107,12 @@ install() {
     if verify_collector "$SERVICE"; then echo 'This exact collector is already installed.'; return; fi
     old_size=$("$BB" stat -c %s "$SERVICE") || die 'Cannot identify installed collector.'
     old_hash=$("$BB" sha256sum "$SERVICE") || die 'Cannot hash installed collector.'
-    if [ "$old_size" -gt 48000 ] || [ "${old_hash%% *}" != 983b1ec7bb3500bbd40523e20eeb835ae8bce29de777714dd605f41d0918b2a1 ]; then die 'A different file occupies the reserved service name; nothing overwritten.'; fi
-    echo 'Upgrading the recognised v1 collector; captures remain in Download.'
+    case "${old_hash%% *}" in
+      983b1ec7bb3500bbd40523e20eeb835ae8bce29de777714dd605f41d0918b2a1|72d4a810dfec5338a853cf31002b5e49d52499d6708645bd1a52fe771d3f0767) ;;
+      *) die 'A different file occupies the reserved service name; nothing overwritten.';;
+    esac
+    if [ "$old_size" -gt 48000 ]; then die 'A different file occupies the reserved service name; nothing overwritten.'; fi
+    echo 'Upgrading the recognised v1/v2 collector; captures remain in Download.'
   fi
   if [ -e /data/adb/service.d/.ts18-coldstart.new ] || [ -L /data/adb/service.d/.ts18-coldstart.new ]; then die 'Reserved installer staging name exists. Nothing overwritten.'; fi
   # One <=48k source file; at most <=96k for old+staged managed copies. No logs here.
@@ -118,7 +122,7 @@ install() {
   fi
   "$BB" chmod 0755 /data/adb/service.d/.ts18-coldstart.new || die 'Cannot make collector executable.'
   "$BB" mv /data/adb/service.d/.ts18-coldstart.new "$SERVICE" || die 'Atomic install failed.'
-  printf 'version=2\ncollector_sha256=%s\ninstalled_bytes=%s\ngenerated_capture_bytes_under_data_adb=0\nuptime_ms=%s\n' "$EXPECTED_COLLECTOR" "$vc_size" "$(ms)" > "$BASE/INSTALL.txt"
+  printf 'version=3\ncollector_sha256=%s\ninstalled_bytes=%s\ngenerated_capture_bytes_under_data_adb=0\nuptime_ms=%s\n' "$EXPECTED_COLLECTOR" "$vc_size" "$(ms)" > "$BASE/INSTALL.txt"
   echo 'Installed for the next real Android boot. No reboot or app launch performed.'
 }
 start() {
@@ -209,7 +213,7 @@ guide() {
   SESSION=$BASE/validation-$(ms)-$$
   "$BB" mkdir "$SESSION" || die 'Cannot create validation session.'
   printf 'uptime_ms\tcase\tmanual_result\tcapture\toptional_note\n' > "$SESSION/results.tsv"
-  echo 'Focus: Auxio-TS Music and Organic Maps on ts-theme. Safely parked only.'
+  echo 'Focus: Auxio-TS Music, Organic Maps and configured Radio on ts-theme. Safely parked only.'
   echo 'Use a phone video with audio. Judge real pixels/audible sound. About 3 seconds is a target, not an absolute cutoff.'
   echo 'App/session/process existence is not readiness. Do not manually prime apps before the first cold observation.'
   status
@@ -224,9 +228,10 @@ guide() {
   case "$filmed:$boot_ok" in
     y:1|Y:1)
       echo 'B0_MAP: measure HOME first visible -> usable compact map pixels/touch.'; record B0_MAP || return
-      echo 'B0_MUSIC: measure first HOME Music Play tap -> audible Auxio, without opening Auxio first.'; record B0_MUSIC || return;;
+      echo 'B0_MUSIC: measure first HOME Music Play tap -> audible Auxio, without opening Auxio first.'; record B0_MUSIC || return
+      echo 'B0_RADIO: first HOME Radio Play -> audible intended station, without manually opening Radio. If untested use N.'; record B0_RADIO || return;;
     *) echo 'No confirmed current-boot capture + film. B0 recorded N; manual tests remain available.'
-      skip_case B0_MAP no_confirmed_unprimed_boot; skip_case B0_MUSIC no_confirmed_unprimed_boot;;
+      skip_case B0_MAP no_confirmed_unprimed_boot; skip_case B0_MUSIC no_confirmed_unprimed_boot; skip_case B0_RADIO no_confirmed_unprimed_boot;;
   esac
   trial M1 'On HOME tap Music Play once (pause first only if already playing). Do not open Auxio or tap Play twice.' 'One tap gives audible intended music promptly (aim about 3s); no unexpected app foreground or source switch.'
   trial M2 'Tap the Music app icon on HOME once. Do this only after recording automatic cold-start results; manual opening is not a startup prerequisite.' 'Correct Auxio screen is interactive promptly (aim about 3s); only one intended app/task opens.'
@@ -238,6 +243,10 @@ guide() {
   trial H3 'Open ordinary Android Settings manually, wait 5s, then press normal HOME once.' 'Map and Music controls are immediately usable promptly (aim about 3s); no delayed foreign app appears.'
   trial M3 'After returning HOME from Settings, tap Music Play/Pause once as appropriate; listen and observe metadata.' 'One action reaches the intended audible/paused state promptly (aim about 3s); no duplicate/queued command.'
   trial R1 'Repeat Auxio -> HOME -> Maps fullscreen -> HOME three times, using normal controls only.' 'Each HOME return is usable promptly (aim about 3s); same intended navigation task; no growing delays, duplicate Activities or Retry.'
+  trial RADIO_PLAY 'From HOME tap Radio Play once with a configured station available. Do not open the radio app first or tap twice.' 'Intended station becomes audible promptly; source handover occurs only after acknowledged Play; no delayed Auxio start.'
+  trial RADIO_HOME 'Open the configured Radio app manually; press normal HOME once.' 'Compact map and both transport groups recover promptly; station/playback intent is preserved.'
+  trial RADIO_BACK 'Open Radio again, close internal panels and use BACK to return HOME.' 'HOME returns promptly, compact map remains interactive and no delayed Music/Radio focus takeover occurs.'
+  trial RADIO_MUSIC 'Use HOME Music Play, then HOME Radio Play, then Music Play once each; observe each result before the next tap.' 'Each single tap hands over to the intended source promptly, without overlapping/late playback, missing controls or losing the map.'
   echo "Results saved in ${SESSION##*/}. Use menu Stop, wait CLOSED, then Export."
 }
 export_run() {
@@ -280,7 +289,7 @@ export_run() {
 }
 menu() {
   while :; do
-    printf '\n1 Install boot collector\n2 Status / latest boot capture\n3 Guided Music + Maps tests\n4 Start manual capture\n5 Stop capture\n6 Export latest capture\n7 Uninstall boot collector\n8 Optional delayed failure screenshot\n0 Exit\nChoice: '
+    printf '\n1 Install boot collector\n2 Status / latest boot capture\n3 Guided Music + Maps + Radio tests\n4 Start manual capture\n5 Stop capture\n6 Export latest capture\n7 Uninstall boot collector\n8 Optional delayed failure screenshot\n0 Exit\nChoice: '
     IFS= read -r choice || exit 0
     case "$choice" in
       1) install;; 2) status;; 3) guide;; 4) start;; 5) stop;; 6) export_run;;

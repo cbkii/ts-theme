@@ -105,6 +105,25 @@ COLLECTOR='{self.boot}'
                           r'\bsetprop\b', r'\bresetprop\b', r'\bpm\s+(clear|grant|disable|uninstall)\b']:
             self.assertNotRegex(text, forbidden)
 
+    def test_radio_and_secondary_process_matching_is_exact(self):
+        fixture = "PID NAME\n21 com.navimods.radio\n22 com.navimods.radio:playback\n23 com.navimods.radio.fake\n24 app.organicmaps.incar:service\n25 com.tw.radio\n26 unrelated\n"
+        fake = self.root / 'android-ps'
+        fake.write_text('#!/bin/sh\nprintf %s ' + __import__('shlex').quote(fixture))
+        fake.chmod(0o700)
+        funcs = self.boot_functions().replace('/system/bin/ps', str(fake))
+        result = subprocess.run(['/bin/bash', '-c', f"BB='{self.bb}'\nAPPS='com.navimods.radio app.organicmaps.incar com.tw.radio'\n"+funcs+'\ntarget_pids'], capture_output=True, text=True, timeout=3)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(['21', '22', '24', '25'], result.stdout.split())
+
+    def test_radio_coverage_and_capture_limits_remain_explicit(self):
+        for case in ('B0_RADIO', 'RADIO_PLAY', 'RADIO_HOME', 'RADIO_BACK', 'RADIO_MUSIC'):
+            self.assertIn(case, GUIDE)
+        self.assertIn('resource-pressure 4194304', BOOT)
+        self.assertIn('HARD_END - 12000', BOOT)
+        self.assertIn('"$COUNT" -lt 180', BOOT)
+        self.assertNotIn('/data/user/0/com.cbkii.ts18launcher/no_backup', BOOT)
+        self.assertIn('72d4a810dfec5338a853cf31002b5e49d52499d6708645bd1a52fe771d3f0767', GUIDE)
+
     def test_monotonic_clock_and_process_identity(self):
         r = self.shell('a=$(ms); sleep 0.1; b=$(ms); [ "$b" -gt "$a" ] && identity $$')
         self.assertEqual(0, r.returncode, r.stderr)

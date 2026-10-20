@@ -194,6 +194,18 @@ check(StartupRootFallback.starts==1&&AppResolver.launches==0,"cold Music did not
 check(StartupRootFallback.returns==1&&navigationStarts==1,"Music held Maps for library readiness");
 Ts18LauncherApplication.shared.musicReady=true;immediate.onProcessMediaStateChanged(null,null,true);Handler.until(1000);
 check(ledger(immediate).record(Source.MUSIC).state==State.READY&&StartupRootFallback.starts==1,"late readiness replayed Music Activity");immediate.destroy();
+// Cold Activity admission may return before its asynchronous Main handoff is resumed.
+StartupReadinessCoordinator delayed=create(false);
+StartupRootFallback.launched=()->{delayed.onHomePaused();RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);Handler h=new Handler(Looper.getMainLooper());h.postDelayed(()->RootShell.top=RootShell.forComponent("com.tw.media/com.tw.media.Main",20),900);};
+android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);delayed.onHomeResumed(new android.app.Activity());};
+Handler.until(700);check(StartupRootFallback.starts==1&&StartupRootFallback.returns==0&&navigationDeferred,"slow handoff abandoned or replayed early");
+Handler.until(1800);check(StartupRootFallback.starts==1&&StartupRootFallback.returns==1&&navigationStarts==1,"slow cold handoff did not restore HOME and release Maps");delayed.destroy();
+StartupReadinessCoordinator foreignDuringHandoff=create(false);
+StartupRootFallback.launched=()->{foreignDuringHandoff.onHomePaused();RootShell.top=RootShell.forComponent("com.android.permissioncontroller/.GrantPermissionsActivity",20);};
+Handler.until(1500);check(StartupRootFallback.starts==1&&StartupRootFallback.returns==0&&!navigationDeferred,"foreign cold handoff focus stolen or lane retained");foreignDuringHandoff.destroy();
+StartupReadinessCoordinator absentEntry=create(false);
+StartupRootFallback.launched=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);};
+Handler.until(6000);check(StartupRootFallback.starts==1&&StartupRootFallback.returns==0&&!navigationDeferred,"absent accepted entry was replayed or waited forever");absentEntry.destroy();
 StartupReadinessCoordinator unsupported=create(false);AuxioPreparationContract.capability=false;Handler.until(800);
 check(StartupRootFallback.starts==0&&AppResolver.launches==0&&navigationStarts==1,"old Auxio was automated or blocked Maps");unsupported.destroy();
 StartupReadinessCoordinator explicitPlay=create(false);
