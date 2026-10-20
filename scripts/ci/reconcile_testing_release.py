@@ -215,7 +215,7 @@ def reconcile(repository, release_id, expected_group=''):
     desired = anchored_body(body, render(repository, snapshots))
     if desired != body:
         gh(release_path, patch={'name': '000 Testing Only Version', 'body': desired,
-                                'draft': True, 'prerelease': False, 'make_latest': False})
+                                'draft': True, 'prerelease': False, 'make_latest': 'false'})
     verified = gh(release_path)
     if verified.get('body') != desired or verified.get('draft') is not True:
         raise ValueError('Release PATCH/read-back mismatch')
