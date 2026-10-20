@@ -963,11 +963,11 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
     private boolean sendPending(MediaController controller, Pending pending) {
         if (MediaSourceAdapter.AUXIO_PACKAGE.equals(pending.packageName)
                 && pending.desired == MediaCommandPolicy.Desired.PLAY && AuxioPreparationContract.supported(context)) {
+            if (SystemClock.elapsedRealtime() >= pending.deadlineElapsedMs) return false;
             try {
                 Bundle extras = new Bundle();
                 extras.putInt("protocol", 1);
-                extras.putLong("deadline_elapsed_ms", SystemClock.elapsedRealtime()
-                        + Math.max(0L, pending.deadlineMs - SystemClock.uptimeMillis()));
+                extras.putLong("deadline_elapsed_ms", pending.deadlineElapsedMs);
                 controller.getTransportControls().sendCustomAction("org.oxycblt.auxio.action.HOME_PLAY_V1", extras);
                 return true;
             } catch (RuntimeException rejected) { return false; }
@@ -1152,6 +1152,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         final MediaCommandPolicy.Desired desired;
         final List<ResultCallback> callbacks = new ArrayList<>();
         final long deadlineMs;
+        final long deadlineElapsedMs;
         boolean dispatched;
         boolean settled;
         boolean coldPlayGuarded;
@@ -1166,6 +1167,8 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
             this.desired = desired;
             if (callback != null) callbacks.add(callback);
             this.deadlineMs = deadlineMs;
+            this.deadlineElapsedMs = SystemClock.elapsedRealtime()
+                    + Math.max(0L, deadlineMs - SystemClock.uptimeMillis());
         }
     }
 }

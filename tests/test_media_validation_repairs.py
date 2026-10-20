@@ -27,7 +27,7 @@ public ComponentName startService(Intent i){return null;} public ComponentName s
             "android/content/ComponentName.java": "package android.content; public class ComponentName {public ComponentName(Context c,Class<?> t){}}",
             "android/content/Intent.java": "package android.content; public class Intent {}",
             "android/os/Bundle.java": "package android.os; public class Bundle {public void putInt(String k,int v){} public void putLong(String k,long v){}}",
-            "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long now=1000;public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now;}}",
+            "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long now=1000,elapsedOffset;public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now+elapsedOffset;}}",
             "android/os/Looper.java": "package android.os; public class Looper {static Looper l=new Looper();public static Looper getMainLooper(){return l;}public static Looper myLooper(){return l;}}",
             "android/os/Handler.java": '''package android.os; import java.util.*; public class Handler {
 record Job(Runnable r,long time){} public static List<Job> jobs=new ArrayList<>(); public Handler(Looper l){}
@@ -75,7 +75,7 @@ String packageName;android.content.ComponentName service;boolean rootPrime,passi
 static MediaSourceAdapter resolve(android.content.Context c,String p){MediaSourceAdapter a=new MediaSourceAdapter();a.packageName=p;return a;}
 static boolean allowsUnadvertisedSkip(String p){return false;}String notReadyMessage(String s){return "not ready";}
 String rootStartCommand(){return "";}android.content.Intent explicitServiceIntent(){return null;} }
-class AuxioPreparationContract {static boolean supported(android.content.Context c){return false;}}
+class AuxioPreparationContract {static boolean paired;static boolean supported(android.content.Context c){return paired;}}
 class MediaSelection {static String RADIO="radio";}
 class LauncherPrefs {static String lastSource(android.content.Context c){return "music";}static String KEY_MUSIC="music";static String packageFor(android.content.Context c,String k){return "com.tw.media";}}
 class RadioProvider {static String resolvePackage(android.content.Context c){return MediaSourceAdapter.NAVRADIO_PACKAGE;}}
@@ -90,7 +90,7 @@ public class Harness {
 static void check(boolean b,String m){if(!b)throw new AssertionError(m);}
 static class Inline extends java.util.concurrent.AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,java.util.concurrent.TimeUnit u){return true;}}
 static class Holding extends Inline {java.util.List<Runnable> pending=new java.util.ArrayList<>();public void execute(Runnable r){pending.add(r);}}
-static MediaSourceBootstrapper create()throws Exception{SystemClock.now=1000;Handler.jobs.clear();var b=new MediaSourceBootstrapper(new android.content.Context());var f=b.getClass().getDeclaredField("readinessWorker");f.setAccessible(true);((java.util.concurrent.ExecutorService)f.get(b)).shutdownNow();f.set(b,new Inline());return b;}
+static MediaSourceBootstrapper create()throws Exception{SystemClock.now=1000;SystemClock.elapsedOffset=0;Handler.jobs.clear();var b=new MediaSourceBootstrapper(new android.content.Context());var f=b.getClass().getDeclaredField("readinessWorker");f.setAccessible(true);((java.util.concurrent.ExecutorService)f.get(b)).shutdownNow();f.set(b,new Inline());return b;}
 static void seedCold(MediaSourceBootstrapper b)throws Exception{
  Class<?> s=Class.forName("com.cbkii.ts18launcher.MediaSourceBootstrapper$ServiceStart");
  Constructor<?> c=s.getDeclaredConstructors()[0];c.setAccessible(true);Object start=c.newInstance(MediaSourceAdapter.resolve(null,MediaSourceAdapter.NAVRADIO_PACKAGE));
@@ -141,6 +141,13 @@ public static void main(String[] args)throws Exception {
  int before=radio.pauses;long commands=b.userCommandGeneration();
  b.command("Radio",radio.pkg,MediaListenerService.Command.NEXT,(ok,m)->{});
  check(!b.pauseUnrequestedPlayback(radio.pkg,commands)&&radio.pauses==before,"startup overwrote newer user command");b.destroy();
+ // A pre-suspend Play cannot acquire a fresh deadline after waking.
+ b=create();AuxioPreparationContract.paired=true;Object expired=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,5500L);
+ Method send=MediaSourceBootstrapper.class.getDeclaredMethod("sendPending",MediaController.class,pc);send.setAccessible(true);
+ SystemClock.elapsedOffset=10000;int priorPlays=music.plays;
+ check(!(Boolean)send.invoke(b,music,expired)&&music.plays==priorPlays,"suspend extended an old Play deadline");
+ Object fresh=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,5500L);
+ check((Boolean)send.invoke(b,music,fresh)&&music.plays==priorPlays+1,"fresh post-wake Play was rejected");b.destroy();SystemClock.elapsedOffset=0;
  System.out.println("PASS cold guard/coalescing/buffering/handover/content/newer intent");
 }}
 ''',
