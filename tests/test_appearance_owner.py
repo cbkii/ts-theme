@@ -168,9 +168,10 @@ class AppearanceOwnerTest(unittest.TestCase):
                 check(AppearanceSchedule.resolve(360,1200,360).equals("night"));
                 check(AppearanceSchedule.resolve(359,1200,360).equals("day"));
                 check(AppearanceSchedule.resolve(720,420,420).equals("day"));
+                LauncherPrefs.mode="day"; // Deterministic initial state, independent of runner wall clock.
                 Context c=new Context(); List<String> a=new ArrayList<>(),b=new ArrayList<>();
                 var first=new AppearanceController(c,a::add); var second=new AppearanceController(c,b::add);
-                first.start(); first.start(); second.start(); check(c.registrations==1); check(Handler.tasks.size()==1);
+                first.start(); first.start(); second.start(); check(c.registrations==1); check(Handler.tasks.isEmpty());
                 int reads=LauncherPrefs.reads;
                 for(int i=0;i<100;i++)AppearanceController.resolvedMode(c); check(reads==LauncherPrefs.reads);
                 LauncherPrefs.mode="night"; LauncherPrefs.prefs.listener.onSharedPreferenceChanged(LauncherPrefs.prefs,"ui.appearance.mode");
@@ -182,6 +183,7 @@ class AppearanceOwnerTest(unittest.TestCase):
                 Handler.runNext();check(a.size()==ac);check(b.get(b.size()-1).equals("day"));
                 second.stop();second.stop();check(c.removals==1);check(Handler.tasks.isEmpty());check(LauncherPrefs.prefs.listener==null);
                 LauncherPrefs.mode="night";first.start();check(a.get(a.size()-1).equals("night"));first.stop();
+                LauncherPrefs.mode="auto";first.start();check(Handler.tasks.size()==1);first.stop();check(Handler.tasks.isEmpty());
                 System.out.println("PASS binary boundaries/shared-owner/cached-snapshot/stopped-observer/restart");
                 } }''',
         }
