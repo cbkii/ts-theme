@@ -44,6 +44,7 @@ class TestingReleaseNoteReconciliationTests(unittest.TestCase):
                 for part in range(4)) + '\n'
             blobs[assets[-1]['id']] = sums.encode()
         release = {'draft': True, 'name': '000 Testing Only Version',
+                   'tag_name': 'untagged-31fecdcb8d777c1a4184',
                    'body': f'{notes.MANAGED}\nDo not publish this draft\n'}
         return repo, release, assets, blobs
 
