@@ -337,53 +337,14 @@ public final class SettingsActivity extends Activity {
 
     private void showTestingMethods() {
         String identity = getString(R.string.build_source_revision) + "\n" + getString(R.string.build_source_ref);
-        String[] choices = {"Navigation: " + TestingProfiles.navigation(this),
-                "Task transition: " + TestingProfiles.transition(this),
-                "Departure: " + (TestingProfiles.retainCompact(this) ? "retain compact" : "background fullscreen"),
-                "Music: " + (TestingProfiles.prepareAuxio(this) ? "bind + supported PREPARE" : "bind only"),
-                "Radio: " + TestingProfiles.radio(this), "Open navigation normally",
-                "Startup: " + TestingProfiles.startup(this), "Build and test identity"};
-        new AlertDialog.Builder(this).setTitle("Testing methods")
-                .setItems(choices, (dialog, which) -> {
-                    switch (which) {
-                        case 0: chooseTesting("navigation", new String[]{"N0", "N1", "N2"},
-                                new String[]{"N0 · Normal open; compact disabled", "N1 · Direct compact cold launch",
-                                        "N2 · Normal bootstrap then compact (Bridge)"}); break;
-                        case 1: chooseTesting("transition", new String[]{"bridge", "intent"},
-                                new String[]{"Bridge · Same task; no Activity redelivery", "Intent comparator · May redeliver current Activity"}); break;
-                        case 2: chooseTesting("departure", new String[]{"fullscreen", "retain"},
-                                new String[]{"L2 · Background fullscreen outside HOME", "L1 · Retain compact outside HOME"}); break;
-                        case 3: chooseTesting("music", new String[]{"prepare", "bind"},
-                                new String[]{"M1 · Auxio bind + advertised PREPARE", "M0 · Browser bind only"}); break;
-                        case 4: chooseTesting("radio", new String[]{"auto", "root", "normal"},
-                                new String[]{"R0 · Root; normal only after definite refusal", "R1 · Root only", "R2 · Normal Android only"}); break;
-                        case 5:
-                            String navigationPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
-                            if (navigationPackage.isEmpty() && NavigationProvider.hasLauncherActivity(this, NavigationProvider.ORGANIC_MAPS_INCAR))
-                                navigationPackage = NavigationProvider.ORGANIC_MAPS_INCAR;
-                            if (!NavigationProvider.open(this, navigationPackage, null))
-                                Toast.makeText(this, "Navigation could not open. Choose an installed Navigation app.", Toast.LENGTH_LONG).show();
-                            break;
-                        case 6: chooseTesting("startup", new String[]{"background", "auto", "aggressive"},
-                                new String[]{"Background only · no foreground bootstrap", "Automatic fallback · foreground bootstrap then HOME restore",
-                                        "Aggressive · guarded root-first staging; no uncertain replay"}); break;
-                        default: new AlertDialog.Builder(this).setTitle("Build and test identity")
-                                .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
-                                        + "\n\n" + StartupReadinessCoordinator.get(this).summary()
-                                        + "\n\nReturn HOME after selecting a method. Keep the Maps APK fixed. "
-                                        + "N2 starts once normally, then compacts the same map task; select Bridge. Complete any real permission/setup screens. "
-                                        + "Use the guided collector for P/F/N results and export. No test clears app data.")
-                                .setPositiveButton("Done", null).show();
-                    }
-                }).setNegativeButton("Done", null).show();
-    }
-
-    private void chooseTesting(String key, String[] values, String[] labels) {
-        new AlertDialog.Builder(this).setTitle("Select " + key + " method")
-                .setItems(labels, (dialog, which) -> {
-                    TestingProfiles.set(this, key, values[which]);
-                    Toast.makeText(this, "Method saved · return HOME to test", Toast.LENGTH_LONG).show();
-                }).setNegativeButton("Cancel", null).show();
+        new AlertDialog.Builder(this).setTitle("Startup and return diagnostics")
+                .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
+                        + "\n\n" + StartupReadinessCoordinator.get(this).summary()
+                        + "\n\nAutomatic root preparation; N2 / Bridge / fullscreen departure. "
+                        + "Use the matching Auxio prepare-only build. Complete any real permission/setup screens. "
+                        + "The guided kit records actual map/audio readiness and return reliability. "
+                        + "About three seconds is the speed target; small overruns are not automatic failures.")
+                .setPositiveButton("Done", null).show();
     }
 
     private void addAccentPaletteRow() {

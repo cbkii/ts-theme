@@ -21,7 +21,7 @@ public void removeCallbacks(Runnable r){synchronized(jobs){jobs.removeIf(j->j.h(
 public void removeCallbacksAndMessages(Object o){synchronized(jobs){jobs.removeIf(j->j.h()==this);}}
 public static void until(long time){for(int n=0;;n++){Job next;synchronized(jobs){next=jobs.stream().filter(j->j.due()<=time).min(java.util.Comparator.comparingLong(Job::due)).orElse(null);if(next==null)break;jobs.remove(next);}if(n>100)throw new AssertionError("unbounded jobs");SystemClock.now=Math.max(SystemClock.now,next.due());next.r().run();}SystemClock.now=time;}}
 ''',
-            'android/os/Message.java': 'package android.os; public class Message {public int what,sendingUid;}',
+            'android/os/Message.java': 'package android.os; public class Message {public int what,sendingUid,arg1,arg2;}',
             'android/os/IBinder.java': 'package android.os; public interface IBinder {}',
             'android/os/Messenger.java': 'package android.os; public class Messenger {public static Handler handler;public Messenger(Handler h){handler=h;}public IBinder getBinder(){return null;}}',
             'android/os/Bundle.java': 'package android.os; public class Bundle {public void putInt(String k,int v){}public void putBinder(String k,IBinder b){}}',
@@ -85,7 +85,16 @@ Thread.sleep(10);check(ContentResolver.observes.get()==3);
 // Genuine authenticated events remain observable after the periodic window expires.
 m=new Message();m.what=1;m.sendingUid=24000;Messenger.handler.handleMessage(m);
 var dpool=(java.util.concurrent.ThreadPoolExecutor)field.get(d);waitFor(()->dpool.getActiveCount()==0);Handler.until(checkpoint+3500);
-waitFor(()->ContentResolver.observes.get()==4);waitFor(()->dpool.getActiveCount()==0);Handler.until(checkpoint+3500);d.close();d.close();
+waitFor(()->ContentResolver.observes.get()==4);waitFor(()->dpool.getActiveCount()==0);Handler.until(checkpoint+3500);
+// Root BACK requests require the current boot and authenticated sender.
+int[] returns={0};d.setHomeReturnCallback(task->{check(task==42);returns[0]++;});
+for(int n=0;n<3;n++){
+ Message back=new Message();back.what=2;back.arg1=42;back.arg2=n==1?6:7;back.sendingUid=n==0?123:24000;
+ int beforeAuth=CompactStartupPeer.auth.get();Messenger.handler.handleMessage(back);
+ waitFor(()->CompactStartupPeer.auth.get()>beforeAuth);waitFor(()->dpool.getActiveCount()==0);Handler.until(checkpoint+3500);
+ check(returns[0]==(n==2?1:0));
+}
+d.close();d.close();
 System.out.println("PASS actual client timeout/replacement/saturation/off-main-auth/double-close");}}
 ''',
         }

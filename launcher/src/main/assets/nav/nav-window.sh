@@ -7,7 +7,7 @@ export PATH
 unset LD_PRELOAD LD_LIBRARY_PATH
 umask 077
 
-ROOT_DIR=/data/adb/ts18-launcher
+ROOT_DIR=${TS18_STATE_DIR:?launcher private runtime directory required}
 SNAPSHOT="$ROOT_DIR/.activity.$$"
 START_HELP="$ROOT_DIR/.am-help.$$"
 LAUNCH_OUTPUT="$ROOT_DIR/.am-start.$$"
@@ -20,8 +20,8 @@ case "${TS18_DEADLINE_S:-}" in
   ''|*[!0-9]*) ;;
   *) [ "$TS18_DEADLINE_S" -lt "$DEADLINE" ] && DEADLINE=$TS18_DEADLINE_S ;;
 esac
-METHOD=${TS18_METHOD:-N1}
-TRANSITION=${TS18_TRANSITION:-intent}
+METHOD=${TS18_METHOD:-N2}
+TRANSITION=${TS18_TRANSITION:-bridge}
 case "$METHOD" in N0|N1|N2) ;; *) METHOD=N1 ;; esac
 case "$TRANSITION" in bridge|intent) ;; *) TRANSITION=bridge ;; esac
 COLD_POLICY=${TS18_COLD_POLICY:-manual}
@@ -413,7 +413,7 @@ read_task_once() {
   fi
   # Preserve bounded parser-miss context locally for the next collector.
   if [ -s "$SNAPSHOT" ]; then
-    head -c 65536 "$SNAPSHOT" >"$ROOT_DIR/task-miss-latest.txt"
+    : # The bounded diagnostic collector owns exports; retain no private dump copies here.
   fi
   bridge_record="$(run_bridge status "$observed_pkg" "$observed_hint" 2>/dev/null)"
   bridge_rc=$?
@@ -618,9 +618,22 @@ claim_cold_launch() {
   automatic_marker="$ROOT_DIR/auto-v1-$ANDROID_USER-$PKG-$current_boot"
   if [ "$COLD_POLICY" = automatic ]; then
     require_startup_window_focus com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity
-    # Durable once-per-boot admission, retained after renderer/task success and process loss.
-    # Existing tasks are adopted before reaching this boundary. Explicit Retry remains separate.
-    mkdir "$automatic_marker" 2>/dev/null || fail AUTOSTART_ALREADY_CLAIMED
+    # Accepted/uncertain startup never repeats. A previously verified MwmActivity owner
+    # may recover only after its exact PID/start-time lifetime has ended AND the caller
+    # has already proved complete task absence. Closing a task in a live process is not
+    # sufficient. Each dead lifetime has one atomic recovery admission.
+    if ! mkdir "$automatic_marker" 2>/dev/null; then
+      [ -f "$automatic_marker/ready-owner" ] || fail AUTOSTART_ALREADY_CLAIMED
+      read -r ready_pid ready_ticks ready_task < "$automatic_marker/ready-owner"
+      valid_uint "$ready_pid" && valid_uint "$ready_ticks" && valid_uint "$ready_task" || fail AUTOSTART_ALREADY_CLAIMED
+      [ "$ready_pid" -gt 0 ] && [ "$ready_task" -gt 0 ] || fail AUTOSTART_ALREADY_CLAIMED
+      live_ticks=$(awk '{sub(/^.*\) /, ""); print $20}' "/proc/$ready_pid/stat" 2>/dev/null)
+      if [ -d "/proc/$ready_pid" ]; then
+        valid_uint "$live_ticks" || fail AUTOSTART_ALREADY_CLAIMED
+        [ "$live_ticks" != "$ready_ticks" ] || fail AUTOSTART_ALREADY_CLAIMED
+      fi
+      mkdir "$automatic_marker/recovered-$ready_pid-$ready_ticks" 2>/dev/null || fail AUTOSTART_ALREADY_CLAIMED
+    fi
     printf 'version=1 boot=%s user=%s package=%s generation=1\n' "$current_boot" "$ANDROID_USER" "$PKG" > "$automatic_marker/identity" || {
       clear_automatic_refusal
       fail LAUNCH_JOURNAL_FAILED
@@ -685,6 +698,20 @@ resolve_launch_claim_if_ready() {
   # Cleanup is optional on a proven warm task; metadata refusal must not
   # invalidate an already verified fullscreen/windowed transition.
   launch_claim_path || return 0
+  ready_marker="$ROOT_DIR/auto-v1-$ANDROID_USER-$PKG-$current_boot"
+  if [ "$PKG" = app.organicmaps.incar ] && [ -d "$ready_marker" ] && command -v pidof >/dev/null 2>&1; then
+    ready_source=$(pidof "$PKG" 2>/dev/null)
+    if valid_uint "$ready_source" && [ "$ready_source" -gt 0 ]; then
+      ready_command=$(tr '\000' '\n' < "/proc/$ready_source/cmdline" 2>/dev/null | head -n 1)
+      if [ "$ready_command" = "$PKG" ]; then
+        ready_start=$(awk '{sub(/^.*\) /, ""); print $20}' "/proc/$ready_source/stat" 2>/dev/null)
+        if valid_uint "$ready_start"; then
+          printf '%s %s %s\n' "$ready_source" "$ready_start" "$TASK_ID" > "$ready_marker/ready-owner.$$" \
+            && mv "$ready_marker/ready-owner.$$" "$ready_marker/ready-owner"
+        fi
+      fi
+    fi
+  fi
   clear_launch_claim
 }
 
@@ -762,7 +789,7 @@ move_task_fullscreen() {
 # Exact foreground ownership for media staging; no mode/geometry or vendor mutations.
 require_startup_window_focus() {
   focus_expected="$1"
-  bounded dumpsys window windows >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  bounded dumpsys window displays >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
   focus_component=$(awk -v user="$ANDROID_USER" '
     function normalise(c, a) {
       split(c,a,"/"); if (substr(a[2],1,1)==".") c=a[1] "/" a[1] a[2]
@@ -1098,6 +1125,26 @@ case "$action" in
     fi
     TASK_ID=unknown; TASK_COMPONENT="$startup_entry"; PKG="${3:-}"
     emit_protocol OK STARTUP_SOURCE_DISPATCHED
+    ;;
+
+  return-home)
+    PKG="${3:-}"; startup_task="${4:-0}"; HOME_PKG="${5:-}"; home_task="${6:-0}"
+    [ "$PKG" = app.organicmaps.incar ] || fail STARTUP_PACKAGE_BLOCKED
+    [ "$HOME_PKG" = com.cbkii.ts18launcher ] || fail BAD_HOME_PACKAGE
+    valid_uint "$startup_task" || fail BAD_TASK
+    [ "$startup_task" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
+    valid_uint "$home_task" || fail BAD_HOME_TASK
+    [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
+    require_startup_home
+    require_task "$PKG" "$startup_task" 2
+    [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+    [ "$TASK_COMPONENT" = app.organicmaps.incar/app.organicmaps.MwmActivity ] || fail COMPONENT_MISMATCH
+    require_handoff_foreground "$startup_task" "$startup_task"
+    require_startup_window_focus app.organicmaps.incar/app.organicmaps.MwmActivity
+    PHASE=focus
+    bounded am task focus "$home_task" >"$LAUNCH_OUTPUT" 2>&1 || fail HOME_FOCUS_FAILED
+    require_foreground_task "$home_task" HOME_NOT_FOREGROUND
+    emit_protocol OK HOME_RETURNED
     ;;
 
   startup-home)

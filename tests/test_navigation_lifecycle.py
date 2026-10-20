@@ -158,7 +158,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             source = HELPER.read_text().replace('PATH=/system/bin:/system/xbin:/vendor/bin', f'PATH={bin_dir}', 1)
             source = source.replace('/proc/$$/stat', '/proc/self/stat')
             source = source.replace('/system/bin/toybox timeout -k 1', 'timeout -k 1')
-            source = source.replace('ROOT_DIR=/data/adb/ts18-launcher', f'ROOT_DIR={work}', 1)
+            source = source.replace('ROOT_DIR=${TS18_STATE_DIR:?launcher private runtime directory required}', f'ROOT_DIR={work}', 1)
             if disable_claim:
                 source = source.replace('mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING', 'mkdir -p "$launch_marker"', 1)
             script = work / 'helper.sh'

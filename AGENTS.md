@@ -90,3 +90,7 @@ Pause handover budgets. See `docs/STARTUP_FINALISATION_2026-10-16.md`. Keep #19/
 ancestry and do not merge the parent independently: inherited review fixes live in
 #24. Software readiness is not audible/tuner/map-input qualification. Use one signed
 exact-head TESTING candidate and its hash-pinned P/F/N kit for the physical smoke gate.
+
+## Approved 20 October 2026 execution profile
+
+The current child selects N2 + guarded bridge + fullscreen departure, with immediate root-first Music preparation through paired Auxio’s non-exported capability. This supersedes historical browser-first delay and profile-comparison guidance above. Ordinary HOME interactions cannot disable startup for the boot. Preserve one coordinator, exact foreground/task checks and accepted/uncertain claims. Around three seconds is a soft target; fastest reliable measured behaviour is mandatory. Do not infer physical success from host tests.

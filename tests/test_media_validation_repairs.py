@@ -26,8 +26,8 @@ public Context getApplicationContext(){return this;} public Object getSystemServ
 public ComponentName startService(Intent i){return null;} public ComponentName startForegroundService(Intent i){return null;} }''',
             "android/content/ComponentName.java": "package android.content; public class ComponentName {public ComponentName(Context c,Class<?> t){}}",
             "android/content/Intent.java": "package android.content; public class Intent {}",
-            "android/os/Bundle.java": "package android.os; public class Bundle {}",
-            "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long now=1000;public static long uptimeMillis(){return now;}}",
+            "android/os/Bundle.java": "package android.os; public class Bundle {public void putInt(String k,int v){} public void putLong(String k,long v){}}",
+            "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long now=1000;public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now;}}",
             "android/os/Looper.java": "package android.os; public class Looper {static Looper l=new Looper();public static Looper getMainLooper(){return l;}public static Looper myLooper(){return l;}}",
             "android/os/Handler.java": '''package android.os; import java.util.*; public class Handler {
 record Job(Runnable r,long time){} public static List<Job> jobs=new ArrayList<>(); public Handler(Looper l){}
@@ -50,7 +50,7 @@ public MediaController(android.content.Context c,MediaSession.Token t){}public M
 public String getPackageName(){return pkg;}public PlaybackState getPlaybackState(){return state;}
 public android.media.MediaMetadata metadata;public java.util.List<MediaSession.QueueItem> queue;public java.util.List<MediaSession.QueueItem> getQueue(){return queue;}public android.media.MediaMetadata getMetadata(){return metadata;}public MediaSession.Token getSessionToken(){return new MediaSession.Token();}
 public void registerCallback(Callback c){} public void unregisterCallback(Callback c){}
-public Controls getTransportControls(){return new Controls();}public class Controls {
+public Controls getTransportControls(){return new Controls();}public class Controls {public void sendCustomAction(String a,android.os.Bundle b){play();}
 public void play(){plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause){if(pauseDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=2,pauseDelay);else state.state=2;}}
 public void prepare(){}public void skipToPrevious(){}public void skipToNext(){}}
 public static class Callback {public void onPlaybackStateChanged(PlaybackState p){}public void onMetadataChanged(android.media.MediaMetadata m){}public void onQueueChanged(java.util.List<MediaSession.QueueItem> q){}public void onSessionDestroyed(){}} }
@@ -75,6 +75,7 @@ String packageName;android.content.ComponentName service;boolean rootPrime,passi
 static MediaSourceAdapter resolve(android.content.Context c,String p){MediaSourceAdapter a=new MediaSourceAdapter();a.packageName=p;return a;}
 static boolean allowsUnadvertisedSkip(String p){return false;}String notReadyMessage(String s){return "not ready";}
 String rootStartCommand(){return "";}android.content.Intent explicitServiceIntent(){return null;} }
+class AuxioPreparationContract {static boolean supported(android.content.Context c){return false;}}
 class MediaSelection {static String RADIO="radio";}
 class LauncherPrefs {static String lastSource(android.content.Context c){return "music";}static String KEY_MUSIC="music";static String packageFor(android.content.Context c,String k){return "com.tw.media";}}
 class RadioProvider {static String resolvePackage(android.content.Context c){return MediaSourceAdapter.NAVRADIO_PACKAGE;}}

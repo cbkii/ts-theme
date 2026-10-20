@@ -19,16 +19,21 @@ final class NavigationRootHelper {
     private static final Pattern COMPONENT = Pattern.compile(
             "[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+/(?:\\.[A-Za-z0-9_.$]+|[A-Za-z0-9_.$]+(?:\\.[A-Za-z0-9_.$]+)*)");
     private static final Pattern ACTION = Pattern.compile(
-            "probe|status|present-native|verify-native|resume-windowed|fullscreen|park-windowed|background-fullscreen|probe-task-mode|startup-source|startup-home");
+            "probe|status|present-native|verify-native|resume-windowed|fullscreen|park-windowed|background-fullscreen|probe-task-mode|startup-source|startup-home|return-home");
     private static final String ASSET = "nav/nav-window.sh";
-    private static final String ROOT_DIR = "/data/adb/ts18-launcher";
-    private static final String ROOT_HELPER = ROOT_DIR + "/nav-window.sh";
     private static final long INSTALL_TIMEOUT_MS = 4000L;
     private static final long COMMAND_TIMEOUT_MS = 12000L;
 
     private final Context context;
+    private final String rootDir;
+    private final String rootHelper;
     private boolean installedThisProcess;
     private long deadline;
+    private long presentationEpoch;
+    void setPresentationEpoch(long epoch) {
+        presentationEpoch = epoch;
+        RootTaskSession.get(context).epoch(epoch);
+    }
     private volatile String coldPolicy = "manual";
     void setColdLaunchPolicy(String policy) {
         coldPolicy = "automatic".equals(policy) || "manual".equals(policy) ? policy : "deny";
@@ -41,6 +46,8 @@ final class NavigationRootHelper {
 
     NavigationRootHelper(Context context) {
         this.context = context.getApplicationContext();
+        rootDir = new File(this.context.getNoBackupFilesDir(), "navigation-root").getAbsolutePath();
+        rootHelper = rootDir + "/nav-window.sh";
     }
 
     synchronized NavigationHelperResult run(String action, String... args) {
@@ -54,6 +61,20 @@ final class NavigationRootHelper {
         }
         if (Thread.currentThread().isInterrupted() || remaining() < 1500L)
             return NavigationHelperResult.failure("ACTION_TIMEOUT", "before helper admission");
+        boolean mapFastPath = args.length > 0 && "app.organicmaps.incar".equals(args[0])
+                && ("resume-windowed".equals(action) || "return-home".equals(action) || "background-fullscreen".equals(action));
+        boolean musicFastPath = args.length > 0 && "com.tw.media".equals(args[0]) && "startup-home".equals(action);
+        if (mapFastPath || musicFastPath) {
+            java.util.ArrayList<String> fields = new java.util.ArrayList<>();
+            fields.add(action); fields.add(Integer.toString(AndroidUserId.current()));
+            java.util.Collections.addAll(fields, args);
+            RootTaskSession session = RootTaskSession.get(context);
+            long until = android.os.SystemClock.elapsedRealtime() + remaining();
+            NavigationHelperResult fast = "startup-home".equals(action)
+                    ? session.runCurrent(until, fields.toArray(new String[0]))
+                    : session.run(presentationEpoch, until, fields.toArray(new String[0]));
+            if (fast != null && !"BRIDGE_API_UNSUPPORTED".equals(fast.code)) return fast;
+        }
         NavigationHelperResult install = ensureInstalled();
         if (!install.success) return install;
 
@@ -61,10 +82,11 @@ final class NavigationRootHelper {
         if (budget < 1000L) return NavigationHelperResult.failure("ACTION_TIMEOUT", "after helper installation");
         long shellDeadline = (android.os.SystemClock.elapsedRealtime() + budget) / 1000L;
         StringBuilder command = new StringBuilder("TS18_DEADLINE_S=").append(shellDeadline)
+                .append(" TS18_STATE_DIR=").append(singleQuote(rootDir))
                 .append(" TS18_COLD_POLICY=").append(coldPolicy)
                 .append(" TS18_METHOD=").append(TestingProfiles.navigation(context))
                 .append(" TS18_TRANSITION=").append(TestingProfiles.transition(context))
-                .append(' ').append(ROOT_HELPER).append(' ').append(action)
+                .append(" /system/bin/sh ").append(singleQuote(rootHelper)).append(' ').append(action)
                 .append(' ').append(AndroidUserId.current());
         for (String arg : args) command.append(' ').append(singleQuote(arg));
         long phaseStart = android.os.SystemClock.elapsedRealtime();
@@ -107,10 +129,10 @@ final class NavigationRootHelper {
             return NavigationHelperResult.failure("ASSET_COPY_FAILED", e.getClass().getSimpleName());
         }
         String source = singleQuote(staged.getAbsolutePath());
-        String rootDir = singleQuote(ROOT_DIR);
-        String temp = singleQuote(ROOT_HELPER + ".tmp");
-        String target = singleQuote(ROOT_HELPER);
-        String command = "umask 077; mkdir -p " + rootDir + " && cp " + source + " " + temp
+        String directory = singleQuote(rootDir);
+        String temp = singleQuote(rootHelper + ".tmp");
+        String target = singleQuote(rootHelper);
+        String command = "umask 077; mkdir -p " + directory + " && cp " + source + " " + temp
                 + " && chmod 0700 " + temp + " && mv " + temp + " " + target;
         ProcessResult result = executeRoot(command, Math.min(INSTALL_TIMEOUT_MS, Math.max(1L, remaining() - 500L)));
         if (result.timedOut) return NavigationHelperResult.failure("INSTALL_TIMEOUT", result.output);

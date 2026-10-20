@@ -53,7 +53,8 @@ class Ts18LauncherApplication {static MediaSourceBootstrapper shared=new MediaSo
 class MediaSourceBootstrapper {boolean musicReady,radioReady,musicPlaying;long commands;int warms,pauses;
 boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radioReady;}
 boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
-boolean startupSessionAbsent(String p){return !hasUsableQueue(p);}boolean startupPlaying(String p){return isPlaying(p);}void setStartupObserver(Runnable r){}long userCommandGeneration(){return commands;}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
+boolean startupSessionAbsent(String p){return !hasUsableQueue(p);}boolean startupPlaying(String p){return isPlaying(p);}void setStartupObserver(Runnable r){}long userCommandGeneration(){return commands;}String userCommandPackage(){return "com.tw.media";}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
+class AuxioPreparationContract {static boolean capability=true;static boolean supported(android.content.Context c){return capability;}static String canonicalEntry(android.content.Context c,android.content.ComponentName n){return n.flattenToShortString();}}
 class UiPersonalizationPrefs {static boolean enabled=true;static boolean mediaStartupWarmup(android.content.Context c){return enabled;}}
 class TestingProfiles {static String mode="auto";static String startup(android.content.Context c){return mode;}}
 class LauncherPrefs {static String KEY_MUSIC="music",KEY_NAV="nav";static String music="com.tw.media";
@@ -67,8 +68,8 @@ class MediaEventTrace {static void record(String a,String b,String... c){}}
 class AppResolver {enum LaunchOutcome {ACCEPTED,REJECTED,UNCERTAIN}static LaunchOutcome outcome=LaunchOutcome.ACCEPTED;static int launches;static Runnable launched=()->{};
 static LaunchOutcome launchForStartup(android.content.Context c,String p){launches++;
 if(outcome==LaunchOutcome.ACCEPTED){RootShell.top=RootShell.forComponent(p+"/"+p+".Main",20);launched.run();}return outcome;}}
-class NavigationHelperResult {boolean success;String code;NavigationHelperResult(boolean s,String c){success=s;code=c;}}
-class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}
+class NavigationHelperResult {boolean success;int userId=0,taskId=10;String component="";String code;NavigationHelperResult(boolean s,String c){success=s;code=c;}}
+class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}NavigationHelperResult observe(){return null;}
 NavigationHelperResult launch(String p,String e,int h){starts++;before.run();if(code.equals("STARTUP_SOURCE_DISPATCHED")){RootShell.top=RootShell.forComponent(e,20);launched.run();}return new NavigationHelperResult(code.equals("STARTUP_SOURCE_DISPATCHED"),code);}
 NavigationHelperResult restoreHome(String p,String e,int t,int h){returns++;if(returnCode.equals("STARTUP_HOME_RESTORED"))android.app.Activity.focused=true;android.app.ActivityManager.moved.run();return new NavigationHelperResult(returnCode.equals("STARTUP_HOME_RESTORED"),returnCode);}
 static boolean definitelyNotStarted(NavigationHelperResult r){return r.code.equals("STARTUP_SOURCE_REJECTED");}}
@@ -84,21 +85,22 @@ import static com.cbkii.ts18launcher.StartupReadinessPolicy.*;
 public class Harness {
 static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
 static boolean navigationDeferred, navReady;
-static int navigationStarts;
+static int navigationStarts;static boolean coldMusic;
 static class Inline extends AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,TimeUnit u){return true;}}
 static StartupReadinessCoordinator create()throws Exception{return create(true);}
 static StartupReadinessCoordinator create(boolean ready)throws Exception{return create(ready,true);}
 static StartupReadinessCoordinator create(boolean ready,boolean clear)throws Exception{
-navReady=ready;navigationStarts=0;
+navReady=ready;navigationStarts=0;AuxioPreparationContract.capability=true;
 Handler.reset();if(clear)android.content.SharedPreferences.strings.clear();android.content.SharedPreferences.commitOk=true;android.app.Activity.focused=true;navigationDeferred=false;TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
 StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
 StartupRootFallback.code="STARTUP_SOURCE_DISPATCHED";StartupRootFallback.starts=0;StartupRootFallback.returns=0;StartupRootFallback.before=()->{};
 android.app.ActivityManager.reject=false;android.app.ActivityManager.uncertain=false;
 MediaListenerService.access=true;RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
 RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);
-Ts18LauncherApplication.shared=new MediaSourceBootstrapper();Ts18LauncherApplication.shared.musicReady=true;
+Ts18LauncherApplication.shared=new MediaSourceBootstrapper();Ts18LauncherApplication.shared.musicReady=!coldMusic;Ts18LauncherApplication.shared.radioReady=coldMusic;
 Constructor<StartupReadinessCoordinator> c=StartupReadinessCoordinator.class.getDeclaredConstructor(android.content.Context.class);c.setAccessible(true);
 StartupReadinessCoordinator s=c.newInstance(new android.content.Context());Field f=s.getClass().getDeclaredField("observer");f.setAccessible(true);((ExecutorService)f.get(s)).shutdownNow();f.set(s,new Inline());AppResolver.launched=s::onHomePaused;StartupRootFallback.launched=s::onHomePaused;
+if(coldMusic)s.onTrigger(Trigger.RESTART);
 s.attachNavigationHook(new StartupReadinessCoordinator.NavigationHook(){public boolean ready(){return navReady;}public boolean busy(){return false;}public void reconcile(){check(!navigationDeferred,"Maps acquired while media pending");navigationStarts++;navReady=true;android.app.Activity.focused=false;}
 public void deferAutomaticPresentation(boolean defer){navigationDeferred=defer;}});
 s.onHomeResumed(new android.app.Activity());return s;}
@@ -117,9 +119,9 @@ Ts18LauncherApplication.shared.radioReady=true;
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);s.onHomeResumed(new android.app.Activity());};
 Handler.until(8000);check(android.app.ActivityManager.moves==1,"exact HOME not restored");check(ledger(s).record(Source.RADIO).state==State.READY,"content not ready");check(!navigationDeferred,"Maps stayed deferred after media");s.destroy();
 StartupReadinessCoordinator ordered=create(false);Handler.until(4000);
-check(navigationStarts==0&&AppResolver.launches==1,"Maps stole focus before required media stage");
+check(navigationStarts==1&&AppResolver.launches==0,"Radio postponed the primary map surface");
 Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.moved=()->ordered.onHomeResumed(new android.app.Activity());
-Handler.until(8000);check(navigationStarts==1&&!navigationDeferred,"Maps not admitted once after media");ordered.destroy();
+Handler.until(8000);check(navigationStarts==1&&!navigationDeferred,"Maps presentation was repeated after background Radio readiness");ordered.destroy();
 StartupReadinessCoordinator root=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;Handler.until(4000);
 check(AppResolver.launches==1&&StartupRootFallback.starts==1,"definite rejection did not select root once");root.destroy();
 StartupReadinessCoordinator rootFirst=create();TestingProfiles.mode="aggressive";Handler.until(4000);
@@ -138,7 +140,7 @@ android.app.ActivityManager.reject=true;StartupRootFallback.returnCode="HOME_FOC
 check(StartupRootFallback.returns==1&&ledger(rootHomeFailure).record(Source.RADIO).state==State.UNCERTAIN,"failed root return marked ready");rootHomeFailure.destroy();
 StartupReadinessCoordinator noHomeReturn=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
 check(StartupRootFallback.returns==0&&ledger(noHomeReturn).record(Source.RADIO).state==State.UNCERTAIN,"silent/unconfirmed return repeated or marked ready");noHomeReturn.destroy();
-StartupReadinessCoordinator cancelledRoot=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;RootShell.afterProbe=cancelledRoot::noteUserInteraction;Handler.until(15000);
+StartupReadinessCoordinator cancelledRoot=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;RootShell.afterProbe=cancelledRoot::noteExternalNavigation;Handler.until(15000);
 check(StartupRootFallback.starts==0&&AppResolver.launches==0,"cancelled executor admitted source");cancelledRoot.destroy();
 StartupReadinessCoordinator homeUncertain=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.uncertain=true;Handler.until(15000);
 check(StartupRootFallback.returns==0&&ledger(homeUncertain).record(Source.RADIO).state==State.UNCERTAIN,"uncertain HOME return replayed");homeUncertain.destroy();
@@ -149,7 +151,7 @@ RootShell.top=RootShell.forComponent("com.android.permissioncontroller/.GrantPer
 Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
 check(android.app.ActivityManager.moves==0,"permission screen stolen");permission.onTrigger(Trigger.SESSION_LOST);Handler.until(20000);
 check(AppResolver.launches==1,"uncertain launch repeated");permission.destroy();
-StartupReadinessCoordinator interrupted=create();Handler.until(4000);interrupted.noteUserInteraction();check(!navigationDeferred,"user navigation stayed blocked");Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
+StartupReadinessCoordinator interrupted=create();Handler.until(4000);interrupted.noteExternalNavigation();check(!navigationDeferred,"user navigation stayed blocked");Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
 check(android.app.ActivityManager.moves==0&&Ts18LauncherApplication.shared.pauses==0,"user cancellation ignored");interrupted.destroy();
 StartupReadinessCoordinator playing=create();Ts18LauncherApplication.shared.musicPlaying=true;Handler.until(15000);
 check(AppResolver.launches==0,"playing music disrupted");playing.destroy();
@@ -181,6 +183,28 @@ StartupReadinessCoordinator diskFailure=create();android.content.SharedPreferenc
 check(AppResolver.launches==0&&StartupRootFallback.starts==0,"journal failure admitted Activity");diskFailure.destroy();
 StartupReadinessCoordinator noFocus=create(false);android.app.Activity.focused=false;noFocus.onHomeFocusChanged();
 check(!navigationDeferred&&navigationStarts==1,"ineligible media kept navigation reserved");noFocus.destroy();
+// Actual boot ordering: reserve Music before the HOME resume callback and let Maps
+// proceed after the short Activity handoff, without waiting for full library readiness.
+coldMusic=true;
+StartupReadinessCoordinator immediate=create(false);
+check(navigationDeferred&&navigationStarts==0,"Maps raced the pre-resume Music lease");
+android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);immediate.onHomeResumed(new android.app.Activity());};
+immediate.noteUserInteraction();Handler.until(800);
+check(StartupRootFallback.starts==1&&AppResolver.launches==0,"cold Music did not choose root immediately");
+check(StartupRootFallback.returns==1&&navigationStarts==1,"Music held Maps for library readiness");
+Ts18LauncherApplication.shared.musicReady=true;immediate.onProcessMediaStateChanged(null,null,true);Handler.until(1000);
+check(ledger(immediate).record(Source.MUSIC).state==State.READY&&StartupRootFallback.starts==1,"late readiness replayed Music Activity");immediate.destroy();
+StartupReadinessCoordinator unsupported=create(false);AuxioPreparationContract.capability=false;Handler.until(800);
+check(StartupRootFallback.starts==0&&AppResolver.launches==0&&navigationStarts==1,"old Auxio was automated or blocked Maps");unsupported.destroy();
+StartupReadinessCoordinator explicitPlay=create(false);
+android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);explicitPlay.onHomeResumed(new android.app.Activity());};
+Handler.until(200);Ts18LauncherApplication.shared.commands++;Ts18LauncherApplication.shared.musicReady=true;Ts18LauncherApplication.shared.musicPlaying=true;
+Handler.until(900);check(StartupRootFallback.returns==1&&ledger(explicitPlay).record(Source.MUSIC).state==State.ACTIVE&&Ts18LauncherApplication.shared.pauses==0,"live Play was cancelled or paused by preparation");explicitPlay.destroy();
+StartupReadinessCoordinator preDispatch=create(false);RootShell.afterProbe=preDispatch::noteExternalNavigation;Handler.until(800);
+check(StartupRootFallback.starts==0,"cancelled reservation dispatched a source");RootShell.afterProbe=()->{};
+android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);preDispatch.onHomeResumed(new android.app.Activity());};
+preDispatch.onHomeResumed(new android.app.Activity());Handler.until(3000);
+check(StartupRootFallback.starts==1&&StartupRootFallback.returns==1,"safe pre-dispatch cancellation blocked this boot: starts="+StartupRootFallback.starts+" returns="+StartupRootFallback.returns+" "+preDispatch.summary());preDispatch.destroy();coldMusic=false;
 System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
 }}
 '''

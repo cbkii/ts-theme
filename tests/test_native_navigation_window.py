@@ -123,7 +123,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
                 f"PATH={bin_dir}",
                 1,
             ).replace(
-                "ROOT_DIR=/data/adb/ts18-launcher",
+                "ROOT_DIR=${TS18_STATE_DIR:?launcher private runtime directory required}",
                 f"ROOT_DIR={helper_root}",
                 1,
             )
@@ -132,6 +132,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             test_helper.write_text(source, encoding="utf-8")
             environment = os.environ.copy()
             environment.update({
+                "TS18_METHOD": "N1",
+                "TS18_TRANSITION": "intent",
                 "FAKE_ACTIVITY_FILE": str(activity),
                 "FAKE_AM_HELP": help_text,
                 "FAKE_AM_HELP_EXIT": str(help_exit),

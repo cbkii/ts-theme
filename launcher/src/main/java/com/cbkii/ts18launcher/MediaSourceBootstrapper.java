@@ -149,8 +149,10 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
     }
 
     private long userCommandGeneration;
+    private String userCommandPackage = "";
 
     long userCommandGeneration() { return userCommandGeneration; }
+    String userCommandPackage() { return userCommandPackage; }
 
     // Main-looper-owned immutable observations. Readiness ticks never cross Binder.
     private final Map<String, StartupMediaObservation> startupObservations = new HashMap<>();
@@ -270,6 +272,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
     void command(String sourceLabel, String packageName, MediaListenerService.Command command,
                  ResultCallback callback) {
         userCommandGeneration++;
+        userCommandPackage = packageName == null ? "" : packageName;
         if (destroyed) {
             finishCallback(callback, false, "Launcher unavailable");
             return;
@@ -836,7 +839,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
             awaitAcknowledgement(controller, pending);
             return;
         }
-        if (!sendDesired(controller, pending.desired)) {
+        if (!sendPending(controller, pending)) {
             MediaEventTrace.record("command", "dispatch-rejected",
                     pending.packageName + " desired=" + pending.desired);
             mark(pending.packageName, MediaCommandPolicy.Phase.FAILED,
@@ -955,6 +958,21 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         }
         handler.postDelayed(() -> awaitOppositePause(opposite, pending, deadline),
                 Math.min(ACK_RETRY_MS, deadline - now));
+    }
+
+    private boolean sendPending(MediaController controller, Pending pending) {
+        if (MediaSourceAdapter.AUXIO_PACKAGE.equals(pending.packageName)
+                && pending.desired == MediaCommandPolicy.Desired.PLAY && AuxioPreparationContract.supported(context)) {
+            try {
+                Bundle extras = new Bundle();
+                extras.putInt("protocol", 1);
+                extras.putLong("deadline_elapsed_ms", SystemClock.elapsedRealtime()
+                        + Math.max(0L, pending.deadlineMs - SystemClock.uptimeMillis()));
+                controller.getTransportControls().sendCustomAction("org.oxycblt.auxio.action.HOME_PLAY_V1", extras);
+                return true;
+            } catch (RuntimeException rejected) { return false; }
+        }
+        return sendDesired(controller, pending.desired);
     }
 
     private static boolean sendDesired(MediaController controller, MediaCommandPolicy.Desired desired) {

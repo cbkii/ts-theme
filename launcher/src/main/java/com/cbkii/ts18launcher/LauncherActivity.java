@@ -98,6 +98,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         nativeNavigationPanel = new NativeNavigationPanel(this);
         root.addView(nativeNavigationPanel);
         navigationWindowController = new NavigationWindowController(this, nativeNavigationPanel);
+        navigationWindowController.setExplicitNavigationListener(() ->
+                StartupReadinessCoordinator.get(this).noteExternalNavigation());
         navigationWindowController.setStartupListener((ready, boundary) ->
                 StartupReadinessCoordinator.get(this).reportNavigation(ready, boundary));
         startupHook = new StartupReadinessCoordinator.NavigationHook() {
@@ -121,7 +123,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaText.setLongClickable(false);
         root.addView(mediaText);
         buildDate();
-        appDrawerPanel = new AppDrawerPanel(this, () -> root.post(this::updateMapVisibility));
+        appDrawerPanel = new AppDrawerPanel(this, () -> root.post(() -> {
+            if (hasWindowFocus()) StartupReadinessCoordinator.get(this).onHomeResumed(this);
+            updateMapVisibility();
+        }));
         root.addView(appDrawerPanel);
         appDrawerPanel.preload();
         updateMediaPresentation();
@@ -697,6 +702,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (appDrawerPanel.isOpen()) appDrawerPanel.hidePanel();
         else {
             MediaEventTrace.record("drawer", "open-request");
+            StartupReadinessCoordinator.get(this).noteExternalNavigation();
             if (mapPanel != null) mapPanel.stop();
             Runnable show = () -> {
                 if (isFinishing() || isDestroyed()) return;
@@ -799,6 +805,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void launchAfterNavigation(Runnable launch) {
+        StartupReadinessCoordinator.get(this).noteExternalNavigation();
         if (ExperimentalMapPolicy.enabled(this) || navigationWindowController == null) launch.run();
         else navigationWindowController.launchAfterSuspension(launch);
     }

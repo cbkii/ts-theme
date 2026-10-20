@@ -17,9 +17,15 @@ final class CompactStartupClient {
     static final class Snapshot {
         final boolean compatible, enabled, rendererReady;
         final int task;
+        final int width, height;
         Snapshot(boolean compatible, boolean enabled, boolean ready, int task) {
-            this.compatible = compatible; this.enabled = enabled; rendererReady = ready; this.task = task;
+            this(compatible, enabled, ready, task, -1, -1);
         }
+        Snapshot(boolean compatible, boolean enabled, boolean ready, int task, int width, int height) {
+            this.compatible = compatible; this.enabled = enabled; rendererReady = ready; this.task = task;
+            this.width = width; this.height = height;
+        }
+        boolean surfaceMatches(int width, int height) { return rendererReady && this.width == width && this.height == height; }
         static Snapshot unknown() { return new Snapshot(false, false, false, -1); }
     }
     private final Context context;
@@ -30,6 +36,8 @@ final class CompactStartupClient {
             });
     private final java.util.function.Consumer<Snapshot> callback;
     private final android.os.Messenger messenger;
+    private java.util.function.IntConsumer homeReturn = task -> { };
+    void setHomeReturnCallback(java.util.function.IntConsumer callback) { homeReturn = callback; }
     private boolean busy, closed, dirty;
     private int failures;
     private int request;
@@ -50,6 +58,21 @@ final class CompactStartupClient {
             CompactStartupClient client = owner.get();
             if (client != null && !client.closed && message.what == 1)
                 client.refreshFromPeer(message.sendingUid);
+            else if (client != null && !client.closed && message.what == 2)
+                client.returnHomeFromPeer(message.sendingUid, message.arg1, message.arg2);
+        }
+    }
+
+    private void returnHomeFromPeer(int uid, int task, int boot) {
+        if (closed || task <= 0 || boot < 0) return;
+        try {
+            worker.execute(() -> {
+                boolean trusted = CompactStartupPeer.trusted(context, uid)
+                        && boot == Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+                if (trusted) main.post(() -> { if (!closed) homeReturn.accept(task); });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException unavailable) {
+            MediaEventTrace.record("compact-startup", "return-auth-unavailable");
         }
     }
 
@@ -65,25 +88,13 @@ final class CompactStartupClient {
         }
     }
 
-    static void suppressForBoot(Context context) {
-        try {
-            int boot = Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
-            if (boot >= 0) context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE).edit()
-                    .putInt("compact_user_override_v1", boot).apply();
-        } catch (RuntimeException unavailable) {
-            MediaEventTrace.record("compact-startup", "override-journal-unavailable");
-        }
-    }
     static boolean automaticAllowed(Context context) {
         try {
             android.os.PowerManager power = (android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE);
             android.app.KeyguardManager keyguard = (android.app.KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
             android.media.AudioManager audio = (android.media.AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
             android.os.UserManager users = (android.os.UserManager) context.getSystemService(Context.USER_SERVICE);
-            int boot = Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
-            boolean suppressed = boot < 0 || context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE)
-                    .getInt("compact_user_override_v1", -1) == boot;
-            return !suppressed && android.os.Build.VERSION.SDK_INT == 29 && HomeMode.isDefaultHome(context)
+            return android.os.Build.VERSION.SDK_INT == 29 && HomeMode.isDefaultHome(context)
                     && power != null && power.isInteractive() && keyguard != null && !keyguard.isKeyguardLocked()
                     && users != null && users.isUserUnlocked() && audio != null && audio.getMode() == android.media.AudioManager.MODE_NORMAL;
         } catch (RuntimeException unavailable) { return false; }
@@ -132,13 +143,14 @@ final class CompactStartupClient {
                                 && number(c, "boot") == boot && number(c, "user") == AndroidUserId.current()
                                 && (boot + ":" + AndroidUserId.current() + ":1").equals(c.getString(c.getColumnIndexOrThrow("generation")))) {
                             MediaEventTrace.record("compact-startup", "evidence", "boot=" + boot
+                                    + " compatible=1 enabled=" + number(c, "enabled")
                                     + " task=" + number(c, "task") + " stage=" + c.getString(c.getColumnIndexOrThrow("stage"))
                                     + " native=" + number(c, "native") + " attached=" + number(c, "attached")
                                     + " size=" + number(c, "width") + "x" + number(c, "height")
                                     + " resumed=" + number(c, "resumed") + " renderer=" + number(c, "renderer_ready")
                                     + " at=" + SystemClock.elapsedRealtime());
                             result = new Snapshot(true, number(c, "enabled") == 1,
-                                    number(c, "renderer_ready") == 1, number(c, "task"));
+                                    number(c, "renderer_ready") == 1, number(c, "task"), number(c, "width"), number(c, "height"));
                         }
                     }
                 }

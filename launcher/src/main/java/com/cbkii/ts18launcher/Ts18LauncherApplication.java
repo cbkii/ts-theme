@@ -75,6 +75,7 @@ public final class Ts18LauncherApplication extends Application
 
     @Override public void onCreate() {
         super.onCreate();
+        if (HomeMode.isDefaultHome(this)) RootTaskSession.warm(this);
         NavigationPermissionBootstrapper.ensureEarly(this);
         MediaNotificationAccessBootstrapper.ensureEarly(this);
         ProcessMediaSessionMonitor.start(this);
@@ -93,6 +94,7 @@ public final class Ts18LauncherApplication extends Application
         wake.addAction(Intent.ACTION_USER_PRESENT);
         registerReceiver(wakeReceiver, wake);
         MediaEventTrace.record("process", "created");
+        MediaEventTrace.record("startup", "profile", TestingProfiles.summary(this));
         // Process (re)creation: classify against the persisted boot counter and reconcile.
         StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.RESTART);
     }

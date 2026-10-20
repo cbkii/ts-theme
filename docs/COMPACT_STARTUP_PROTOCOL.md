@@ -1,14 +1,13 @@
 # Organic Maps compact startup v1
 
-Outcome: `app.organicmaps.incar` owns the opt-in choice and renderer evidence;
+Outcome: `app.organicmaps.incar` owns the explicit startup choice and renderer evidence;
 `com.cbkii.ts18launcher` owns admission and compact task presentation on API29.
 This child builds on #24; the matching Maps child builds on #67. Neither parent
 stack is merged, rewritten or replaced.
 
 ## Active contract and implementation
 
-- First In-Car Settings toggle, default OFF. Existing installs have no key and
-  remain OFF; unrelated driving/camera/route preferences are untouched.
+- First In-Car Settings toggle defaults ON when the key is unset in the InCar product. A stored OFF remains OFF. Other products and unrelated driving/camera/route preferences are unchanged.
 - InCar-only read-only provider `app.organicmaps.incar.compact.startup/status`.
   Query parameters `v=1&boot=<Settings.Global.BOOT_COUNT>` are mandatory. The
   response binds protocol, package, boot, Android user, generation `boot:user:1`,
@@ -16,7 +15,7 @@ stack is merged, rewritten or replaced.
 - Both providers verify the actual Binder caller UID, same Android user, sole
   package owning that UID and the independently pinned release certificate.
   Package targeting alone is not authentication. No debug trust bypass, shared
-  UID, arbitrary command, task ID, rectangle or preference-write RPC exists.
+  UID, arbitrary command, rectangle or preference-write RPC exists. The authenticated observer supports one action-specific root-Back request carrying the Maps task and boot; the launcher independently verifies ownership before focusing its existing HOME task.
 - Pins: launcher certificate from signing run 38877410241; Maps certificate
   `40ad32351bf55902c617df2351a5761bb5e5462cc2f2ed268503082331139780`
   from publish job 116853941672, run 38863163942. A signer rotation requires a
@@ -49,27 +48,20 @@ admitting anything. An existing valid task is reused, even with opt-in OFF.
 
 Automatic cold admission additionally requires ON, compatible authenticated
 peer, current unlocked/interactive API29 HOME, normal Android audio mode,
-no recorded user override for the boot, and confirmed HOME window focus.
+no current external-navigation yield, and confirmed HOME window focus.
 Unknown/null focus yields; Android call state cannot prove the vendor video path.
 
 The original `launch-user-package-boot` atomic claim still protects every
 accepted/uncertain admission. A second `auto-v1-user-package-boot` directory is
 reserved atomically for automatic admission and **retained after task success**.
 Its identity includes schema, kernel boot ID, user, package and generation. Only
-a proven pre-admission refusal releases it. Launcher recreation, screen-on,
-package update and task loss cannot replay a previously accepted automatic cold
-start. Root paths remain private; no daemon or persistent OEM writer is added.
-If a truly lost task needs another admission in that boot, the user can choose
-explicit Retry/Open; an unresolved accepted claim still blocks a duplicate.
-User interaction suppresses further automatic cold admission for the boot,
-including after launcher process recreation. It does not close a valid task.
+a proven pre-admission refusal releases it. Launcher recreation, screen-on and package update cannot replay an accepted or uncertain admission. A recorded previously-ready process lifetime may recover once only after corroborated process death and fresh task absence. An unresolved initial claim or intentionally closed task in a live process remains protected. Runtime state is launcher-private, outside `/data/adb`. Ordinary HOME touches do not suppress startup for the boot; actual external navigation temporarily yields and a valid HOME return reconciles again.
 
-N1 requests direct mode 5. N2 normally admits once then converts the same task.
-Missing/explicitly refused direct launch options may select N2 + guarded bridge;
-an accepted/uncertain launch never selects a second admission. N2's journalled
-method is restored on delayed observation so the same-task handoff survives
-HOME stop. Current Testing methods still permit controlled N1/N2 comparisons.
-Neither method is physically preferred by these source changes.
+The selected launcher profile is N2 + bridge + fullscreen departure. Existing-task adoption precedes new admission. N2 admits through ordinary Splash/entry and converts the same verified task. Its journalled handoff survives HOME stop. No profile comparison or manual priming is required. Launcher and Maps candidates must be paired.
+
+Integrated root Back preserves the Maps task after transient and route handlers have had their normal opportunity. The provider sends Messenger `what=2`, task in `arg1`, boot in `arg2`, to the previously authenticated observer. Launcher authenticates sender UID and current boot off-main, then verifies exact task and foreground through its sole root owner. No callback creates HOME or bypasses protected foreground. If cooperation is unavailable, normal standalone Back remains available.
+
+The launcher reuses an inherited-pipe root bridge with bounded typed requests and idle exit; no listening socket, external service manager or persistent polling daemon is introduced. A fresh desired-presentation epoch supersedes old fullscreen/departure results. Fast task mutations await the current peer renderer and matching dimensions rather than treating dispatch as visible pixels.
 
 ## Application evidence and performance
 
@@ -85,7 +77,7 @@ size/resume/renderer state and elapsed time. Its ready state requires both the
 existing mode/bounds/WMS visibility verification and the peer's renderer-ready
 status for that exact task. This means software rendering eligibility; actual
 pixels, touch, offline data usefulness and GNSS fixes are separate physical gates.
-No startup timing target is invented. Compare boot videos with these monotonic
+Around three seconds is a soft product target; reliability and the fastest measured approach take priority. Compare boot videos with these monotonic
 stages; report median and slowest from separate comparable boot trials.
 
 ## Research and bounded decisions
@@ -111,12 +103,11 @@ Current supplied device documents are September snapshots; live HOME, package,
 root domain/namespace, signature and runtime capability require physical recheck.
 There is no qualified vendor ACC signal. SCREEN_ON stays an unverified wake hint;
 no invented vendor receiver or separate cold launch is added for it.
-Force-stopped/not-yet-opened packages must be manually opened once; no bypass is
-claimed. Disabled components, incompatible hosts and missing root fail open.
+The root owner may use ordinary Activity entry when current prerequisites and admission allow; no unconditional manual-launch prerequisite is imposed. Disabled components, incompatible hosts and missing root fail open. Device qualification must distinguish an Android reboot from package force-stop and first-run permission/resource gates.
 
 ## Validation and remaining gates
 
-Use `scripts/qualification/ts18-validate.sh guide`, menu **a**, Compact A0-A16.
+Use the matching ts-theme `scripts/qualification/ts18-validate.sh guide`, menu **a**, Compact A0-A16.
 Run A0-A2 smoke before long trials. P/F/N with optional comment is retained; the
 collector never installs, launches, reboots or fabricates a physical result.
 Historical embedded candidate rows remain comparison evidence; match the new
@@ -130,7 +121,7 @@ remain NOT_RUN until exact-device results arrive. A failed A0 should lead to a
 focused fix, not another full validation campaign.
 
 Observer registration is limited to the authenticated peer and boot, and accepts only a
-Messenger Binder for invalidation. Callbacks carry no state and their sending UID is checked;
+Messenger Binder for invalidation. Invalidations carry no renderer state; the action-specific Back message carries only task/boot and its sending UID is checked;
 there are no public renderer notifications. Provider authorities are resolved to the pinned
 package before querying/registering. Capability probes use a bounded two-worker pool with no
 queue. One stalled call leaves a second slot available; two stalled calls fail closed
@@ -141,15 +132,12 @@ The attempted optional PR17 archive could not read draft release assets with the
 workflow token (HTTP403). It is removed from source CI; no archive is claimed. The live
 managed draft also contains the immediate-parent PR24-96c128d signed candidate, APK SHA-256
 `c7a53fa0ecc9d1876f10c64a38210b9d508d14c5538715c83399b10d6e37c590`.
-The first PR26-c9d758e snapshot retained that parent and rotated older PR17 under the
-existing authorised TESTING policy. Subsequent qualified PR26 snapshots retain their
-immediate predecessor (c9d758e) as rollback under that same two-snapshot policy. No
+The existing two-snapshot publisher retains that immediate-parent rollback when adding PR26;
+the older PR17 snapshot rotates out under the existing authorised TESTING policy. No
 publisher, signing permission or retention-policy change is required. PR24 remains a
 rollback candidate, not a physically qualified cold-start success.
 
-User suppression is immediate in memory with Android's normal lifecycle-flushed preference
-write; abrupt kill before that flush is unqualified. Accepted/uncertain Activity admission
-remains protected by the durable root claim.
+User yield is temporary and action-scoped. Accepted/uncertain Activity admission remains protected by the durable root claim.
 
 ## Resume hardening
 
@@ -170,14 +158,6 @@ Android Check on Maps f71a3aa compiled arm64 and passed lint, then exhausted the
 2 GiB Java heap while merging x86 debug resources. The x86 packaging invocation now uses
 a 4 GiB heap and two Gradle workers; canonical final-head CI must verify the change.
 
-A slow provider can recover after the initial query failures. Failed IPC observations now
-continue with bounded backoff (at most three seconds) until the 45-second startup deadline,
-rather than stopping after three failures. The non-queued worker cap remains two, and this
-never grants another Activity admission. A production-client regression blocks both calls,
-advances through saturation, releases the provider, and verifies a fresh query within the
-same observation window.
+## Current execution record
 
-Yielded completion clears the N2 bootstrap flag and retains the helper's validated task
-identity before suppressing presentation. This also applies before serving a queued explicit
-action. A regression verifies N2 completion remains unpresented until a later HOME return,
-then reuses that same accepted task without a second acquisition.
+See [automatic preparation execution](AUTOMATIC_STARTUP_2026-10-20.md) for source pins, host checks, v2 kit and remaining physical gates.

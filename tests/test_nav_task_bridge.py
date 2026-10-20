@@ -14,8 +14,9 @@ SOURCE = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavTaskBridge.jav
 STUBS = {
     "android/annotation/SuppressLint.java": "package android.annotation; public @interface SuppressLint { String[] value(); }",
     "android/os/Build.java": "package android.os; public class Build { public static class VERSION { public static int SDK_INT=29; }}",
+    "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long elapsedRealtime(){return 1000;}}",
     "android/os/Process.java": "package android.os; public class Process { public static int myUid(){return 0;} }",
-    "android/graphics/Rect.java": "package android.graphics; public class Rect { public int left=0,top=141,right=1131,bottom=702; }",
+    "android/graphics/Rect.java": "package android.graphics; public class Rect { public int left=0,top=141,right=1131,bottom=702; public Rect(){} public Rect(int l,int t,int r,int b){left=l;top=t;right=r;bottom=b;} public boolean isEmpty(){return left>=right||top>=bottom;} }",
     "android/content/ComponentName.java": '''package android.content;
 public class ComponentName {
  private final String text; private ComponentName(String s){text=s;}
