@@ -1,5 +1,7 @@
 name: Publish Testing APK Draft
 
+# The note writer uses immutable BUILD_INFO, SHA256SUMS and actual asset URLs.
+
 on:
   workflow_call:
     inputs:
@@ -60,6 +62,14 @@ jobs:
           run-id: ${{ inputs.artifact_run_id }}
           github-token: ${{ github.token }}
 
+      - name: Checkout trusted release-note reconciler
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.repository.default_branch || 'main' }}
+          path: publisher-tools
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Validate minimal hand-off envelope
         shell: bash
         env:
@@ -113,6 +123,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           SOURCE_RUN_ID: ${{ inputs.artifact_run_id }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test -n "$KEYSTORE_PASSWORD"
@@ -175,6 +186,332 @@ jobs:
           signer_asset=$signer_name
           checksums_asset=$sums_name
           INFO
+
+          # Freeze a bounded source-SHA-specific change summary inside BUILD_INFO.
+          # This runs in the trusted publisher, not in the source checkout.
+          printf 'notes_schema_version=2\n' >> "outgoing/$info_name"
+          change_summary="$RUNNER_TEMP/testing-change-summary.txt"
+          : > "$change_summary"
+          base_sha="$(value pr_base_sha)"
+          if [[ "$base_sha" =~ ^[0-9a-f]{40}$ && "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+            comparison="$RUNNER_TEMP/testing-snapshot-compare.json"
+            if gh api "repos/$GITHUB_REPOSITORY/compare/$base_sha...$source_sha" > "$comparison" 2>/dev/null; then
+              if jq -e '(.status == "ahead") and (.behind_by == 0) and (.total_commits > 0) and (.total_commits <= 60)' "$comparison" >/dev/null; then
+                jq -r '.commits[-6:][] | .commit.message | split("\\n")[0] | gsub("[\\r\\n=]"; " ") | .[0:180]' "$comparison" \\
+                  | grep -v '^
+            sha256sum "$install_name" "$debug_name" "$info_name" "$signer_name" > "$sums_name"
+            sha256sum -c "$sums_name"
+          )
+
+          printf 'group_id=%s\n' "$group_id" >> "$GITHUB_OUTPUT"
+          printf 'install_name=%s\n' "$install_name" >> "$GITHUB_OUTPUT"
+          printf 'debug_name=%s\n' "$debug_name" >> "$GITHUB_OUTPUT"
+          printf 'info_name=%s\n' "$info_name" >> "$GITHUB_OUTPUT"
+          printf 'signer_name=%s\n' "$signer_name" >> "$GITHUB_OUTPUT"
+          printf 'sums_name=%s\n' "$sums_name" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh fixed draft and retain two snapshots
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GROUP_ID: ${{ steps.assets.outputs.group_id }}
+          INSTALL_NAME: ${{ steps.assets.outputs.install_name }}
+          DEBUG_NAME: ${{ steps.assets.outputs.debug_name }}
+          INFO_NAME: ${{ steps.assets.outputs.info_name }}
+          SIGNER_NAME: ${{ steps.assets.outputs.signer_name }}
+          SUMS_NAME: ${{ steps.assets.outputs.sums_name }}
+        run: |
+          set -euo pipefail
+
+          api_read() {
+            local attempt
+            for attempt in 1 2 3; do
+              if gh api "$@"; then
+                return 0
+              fi
+              (( attempt < 3 )) || return 1
+              sleep $((attempt * 2))
+            done
+          }
+
+          release_assets_json() {
+            api_read "repos/$GITHUB_REPOSITORY/releases/$1/assets?per_page=100"
+          }
+
+          asset_is_uploaded() {
+            local json="$1" name="$2"
+            jq -e --arg name "$name" '.[] | select(.name == $name and .state == "uploaded" and .size > 0)' "$json" >/dev/null
+          }
+
+          delete_asset_by_name() {
+            local release_id="$1" name="$2" asset_id
+            asset_id="$(release_assets_json "$release_id" | jq -r --arg name "$name" '.[] | select(.name == $name) | .id' | head -n 1)"
+            [[ -n "$asset_id" ]] || return 0
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" >/dev/null || {
+              if release_assets_json "$release_id" | jq -e --arg name "$name" '.[] | select(.name == $name)' >/dev/null; then
+                echo "::error::Could not remove existing asset '$name'."
+                return 1
+              fi
+            }
+          }
+
+          group_names() {
+            local group_id="$1"
+            if [[ "$group_id" == LEGACY ]]; then
+              printf '%s\n' \
+                TS18-Standalone-Launcher-TESTING.apk \
+                TS18-Standalone-Launcher-DEBUG.apk \
+                BUILD_INFO.txt \
+                SIGNER.txt \
+                SHA256SUMS.txt
+            else
+              printf '%s\n' \
+                "TS18-Standalone-Launcher-TESTING-${group_id}.apk" \
+                "TS18-Standalone-Launcher-DEBUG-${group_id}.apk" \
+                "BUILD_INFO-${group_id}.txt" \
+                "SIGNER-${group_id}.txt" \
+                "SHA256SUMS-${group_id}.txt"
+            fi
+          }
+
+          delete_group() {
+            local release_id="$1" group_id="$2" name
+            while IFS= read -r name; do
+              delete_asset_by_name "$release_id" "$name"
+            done < <(group_names "$group_id")
+          }
+
+          group_complete() {
+            local json="$1" group_id="$2" name
+            while IFS= read -r name; do
+              asset_is_uploaded "$json" "$name" || return 1
+            done < <(group_names "$group_id")
+          }
+
+          upload_asset() {
+            local release_id="$1" path="$2" name content_type attempt response existing
+            name="$(basename "$path")"
+            case "$name" in
+              *.apk) content_type="application/vnd.android.package-archive" ;;
+              *) content_type="text/plain" ;;
+            esac
+            response="$RUNNER_TEMP/upload-$name.json"
+
+            for attempt in 1 2; do
+              existing="$(release_assets_json "$release_id" | jq -r --arg name "$name" '.[] | select(.name == $name and .state == "uploaded" and .size > 0) | .id' | head -n 1)"
+              [[ -z "$existing" ]] || return 0
+
+              if curl --fail-with-body --silent --show-error --location \
+                  --request POST \
+                  --header "Accept: application/vnd.github+json" \
+                  --header "Authorization: Bearer $GH_TOKEN" \
+                  --header "X-GitHub-Api-Version: 2022-11-28" \
+                  --header "Content-Type: $content_type" \
+                  --data-binary "@$path" \
+                  "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" \
+                  > "$response"; then
+                jq -e --arg name "$name" '.name == $name and .state == "uploaded" and .size > 0' "$response" >/dev/null
+                return 0
+              fi
+
+              sleep $((attempt * 2))
+              existing="$(release_assets_json "$release_id" | jq -r --arg name "$name" '.[] | select(.name == $name and .state == "uploaded" and .size > 0) | .id' | head -n 1)"
+              [[ -z "$existing" ]] || return 0
+            done
+            echo "::error::Failed to upload '$name' after bounded retry."
+            return 1
+          }
+
+          download_text_asset() {
+            local asset_id="$1" output="$2"
+            curl --fail --silent --show-error --location \
+              --header "Accept: application/octet-stream" \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+              --output "$output"
+          }
+
+          field() {
+            local file="$1" key="$2"
+            sed -n "s/^$key=//p" "$file" | head -n 1
+          }
+
+          markdown_escape() {
+            local text="${1:-}"
+            text="${text//$'\n'/ }"
+            text="${text//$'\r'/ }"
+            text="${text//|/\\|}"
+            printf '%s' "$text"
+          }
+
+          commit_link() {
+            local sha="$1" url
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 0
+            url="$(api_read "repos/$GITHUB_REPOSITORY/commits/$sha" --jq .html_url 2>/dev/null || true)"
+            [[ -n "$url" ]] || url="https://github.com/$GITHUB_REPOSITORY/commit/$sha"
+            printf '[`%s`](%s)' "${sha:0:7}" "$url"
+          }
+
+          release_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\" and (.body // \"\" | contains(\"$MANAGED_MARKER\"))) | [.updated_at, .id] | @tsv" \
+            | sort -r | head -n 1 | cut -f2)"
+
+          if [[ -z "$release_id" ]]; then
+            release_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\") | [.updated_at, .id] | @tsv" \
+              | sort -r | head -n 1 | cut -f2)"
+          fi
+
+          bootstrap_body="$RUNNER_TEMP/testing-draft-bootstrap.md"
+          cat > "$bootstrap_body" <<BODY
+          $MANAGED_MARKER
+          **TESTING ONLY.** Development snapshots for exact-device validation. Do not publish this draft as a production release.
+          BODY
+
+          if [[ -z "$release_id" ]]; then
+            release_id="$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TEST_RELEASE_TAG" \
+              -f target_commitish="${{ github.event.repository.default_branch || 'main' }}" \
+              -f name="$TEST_RELEASE_TITLE" \
+              --raw-field body="$(cat "$bootstrap_body")" \
+              -F draft=true \
+              -F prerelease=false \
+              -f make_latest=false \
+              --jq .id)"
+          fi
+
+          state="$(api_read "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq '[.draft, .name] | @tsv')"
+          [[ "$state" == $'true\t'"$TEST_RELEASE_TITLE" ]] || {
+            echo "::error::Testing release is not the required draft/title before asset refresh: $state"
+            exit 1
+          }
+
+          assets_json="$RUNNER_TEMP/testing-assets.json"
+          release_assets_json "$release_id" > "$assets_json"
+
+          # Recover from interrupted prior publications before selecting retained
+          # snapshots. BUILD_INFO is the commit marker for a snapshot group;
+          # incomplete groups and orphaned pre-marker assets are deleted.
+          declare -A candidate_groups=()
+          mapfile -t existing_names < <(jq -r '.[].name' "$assets_json")
+          legacy_seen=false
+          for name in "${existing_names[@]}"; do
+            group=''
+            case "$name" in
+              TS18-Standalone-Launcher-TESTING.apk|TS18-Standalone-Launcher-DEBUG.apk|BUILD_INFO.txt|SIGNER.txt|SHA256SUMS.txt)
+                legacy_seen=true
+                ;;
+              TS18-Standalone-Launcher-TESTING-*.apk)
+                group="${name#TS18-Standalone-Launcher-TESTING-}"
+                group="${group%.apk}"
+                ;;
+              TS18-Standalone-Launcher-DEBUG-*.apk)
+                group="${name#TS18-Standalone-Launcher-DEBUG-}"
+                group="${group%.apk}"
+                ;;
+              BUILD_INFO-*.txt)
+                group="${name#BUILD_INFO-}"
+                group="${group%.txt}"
+                ;;
+              SIGNER-*.txt)
+                group="${name#SIGNER-}"
+                group="${group%.txt}"
+                ;;
+              SHA256SUMS-*.txt)
+                group="${name#SHA256SUMS-}"
+                group="${group%.txt}"
+                ;;
+            esac
+            if [[ "$group" =~ ^(PR[1-9][0-9]*-[0-9a-f]{7}|SHA-[0-9a-f]{7})$ ]]; then
+              candidate_groups["$group"]=1
+            fi
+          done
+
+          if [[ "$legacy_seen" == true ]] && ! group_complete "$assets_json" LEGACY; then
+            echo "Removing incomplete legacy TESTING asset group from an interrupted publication."
+            delete_group "$release_id" LEGACY
+          fi
+          for group in "${!candidate_groups[@]}"; do
+            if ! group_complete "$assets_json" "$group"; then
+              echo "Removing incomplete TESTING asset group '$group' from an interrupted publication."
+              delete_group "$release_id" "$group"
+            fi
+          done
+
+          release_assets_json "$release_id" > "$assets_json"
+
+          # Re-running one snapshot replaces only that group. Upload BUILD_INFO
+          # last so it acts as the visible commit marker after the other four
+          # assets have arrived successfully.
+          delete_group "$release_id" "$GROUP_ID"
+          upload_asset "$release_id" "outgoing/$INSTALL_NAME"
+          upload_asset "$release_id" "outgoing/$DEBUG_NAME"
+          upload_asset "$release_id" "outgoing/$SIGNER_NAME"
+          upload_asset "$release_id" "outgoing/$SUMS_NAME"
+          upload_asset "$release_id" "outgoing/$INFO_NAME"
+
+          release_assets_json "$release_id" > "$assets_json"
+          group_complete "$assets_json" "$GROUP_ID" || {
+            echo "::error::New TESTING snapshot '$GROUP_ID' is incomplete after upload."
+            exit 1
+          }
+
+          # BUILD_INFO assets now represent only complete groups. Keep the two
+          # newest groups and prune only older workflow-managed snapshots.
+          mapfile -t groups < <(
+            jq -r '.[]
+              | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[1-9][0-9]*-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))
+              | [.created_at, .name] | @tsv' "$assets_json" | sort -r
+          )
+
+          for entry in "${groups[@]:2}"; do
+            metadata_name="${entry#*$'\t'}"
+            if [[ "$metadata_name" == 'BUILD_INFO.txt' ]]; then
+              delete_group "$release_id" LEGACY
+            else
+              stale_group="${metadata_name#BUILD_INFO-}"
+              stale_group="${stale_group%.txt}"
+              delete_group "$release_id" "$stale_group"
+            fi
+          done
+
+          release_assets_json "$release_id" > "$assets_json"
+          mapfile -t retained < <(
+            jq -r '.[]
+              | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[1-9][0-9]*-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))
+              | [.created_at, .name, .id] | @tsv' "$assets_json" | sort -r | head -n 2
+          )
+          ((${#retained[@]} >= 1 && ${#retained[@]} <= 2)) || {
+            echo "::error::Expected one or two retained TESTING snapshot groups; found ${#retained[@]}."
+            exit 1
+          }
+
+          # Reconcile only the anchored portion of the draft from the uploaded
+          # BUILD_INFO and SHA256SUMS assets; a failed read-back fails publishing.
+          python3 publisher-tools/scripts/ci/reconcile_testing_release.py \\
+            --release-id "$release_id" --expected-group "$GROUP_ID"
+
+          mapfile -t managed_duplicates < <(
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq ".[] | select(.draft == true and .name == \"$TEST_RELEASE_TITLE\" and (.body // \"\" | contains(\"$MANAGED_MARKER\")) and .id != $release_id) | .id"
+          )
+          for duplicate_id in "${managed_duplicates[@]}"; do
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$duplicate_id" >/dev/null
+          done
+
+          echo "TESTING draft refreshed with snapshot $GROUP_ID; newest two complete snapshot groups are retained."
+ > "$change_summary" || true
+              fi
+            fi
+          fi
+          if [[ ! -s "$change_summary" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/commits/$source_sha" \\
+              --jq '.commit.message | split("\\n")[0] | gsub("[\\r\\n=]"; " ") | .[0:180]' \\
+              > "$change_summary"
+          fi
+          awk 'NF { printf "change_%d=%s\\n", ++n, $0; if (n == 6) exit }' \\
+            "$change_summary" >> "outgoing/$info_name"
 
           (
             cd outgoing
