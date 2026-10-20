@@ -26,13 +26,15 @@ final class ShortcutEditorView extends LinearLayout {
     }
 
     private final Activity activity;
+    private final AppearanceDialogs dialogs;
     private final boolean drawer;
     private final int index;
     private final Runnable refresh;
 
-    ShortcutEditorView(Activity activity, boolean drawer, int index, Runnable refresh) {
+    ShortcutEditorView(SettingsActivity activity, boolean drawer, int index, Runnable refresh) {
         super(activity);
         this.activity = activity;
+        this.dialogs = activity.appearanceDialogs();
         this.drawer = drawer;
         this.index = index;
         this.refresh = refresh;
@@ -122,7 +124,7 @@ final class ShortcutEditorView extends LinearLayout {
     }
 
     private void chooseTarget() {
-        new AlertDialog.Builder(activity)
+        dialogs.builder()
                 .setTitle((drawer ? "Drawer shortcut " : "Sidebar shortcut ") + (index + 1) + " app")
                 .setItems(new String[] {"Choose app", "Use default", "Change default type"}, (dialog, which) -> {
                     if (which == 0) {
@@ -139,7 +141,7 @@ final class ShortcutEditorView extends LinearLayout {
 
     private void chooseRole() {
         String current = role();
-        new AlertDialog.Builder(activity).setTitle("Choose default shortcut")
+        dialogs.builder().setTitle("Choose default shortcut")
                 .setSingleChoiceItems(RoleIconCatalog.LABELS, indexOf(RoleIconCatalog.VALUES, current), (dialog, which) -> {
                     if (drawer) ShortcutSlot.chooseRole(activity, LauncherPrefs.DRAWER_ROLE_KEYS[index],
                             LauncherPrefs.DRAWER_QUICK_KEYS[index], RoleIconCatalog.VALUES[which]);
@@ -159,14 +161,15 @@ final class ShortcutEditorView extends LinearLayout {
         grid.setPadding(gap, gap, gap, gap);
         ScrollView scroll = new ScrollView(activity);
         scroll.addView(grid);
-        AlertDialog dialog = new AlertDialog.Builder(activity).setTitle("Choose icon")
+        AlertDialog dialog = dialogs.builder().setTitle("Choose icon")
                 .setView(scroll).setNegativeButton("Cancel", null).create();
         for (String value : SlotIconCatalog.VALUES) {
             ImageButton tile = new ImageButton(activity);
             PreviewIcon preview = SlotIconCatalog.AUTO.equals(value)
                     ? targetPreview(packageKey(), role()) : resourcePreview(SlotIconCatalog.icon(value));
             tile.setImageDrawable(preview.drawable);
-            if (preview.tint) tile.setColorFilter(AccentPalette.color(activity, false));
+            tile.setTag(preview.tint);
+            if (preview.tint) tile.setColorFilter(AutomotiveUi.accentForeground(activity));
             tile.setContentDescription(SlotIconCatalog.label(value));
             tile.setTooltipText(SlotIconCatalog.label(value));
             tile.setSelected(value.equals(current));
@@ -188,6 +191,15 @@ final class ShortcutEditorView extends LinearLayout {
                 refresh.run();
             });
         }
+        dialogs.bind(dialog, () -> {
+            for (int i = 0; i < grid.getChildCount(); i++) {
+                ImageButton tile = (ImageButton) grid.getChildAt(i);
+                tile.setBackground(AutomotiveUi.followModeBackground(activity));
+                if (Boolean.TRUE.equals(tile.getTag()))
+                    tile.setColorFilter(AutomotiveUi.accentForeground(activity));
+                else tile.clearColorFilter();
+            }
+        });
         dialog.show();
     }
 
@@ -202,7 +214,8 @@ final class ShortcutEditorView extends LinearLayout {
     private TextView text(String value, int dimenId, int colorId) {
         TextView view = new TextView(activity);
         view.setText(value);
-        view.setTextColor(AutomotiveUi.color(activity, colorId));
+        view.setTextColor(colorId == R.color.ui_accent ? AutomotiveUi.accentForeground(activity)
+                : AutomotiveUi.color(activity, colorId));
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, activity.getResources().getDimension(dimenId));
         view.setPadding(0, 4, 0, 4);
         return view;

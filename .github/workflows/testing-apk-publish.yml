@@ -60,6 +60,14 @@ jobs:
           run-id: ${{ inputs.artifact_run_id }}
           github-token: ${{ github.token }}
 
+      - name: Checkout trusted release-note reconciler
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.repository.default_branch || 'main' }}
+          path: publisher-tools
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Validate minimal hand-off envelope
         shell: bash
         env:
@@ -113,6 +121,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           SOURCE_RUN_ID: ${{ inputs.artifact_run_id }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test -n "$KEYSTORE_PASSWORD"
@@ -175,6 +184,29 @@ jobs:
           signer_asset=$signer_name
           checksums_asset=$sums_name
           INFO
+
+          # Freeze bounded commit highlights relative to the recorded base into
+          # the same metadata asset, before the SHA256SUMS snapshot is sealed.
+          printf 'notes_schema_version=2\n' >> "outgoing/$info_name"
+          changes="$RUNNER_TEMP/testing-change-summary.txt"
+          : > "$changes"
+          base_sha="$(value pr_base_sha)"
+          if [[ "$base_sha" =~ ^[0-9a-f]{40}$ && "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+            comparison="$RUNNER_TEMP/testing-snapshot-compare.json"
+            if gh api "repos/$GITHUB_REPOSITORY/compare/$base_sha...$source_sha" > "$comparison" 2>/dev/null; then
+              if jq -e '(.status == "ahead") and (.behind_by == 0) and (.total_commits > 0) and (.total_commits <= 60)' "$comparison" >/dev/null; then
+                jq -r '.commits[-6:][] | .commit.message | split("\n")[0] | gsub("[\r\n=]"; " ") | .[0:180]' "$comparison" \
+                  | grep -v '^$' > "$changes" || true
+              fi
+            fi
+          fi
+          if [[ ! -s "$changes" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/commits/$source_sha" \
+              --jq '.commit.message | split("\n")[0] | gsub("[\r\n=]"; " ") | .[0:180]' \
+              > "$changes"
+          fi
+          awk 'NF { printf "change_%d=%s\n", ++n, $0; if (n == 6) exit }' \
+            "$changes" >> "outgoing/$info_name"
 
           (
             cd outgoing
@@ -466,184 +498,10 @@ jobs:
             exit 1
           }
 
-          body="$RUNNER_TEMP/testing-release-body.md"
-          details="$RUNNER_TEMP/testing-release-details.md"
-          : > "$details"
-          cat > "$body" <<BODY
-          $MANAGED_MARKER
-          **TESTING ONLY.** These are development snapshots for physical/engineering validation. They are not production releases and the newest snapshot is not necessarily the safest one.
-
-          Both retained snapshots intentionally use Android versionName 0.0.0-testing and versionCode 999999, so TESTING builds remain in the same reinstall/update lane.
-
-          ## Current TESTING builds
-
-          | Snapshot | Install | Debug | Source | Built |
-          | --- | --- | --- | --- | --- |
-          BODY
-
-          index=0
-          for entry in "${retained[@]}"; do
-            ((index += 1))
-            created_at="${entry%%$'\t'*}"
-            rest="${entry#*$'\t'}"
-            metadata_name="${rest%%$'\t'*}"
-            metadata_id="${rest##*$'\t'}"
-            info="$RUNNER_TEMP/retained-$index.txt"
-            download_text_asset "$metadata_id" "$info"
-
-            group_id="$(field "$info" group_id)"
-            [[ -n "$group_id" ]] || group_id='LEGACY'
-            install_name="$(field "$info" install_asset)"
-            debug_name="$(field "$info" debug_asset)"
-            [[ -n "$install_name" ]] || install_name='TS18-Standalone-Launcher-TESTING.apk'
-            [[ -n "$debug_name" ]] || debug_name='TS18-Standalone-Launcher-DEBUG.apk'
-            signer_name="$(field "$info" signer_asset)"
-            sums_name="$(field "$info" checksums_asset)"
-            [[ -n "$signer_name" ]] || signer_name='SIGNER.txt'
-            [[ -n "$sums_name" ]] || sums_name='SHA256SUMS.txt'
-
-            if ! group_complete "$assets_json" "$group_id"; then
-              echo "::error::Retained TESTING group '$group_id' became incomplete before release-note generation."
-              exit 1
-            fi
-
-            install_url="$(jq -r --arg name "$install_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
-            debug_url="$(jq -r --arg name "$debug_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
-            metadata_url="$(jq -r --arg name "$metadata_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
-            signer_url="$(jq -r --arg name "$signer_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
-            sums_url="$(jq -r --arg name "$sums_name" '.[] | select(.name == $name) | .browser_download_url' "$assets_json" | head -n 1)"
-            for url in "$install_url" "$debug_url" "$metadata_url" "$signer_url" "$sums_url"; do
-              [[ -n "$url" && "$url" != null ]] || {
-                echo "::error::Retained TESTING group '$group_id' has a missing release asset URL."
-                exit 1
-              }
-            done
-
-            source_kind="$(field "$info" source_kind)"
-            requested_source="$(field "$info" requested_source)"
-            [[ -n "$requested_source" ]] || requested_source="$(field "$info" requested_ref)"
-            source_sha="$(field "$info" source_sha)"
-            built_sha="$(field "$info" built_sha)"
-            source_ref="$(field "$info" source_ref)"
-            pr_number="$(field "$info" pr_number)"
-            pr_head_sha="$(field "$info" pr_head_sha)"
-            pr_base_ref="$(field "$info" pr_base_ref)"
-            pr_base_sha="$(field "$info" pr_base_sha)"
-            trigger_type="$(field "$info" trigger_type)"
-            trigger_actor="$(field "$info" trigger_actor)"
-            build_run_id="$(field "$info" build_run_id)"
-            [[ -n "$build_run_id" ]] || build_run_id="$(field "$info" validate_run_id)"
-            build_run_number="$(field "$info" build_run_number)"
-            [[ -n "$build_run_number" ]] || build_run_number="$(field "$info" validate_run_number)"
-            build_run_url="$(field "$info" build_run_url)"
-            [[ -n "$build_run_url" || -z "$build_run_id" ]] || build_run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$build_run_id"
-            published_at="$(field "$info" published_at)"
-            [[ -n "$published_at" ]] || published_at="$created_at"
-
-            source_summary=''
-            detail_title="$group_id"
-            if [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
-              pr_json="$RUNNER_TEMP/pr-$pr_number.json"
-              if api_read "repos/$GITHUB_REPOSITORY/pulls/$pr_number" > "$pr_json" 2>/dev/null; then
-                pr_title="$(markdown_escape "$(jq -r .title "$pr_json")")"
-                pr_url="$(jq -r .html_url "$pr_json")"
-                pr_state="$(jq -r .state "$pr_json")"
-                current_head_sha="$(jq -r .head.sha "$pr_json")"
-                current_head_ref="$(jq -r .head.ref "$pr_json")"
-                current_base_sha="$(jq -r .base.sha "$pr_json")"
-                current_base_ref="$(jq -r .base.ref "$pr_json")"
-                [[ -n "$pr_head_sha" ]] || pr_head_sha="$source_sha"
-                [[ -n "$pr_base_ref" ]] || pr_base_ref="$current_base_ref"
-                [[ -n "$pr_base_sha" ]] || pr_base_sha="$current_base_sha"
-                detail_title="PR #$pr_number - $pr_title"
-                source_summary="[PR #$pr_number]($pr_url) $pr_title"
-                if [[ "$current_head_sha" != "$pr_head_sha" ]]; then
-                  source_summary+="<br>snapshot head $(commit_link "$pr_head_sha"); current head $(commit_link "$current_head_sha")"
-                else
-                  source_summary+="<br>head $(commit_link "$pr_head_sha")"
-                fi
-              else
-                source_summary="PR #$pr_number snapshot head $(commit_link "${pr_head_sha:-$source_sha}")"
-                pr_state='unavailable'
-                current_head_ref=''
-              fi
-            else
-              source_label="$(markdown_escape "${requested_source:-${source_ref:-$source_kind}}")"
-              source_summary="${source_label:-manual source}<br>source $(commit_link "$source_sha")"
-              pr_state=''
-              current_head_ref=''
-            fi
-
-            built_summary="$(commit_link "$built_sha")"
-            if [[ -n "$source_sha" && "$source_sha" != "$built_sha" ]]; then
-              built_summary="source $(commit_link "$source_sha")<br>built tree $(commit_link "$built_sha")"
-            fi
-
-            printf '| `%s` | [TESTING APK](%s) | [DEBUG APK](%s) | %s | %s |\n' \
-              "$group_id" "$install_url" "$debug_url" "$source_summary" "$built_summary" >> "$body"
-
-            {
-              printf '\n### %d. %s\n\n' "$index" "$detail_title"
-              printf -- '- **Install:** [%s](%s)\n' "$install_name" "$install_url"
-              printf -- '- **Debug:** [%s](%s)\n' "$debug_name" "$debug_url"
-              if [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
-                printf -- '- **PR snapshot:** #%s, state `%s`, head `%s` at %s\n' \
-                  "$pr_number" "$pr_state" "${source_ref:-$current_head_ref}" "$(commit_link "${pr_head_sha:-$source_sha}")"
-                [[ -z "$pr_base_ref" ]] || printf -- '- **Base at request:** `%s` at %s\n' "$pr_base_ref" "$(commit_link "$pr_base_sha")"
-                if [[ -n "${current_head_sha:-}" && "$current_head_sha" != "${pr_head_sha:-$source_sha}" ]]; then
-                  printf -- '- **Current PR head:** `%s` at %s (the PR moved after this snapshot)\n' "$current_head_ref" "$(commit_link "$current_head_sha")"
-                fi
-              else
-                printf -- '- **Requested source:** `%s`\n' "$(markdown_escape "$requested_source")"
-                printf -- '- **Resolved source:** %s\n' "$(commit_link "$source_sha")"
-              fi
-              if [[ "$source_sha" != "$built_sha" ]]; then
-                printf -- '- **Built SHA:** %s. This differs from the recorded source/head SHA above; the two identities are intentionally reported separately.\n' "$(commit_link "$built_sha")"
-              else
-                printf -- '- **Built SHA:** %s\n' "$(commit_link "$built_sha")"
-              fi
-              printf -- '- **Trigger:** `%s`' "${trigger_type:-legacy-validate}"
-              [[ -z "$trigger_actor" ]] || printf ' by `@%s`' "$(markdown_escape "$trigger_actor")"
-              printf '\n'
-              if [[ -n "$build_run_url" ]]; then
-                printf -- '- **Build workflow:** [run %s](%s)\n' "${build_run_number:-$build_run_id}" "$build_run_url"
-              fi
-              printf -- '- **Published:** `%s`\n' "$published_at"
-              printf -- '- **Metadata:** [BUILD_INFO](%s) · [SHA256SUMS](%s) · [SIGNER](%s)\n' \
-                "$metadata_url" "$sums_url" "$signer_url"
-            } >> "$details"
-          done
-
-          cat >> "$body" <<'BODY'
-
-          The rows above are separate points in development and may come from different PRs or commits. Use the PR/head/built SHA details to match an APK to the physical test you are performing.
-          BODY
-          cat "$details" >> "$body"
-          cat >> "$body" <<BODY
-
-          ---
-          Managed by **Refresh Testing APK Draft**. Publisher run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
-          BODY
-
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
-            -f name="$TEST_RELEASE_TITLE" \
-            --raw-field body="$(cat "$body")" \
-            -F draft=true \
-            -F prerelease=false \
-            -f make_latest=false >/dev/null
-
-          final="$(api_read "repos/$GITHUB_REPOSITORY/releases/$release_id")"
-          [[ "$(jq -r .draft <<<"$final")" == true ]]
-          [[ "$(jq -r .name <<<"$final")" == "$TEST_RELEASE_TITLE" ]]
-          jq -e --arg marker "$MANAGED_MARKER" '(.body // "") | contains($marker)' <<<"$final" >/dev/null
-          jq -e --arg name "$INFO_NAME" '.assets[] | select(.name == $name and .state == "uploaded" and .size > 0)' <<<"$final" >/dev/null
-          ! grep -Fq '](null)' <<<"$(jq -r .body <<<"$final")"
-
-          retained_count="$(jq -r '[.assets[] | select(.name == "BUILD_INFO.txt" or (.name | test("^BUILD_INFO-(PR[1-9][0-9]*-[0-9a-f]{7}|SHA-[0-9a-f]{7})\\.txt$")))] | length' <<<"$final")"
-          (( retained_count >= 1 && retained_count <= 2 )) || {
-            echo "::error::Final draft does not contain one or two TESTING snapshot groups."
-            exit 1
-          }
+          # Render from the uploaded BUILD_INFO, signer and SHA256SUMS assets.
+          # Verify exact read-back before reporting publication success.
+          python3 publisher-tools/scripts/ci/reconcile_testing_release.py \
+            --release-id "$release_id" --expected-group "$GROUP_ID"
 
           mapfile -t managed_duplicates < <(
             gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \

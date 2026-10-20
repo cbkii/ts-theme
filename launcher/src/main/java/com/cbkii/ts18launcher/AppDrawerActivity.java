@@ -42,18 +42,27 @@ public final class AppDrawerActivity extends Activity {
     private final AppsAdapter adapter = new AppsAdapter();
     private String pickKey;
     private EditText search;
+    private LinearLayout root;
+    private LinearLayout searchRow;
+    private TextView header;
+    private ImageView searchIcon;
+    private ImageButton voice;
+    private Button clear;
+    private AppearanceController appearanceController;
 
     @Override protected void onCreate(Bundle state) {
+        setTheme(AutomotiveUi.activityTheme(this));
         super.onCreate(state);
         pickKey = getIntent().getStringExtra(EXTRA_PICK_KEY);
-        LinearLayout root = new LinearLayout(this);
+        appearanceController = new AppearanceController(this, mode -> applyAppearance());
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         int gap = AutomotiveUi.dimen(this, R.dimen.driver_gap);
         int target = AutomotiveUi.dimen(this, R.dimen.driver_target_min);
         root.setPadding(gap, gap, gap, gap);
 
-        TextView header = new TextView(this);
+        header = new TextView(this);
         header.setText(pickKey == null ? "Apps" : "Choose app");
         header.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
         header.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
@@ -66,7 +75,7 @@ public final class AppDrawerActivity extends Activity {
                 AutomotiveUi.dimen(this, R.dimen.ui_drawer_header_height)));
 
         if (pickKey != null && !pickKey.isEmpty()) {
-            Button clear = new Button(this);
+            clear = new Button(this);
             clear.setText(RoleIconCatalog.hasDefault(ShortcutSlot.role(this, pickKey))
                     ? "Use role default" : "Clear assignment");
             clear.setOnClickListener(v -> {
@@ -77,10 +86,10 @@ public final class AppDrawerActivity extends Activity {
             root.addView(clear, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, target));
         }
 
-        LinearLayout searchRow = new LinearLayout(this);
+        searchRow = new LinearLayout(this);
         searchRow.setGravity(Gravity.CENTER_VERTICAL);
         searchRow.setBackground(AutomotiveUi.cardBackground(this));
-        ImageView searchIcon = new ImageView(this);
+        searchIcon = new ImageView(this);
         searchIcon.setImageResource(R.drawable.ic_search);
         searchIcon.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
         searchIcon.setPadding(gap, gap, gap, gap);
@@ -102,7 +111,7 @@ public final class AppDrawerActivity extends Activity {
             @Override public void afterTextChanged(Editable s) {}
         });
         searchRow.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        ImageButton voice = new ImageButton(this);
+        voice = new ImageButton(this);
         voice.setImageResource(R.drawable.ic_mic);
         boolean voiceAvailable = VoiceSearch.available(this);
         voice.setContentDescription(voiceAvailable ? "Voice search" : "Voice search unavailable");
@@ -125,6 +134,25 @@ public final class AppDrawerActivity extends Activity {
         Ts18SafeArea.setContent(this, root);
         loadEntries();
         filter("");
+        applyAppearance();
+    }
+
+    @Override protected void onStart() { super.onStart(); appearanceController.start(); }
+    @Override protected void onStop() { appearanceController.stop(); super.onStop(); }
+
+    private void applyAppearance() {
+        root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
+        header.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+        searchRow.setBackground(AutomotiveUi.cardBackground(this));
+        searchIcon.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
+        search.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+        search.setHintTextColor(AutomotiveUi.color(this, R.color.ui_text_secondary));
+        AutomotiveUi.styleRailButton(this, voice);
+        if (clear != null) {
+            clear.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+            clear.setBackground(AutomotiveUi.interactiveBackground(this, false));
+        }
+        adapter.notifyDataSetChanged();
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -239,6 +267,7 @@ public final class AppDrawerActivity extends Activity {
                 }
             }
             icon.setImageDrawable(entry.icon);
+            label.setTextColor(AutomotiveUi.color(AppDrawerActivity.this, R.color.ui_text));
             label.setText(entry.label);
             cell.setMinimumHeight(116);
             return cell;
