@@ -13,7 +13,7 @@ This child is based on PR27 `11ec69a0c53f723cca0c046a255ddf0f4322b006`. Pair it 
 - One latest presentation epoch controls compact HOME, fullscreen Maps and background fullscreen. HOME supersedes old goals, including late fullscreen completion. Cooperative root Back preserves the map task after ordinary transient/routing handlers, authenticates UID/boot and focuses only the existing verified HOME task.
 - The root bridge uses one reusable `app_process` over private inherited pipes. Typed API29 observation/transition operations preserve exact package/user/task/display and exclusive-stack checks, corroborate display-level focus and check epochs between mutations. Background fullscreen never focuses Maps. An unsupported, undispatched operation may use the shell; a timeout after dispatch never replays it. The process exits after 60 seconds idle or client EOF.
 - Fast task success waits for authenticated renderer evidence for the same task and dimensions. It does not invent WMS drawn/visible flags. Peer readiness establishes software eligibility, not actual useful pixels or touch.
-- Runtime helper journals now live in launcher-private `no_backup/navigation-root`, invoked through `/system/bin/sh`. There are no new generated writes in `/data/adb`. Proven death of a previously ready Maps process may recover once; live-task close or uncertain initial admission does not reset a claim.
+- Legacy current-boot launch claims remain read-only guards across an APK upgrade; a storage move cannot create a second admission. Runtime helper journals now live in launcher-private `no_backup/navigation-root`, invoked through `/system/bin/sh`. There are no new generated writes in `/data/adb`. Proven death of a previously ready Maps process may recover once; live-task close or uncertain initial admission does not reset a claim.
 
 No second startup launcher, player/session, root management app, injected key sequence, UID1000 impersonation, SELinux change or protected-package writer is introduced. API29/default-HOME/unlocked/interactive/normal-audio and exact foreground guards remain required. Permission and first-run resource UI remain truthful blocked prerequisites.
 
@@ -28,7 +28,7 @@ The guide observes automatic cold startup before manual comparison and includes 
 | Check | Result |
 |---|---|
 | `python3 tools/ts18_theme.py validate` | PASS |
-| Complete launcher Python suite | 391 tests, PASS; three unavailable-tool skips |
+| Complete launcher Python suite | 393 tests, PASS; three unavailable-tool skips |
 | Production startup runtime | PASS, including cold Music lane, old source capability refusal, live Play and pre-dispatch cancellation/re-entry |
 | Controller production model | PASS, including late fullscreen/HOME and OFF + existing task adoption |
 | Root bridge server | Five PASS, including task preservation, protected foreground and mid-operation epoch cancellation |

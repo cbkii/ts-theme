@@ -148,6 +148,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             replays = overrides.pop("replays", 1)
             parallel = overrides.pop("parallel", False)
             seed_claim = overrides.pop("seed_claim", False)
+            legacy_claim = overrides.pop("legacy_claim", "")
             close_after_first = overrides.pop("close_after_first", False)
             reveal_after_first = overrides.pop("reveal_after_first", False)
             disable_claim = overrides.pop("disable_claim", False)
@@ -157,6 +158,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             state_path.write_text(json.dumps(state))
             source = HELPER.read_text().replace('PATH=/system/bin:/system/xbin:/vendor/bin', f'PATH={bin_dir}', 1)
             source = source.replace('/proc/$$/stat', '/proc/self/stat')
+            source = source.replace('/data/adb/ts18-launcher/', str(work / 'legacy') + '/')
             source = source.replace('/system/bin/toybox timeout -k 1', 'timeout -k 1')
             source = source.replace('ROOT_DIR=${TS18_STATE_DIR:?launcher private runtime directory required}', f'ROOT_DIR={work}', 1)
             if disable_claim:
@@ -168,6 +170,9 @@ class NavigationLifecycleTest(unittest.TestCase):
                 claim = work / ('launch-0-' + overrides.get('nav_package', 'app.organicmaps.incar') + '-' + boot)
                 claim.mkdir()
                 os.utime(claim, (1, 1))
+            if legacy_claim:
+                boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+                (work / 'legacy' / (legacy_claim + '-0-app.organicmaps.incar-' + boot)).mkdir(parents=True)
             def invoke():
                 return subprocess.run(['/bin/sh', str(script), *args], capture_output=True, text=True,
                                         env={**os.environ, 'ANDROID_STATE': str(state_path), 'TS18_METHOD': method, 'TS18_TRANSITION': transition, 'TS18_COLD_POLICY': cold_policy}, timeout=12)
@@ -211,6 +216,26 @@ class NavigationLifecycleTest(unittest.TestCase):
         self.assertIn('AUTOSTART_ALREADY_CLAIMED', result.stdout)
         self.assertEqual(1, state['start_dispatches'])
         self.assertEqual(1, state['automatic_claims'])
+
+    def test_runtime_storage_upgrade_preserves_legacy_current_boot_claims(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        for marker, policy, code in [('launch', 'manual', 'LAUNCH_PENDING'),
+                                     ('launch', 'automatic', 'LAUNCH_PENDING'),
+                                     ('auto-v1', 'automatic', 'AUTOSTART_ALREADY_CLAIMED')]:
+            with self.subTest(marker=marker, policy=policy):
+                result, state = self.run_helper(args, nav_alive=False, focus=7,
+                                                cold_policy=policy, legacy_claim=marker)
+                self.assertIn(code, result.stdout)
+                self.assertEqual(0, state['start_dispatches'])
+
+    def test_legacy_claim_never_prevents_warm_task_adoption(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        for marker in ('launch', 'auto-v1'):
+            result, state = self.run_helper(args, cold_policy='automatic', legacy_claim=marker)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual(0, state['start_dispatches'])
 
     def test_uncertain_automatic_launch_is_never_replayed(self):
         args = ['present-native', '0', 'app.organicmaps.incar',

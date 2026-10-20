@@ -615,8 +615,14 @@ launch_claim_path() {
 claim_cold_launch() {
   [ "$COLD_POLICY" != deny ] || fail AUTOSTART_DISABLED_OR_UNAVAILABLE
   launch_claim_path || fail LAUNCH_MARKER_FAILED
+  # Changing runtime storage on upgrade must not forget an accepted/uncertain
+  # current-boot launch. Legacy journals are read-only and need no migration write.
+  legacy_launch="/data/adb/ts18-launcher/launch-$ANDROID_USER-$PKG-$current_boot"
+  if [ -e "$legacy_launch" ] || [ -L "$legacy_launch" ]; then fail LAUNCH_PENDING; fi
   automatic_marker="$ROOT_DIR/auto-v1-$ANDROID_USER-$PKG-$current_boot"
   if [ "$COLD_POLICY" = automatic ]; then
+    legacy_auto="/data/adb/ts18-launcher/auto-v1-$ANDROID_USER-$PKG-$current_boot"
+    if [ -e "$legacy_auto" ] || [ -L "$legacy_auto" ]; then fail AUTOSTART_ALREADY_CLAIMED; fi
     require_startup_window_focus com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity
     # Accepted/uncertain startup never repeats. A previously verified MwmActivity owner
     # may recover only after its exact PID/start-time lifetime has ended AND the caller
