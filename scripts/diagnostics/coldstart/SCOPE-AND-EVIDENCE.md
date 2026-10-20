@@ -12,7 +12,7 @@ Prepared for TS18 Android 10 / API 29, UIS8581A Cortex-A55, PowerVR GE8322, 4 GB
 
 These source commits are context, not claims about the installed APKs. The collector records package/build information and hashes installed APKs/splits when permitted and within its deferred time budget. Missing hashes remain unknown.
 
-Target packages: launcher `com.cbkii.ts18launcher`; Auxio-TS `com.tw.media`; Organic Maps `app.organicmaps.incar`. Inspected music contracts include exported `com.tw.music.MusicActivity` → Auxio MainActivity and browser service `com.tw.music.MusicService`; the collector does not launch or bind either. Relevant source trace tags include `TS18Media`, `TS18Nav` and `InCarCompactStartup`. The launcher media trace includes elapsedRealtime and a bounded memory ring, so external log capture is necessary; the ring is not assumed persistent.
+Target packages: launcher `com.cbkii.ts18launcher`; Auxio-TS `com.tw.media`; Organic Maps `app.organicmaps.incar`; radio `com.navimods.radio` and `com.tw.radio` when installed. Inspected music contracts include exported `com.tw.music.MusicActivity` → Auxio MainActivity and browser service `com.tw.music.MusicService`; the collector does not launch or bind either. Relevant source trace tags include `TS18Media`, `TS18Nav` and `InCarCompactStartup`. The launcher media trace includes elapsedRealtime and a bounded memory ring, so external log capture is necessary; the ring is not assumed persistent.
 
 Known launcher preference files read: `ts18_launcher.xml`, `testing_profiles.xml`, `startup_readiness.xml`, `compact_startup.xml`. The current Android user is resolved read-only; failure never defaults to user 0. No media database, bookmarks, downloaded maps, or arbitrary preference tree is copied. Existing navigation helper journal identity/state files are read with per-file/output limits. The new helper keeps runtime journals in launcher-private `no_backup/navigation-root`; legacy `/data/adb` journals are read only. The helper is never executed by this kit.
 
@@ -37,3 +37,9 @@ Physical TS18 qualification: **NOT RUN**. The guide's real reboot film, package 
 - Android logcat: https://developer.android.com/tools/logcat
 
 The service directory is `service.d` (not `sercice.d`). Installation makes the bounded collector executable. Each invocation detaches and has its own absolute 480-second uptime deadline; repeated invocations do not extend an already-running collector.
+
+## v3 review additions
+
+Package-specific secondary process discovery uses read-only Android `ps` with exact package or `package:` prefix matching, never substring guessing. Resource samples use bounded pseudo-files every five seconds; kernel, jobs, idle, input and media-route dumps are deferred until after the initial lightweight phase. Radio HOME, Back, single Play and source handover have separate guided cases. The private journal path now honours the observed Android user (the legacy journal path is read-only).
+
+The collector still makes no physical readiness claims. MediaBrowser/session, tuner hardware, Android audio tracks, actual audible station/music, Maps task/renderer, pixels and input are different boundaries. Missing/unsupported/capped probes do not establish absence.

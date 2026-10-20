@@ -1,18 +1,18 @@
 #!/system/bin/sh
-# TS18_COLDSTART_MANAGED_V2 — standalone Magisk service.d collector; no module.
+# TS18_COLDSTART_MANAGED_V3 — standalone Magisk service.d collector; no module.
 # Capture data, locks, status, temporary files and receipts ONLY in Download.
 # No app/service launch, provider call, playback, task change, log clear or settings write.
 umask 077
 BB=/data/adb/magisk/busybox
 BASE=/storage/emulated/0/Download/TS18-ColdStart
-APPS='com.cbkii.ts18launcher com.tw.media app.organicmaps.incar'
+APPS='com.cbkii.ts18launcher com.tw.media app.organicmaps.incar com.navimods.radio com.tw.radio'
 PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin
 export PATH
 unset LD_PRELOAD LD_LIBRARY_PATH TMPDIR
 SELF=$0
 
 help() {
-  printf '%s\n' 'TS18 cold-start collector v2' \
+  printf '%s\n' 'TS18 cold-start collector v3' \
     'No arguments: detached 480-second boot capture (service.d).' \
     'start: detached 480-second manual capture; never claims a cold boot.' \
     'All generated output: Download/TS18-ColdStart. No fallback storage.' \
@@ -137,7 +137,7 @@ stop_worker() {
   if [ "$st_bytes" -ge "$st_cap" ]; then st_status=TRUNCATED
   elif [ "$st_rc" = 0 ]; then st_status=OK
   elif [ "$st_rc" = UNKNOWN ]; then
-    case "$st_dir" in *-logcat-*|*-input-events|*-process-samples) st_status=PLANNED_STREAM_STOP;; *) st_status=TIMEOUT_OR_STOP;; esac
+    case "$st_dir" in *-logcat-*|*-input-events|*-process-samples|*-resource-pressure) st_status=PLANNED_STREAM_STOP;; *) st_status=TIMEOUT_OR_STOP;; esac
   else st_status=COMMAND_FAILED; fi
   printf 'end_uptime_ms=%s\nrc=%s\nbytes=%s\nresult=%s\n' "$(ms)" "$st_rc" "$st_bytes" "$st_status" >> "$st_dir/meta.txt"
   case "$st_dir:$st_status" in *-screen-*:OK) "$BB" mv "$st_dir/output.txt" "$st_dir/screenshot.png";; esac
@@ -154,13 +154,36 @@ probe() {
   stop_worker "$pr_pid" "$pr_ticks" "$pr_dir" "$pr_end"
 }
 
+target_pids() {
+  # Android ps includes package :remote/service processes that pidof exact names misses.
+  # shellcheck disable=SC2016 # AWK fields are not shell expansions.
+  /system/bin/ps -A -o PID,NAME 2>/dev/null | "$BB" awk -v apps="$APPS" '
+    BEGIN {n=split(apps,a," ")} NR>1 {for(i=1;i<=n;i++)
+      if($2==a[i] || index($2,a[i] ":")==1) {print $1; break}}'
+}
+resource_state() {
+  for rs_file in /proc/stat /proc/meminfo /proc/vmstat /proc/diskstats /proc/pressure/cpu /proc/pressure/memory /proc/pressure/io; do
+    [ -r "$rs_file" ] || continue
+    printf '\nFILE %s\n' "$rs_file"; "$BB" head -c 16384 "$rs_file"
+  done
+  for rs_file in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq /sys/class/thermal/thermal_zone*/type /sys/class/thermal/thermal_zone*/temp; do
+    [ -r "$rs_file" ] || continue
+    printf '%s ' "$rs_file"; "$BB" head -c 128 "$rs_file"; printf '\n'
+  done
+}
+resource_samples() {
+  while [ "$(ms)" -lt "$1" ]; do
+    printf '\nUPTIME_MS %s\n' "$(ms)"; resource_state
+    "$BB" sleep 5
+  done
+}
 sample() {
   sample_end=$1; sample_begin=$(ms); sample_scan=0; sample_pids=''
   printf 'uptime_ms\tkind\tpid\tstart_ticks\tstate\tppid\tutime_ticks\tstime_ticks\tthreads\tvsize_bytes\trss_pages\twchan\n'
   while [ "$(ms)" -lt "$sample_end" ]; do
     sample_now=$(ms)
     if [ "$sample_now" -ge "$sample_scan" ]; then
-      sample_pids=$("$BB" pidof com.cbkii.ts18launcher com.tw.media app.organicmaps.incar 2>/dev/null)
+      sample_pids=$(target_pids)
       printf '%s\tPIDS\t%s\n' "$sample_now" "$sample_pids"
       for sample_pid in $sample_pids; do
         printf '%s\tCMDLINE\t%s\t' "$sample_now" "$sample_pid"
@@ -206,7 +229,7 @@ private_state() {
       "$BB" head -c 32768 "$ps_file"
     done
   done
-  for ps_dir in /data/user/0/com.cbkii.ts18launcher/no_backup/navigation-root/auto-v1-* /data/user/0/com.cbkii.ts18launcher/no_backup/navigation-root/launch-* /data/adb/ts18-launcher/auto-v1-* /data/adb/ts18-launcher/launch-*; do
+  for ps_dir in "/data/user/$ps_user/com.cbkii.ts18launcher/no_backup/navigation-root"/auto-v1-* "/data/user/$ps_user/com.cbkii.ts18launcher/no_backup/navigation-root"/launch-* /data/adb/ts18-launcher/auto-v1-* /data/adb/ts18-launcher/launch-*; do
     if [ ! -d "$ps_dir" ] || [ -L "$ps_dir" ]; then continue; fi
     printf '\nHELPER_JOURNAL %s\n' "$ps_dir"
     for ps_name in identity state ready-owner; do
@@ -227,7 +250,7 @@ apk_hashes() {
   done
 }
 thread_state() {
-  for th_pid in $("$BB" pidof com.cbkii.ts18launcher com.tw.media app.organicmaps.incar 2>/dev/null); do
+  for th_pid in $(target_pids); do
     for th_dir in "/proc/$th_pid/task"/[0-9]*; do
       [ -r "$th_dir/stat" ] || continue
       printf '\nUPTIME_MS %s PID %s TID %s\n' "$(ms)" "$th_pid" "${th_dir##*/}"
@@ -247,10 +270,12 @@ extended() {
   probe "$ex-audio" 262144 3 /system/bin/dumpsys -t 3 audio
   probe "$ex-audioflinger" 262144 3 /system/bin/dumpsys -t 3 media.audio_flinger
   probe "$ex-audiopolicy" 131072 2 /system/bin/dumpsys -t 2 media.audio_policy
+  probe "$ex-media-router" 65536 2 /system/bin/dumpsys -t 2 media_router
   probe "$ex-surfaces" 196608 2 /system/bin/dumpsys -t 2 SurfaceFlinger --list
   for ex_pkg in $APPS; do
     ex_label=$(printf '%s' "$ex_pkg" | "$BB" tr . _)
     probe "$ex_label-meminfo" 131072 3 /system/bin/dumpsys -t 3 meminfo "$ex_pkg"
+    probe "$ex_label-services" 131072 2 /system/bin/dumpsys -t 2 activity services "$ex_pkg"
     probe "$ex_label-gfxinfo" 131072 2 /system/bin/dumpsys -t 2 gfxinfo "$ex_pkg" framestats
   done
   case "$CURRENT_USER" in ''|*[!0-9]*) event 'SKIP private preferences: current Android user unknown';;
@@ -258,6 +283,11 @@ extended() {
   esac
 }
 baseline() {
+  probe installed-related-packages 131072 2 /system/bin/pm list packages -U
+  probe kernel-ring 2097152 2 /system/bin/dmesg
+  probe input-state 131072 2 /system/bin/dumpsys -t 2 input
+  probe device-idle 65536 2 /system/bin/dumpsys -t 2 deviceidle
+  probe system-memory 65536 2 "$BB" cat /proc/meminfo /proc/vmstat
   probe properties 49152 2 "$BB" sh "$SELF" --properties
   probe mounts 65536 2 "$BB" cat /proc/mounts
   probe media-storage 65536 2 /system/bin/dumpsys -t 2 mount
@@ -267,6 +297,7 @@ baseline() {
   case "$CURRENT_USER" in *[!0-9]*|'') CURRENT_USER=UNKNOWN;; esac
   printf 'current_android_user=%s\n' "$CURRENT_USER" >> "$OUT/CONTEXT.txt"
   probe home-resolution 32768 2 /system/bin/cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
+  probe boot-count 8192 2 /system/bin/settings get global boot_count
   probe notification-access 32768 2 /system/bin/settings get secure enabled_notification_listeners
   probe display 65536 2 /system/bin/dumpsys -t 2 display
   probe power 65536 2 /system/bin/dumpsys -t 2 power
@@ -274,6 +305,7 @@ baseline() {
     bl_label=$(printf '%s' "$bl_pkg" | "$BB" tr . _)
     probe "$bl_label-package" 262144 3 /system/bin/dumpsys -t 3 package "$bl_pkg"
     probe "$bl_label-services" 131072 2 /system/bin/dumpsys -t 2 activity services "$bl_pkg"
+    probe "$bl_label-jobs" 65536 2 /system/bin/dumpsys -t 2 jobscheduler "$bl_pkg"
     probe "$bl_label-appops" 65536 2 /system/bin/cmd appops get "$bl_pkg"
   done
 }
@@ -353,7 +385,7 @@ collect() {
   [ ! -L "$BASE/latest" ] || exit 73
   printf '%s\n' "${OUT##*/}" > "$BASE/latest"
   : > "$OUT/workers.tsv"
-  printf 'script_version=2\norigin=%s\nboot_id=%s\nservice_entry_uptime_ms=%s\noutput_ready_uptime_ms=%s\nhard_deadline_uptime_ms=%s\nmax_duration_ms=480000\noutput_root=%s\nmagisk_capture_output_bytes=0\nphysical_acceptance=NOT_RUN\n' "$ORIGIN" "$BOOT_ID" "$START_MS" "$(ms)" "$HARD_END" "$OUT" > "$OUT/CONTEXT.txt"
+  printf 'script_version=3\norigin=%s\nboot_id=%s\nservice_entry_uptime_ms=%s\noutput_ready_uptime_ms=%s\nhard_deadline_uptime_ms=%s\nmax_duration_ms=480000\noutput_root=%s\nmagisk_capture_output_bytes=0\nphysical_acceptance=NOT_RUN\n' "$ORIGIN" "$BOOT_ID" "$START_MS" "$(ms)" "$HARD_END" "$OUT" > "$OUT/CONTEXT.txt"
   printf 'status=RUNNING\n' > "$OUT/STATUS.txt"
   trap 'REASON=signal; finish; "$BB" kill -KILL "-$$"; exit 0' HUP INT TERM
   # The already-running absolute guard also bounds final hashing and cleanup.
@@ -364,6 +396,8 @@ collect() {
   start_worker logcat-events 6291456 "$cs_secs" /system/bin/logcat -b events -v threadtime -v monotonic '*:I'
   EVENT_LOG_WORKER=$LAST_WORKER
   start_worker input-events 6291456 "$cs_secs" /system/bin/getevent -lt
+  start_worker resource-pressure 4194304 "$cs_secs" "$BB" sh "$SELF" --resources "$WORK_END"
+  start_worker resource-processes 131072 2 /system/bin/ps -A -o USER,PID,PPID,NAME
   start_worker process-samples 6291456 "$cs_secs" "$BB" sh "$SELF" --sample "$WORK_END"
   cs_light_until=$((START_MS + 60000)); QUIET_UNTIL=0; cs_next=0; cs_extended=0; cs_hashed=0; cs_baseline=0; cs_requests=0; cs_fallback=0; cs_clock=0
   while [ "$(ms)" -lt "$WORK_END" ]; do
@@ -434,6 +468,7 @@ collect() {
 case "${1:-}" in
   --worker) shift; worker "$@";;
   --sample) sample "$2";;
+  --resources) resource_samples "$2";;
   --private) private_state "$2";;
   --hashes) apk_hashes;;
   --threads) thread_state;;

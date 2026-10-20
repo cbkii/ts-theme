@@ -1,10 +1,10 @@
-# One fixed startup profile — validation kit v2
+# One fixed startup profile — validation kit v3
 
 Use the matching launcher, Maps and Auxio TESTING candidates. The profile is fixed to N2 / Bridge / fullscreen departure with root-assisted silent preparation. Do not select or compare alternate profiles. An old Auxio APK without the prepare-only capability is reported blocked; it is never silently automated. A saved Maps startup OFF choice remains OFF; enable its compact-startup setting once if that was your earlier choice.
 
-# TS18 Music + Maps cold-start diagnostics
+# TS18 Music + Maps + Radio cold-start diagnostics
 
-This kit investigates two critical ts-theme HOME features: usable Organic Maps and audible Auxio-TS music as fast and reliably as possible (aiming for about **3 seconds**), including real Android boot, switching apps and returning HOME. It collects evidence; it does not repair the integrations or declare device acceptance from logs.
+This kit investigates ts-theme HOME features: usable Organic Maps, audible Auxio-TS music and configured Radio as fast and reliably as possible (aiming for about **3 seconds**), including real Android boot, switching apps and returning HOME. It collects evidence; it does not repair the integrations or declare device acceptance from logs.
 
 There are exactly two device scripts:
 
@@ -27,7 +27,7 @@ Use this only while safely parked. No source app is opened automatically. The ki
 
 3. Choose **1 Install boot collector**, then **0 Exit**. Installation verifies the exact companion collector; it refuses to overwrite a different file. No reboot occurs automatically.
 4. Start a **phone video with sound**, then perform a real Android reboot using the normal Android controls. Film the first appearance of HOME. Do not open Auxio, Maps, Termux, or Retry before observing the first map and making the first single HOME Music Play tap. Leave the display observable for at least 10 seconds after a failure. Capture the whole sequence, not only the eventual success.
-5. Now open Termux, enter the same root lane and paste the same command. Choose **2 Status**, then **3 Guided tests**. Answer Y only if you filmed a real reboot without priming either source app. The guide separately verifies that the capture belongs to this Android boot and originated from `service.d`.
+5. Now open Termux, enter the same root lane and paste the same command. Choose **2 Status**, then **3 Guided tests**. Answer Y only if you filmed a real reboot without priming any source app. The guide separately verifies that the capture belongs to this Android boot and originated from `service.d`.
 6. Follow the short actions. Normally only Enter and **P / S / F / N** are needed; notes are optional. The guide requests a quiet period before each timed action. Wait for **Ready**, return HOME, wait about 5 seconds, perform the stated action once, observe for at least 10 seconds, then return to Termux. The next test is not launched automatically.
 7. Choose **5 Stop**, wait until **2 Status** says **CLOSED**, then **6 Export**. Share the resulting `.tar.gz`, its `.sha256`, and the phone video. All are in `Download/TS18-ColdStart/`. If the 8-minute capture already ended, export it directly.
 
@@ -61,6 +61,7 @@ An ACC wake, display wake, process restart and full Android boot are different s
 |---|---|
 | B0_MAP | First HOME after real reboot: compact map pixels and touch. |
 | B0_MUSIC | First HOME Play after that reboot, before opening Auxio. |
+| B0_RADIO | First HOME Radio Play after reboot, without opening Radio manually; N if unobserved. |
 | M1 | One HOME Music Play action without opening Auxio. |
 | M2 | Explicit Music icon opens Auxio; this deliberately primes later comparisons. |
 | H1 | Auxio → normal HOME: compact map, controls, preserved playback. |
@@ -70,6 +71,9 @@ An ACC wake, display wake, process restart and full Android boot are different s
 | MUSIC_BACK | Auxio Back: recover HOME and preserve playback intent. |
 | H3 | Ordinary Android Settings → HOME: both integrations and no late focus takeover. |
 | M3 | One Music Play/Pause action after returning HOME. |
+| RADIO_PLAY | Single HOME Radio Play without manually priming Radio. |
+| RADIO_HOME / RADIO_BACK | Radio app return via HOME and Back, separately. |
+| RADIO_MUSIC | Explicit Radio/Music handover with one tap per action. |
 | R1 | Three Auxio → HOME → Maps fullscreen → HOME cycles; every return must work reliably at an acceptable speed. |
 
 If boot film/current-boot evidence is missing, B0 is automatically N. Skipping a case also records N without asking for a success result. If the collector ends during testing, the guide offers a fresh **manual** capture; the original boot run is retained with its own ID. Export each relevant run before starting another if you need a separate archive; the menu exports the latest run.
@@ -111,3 +115,11 @@ Logs can include track paths/titles, other packages, Bluetooth details and locat
 - **Missing probe / permission denied / no seal:** preserve the raw folder and video. These are evidence gaps, not a reason to call the integration healthy.
 
 Read `SCOPE-AND-EVIDENCE.md` for the exact source baseline and the limits of host verification. This kit has not yet been executed on your TS18.
+
+## v3 expanded radio and resource evidence
+
+The same collector now covers `com.navimods.radio` (NavRadio+), `com.tw.radio` (stock radio, if installed), Auxio, Maps and HOME, including their named secondary `:service` processes. Package inventory and launcher role preferences identify a different configured radio; its raw system/session/audio logs remain available, but per-package hashes/process probes are limited to the named targets. No radio service/broadcast/provider command is sent. Android MediaSession `PLAYING` is not proof of tuner/DSP output.
+
+A five-second, read-only resource stream records CPU time/load, memory, paging, disk counters, available pressure counters, CPU frequencies and temperatures. Deferred probes include kernel ring/SELinux errors, device-idle, input state, app jobs/services/app-ops, media router, audio focus/policy/AudioFlinger, surfaces and frames. Unsupported OEM probes retain their error/timeout status. These observations can contain media titles, station names, touch coordinates, package names, paths and incidental location details in system logs. Review the local archive before sharing it.
+
+The installer upgrades only the exact known v1/v2 collector hashes. All limits remain: 480 seconds, Download-only generated output, 96 MiB reserved capture, 180 probes, 32 MiB compressed export, no deletion of old captures. Extra evidence is best-effort within these limits; exhaustion is recorded as SKIP, never interpreted as absence.

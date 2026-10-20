@@ -450,8 +450,21 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         });
     }
     private void observeSourceAfterLaunch(Source source, int g, String pkg, int token) {
+        awaitSourceEntry(source, g, pkg, token, SystemClock.uptimeMillis() + 4000L);
+    }
+    private void awaitSourceEntry(Source source, int g, String pkg, int token, long deadline) {
         handler.postDelayed(() -> observe(token, owner -> {
-            if (!validStage(token) || owner == null || !owner.isEntry(AndroidUserId.current(), stagedEntry)) {
+            if (!validStage(token)) {
+                yieldStage(source, g, "source-entry-interrupted"); return;
+            }
+            if (owner == null || !owner.isEntry(AndroidUserId.current(), stagedEntry)) {
+                // An accepted launch can still be between the NoDisplay entry and MainActivity.
+                // Observe only: never replay it. A known foreign/permission owner yields at once.
+                boolean waitingAtHome = owner != null && owner.matches(AndroidUserId.current(),
+                        homeTask, context.getPackageName() + "/.LauncherActivity");
+                if ((owner == null || waitingAtHome) && SystemClock.uptimeMillis() < deadline) {
+                    awaitSourceEntry(source, g, pkg, token, deadline); return;
+                }
                 yieldStage(source, g, "source-entry-not-foreground"); return;
             }
             stagedTask = owner.task;
