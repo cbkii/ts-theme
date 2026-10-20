@@ -73,7 +73,11 @@ final class NativeNavigationPanel extends FrameLayout {
         params.width = diameter;
         params.height = diameter;
         int inset = Math.round(diameter * 0.19f);
-        openNavigation.setPadding(inset, inset, inset, inset);
+        // setPadding requests layout even for an unchanged value on API 29.
+        // Do not turn each measurement into another traversal.
+        if (openNavigation.getPaddingLeft() != inset || openNavigation.getPaddingTop() != inset
+                || openNavigation.getPaddingRight() != inset || openNavigation.getPaddingBottom() != inset)
+            openNavigation.setPadding(inset, inset, inset, inset);
         int exact = View.MeasureSpec.makeMeasureSpec(diameter, View.MeasureSpec.EXACTLY);
         openNavigation.measure(exact, exact);
     }
