@@ -223,6 +223,13 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();boolean[] ready={false};c=new NavigationWindowController(new android.app.Activity(),p);c.setStartupListener((ok,why)->ready[0]=ok);c.onHomeVisible();CompactStartupClient.deliver();android.view.View.drain();
  check(ready[0],"known renderer not ready");CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);CompactStartupClient.deliver();
  check(!ready[0]&&!c.startupNavigationReady(),"renderer readiness loss was not reported");c.destroy();
+ // Typed bridge completion needs current renderer evidence, never invented drawn flags.
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ int priorResumes=RawFreeformTaskBackend.resumes;c.onHomeStopped();RawFreeformTaskBackend.peerResume=true;
+ CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);CompactStartupClient.deliver();c.onHomeVisible();
+ check(!c.startupNavigationReady(),"typed task result invented renderer readiness");
+ CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();android.view.View.drain();
+ check(c.startupNavigationReady()&&RawFreeformTaskBackend.resumes==priorResumes+1,"current peer surface did not complete typed resume");c.destroy();
  // HOME arriving during accepted fullscreen work supersedes its late result.
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
  RawFreeformTaskBackend.fullscreenCode="SUCCESS";RawFreeformTaskBackend.holdFullscreen=true;c.openFullscreen(null);
