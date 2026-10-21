@@ -233,7 +233,15 @@ requested.prepareForPlay("com.tw.media",SystemClock.elapsedRealtime()+6100);
 requested.prepareForPlay("com.tw.media",SystemClock.elapsedRealtime()+6100);
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);requested.onHomeResumed(new android.app.Activity());};
 Handler.until(1200);check(StartupRootFallback.starts==1&&StartupRootFallback.returns==1,"explicit Play duplicated or skipped source staging");
-requested.destroy();UiPersonalizationPrefs.enabled=true;coldMusic=false;
+requested.destroy();UiPersonalizationPrefs.enabled=true;
+StartupReadinessCoordinator isolated=create(true);UiPersonalizationPrefs.enabled=false;
+Ts18LauncherApplication.shared.radioReady=false;ledger(isolated).begin(Source.RADIO,Trigger.READINESS_CHANGED,StartupReadinessPolicy.Method.ACTIVITY_BOOTSTRAP,SystemClock.uptimeMillis());
+var queueField=StartupReadinessCoordinator.class.getDeclaredField("foregroundQueue");queueField.setAccessible(true);
+((java.util.ArrayDeque<Source>)queueField.get(isolated)).addLast(Source.RADIO);
+isolated.prepareForPlay("com.tw.media",SystemClock.elapsedRealtime()+6100);
+android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);isolated.onHomeResumed(new android.app.Activity());};
+Handler.until(1200);check(StartupRootFallback.starts==1&&AppResolver.launches==0,"explicit Music preparation authorised disabled Radio staging");
+isolated.destroy();UiPersonalizationPrefs.enabled=true;coldMusic=false;
 System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
 }}
 '''

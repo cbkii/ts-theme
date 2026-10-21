@@ -224,6 +224,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                     && !policy.record(Source.MUSIC).activityLaunchAccepted;
         }
         for (Source source : new Source[] {Source.RADIO, Source.MUSIC}) {
+            if (!sourceForegroundAllowed(source)) continue;
             if (source == Source.RADIO && navigation != null && !navigation.ready()) continue;
             String pkg = packageFor(source);
             if (policy.record(source).state != State.STARTING || policy.record(source).activityLaunchAccepted
@@ -323,7 +324,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 }
                 boolean qualifiedPackage = MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg)
                         || MediaSourceAdapter.NAVRADIO_PACKAGE.equals(pkg);
-                if (foregroundAllowed() && qualifiedPackage && !r.activityLaunchAccepted) {
+                if (sourceForegroundAllowed(source) && qualifiedPackage && !r.activityLaunchAccepted) {
                     policy.changeMethod(source, Method.ACTIVITY_BOOTSTRAP);
                     if (!foregroundQueue.contains(source)) foregroundQueue.add(source);
                     runForegroundSoon();
@@ -340,7 +341,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
 
     private boolean foregroundAllowed() {
-        return !yielded && (explicitMusicPreparation()
+        return sourceForegroundAllowed(Source.MUSIC) || sourceForegroundAllowed(Source.RADIO);
+    }
+    private boolean sourceForegroundAllowed(Source source) {
+        return !yielded && (source == Source.MUSIC && explicitMusicPreparation()
                 || StartupReadinessPolicy.foregroundAllowed(mode())
                     && UiPersonalizationPrefs.mediaStartupWarmup(context));
     }
@@ -360,6 +364,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             handler.postDelayed(this::runForegroundSoon, 100L); return;
         }
         Source source = foregroundQueue.poll();
+        if (!sourceForegroundAllowed(source)) {
+            policy.block(source, policy.record(source).generation, "source-preparation-disabled", SystemClock.uptimeMillis());
+            updateNavigationAdmission(); runForegroundSoon(); return;
+        }
         if (source == Source.RADIO && navigation != null && !navigation.ready()) {
             foregroundQueue.addLast(source); updateNavigationAdmission(); return;
         }
@@ -537,7 +545,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         }), 150L);
     }
     private boolean validStage(int token) {
-        return token == foregroundToken && foregroundAllowed() && safeScreen()
+        return token == foregroundToken && sourceForegroundAllowed(foregroundSource) && safeScreen()
                 && foregroundSource != null
                 && (foregroundSource != Source.RADIO || MediaListenerService.hasNotificationAccess(context))
                 && packageFor(foregroundSource).equals(packages[foregroundSource.ordinal()])
