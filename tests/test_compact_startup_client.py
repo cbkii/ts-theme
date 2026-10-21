@@ -53,6 +53,9 @@ public class Harness{
 static void check(boolean b){if(!b)throw new AssertionError();}
 static void waitFor(java.util.function.BooleanSupplier condition)throws Exception{long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(3);while(!condition.getAsBoolean()){if(System.nanoTime()>end)throw new AssertionError("worker did not run");Thread.sleep(1);}}
 public static void main(String[] args)throws Exception{
+var sized=new CompactStartupClient.Snapshot(true,true,true,42,600,300);
+check(sized.surfaceMatches(640,360));check(!sized.surfaceMatches(500,360));
+check(!new CompactStartupClient.Snapshot(true,true,true,42,0,0).surfaceMatches(640,360));
 int[] callbacks={0};CompactStartupClient c=new CompactStartupClient(new Context(),s->{check(!s.compatible);callbacks[0]++;});
 ContentResolver.block=true;c.watch();waitFor(()->ContentResolver.observes.get()==1);
 Handler.until(2000);check(callbacks[0]==1);Handler.until(2500);waitFor(()->ContentResolver.observes.get()==2);

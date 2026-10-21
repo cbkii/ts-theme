@@ -122,8 +122,8 @@ public static void main(String[] args)throws Exception{
  check(p.configured==1&&RawFreeformTaskBackend.presents==1&&RawFreeformTaskBackend.resumes==1,"bootstrap duplicated launch");
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="BOOTSTRAP_PENDING";RawFreeformTaskBackend.resumeMiss=true;p=new NativeNavigationPanel();start(p);android.view.View.drain();
  check(p.configured==1&&RawFreeformTaskBackend.resumes==1,"foreground mismatch had no follow-up");
- RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="HIDDEN";p=new NativeNavigationPanel();start(p);
- check(p.configured==0,"geometry incorrectly claimed visibility");android.view.View.drain();check(p.configured==1&&RawFreeformTaskBackend.presents==1,"surface recovery relaunched task");
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="HIDDEN";CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);p=new NativeNavigationPanel();start(p);
+ check(p.configured==0,"geometry incorrectly claimed visibility");CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();android.view.View.drain();check(p.configured==1&&RawFreeformTaskBackend.presents==1,"surface recovery relaunched task");
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.alwaysMiss=true;p=new NativeNavigationPanel();start(p);android.view.View.drain();
  check(RawFreeformTaskBackend.presents==1&&RawFreeformTaskBackend.statuses==4&&p.error.contains("TASK_OBSERVATION_UNCERTAIN"),"recovery budget not enforced");
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.alwaysMiss=true;RawFreeformTaskBackend.workMs=20000;p=new NativeNavigationPanel();start(p);android.view.View.drain();
@@ -174,7 +174,7 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  java.lang.reflect.Method retry=NavigationWindowController.class.getDeclaredMethod("retry");retry.setAccessible(true);
  retry.invoke(c);retry.invoke(c);RawFreeformTaskBackend.delayed=false;RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
- android.view.View.drain();check(p.configured==1&&RawFreeformTaskBackend.presents==2,"queued Retry lost or duplicated");
+ android.view.View.drain();check(p.configured==1&&RawFreeformTaskBackend.presents==1&&RawFreeformTaskBackend.resumes==1,"queued Retry failed to reuse the admitted task once");
  // User interaction cancels an unfinished automatic operation; a late result cannot win.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  c.cancelAutomaticColdStart();check(c.startupNavigationBusy(),"in-flight ownership discarded on yield");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());
@@ -246,6 +246,32 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.presents=1;CompactStartupClient.next=new CompactStartupClient.Snapshot(true,false,true,42);p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
  check(RawFreeformTaskBackend.presents==1&&c.startupNavigationReady(),"opt-out blocked warm task adoption");c.destroy();
  check("N1".equals(NavigationHelperResult.parse("OK method=N1 naviName=foo_method=N2").method),"vendor metadata overrode exact method token");
+ // Cancelling a pending renderer wait releases the startup lane and ignores late frames.
+ RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.first="HIDDEN";
+ CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);p=new NativeNavigationPanel();c=start(p);
+ c.cancelAutomaticColdStart();check(!c.startupNavigationBusy(),"cancelled renderer wait held the startup lane");
+ CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();
+ check(!c.startupNavigationReady(),"late frame revived a cancelled compact request");c.destroy();
+ // Media preparation may release that wait without disabling compact Maps for this HOME.
+ RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.first="HIDDEN";
+ CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);p=new NativeNavigationPanel();c=start(p);
+ c.yieldForMediaPreparation();check(!c.startupNavigationBusy(),"media yield held the startup lane");
+ CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();check(!c.startupNavigationReady(),"deferred media lane presented Maps");
+ c.deferAutomaticStartupPresentation(false);c.reconcileStartup();android.view.View.drain();
+ check(c.startupNavigationReady()&&RawFreeformTaskBackend.presents==1,"media yield disabled Maps or duplicated launch");c.destroy();
+ // Explicit Retry replaces a renderer wait rather than waiting on its stale epoch.
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="HIDDEN";
+ CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);p=new NativeNavigationPanel();c=start(p);
+ retry.invoke(c);check(RawFreeformTaskBackend.resumes==1,"Retry remained stuck behind a renderer wait");
+ CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();android.view.View.drain();
+ check(c.startupNavigationReady()&&RawFreeformTaskBackend.presents==1,"Retry duplicated the task or failed to accept fresh renderer evidence");c.destroy();
+ // A definite pre-dispatch focus refusal recovers when the same HOME becomes eligible.
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="STARTUP_FOCUS_CHANGED";p=new NativeNavigationPanel();c=start(p);
+ android.view.View.drain();check(c.startupNavigationReady()&&RawFreeformTaskBackend.presents==2,"focus refusal stayed terminal");c.destroy();
+ // An unrelated foreground owner suppresses retry until an explicit safe HOME focus event.
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="STARTUP_FOCUS_CHANGED";android.app.Activity.focused=false;p=new NativeNavigationPanel();c=start(p);
+ android.view.View.drain();check(RawFreeformTaskBackend.presents==1,"focus refusal retried over another owner");
+ android.app.Activity.focused=true;c.onHomeFocusAvailable();android.view.View.drain();check(c.startupNavigationReady(),"safe focus did not rearm compact request");c.destroy();
  System.out.println("PASS controller acquisition/bootstrap/focus/visibility/budget/lifecycle/fallback");
 }}
 ''')

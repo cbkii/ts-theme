@@ -15,7 +15,7 @@ class StartupRuntimeTests(unittest.TestCase):
             self.skipTest('JDK unavailable')
         stubs = {
             'android/os/Looper.java': 'package android.os; public class Looper {static Looper l=new Looper(); public static Looper getMainLooper(){return l;} public static Looper myLooper(){return l;}}',
-            'android/os/SystemClock.java': 'package android.os; public class SystemClock {public static long now=100; public static long uptimeMillis(){return now;}}',
+            'android/os/SystemClock.java': 'package android.os; public class SystemClock {public static long now=100; public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now;}}',
             'android/os/Handler.java': '''package android.os;import java.util.*;
 public class Handler {record Job(Runnable r,long at){} static List<Job> jobs=new ArrayList<>();
 public Handler(Looper l){}public boolean post(Runnable r){return postDelayed(r,0);}
@@ -50,7 +50,7 @@ public Object getSystemService(String s){return switch(s){case "power"->new andr
 class ProcessMediaSessionMonitor {interface Observer{void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
 class MediaListenerService {static boolean access=true;static boolean hasNotificationAccess(android.content.Context c){return access;}static class Snapshot{}}
 class Ts18LauncherApplication {static MediaSourceBootstrapper shared=new MediaSourceBootstrapper();static MediaSourceBootstrapper mediaSources(android.content.Context c){return shared;}}
-class MediaSourceBootstrapper {boolean musicReady,radioReady,musicPlaying;long commands;int warms,pauses;
+class MediaSourceBootstrapper {interface PreparationRequester{void request(String p,long d);}void setPreparationRequester(PreparationRequester r){}boolean musicReady,radioReady,musicPlaying;long commands;int warms,pauses;
 boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radioReady;}
 boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
 boolean startupSessionAbsent(String p){return !hasUsableQueue(p);}boolean startupPlaying(String p){return isPlaying(p);}void setStartupObserver(Runnable r){}long userCommandGeneration(){return commands;}String userCommandPackage(){return "com.tw.media";}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
@@ -227,6 +227,13 @@ check(StartupRootFallback.starts==0,"cancelled reservation dispatched a source")
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);preDispatch.onHomeResumed(new android.app.Activity());};
 preDispatch.onHomeResumed(new android.app.Activity());Handler.until(3000);
 check(StartupRootFallback.starts==1&&StartupRootFallback.returns==1,"safe pre-dispatch cancellation blocked this boot: starts="+StartupRootFallback.starts+" returns="+StartupRootFallback.returns+" "+preDispatch.summary());preDispatch.destroy();coldMusic=false;
+// Passive warm-up OFF must not block one explicit cold Play preparation.
+coldMusic=true;StartupReadinessCoordinator requested=create(false);UiPersonalizationPrefs.enabled=false;
+requested.prepareForPlay("com.tw.media",SystemClock.elapsedRealtime()+6100);
+requested.prepareForPlay("com.tw.media",SystemClock.elapsedRealtime()+6100);
+android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);requested.onHomeResumed(new android.app.Activity());};
+Handler.until(1200);check(StartupRootFallback.starts==1&&StartupRootFallback.returns==1,"explicit Play duplicated or skipped source staging");
+requested.destroy();UiPersonalizationPrefs.enabled=true;coldMusic=false;
 System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
 }}
 '''

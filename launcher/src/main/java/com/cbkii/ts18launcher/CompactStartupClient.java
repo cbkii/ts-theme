@@ -25,7 +25,12 @@ final class CompactStartupClient {
             this.compatible = compatible; this.enabled = enabled; rendererReady = ready; this.task = task;
             this.width = width; this.height = height;
         }
-        boolean surfaceMatches(int width, int height) { return rendererReady && this.width == width && this.height == height; }
+        boolean surfaceMatches(int width, int height) {
+            // Maps reports its content area, excluding any task caption/insets. A stale
+            // fullscreen surface must not qualify a newly compacted task.
+            return rendererReady && this.width > 0 && this.height > 0
+                    && this.width <= width && this.height <= height;
+        }
         static Snapshot unknown() { return new Snapshot(false, false, false, -1); }
     }
     private final Context context;

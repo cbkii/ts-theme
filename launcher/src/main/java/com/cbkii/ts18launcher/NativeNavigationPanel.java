@@ -21,7 +21,7 @@ final class NativeNavigationPanel extends FrameLayout {
     private BoundsListener boundsListener;
     private NavigationWindowBounds lastBounds;
     private Runnable openAction;
-    private Runnable fullscreenAction;
+    private Runnable compactAction;
 
     NativeNavigationPanel(Activity activity) {
         super(activity);
@@ -51,17 +51,17 @@ final class NativeNavigationPanel extends FrameLayout {
 
     void setBoundsListener(BoundsListener listener) { boundsListener = listener; }
     void setAction(String label, Runnable action) { showAction(label, action); }
-    // Recovery remains controller-owned. The fallback offers only an explicit open action.
-    void setRecoveryActions(Runnable retry, Runnable fullscreen) { fullscreenAction = fullscreen; }
+    // The map-panel action preserves compact intent; fullscreen belongs to the Navigation rail.
+    void setRecoveryActions(Runnable retry, Runnable fullscreen) { compactAction = retry; }
     private void showAction(String detail, Runnable action) {
         openAction = action;
         openNavigation.setContentDescription(detail == null || detail.isEmpty()
                 ? "Open navigation" : "Open navigation · " + detail);
         openNavigation.setVisibility(action == null ? View.GONE : View.VISIBLE);
     }
-    void showStarting(String label, String backend) { showAction("Starting navigation", fullscreenAction); }
-    void showConfigured(String detail, Runnable openFullscreen) { showAction(detail, openFullscreen); }
-    void showFailure(String detail, Runnable retry, Runnable openFullscreen) { showAction(detail, openFullscreen); }
+    void showStarting(String label, String backend) { showAction("Restore map here", compactAction); }
+    void showConfigured(String detail, Runnable openFullscreen) { showAction("Restore map here", compactAction); }
+    void showFailure(String detail, Runnable retry, Runnable openFullscreen) { showAction("Restore map here", retry); }
     void showUnavailable(String detail, Runnable openFullscreen) { showAction(detail, openFullscreen); }
     void showFullscreenOnly(String label, Runnable openFullscreen) { showAction(label, openFullscreen); }
     void applyAppearance(Activity activity) {

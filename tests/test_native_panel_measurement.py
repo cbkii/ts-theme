@@ -23,13 +23,13 @@ class NativePanelMeasurementTest(unittest.TestCase):
             'android/view/View.java': '''package android.view;
 public class View {
  public static int GONE=8,VISIBLE=0; public int paddingRequests; int padding,w,h;
- Object params; public interface Click {void onClick(View v);}
+ Object params; public Click click;public void performClick(){if(click!=null)click.onClick(this);} public interface Click {void onClick(View v);}
  public static class MeasureSpec {public static int EXACTLY=0x40000000; public static int makeMeasureSpec(int s,int m){return s|m;}}
  public void setPadding(int l,int t,int r,int b){padding=l;paddingRequests++;}
  public int getPaddingLeft(){return padding;}public int getPaddingTop(){return padding;}
  public int getPaddingRight(){return padding;}public int getPaddingBottom(){return padding;}
  public void setFocusable(boolean b){}public void setClickable(boolean b){}public void setBackgroundColor(int c){}
- public void setBackground(Object b){}public void setContentDescription(String s){}public void setOnClickListener(Click c){}
+ public void setBackground(Object b){}public void setContentDescription(String s){}public void setOnClickListener(Click c){click=c;}
  public void setVisibility(int i){}public Object getLayoutParams(){return params;}public void setLayoutParams(Object p){params=p;}
  public void measure(int x,int y){w=x&0x3fffffff;h=y&0x3fffffff;}
  public int getWidth(){return w;}public int getHeight(){return h;}public int getMeasuredWidth(){return w;}public int getMeasuredHeight(){return h;}
@@ -55,6 +55,13 @@ public class MeasureTest {public static void main(String[] args)throws Exception
  NativeNavigationPanel panel=new NativeNavigationPanel(new android.app.Activity());
  var field=NativeNavigationPanel.class.getDeclaredField("openNavigation");field.setAccessible(true);
  var child=(android.view.View)field.get(panel);
+ int[] compact={0},fullscreen={0};panel.setRecoveryActions(()->compact[0]++,()->fullscreen[0]++);
+ panel.showStarting("Maps","loading");child.performClick();
+ panel.showFailure("failed",()->compact[0]++,()->fullscreen[0]++);child.performClick();
+ panel.showConfigured("",()->fullscreen[0]++);child.performClick();
+ if(compact[0]!=3||fullscreen[0]!=0)throw new AssertionError("map-panel recovery opened fullscreen");
+ panel.showFullscreenOnly("Maps",()->fullscreen[0]++);child.performClick();
+ if(fullscreen[0]!=1)throw new AssertionError("explicit fullscreen action lost");
  panel.onMeasure(800,600);int first=child.paddingRequests;
  for(int i=0;i<1000;i++)panel.onMeasure(800,600);
  if(first!=1 || child.paddingRequests!=first || child.getMeasuredWidth()!=450)throw new AssertionError("layout loop");

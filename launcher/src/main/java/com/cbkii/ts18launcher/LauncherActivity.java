@@ -109,6 +109,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
             @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
             @Override public void cancelAutomaticColdStart() { navigationWindowController.cancelAutomaticColdStart(); }
+            @Override public void yieldForMediaPreparation() { navigationWindowController.yieldForMediaPreparation(); }
             @Override public void deferAutomaticPresentation(boolean defer) {
                 navigationWindowController.deferAutomaticStartupPresentation(defer);
             }
@@ -168,7 +169,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         StartupReadinessCoordinator.get(this).onHomeFocusChanged();
-        if (hasFocus && navigationWindowController != null) navigationWindowController.reconcileStartupEvidence();
+        if (hasFocus && navigationWindowController != null) navigationWindowController.onHomeFocusAvailable();
         if (!hasFocus && navigationWindowController != null)
             navigationWindowController.onHomeFocusLost();
         if (root != null && hasFocus) scheduleGeometry();

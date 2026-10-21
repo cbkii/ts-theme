@@ -26,7 +26,7 @@ public Context getApplicationContext(){return this;} public Object getSystemServ
 public ComponentName startService(Intent i){return null;} public ComponentName startForegroundService(Intent i){return null;} }''',
             "android/content/ComponentName.java": "package android.content; public class ComponentName {public ComponentName(Context c,Class<?> t){}}",
             "android/content/Intent.java": "package android.content; public class Intent {}",
-            "android/os/Bundle.java": "package android.os; public class Bundle {public void putInt(String k,int v){} public void putLong(String k,long v){}}",
+            "android/os/Bundle.java": "package android.os; public class Bundle {public java.util.Map<String,Long> values=new java.util.HashMap<>();public void putInt(String k,int v){values.put(k,(long)v);}public void putLong(String k,long v){values.put(k,v);}public long get(String k){return values.getOrDefault(k,-1L);}}",
             "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long now=1000,elapsedOffset;public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now+elapsedOffset;}}",
             "android/os/Looper.java": "package android.os; public class Looper {static Looper l=new Looper();public static Looper getMainLooper(){return l;}public static Looper myLooper(){return l;}}",
             "android/os/Handler.java": '''package android.os; import java.util.*; public class Handler {
@@ -45,13 +45,13 @@ public int state=STATE_PAUSED;public int getState(){return state;}public long ge
             "android/media/session/MediaSession.java": "package android.media.session; public class MediaSession {public static class Token{}public static class QueueItem{}}",
             "android/media/MediaMetadata.java": "package android.media;public class MediaMetadata {public static String METADATA_KEY_MEDIA_ID=\"id\",METADATA_KEY_TITLE=\"title\",METADATA_KEY_DISPLAY_TITLE=\"display\";public String text;public String getString(String s){return text;}}",
             "android/media/session/MediaController.java": '''package android.media.session;
-public class MediaController {public String pkg;public PlaybackState state=new PlaybackState();public int plays,pauses;public boolean buffer,ignorePause;public long playDelay,pauseDelay;
+public class MediaController {public String pkg;public PlaybackState state=new PlaybackState();public int plays,pauses,customPlays,ordinaryPlays;public long lastDeadline;public boolean buffer,ignorePause;public long playDelay,pauseDelay;
 public MediaController(android.content.Context c,MediaSession.Token t){}public MediaController(String p){pkg=p;}
 public String getPackageName(){return pkg;}public PlaybackState getPlaybackState(){return state;}
-public android.media.MediaMetadata metadata;public java.util.List<MediaSession.QueueItem> queue;public java.util.List<MediaSession.QueueItem> getQueue(){return queue;}public android.media.MediaMetadata getMetadata(){return metadata;}public MediaSession.Token getSessionToken(){return new MediaSession.Token();}
+public android.media.MediaMetadata metadata;public java.util.List<MediaSession.QueueItem> queue;public java.util.List<MediaSession.QueueItem> getQueue(){return queue;}public android.media.MediaMetadata getMetadata(){return metadata;}public MediaSession.Token getSessionToken(){return token;}private final MediaSession.Token token=new MediaSession.Token();
 public void registerCallback(Callback c){} public void unregisterCallback(Callback c){}
-public Controls getTransportControls(){return new Controls();}public class Controls {public void sendCustomAction(String a,android.os.Bundle b){play();}
-public void play(){plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause){if(pauseDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=2,pauseDelay);else state.state=2;}}
+public Controls getTransportControls(){return new Controls();}public class Controls {public void sendCustomAction(String a,android.os.Bundle b){customPlays++;lastDeadline=b.get("deadline_elapsed_ms");long remaining=lastDeadline-android.os.SystemClock.elapsedRealtime();if(b.get("protocol")!=1||remaining<=0||remaining>5000)return;plays++;state.state=3;}
+public void play(){ordinaryPlays++;plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause){if(pauseDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=2,pauseDelay);else state.state=2;}}
 public void prepare(){}public void skipToPrevious(){}public void skipToNext(){}}
 public static class Callback {public void onPlaybackStateChanged(PlaybackState p){}public void onMetadataChanged(android.media.MediaMetadata m){}public void onQueueChanged(java.util.List<MediaSession.QueueItem> q){}public void onSessionDestroyed(){}} }
 ''',
@@ -90,7 +90,7 @@ public class Harness {
 static void check(boolean b,String m){if(!b)throw new AssertionError(m);}
 static class Inline extends java.util.concurrent.AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,java.util.concurrent.TimeUnit u){return true;}}
 static class Holding extends Inline {java.util.List<Runnable> pending=new java.util.ArrayList<>();public void execute(Runnable r){pending.add(r);}}
-static MediaSourceBootstrapper create()throws Exception{SystemClock.now=1000;SystemClock.elapsedOffset=0;Handler.jobs.clear();var b=new MediaSourceBootstrapper(new android.content.Context());var f=b.getClass().getDeclaredField("readinessWorker");f.setAccessible(true);((java.util.concurrent.ExecutorService)f.get(b)).shutdownNow();f.set(b,new Inline());return b;}
+static MediaSourceBootstrapper create()throws Exception{SystemClock.now=1000;SystemClock.elapsedOffset=0;Handler.jobs.clear();var b=new MediaSourceBootstrapper(new android.content.Context());var f=b.getClass().getDeclaredField("readinessWorker");f.setAccessible(true);((java.util.concurrent.ExecutorService)f.get(b)).shutdownNow();f.set(b,new Inline());b.refreshStartupObservation();return b;}
 static void seedCold(MediaSourceBootstrapper b)throws Exception{
  Class<?> s=Class.forName("com.cbkii.ts18launcher.MediaSourceBootstrapper$ServiceStart");
  Constructor<?> c=s.getDeclaredConstructors()[0];c.setAccessible(true);Object start=c.newInstance(MediaSourceAdapter.resolve(null,MediaSourceAdapter.NAVRADIO_PACKAGE));
@@ -136,13 +136,15 @@ public static void main(String[] args)throws Exception {
  check(MediaSessionManager.queries==queries,"readiness tick issued Binder query");
  Holding delayed=new Holding();var worker=MediaSourceBootstrapper.class.getDeclaredField("readinessWorker");worker.setAccessible(true);worker.set(b,delayed);
  b.refreshStartupObservation();Handler.until(SystemClock.now+2000);check(!b.hasUsableQueue(radio.pkg),"timeout retained ready evidence");
+ check(!b.startupSessionAbsent(radio.pkg),"unknown observation proved session death");
+ check(b.hasSessionIdentity(radio.pkg),"unknown observation revoked a known token");
  delayed.pending.remove(0).run();check(!b.hasUsableQueue(radio.pkg),"late timed-out completion restored readiness");
  worker.set(b,new Inline());b.refreshStartupObservation();check(b.hasUsableQueue(radio.pkg),"new observation did not recover");
  int before=radio.pauses;long commands=b.userCommandGeneration();
  b.command("Radio",radio.pkg,MediaListenerService.Command.NEXT,(ok,m)->{});
  check(!b.pauseUnrequestedPlayback(radio.pkg,commands)&&radio.pauses==before,"startup overwrote newer user command");b.destroy();
  // A pre-suspend Play cannot acquire a fresh deadline after waking.
- b=create();AuxioPreparationContract.paired=true;Object expired=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,5500L);
+ b=create();AuxioPreparationContract.paired=true;music.metadata=new android.media.MediaMetadata();music.metadata.text="Saved track";Object expired=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,5500L);
  Method send=MediaSourceBootstrapper.class.getDeclaredMethod("sendPending",MediaController.class,pc);send.setAccessible(true);
  SystemClock.elapsedOffset=10000;int priorPlays=music.plays;
  check(!(Boolean)send.invoke(b,music,expired)&&music.plays==priorPlays,"suspend extended an old Play deadline");
@@ -150,8 +152,29 @@ public static void main(String[] args)throws Exception {
  ((Map)toggles.get(b)).put(music.pkg,expired);music.state.state=2;
  b.command("Music",music.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->{});
  check(music.plays==priorPlays+1,"fresh wake tap coalesced into an expired Play");priorPlays=music.plays;
- Object fresh=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,5500L);
+ b.refreshStartupObservation();Object fresh=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,5500L);
  check((Boolean)send.invoke(b,music,fresh)&&music.plays==priorPlays+1,"fresh post-wake Play was rejected");b.destroy();SystemClock.elapsedOffset=0;
+ // Immediate warm PLAY must bypass the custom protocol completely.
+ b=create();AuxioPreparationContract.paired=true;music.state.state=2;
+ int ordinary=music.ordinaryPlays,custom=music.customPlays;
+ b.command("Music",music.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->{});
+ check(music.ordinaryPlays==ordinary+1&&music.customPlays==custom,"warm PLAY did not use ordinary transport");b.destroy();
+ // Real V1 receiver limits: both originating command budgets must be shortened, never renewed.
+ for(long budget:new long[]{6100L,7700L}){
+  b=create();AuxioPreparationContract.paired=true;music.metadata=null;music.queue=null;music.state.state=2;b.refreshStartupObservation();
+  Object cold=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,SystemClock.uptimeMillis()+budget);
+  long original=SystemClock.elapsedRealtime()+budget;int beforeCustom=music.customPlays;
+  check((Boolean)send.invoke(b,music,cold),"cold PLAY not dispatched");
+  check(music.customPlays==beforeCustom+1&&music.state.state==3,"paired receiver rejected cold PLAY");
+  check(music.lastDeadline<=original&&music.lastDeadline-SystemClock.elapsedRealtime()==5000,"transport deadline not bounded");b.destroy();
+ }
+ // A cold tap joins preparation once; no PLAY before the prepared session appears.
+ b=create();AuxioPreparationContract.paired=true;music.metadata=null;music.state.state=2;
+ int[] prepared={0};b.setPreparationRequester((pkg,deadline)->prepared[0]++);int beforeCold=music.plays;
+ b.command("Music",music.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->{});
+ check(prepared[0]==1&&music.plays==beforeCold,"cold tap bypassed preparation gate");
+ music.metadata=new android.media.MediaMetadata();music.metadata.text="Restored track";Handler.until(1250);
+ check(music.plays==beforeCold+1,"prepared cold tap did not PLAY");b.destroy();
  System.out.println("PASS cold guard/coalescing/buffering/handover/content/newer intent");
 }}
 ''',

@@ -25,6 +25,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         default void deferAutomaticPresentation(boolean defer) { }
         default void refreshEvidence() { }
         default void cancelAutomaticColdStart() { }
+        default void yieldForMediaPreparation() { cancelAutomaticColdStart(); }
     }
     private static StartupReadinessCoordinator instance;
     static synchronized StartupReadinessCoordinator get(Context context) {
@@ -50,6 +51,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private int homeTask = -1;
     private long stagedCommands;
     private boolean pauseSent;
+    private boolean stagedForExplicitPlay;
     private int navigationWaitGeneration = -1;
     private int navigationWaitEpoch;
     private java.util.concurrent.atomic.AtomicBoolean stageLease = new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -62,6 +64,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private long interactionUntil;
     private boolean homeHasReceivedFocus;
     private long initialHomeFocusUntil;
+    private long explicitMusicPreparationUntil;
 
     private StartupReadinessCoordinator(Context context) {
         this.context = context.getApplicationContext();
@@ -71,7 +74,35 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private MediaSourceBootstrapper media() {
         MediaSourceBootstrapper owner = Ts18LauncherApplication.mediaSources(context);
         owner.setStartupObserver(this::onMediaReadinessChanged);
+        owner.setPreparationRequester(this::prepareForPlay);
         return owner;
+    }
+
+    /** Join the existing owner; a user Play may prepare even when passive warm-up is disabled. */
+    void prepareForPlay(String pkg, long deadlineElapsedMs) {
+        if (destroyed || !MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg)
+                || !pkg.equals(packageFor(Source.MUSIC))
+                || deadlineElapsedMs <= SystemClock.elapsedRealtime()) return;
+        explicitMusicPreparationUntil = deadlineElapsedMs;
+        yielded = false;
+        StartupReadinessPolicy.Record r = policy.record(Source.MUSIC);
+        if (ready(Source.MUSIC, pkg) || r.activityLaunchAccepted) return;
+        if (r.state != State.STARTING) {
+            packages[Source.MUSIC.ordinal()] = pkg;
+            policy.begin(Source.MUSIC, Trigger.READINESS_CHANGED, Method.ACTIVITY_BOOTSTRAP,
+                    SystemClock.uptimeMillis());
+        }
+        if (!foregroundQueue.contains(Source.MUSIC) && foregroundSource != Source.MUSIC)
+            foregroundQueue.addFirst(Source.MUSIC);
+        if (navigation != null && navigation.busy()) navigation.yieldForMediaPreparation();
+        updateNavigationAdmission();
+        runForegroundSoon();
+    }
+
+    private boolean explicitMusicPreparation() {
+        // Once admitted, finish the bounded HOME-return transaction even if Play expires.
+        return SystemClock.elapsedRealtime() < explicitMusicPreparationUntil
+                || explicitMusicPreparationUntil > 0L && foregroundBusy && foregroundSource == Source.MUSIC;
     }
 
     void onTrigger(Trigger trigger) {
@@ -100,10 +131,11 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         }
         MediaEventTrace.record("startup", "trigger", trigger + " kind=" + kind + " mode=" + mode()
                 + (trigger == Trigger.SCREEN_ON ? " acc=unverified" : ""));
-        if (!UiPersonalizationPrefs.mediaStartupWarmup(context))
+        if (!UiPersonalizationPrefs.mediaStartupWarmup(context) && !explicitMusicPreparation())
             cancelForeground("media-disabled-by-preference");
         for (Source source : Source.values()) {
-            if (source != Source.NAVIGATION && !UiPersonalizationPrefs.mediaStartupWarmup(context)) continue;
+            if (source != Source.NAVIGATION && !UiPersonalizationPrefs.mediaStartupWarmup(context)
+                    && !(source == Source.MUSIC && explicitMusicPreparation())) continue;
             String pkg = packageFor(source);
             int index = source.ordinal();
             if (!pkg.equals(packages[index])) {
@@ -230,6 +262,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         runForegroundSoon();
     }
     void noteExternalNavigation() {
+        explicitMusicPreparationUntil = 0L;
         yielded = true;
         if (navigation != null) navigation.cancelAutomaticColdStart();
         cancelForeground("external-navigation");
@@ -307,8 +340,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
 
     private boolean foregroundAllowed() {
-        return StartupReadinessPolicy.foregroundAllowed(mode()) && !yielded
-                && UiPersonalizationPrefs.mediaStartupWarmup(context);
+        return !yielded && (explicitMusicPreparation()
+                || StartupReadinessPolicy.foregroundAllowed(mode())
+                    && UiPersonalizationPrefs.mediaStartupWarmup(context));
     }
     private void runForegroundSoon() {
         if (destroyed || foregroundScheduled) return;
@@ -338,7 +372,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             policy.block(source, r.generation, "notification-access-required", SystemClock.uptimeMillis());
             updateNavigationAdmission(); runForegroundSoon(); return;
         }
-        if (media().startupPlaying(pkg) || media().startupPlaying(opposite)) {
+        if (media().startupPlaying(pkg) || media().startupPlaying(opposite)
+                && !(source == Source.MUSIC && explicitMusicPreparation())) {
             policy.block(source, r.generation, "playing-source-protected", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
         }
         if (source == Source.MUSIC && MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg)
@@ -366,6 +401,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             yieldStage(source, r.generation, "entry-target-unresolved"); return;
         }
         stagedCommands = media().userCommandGeneration(); pauseSent = false;
+        stagedForExplicitPlay = source == Source.MUSIC && explicitMusicPreparation()
+                && pkg.equals(media().userCommandPackage());
         claimMediaAdmission(source, pkg, token, () -> observe(token, top -> {
             if (!homeResumed || !foregroundAllowed() || !safeScreen() || top == null
                     || !(top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.LauncherActivity")
@@ -375,7 +412,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             if (source == Source.RADIO && !MediaListenerService.hasNotificationAccess(context)) {
                 yieldStage(source, g, "notification-access-lost"); return;
             }
-            if (media().isPlaying(pkg) || media().isPlaying(opposite)) {
+            if (media().isPlaying(pkg) || media().isPlaying(opposite)
+                    && !(source == Source.MUSIC && explicitMusicPreparation())) {
                 yieldStage(source, g, "playing-source-arrived"); return;
             }
             if (!policy.markActivityLaunch(source)) { yieldStage(source, g, "launch-already-accepted"); return; }
@@ -515,7 +553,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 if (!validStage(token) || top == null || !top.matches(AndroidUserId.current(), stagedTask, stagedEntry)) {
                     yieldStage(source, g, "foreground-owner-changed"); return;
                 }
-                if (!pauseSent && media().startupPlaying(pkg)) {
+                if (!pauseSent && !stagedForExplicitPlay && media().startupPlaying(pkg)) {
                     pauseSent = media().pauseUnrequestedPlayback(pkg, stagedCommands);
                     awaitSilence(source, g, pkg, token, SystemClock.uptimeMillis() + 1600L);
                 } else finishStage(source, g, pkg, token);
@@ -578,6 +616,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             }
             String pkg = packageFor(source);
             if (ready(source, pkg) && (!media().isPlaying(pkg)
+                    || stagedForExplicitPlay
                     || media().userCommandGeneration() != stagedCommands && pkg.equals(media().userCommandPackage()))) {
                 policy.ready(source, g, SystemClock.uptimeMillis()); noteMediaReady(source, pkg);
                 if (media().isPlaying(pkg)) policy.active(source, SystemClock.uptimeMillis());
