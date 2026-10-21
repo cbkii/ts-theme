@@ -263,6 +263,21 @@ public final class SettingsActivity extends Activity {
     }
 
     private void renderMedia() {
+        addSection(getString(R.string.startup_loader_title));
+        addSwitchRow(R.drawable.ic_power, getString(R.string.startup_loader_title),
+                getString(R.string.startup_loader_summary), UiPersonalizationPrefs.startupLoader(this),
+                checked -> { UiPersonalizationPrefs.setStartupLoader(this, checked); render(); });
+        if (UiPersonalizationPrefs.startupLoader(this)) {
+            addSwitchRow(R.drawable.ic_power, getString(R.string.startup_loader_after_sleep),
+                    getString(R.string.startup_loader_after_sleep_summary),
+                    UiPersonalizationPrefs.startupLoaderAfterSleep(this), checked ->
+                            UiPersonalizationPrefs.setStartupLoaderAfterSleep(this, checked));
+            addSystemRow(R.drawable.ic_settings, getString(R.string.startup_loader_overlay),
+                    Settings.canDrawOverlays(this) ? getString(R.string.startup_loader_overlay_granted)
+                            : getString(R.string.startup_loader_overlay_missing),
+                    v -> startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:" + getPackageName()))));
+        }
         addSection("Playback");
         addSwitchRow(R.drawable.ic_power, "Prepare music and radio at startup",
                 "Prepares the selected sources automatically. The startup testing method may briefly open "

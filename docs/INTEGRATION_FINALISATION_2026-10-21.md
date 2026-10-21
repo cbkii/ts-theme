@@ -29,3 +29,8 @@ The prior triplet failed physical acceptance: launcher PLAY did not resume Auxio
 The attached secondary review's claim that Activity preparation is wholly prohibited was stale: MediaSourceAdapter is background-only, while StartupReadinessCoordinator already owns Activity staging. Its deadline, fallback-routing and initial renderer-wait findings were substantiated. P0 labels were not adopted: these are P1 primary-flow failures under the Project's severity definitions.
 
 Regression gates: actual panel click routing; warm ordinary PLAY; cold V1 admission at both 6.1/7.7-second originating budgets; expiry/newer intent; single preparation admission and exact HOME return; initial frame wait; focus refusal/re-arm; drawer/app escape during pending presentation; caption/inset dimensions. Qualify the replacement signed triplet on TS18 before merge. A local loading state must never intercept rail/drawer controls. Around three seconds remains a soft target; CI does not prove audible output, useful map pixels/touch or ACC behaviour.
+
+## Optional readiness loader follow-up
+
+The 22 October follow-up adds opt-in Startup Readiness Loader and after-sleep settings, using
+the existing source/task owners. See [audit, external research, BACK limitations and device gates](STARTUP_READINESS_LOADER.md).

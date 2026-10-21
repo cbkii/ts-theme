@@ -15,12 +15,12 @@ class StartupRuntimeTests(unittest.TestCase):
             self.skipTest('JDK unavailable')
         stubs = {
             'android/os/Looper.java': 'package android.os; public class Looper {static Looper l=new Looper(); public static Looper getMainLooper(){return l;} public static Looper myLooper(){return l;}}',
-            'android/os/SystemClock.java': 'package android.os; public class SystemClock {public static long now=100; public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now;}}',
+            'android/os/SystemClock.java': 'package android.os; public class SystemClock {public static long now=100,asleep=0; public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now+asleep;}}',
             'android/os/Handler.java': '''package android.os;import java.util.*;
 public class Handler {record Job(Runnable r,long at){} static List<Job> jobs=new ArrayList<>();
 public Handler(Looper l){}public boolean post(Runnable r){return postDelayed(r,0);}
 public boolean postDelayed(Runnable r,long d){jobs.add(new Job(r,SystemClock.now+d));return true;}
-public void removeCallbacksAndMessages(Object o){jobs.clear();}
+public void removeCallbacks(Runnable r){jobs.removeIf(j->j.r()==r);}public void removeCallbacksAndMessages(Object o){jobs.clear();}
 public static void until(long end){int n=0;while(!jobs.isEmpty()){
 Job j=jobs.stream().min(Comparator.comparingLong(Job::at)).orElseThrow();if(j.at()>end)break;
 if(++n>1000)throw new AssertionError("unbounded jobs");jobs.remove(j);SystemClock.now=j.at();j.r().run();}SystemClock.now=end;}
@@ -55,7 +55,7 @@ boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radi
 boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
 boolean startupSessionAbsent(String p){return !hasUsableQueue(p);}boolean startupPlaying(String p){return isPlaying(p);}void setStartupObserver(Runnable r){}long userCommandGeneration(){return commands;}String userCommandPackage(){return "com.tw.media";}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
 class AuxioPreparationContract {static boolean capability=true;static boolean supported(android.content.Context c){return capability;}static String canonicalEntry(android.content.Context c,android.content.ComponentName n){return n.flattenToShortString();}}
-class UiPersonalizationPrefs {static boolean enabled=true;static boolean mediaStartupWarmup(android.content.Context c){return enabled;}}
+class UiPersonalizationPrefs {static boolean loader=false,afterSleep=false;static boolean startupLoader(android.content.Context c){return loader;}static boolean startupLoaderAfterSleep(android.content.Context c){return afterSleep;}static boolean enabled=true;static boolean mediaStartupWarmup(android.content.Context c){return enabled;}}
 class TestingProfiles {static String mode="auto";static String startup(android.content.Context c){return mode;}}
 class LauncherPrefs {static String KEY_MUSIC="music",KEY_NAV="nav";static String music="com.tw.media";
 static String packageFor(android.content.Context c,String k){return k.equals("music")?music:"app.organicmaps.incar";}}
@@ -69,7 +69,7 @@ class AppResolver {enum LaunchOutcome {ACCEPTED,REJECTED,UNCERTAIN}static Launch
 static LaunchOutcome launchForStartup(android.content.Context c,String p){launches++;
 if(outcome==LaunchOutcome.ACCEPTED){RootShell.top=RootShell.forComponent(p+"/"+p+".Main",20);launched.run();}return outcome;}}
 class NavigationHelperResult {boolean success;int userId=0,taskId=10;String component="";String code;NavigationHelperResult(boolean s,String c){success=s;code=c;}}
-class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}NavigationHelperResult observe(){return null;}
+class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static boolean fast=false;static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}NavigationHelperResult observe(){if(!fast)return null;StartupForegroundPolicy p=StartupForegroundPolicy.parse(RootShell.top);if(p==null)return new NavigationHelperResult(false,"UNKNOWN");NavigationHelperResult r=new NavigationHelperResult(true,"FOREGROUND");r.userId=p.user;r.taskId=p.task;r.component=p.component;return r;}
 NavigationHelperResult launch(String p,String e,int h){starts++;before.run();if(code.equals("STARTUP_SOURCE_DISPATCHED")){RootShell.top=RootShell.forComponent(e,20);launched.run();}return new NavigationHelperResult(code.equals("STARTUP_SOURCE_DISPATCHED"),code);}
 NavigationHelperResult restoreHome(String p,String e,int t,int h){returns++;if(returnCode.equals("STARTUP_HOME_RESTORED"))android.app.Activity.focused=true;android.app.ActivityManager.moved.run();return new NavigationHelperResult(returnCode.equals("STARTUP_HOME_RESTORED"),returnCode);}
 static boolean definitelyNotStarted(NavigationHelperResult r){return r.code.equals("STARTUP_SOURCE_REJECTED");}}
@@ -92,7 +92,7 @@ static StartupReadinessCoordinator create(boolean ready)throws Exception{return 
 static StartupReadinessCoordinator create(boolean ready,boolean clear)throws Exception{
 navReady=ready;navigationStarts=0;AuxioPreparationContract.capability=true;
 Handler.reset();if(clear)android.content.SharedPreferences.strings.clear();android.content.SharedPreferences.commitOk=true;android.app.Activity.focused=!coldHomeUnfocused;navigationDeferred=false;TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
-StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
+StartupRootFallback.fast=false;StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
 StartupRootFallback.code="STARTUP_SOURCE_DISPATCHED";StartupRootFallback.starts=0;StartupRootFallback.returns=0;StartupRootFallback.before=()->{};
 android.app.ActivityManager.reject=false;android.app.ActivityManager.uncertain=false;
 MediaListenerService.access=true;RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
@@ -242,6 +242,47 @@ isolated.prepareForPlay("com.tw.media",SystemClock.elapsedRealtime()+6100);
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);isolated.onHomeResumed(new android.app.Activity());};
 Handler.until(1200);check(StartupRootFallback.starts==1&&AppResolver.launches==0,"explicit Music preparation authorised disabled Radio staging");
 isolated.destroy();UiPersonalizationPrefs.enabled=true;coldMusic=false;
+// Opt-in all-source preparation reserves Radio before Maps; it uses the same owner.
+UiPersonalizationPrefs.loader=true;UiPersonalizationPrefs.enabled=false;
+StartupReadinessCoordinator loaded=create(false);StartupRootFallback.fast=true;
+class Ui implements StartupReadinessCoordinator.LoaderUi {public boolean canMask(){return true;}int renders,hides;boolean masked;String status="";public void render(String s,boolean h){renders++;status=s;}public void mask(boolean b){masked=b;}public void hide(){hides++;masked=false;}}
+Ui ui=new Ui();loaded.attachLoader(ui);Handler.until(1600);
+check(AppResolver.launches==1&&navigationStarts==0,"loader did not serialise media before Maps");
+check(ui.masked&&ui.status.contains("Radio: preparing"),"verified source was not masked or readiness invented");
+loaded.onTrigger(Trigger.BOOT);loaded.onTrigger(Trigger.SCREEN_ON);
+check(AppResolver.launches==1,"duplicate loader triggers replayed admission");
+check(loaded.dismissLoader()&&!loaded.dismissLoader()&&!ui.masked,"BACK-style dismissal did not remain dismissed");
+Ts18LauncherApplication.shared.radioReady=true;
+android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);loaded.onHomeResumed(new android.app.Activity());};
+Handler.until(5000);check(android.app.ActivityManager.moves==1,"dismissal lost admitted exact-HOME cleanup");loaded.destroy();
+// Same-boot process recreation does not repeat the cold-boot loader.
+UiPersonalizationPrefs.enabled=true;
+StartupReadinessCoordinator consumed=create(false,false);check(!consumed.dismissLoader(),"same boot replayed loader");consumed.destroy();
+// Wake opt-out is independent from ordinary HOME callbacks. Opt-in consumes one wake.
+StartupReadinessCoordinator wakes=create(false);wakes.dismissLoader();wakes.onScreenOff();wakes.onTrigger(Trigger.SCREEN_ON);
+check(!wakes.dismissLoader(),"sleep loader ignored opt-out");UiPersonalizationPrefs.afterSleep=true;
+wakes.onScreenOff();wakes.onTrigger(Trigger.SCREEN_ON);check(wakes.dismissLoader(),"opted-in wake did not start loader");
+wakes.onTrigger(Trigger.SCREEN_ON);check(!wakes.dismissLoader(),"repeated screen/user-present replayed wake");wakes.destroy();
+// A process killed over suspend can recover from the elapsed-vs-uptime sleep clock.
+SystemClock.asleep=5000;StartupReadinessCoordinator sleepRestart=create(false,false);
+check(sleepRestart.dismissLoader(),"process-death sleep evidence was missed");sleepRestart.destroy();SystemClock.asleep=0;
+// A permission Activity must unmask immediately and stop foreground preparation.
+StartupReadinessCoordinator protectedUi=create(false);StartupRootFallback.fast=true;Ui protection=new Ui();protectedUi.attachLoader(protection);Handler.until(1600);
+check(protection.masked,"mask fixture not established");
+RootShell.top=RootShell.forComponent("com.navimods.radio/.Permission",20);Handler.until(2800);
+check(!protection.masked&&!protectedUi.dismissLoader()&&android.app.ActivityManager.moves==0,"permission Activity masked or focus stolen");protectedUi.destroy();
+// Source BACK returning HOME dismisses presentation without inventing another Activity.
+StartupReadinessCoordinator back=create(false);Handler.until(1600);
+RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);back.onHomeResumed(new android.app.Activity());
+check(!back.dismissLoader()&&AppResolver.launches==1,"source BACK did not dismiss loader");back.destroy();
+UiPersonalizationPrefs.loader=false;UiPersonalizationPrefs.afterSleep=false;UiPersonalizationPrefs.enabled=true;StartupRootFallback.fast=false;
+// A once-ready journal plus definite source death revokes an UNCERTAIN stale admission.
+StartupReadinessCoordinator lostReady=create(true);var record=ledger(lostReady).record(Source.RADIO);
+record.state=State.UNCERTAIN;record.activityLaunchAccepted=true;
+new android.content.SharedPreferences().edit().putString("media_admission_v1_RADIO","5:0:com.navimods.radio:ready").apply();
+Ts18LauncherApplication.shared.radioReady=false;lostReady.onTrigger(Trigger.READINESS_CHANGED);
+check(ledger(lostReady).record(Source.RADIO).state==State.STARTING&&!ledger(lostReady).record(Source.RADIO).activityLaunchAccepted,"confirmed source death retained stale admission");lostReady.destroy();
+System.out.println("PASS startup loader opt-in/order/boot/wake/process-sleep/BACK/permission/source-loss");
 System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
 }}
 '''
@@ -250,7 +291,7 @@ System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unkno
         stubs['org/junit/Assert.java'] = 'package org.junit;public class Assert {public static void assertTrue(boolean b){if(!b)throw new AssertionError();}public static void assertFalse(boolean b){assertTrue(!b);}public static void assertEquals(Object a,Object b){assertTrue(java.util.Objects.equals(a,b));}}'
         stubs['com/cbkii/ts18launcher/Harness.java'] = stubs['com/cbkii/ts18launcher/Harness.java'].replace(
             'StartupForegroundPolicy top=',
-            'int tested=0;for(java.lang.reflect.Method m:StartupReadinessPolicyTest.class.getDeclaredMethods()){if(m.getAnnotation(org.junit.Test.class)!=null){m.invoke(new StartupReadinessPolicyTest());tested++;}}check(tested>=14,"policy coverage missing");StartupForegroundPolicy top=')
+            'int tested=0;for(Object suite:new Object[]{new StartupReadinessPolicyTest(),new StartupLoaderPolicyTest()})for(java.lang.reflect.Method m:suite.getClass().getDeclaredMethods()){if(m.getAnnotation(org.junit.Test.class)!=null){m.invoke(suite);tested++;}}check(tested>=21,"policy coverage missing");StartupForegroundPolicy top=')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name, content in stubs.items():
@@ -260,8 +301,9 @@ System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unkno
             # Stub Context's identity mirrors the real standalone launcher.
             p = root / 'android/content/Context.java'
             p.write_text(p.read_text().replace('SharedPreferences prefs=', 'public String getPackageName(){return "com.cbkii.ts18launcher";} SharedPreferences prefs='))
-            shutil.copyfile(ROOT / 'launcher/src/test/java/com/cbkii/ts18launcher/StartupReadinessPolicyTest.java', root / 'com/cbkii/ts18launcher/StartupReadinessPolicyTest.java')
-            for name in ('StartupReadinessPolicy', 'StartupForegroundPolicy', 'StartupReadinessCoordinator'):
+            for name in ('StartupReadinessPolicyTest', 'StartupLoaderPolicyTest'):
+                shutil.copyfile(ROOT / f'launcher/src/test/java/com/cbkii/ts18launcher/{name}.java', root / f'com/cbkii/ts18launcher/{name}.java')
+            for name in ('StartupReadinessPolicy', 'StartupForegroundPolicy', 'StartupReadinessCoordinator', 'StartupLoaderPolicy'):
                 shutil.copyfile(SRC / (name + '.java'), root / 'com/cbkii/ts18launcher' / (name + '.java'))
             subprocess.run(['java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-d', str(root), *map(str, root.rglob('*.java'))], check=True)
             subprocess.run(['java', '-cp', str(root), 'com.cbkii.ts18launcher.Harness'], check=True, timeout=30)

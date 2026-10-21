@@ -161,6 +161,8 @@ final class NavigationWindowController {
         }
     }
 
+    int startupTaskId() { return activeTaskId; }
+
     boolean startupNavigationBusy() { return activeOperationId != 0 || normalBootstrapInFlight; }
 
     /** The existing controller owns the only Maps launch claim and all task/window verification. */

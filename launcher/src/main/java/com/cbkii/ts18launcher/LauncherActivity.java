@@ -68,6 +68,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
     private StartupReadinessCoordinator.NavigationHook startupHook;
+    private StartupReadinessLoader readinessLoader;
+    private StartupReadinessCoordinator.LoaderUi loaderUi;
     private boolean launchedAsHome;
     private boolean redirectingToHome;
     private boolean locationPermissionRequested;
@@ -106,6 +108,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         startupHook = new StartupReadinessCoordinator.NavigationHook() {
             @Override public void refreshEvidence() { navigationWindowController.reconcileStartupEvidence(); }
             @Override public boolean ready() { return navigationWindowController.startupNavigationReady(); }
+            @Override public int taskId() { return navigationWindowController.startupTaskId(); }
             @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
             @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
             @Override public void cancelAutomaticColdStart() { navigationWindowController.cancelAutomaticColdStart(); }
@@ -131,6 +134,19 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         }));
         root.addView(appDrawerPanel);
         appDrawerPanel.preload();
+        readinessLoader = new StartupReadinessLoader(this, root,
+                () -> StartupReadinessCoordinator.get(this).dismissLoader());
+        loaderUi = new StartupReadinessCoordinator.LoaderUi() {
+            @Override public void render(String status, boolean visible) { readinessLoader.show(status, visible); }
+            @Override public void mask(boolean show) { if (show) readinessLoader.showMask(); else readinessLoader.hideMask(); }
+            @Override public boolean canMask() { return readinessLoader.canMask(); }
+            @Override public void hide() { readinessLoader.hide(); }
+            @Override public void incomplete() {
+                android.widget.Toast.makeText(LauncherActivity.this, R.string.startup_loader_incomplete,
+                        android.widget.Toast.LENGTH_LONG).show();
+            }
+        };
+        StartupReadinessCoordinator.get(this).attachLoader(loaderUi);
         updateMediaPresentation();
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 scheduleGeometry());
@@ -148,6 +164,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (redirectingToHome || root == null) return;
         launchedAsHome = intent != null && intent.hasCategory(Intent.CATEGORY_HOME);
         if (launchedAsHome) {
+            StartupReadinessCoordinator.get(this).dismissLoader();
             if (navigationWindowController != null) navigationWindowController.cancelLauncherOverlay();
             if (appDrawerPanel != null) appDrawerPanel.restoreDashboardRoot();
             root.clearFocus();
@@ -217,6 +234,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onStop() {
         if (root == null) { super.onStop(); return; }
+        if (readinessLoader != null) readinessLoader.hide();
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
         mediaStatusGeneration++;
@@ -235,6 +253,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onDestroy() {
+        StartupReadinessCoordinator.get(this).detachLoader(loaderUi);
+        if (readinessLoader != null) readinessLoader.destroy();
         StartupReadinessCoordinator.get(this).detachNavigationHook(startupHook);
         if (root != null) root.removeCallbacks(geometryUpdate);
         mediaRefreshHandler.removeCallbacksAndMessages(null);
@@ -245,6 +265,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override public void onBackPressed() {
+        if (StartupReadinessCoordinator.get(this).dismissLoader()) return;
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) { appDrawerPanel.hidePanel(); return; }
         if (launchedAsHome || HomeMode.isDefaultHome(this)) return;
         super.onBackPressed();
@@ -597,6 +618,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             place(nativeNavigationPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (appDrawerPanel != null) place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
+        if (readinessLoader != null) readinessLoader.geometry(g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
     }
 
     private void place(View view, int x, int y, int width, int height) {

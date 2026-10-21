@@ -23,10 +23,25 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         boolean busy();
         void reconcile();
         default void deferAutomaticPresentation(boolean defer) { }
+        default int taskId() { return -1; }
         default void refreshEvidence() { }
         default void cancelAutomaticColdStart() { }
         default void yieldForMediaPreparation() { cancelAutomaticColdStart(); }
     }
+    interface LoaderUi {
+        void render(String status, boolean homeVisible);
+        void mask(boolean show);
+        void hide();
+        default boolean canMask() { return false; }
+        default void incomplete() { }
+    }
+    private final StartupLoaderPolicy loader = new StartupLoaderPolicy();
+    private LoaderUi loaderUi;
+    private int loaderEpoch;
+    private boolean loaderProbePending, expectingHomeReturn, stagedByLoader, suppressLoaderStaging;
+    private long lastLoaderProbeAt = -1000L;
+    private final Runnable loaderTick = this::updateLoader;
+
     private static StartupReadinessCoordinator instance;
     static synchronized StartupReadinessCoordinator get(Context context) {
         if (instance == null) instance = new StartupReadinessCoordinator(context.getApplicationContext());
@@ -119,6 +134,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             MediaEventTrace.record("startup", "durable-boot-reconcile", "pending=" + pendingBoot + " current=" + boot);
         }
         Kind kind = StartupReadinessPolicy.classify(trigger, boot, seen);
+        considerLoader(trigger, boot, prefs);
         // BOOT_COMPLETED can arrive after process/HOME startup: never reset active admissions twice.
         if (boot >= 0 && boot != seen) {
             cancelForeground("new-boot"); policy.resetForBoot(); yielded = false;
@@ -131,10 +147,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         }
         MediaEventTrace.record("startup", "trigger", trigger + " kind=" + kind + " mode=" + mode()
                 + (trigger == Trigger.SCREEN_ON ? " acc=unverified" : ""));
-        if (!UiPersonalizationPrefs.mediaStartupWarmup(context) && !explicitMusicPreparation())
+        if (!automaticMediaPreparation() && !explicitMusicPreparation() && !(foregroundBusy && stagedByLoader))
             cancelForeground("media-disabled-by-preference");
         for (Source source : Source.values()) {
-            if (source != Source.NAVIGATION && !UiPersonalizationPrefs.mediaStartupWarmup(context)
+            if (source != Source.NAVIGATION && !automaticMediaPreparation()
                     && !(source == Source.MUSIC && explicitMusicPreparation())) continue;
             String pkg = packageFor(source);
             int index = source.ordinal();
@@ -175,6 +191,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                         if (!foregroundQueue.contains(source)) foregroundQueue.addFirst(source);
                     }
                 }
+                if (source == Source.RADIO && loader.active() && sourceForegroundAllowed(source)
+                        && MediaSourceAdapter.NAVRADIO_PACKAGE.equals(pkg) && !policy.record(source).activityLaunchAccepted
+                        && !foregroundQueue.contains(source)) foregroundQueue.addLast(source);
                 await(source, g, pkg, now + (source == Source.MUSIC ? 5000L : 2500L));
             }
         }
@@ -225,7 +244,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         }
         for (Source source : new Source[] {Source.RADIO, Source.MUSIC}) {
             if (!sourceForegroundAllowed(source)) continue;
-            if (source == Source.RADIO && navigation != null && !navigation.ready()) continue;
+            if (source == Source.RADIO && !loader.active() && navigation != null && !navigation.ready()) continue;
             String pkg = packageFor(source);
             if (policy.record(source).state != State.STARTING || policy.record(source).activityLaunchAccepted
                     || ready(source, pkg)) continue;
@@ -239,6 +258,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     void attachNavigationHook(NavigationHook hook) { navigation = hook; updateNavigationAdmission(); }
     void detachNavigationHook(NavigationHook hook) { if (navigation == hook) navigation = null; }
     void onHomeResumed(Activity activity) {
+        // BACK from a staged third-party Activity returns here. A coordinator-owned HOME
+        // return is distinguished so it does not dismiss the rest of the preparation session.
+        if (loader.active() && foregroundBusy && stagedTask > 0 && !expectingHomeReturn)
+            dismissLoader();
         if (home.get() != activity) {
             homeHasReceivedFocus = activity.hasWindowFocus();
             initialHomeFocusUntil = SystemClock.uptimeMillis() + 1000L;
@@ -256,13 +279,19 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (activity != null && activity.hasWindowFocus()) homeHasReceivedFocus = true;
         updateNavigationAdmission(); runForegroundSoon();
     }
-    void onScreenOff() { yielded = true; cancelForeground("screen-off"); }
+    void onScreenOff() {
+        if (UiPersonalizationPrefs.startupLoaderAfterSleep(context))
+            context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE).edit()
+                    .putString("loader_sleep_pending_v1", "yes").apply();
+        finishLoader("screen-off"); yielded = true; cancelForeground("screen-off");
+    }
     void noteUserInteraction() {
         // A transport/drawer tap is not permission to disable Maps for the rest of the boot.
         interactionUntil = SystemClock.uptimeMillis() + 300L;
         runForegroundSoon();
     }
     void noteExternalNavigation() {
+        finishLoader("user-navigation");
         explicitMusicPreparationUntil = 0L;
         yielded = true;
         if (navigation != null) navigation.cancelAutomaticColdStart();
@@ -344,9 +373,12 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         return sourceForegroundAllowed(Source.MUSIC) || sourceForegroundAllowed(Source.RADIO);
     }
     private boolean sourceForegroundAllowed(Source source) {
+        // Dismissing presentation cancels future loader staging, but an already admitted
+        // transaction still owns its bounded exact-HOME return.
+        if (foregroundBusy && source == foregroundSource && stagedByLoader) return true;
         return !yielded && (source == Source.MUSIC && explicitMusicPreparation()
-                || StartupReadinessPolicy.foregroundAllowed(mode())
-                    && UiPersonalizationPrefs.mediaStartupWarmup(context));
+                || !suppressLoaderStaging && (loader.active() || StartupReadinessPolicy.foregroundAllowed(mode()))
+                    && automaticMediaPreparation());
     }
     private void runForegroundSoon() {
         if (destroyed || foregroundScheduled) return;
@@ -368,7 +400,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             policy.block(source, policy.record(source).generation, "source-preparation-disabled", SystemClock.uptimeMillis());
             updateNavigationAdmission(); runForegroundSoon(); return;
         }
-        if (source == Source.RADIO && navigation != null && !navigation.ready()) {
+        if (source == Source.RADIO && !loader.active() && navigation != null && !navigation.ready()) {
             foregroundQueue.addLast(source); updateNavigationAdmission(); return;
         }
         StartupReadinessPolicy.Record r = policy.record(source);
@@ -398,7 +430,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (entry == null || entry.getComponent() == null) {
             policy.block(source, r.generation, "entry-unavailable", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
         }
-        foregroundBusy = true; foregroundSource = source;
+        foregroundBusy = true; foregroundSource = source; expectingHomeReturn = false; stagedByLoader = loader.active();
         updateNavigationAdmission();
         stageLease = new java.util.concurrent.atomic.AtomicBoolean(true);
         stageAdmission = new java.util.concurrent.atomic.AtomicInteger(0);
@@ -446,7 +478,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (claimed && value.equals(prefix + "ready") && media().startupSessionAbsent(pkg)) {
             // A previously usable session is now authoritatively absent: legitimate source recovery.
             prefs.edit().remove(mediaJournalKey(source)).apply(); claimed = false;
-            policy.sessionLost(source);
+            // A once-ready journal plus authoritative absence proves source loss, even if
+            // transient content loss previously moved the in-memory ledger to UNCERTAIN.
+            policy.configurationChanged(source);
         }
         if (claimed || prefix.isEmpty()) policy.record(source).activityLaunchAccepted = true;
     }
@@ -577,6 +611,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
     private void finishStage(Source source, int g, String pkg, int token) {
         if (token != foregroundToken) return;
+        expectingHomeReturn = true;
         // A pause dispatch is not proof of silence. Leave uncertain rather than recording READY.
         observe(token, top -> {
             if (!validStage(token) || top == null || !top.matches(AndroidUserId.current(), stagedTask, stagedEntry)) {
@@ -638,16 +673,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private void observe(int token, Observation callback) { observe(token, callback, 2); }
     private void observe(int token, Observation callback, int attempts) {
         observer.execute(() -> {
-            NavigationHelperResult fast = rootFallback.observe();
-            StartupForegroundPolicy top;
-            if (fast != null) top = StartupForegroundPolicy.fromHelper(fast);
-            else {
-                RootShell.Result result = RootShell.runWithin(
-                    "dumpsys activity activities | /system/bin/toybox grep 'mResumedActivity:'; "
-                    + "dumpsys window displays | /system/bin/toybox grep 'mCurrentFocus='", 1800L);
-                top = result.success() ? StartupForegroundPolicy.parse(result.output) : null;
-            }
-            final StartupForegroundPolicy observed = top;
+            final StartupForegroundPolicy observed = readForeground();
             handler.post(() -> {
                 if (token != foregroundToken || destroyed) return;
                 if (observed == null && attempts > 1) handler.postDelayed(() -> observe(token, callback, attempts - 1), 200L);
@@ -655,11 +681,20 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             });
         });
     }
+    private StartupForegroundPolicy readForeground() {
+        NavigationHelperResult fast = rootFallback.observe();
+        if (fast != null) return StartupForegroundPolicy.fromHelper(fast);
+        RootShell.Result result = RootShell.runWithin(
+                "dumpsys activity activities | /system/bin/toybox grep 'mResumedActivity:'; "
+                        + "dumpsys window displays | /system/bin/toybox grep 'mCurrentFocus='", 1800L);
+        return result.success() ? StartupForegroundPolicy.parse(result.output) : null;
+    }
     private void yieldStage(Source source, int g, String boundary) {
         policy.uncertain(source, g, boundary, SystemClock.uptimeMillis());
         yielded = true; cancelForeground(boundary);
     }
     private void cancelForeground(String boundary) {
+        expectingHomeReturn = false;
         stageLease.set(false);
         int admission = stageAdmission.getAndSet(2);
         foregroundToken++; foregroundBusy = false;
@@ -698,6 +733,146 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             MediaEventTrace.record("startup", "unadmitted-journal-cleanup-deferred");
         }
     }
+    private boolean automaticMediaPreparation() {
+        return UiPersonalizationPrefs.mediaStartupWarmup(context) || loader.active();
+    }
+
+    void attachLoader(LoaderUi ui) { loaderUi = ui; if (loader.active()) updateLoader(); }
+    void detachLoader(LoaderUi ui) {
+        if (ui != null && loaderUi == ui) { ui.hide(); loaderUi = null; }
+    }
+    boolean dismissLoader() {
+        if (!loader.active()) return false;
+        finishLoader("dismissed");
+        suppressLoaderStaging = true;
+        if (!foregroundBusy) cancelForeground("loader-dismissed");
+        else {
+            while (!foregroundQueue.isEmpty()) {
+                Source source = foregroundQueue.poll();
+                policy.block(source, policy.record(source).generation, "loader-dismissed", SystemClock.uptimeMillis());
+            }
+        }
+        // Hide immediately. An accepted foreground transaction retains its exact-task
+        // cleanup; dismissal never proves that a dispatched Activity did not start.
+        return true;
+    }
+
+    private void considerLoader(Trigger trigger, long boot, SharedPreferences prefs) {
+        if (!UiPersonalizationPrefs.startupLoader(context)) {
+            if (loader.active()) dismissLoader();
+            return;
+        }
+        long consumed;
+        try { consumed = Long.parseLong(prefs.getString("loader_boot_v1", "-1")); }
+        catch (NumberFormatException corrupt) { consumed = -1L; }
+        long sleepClock = SystemClock.elapsedRealtime() - SystemClock.uptimeMillis();
+        long previousSleepClock;
+        try { previousSleepClock = Long.parseLong(prefs.getString("loader_sleep_clock_v1", Long.toString(sleepClock))); }
+        catch (NumberFormatException corrupt) { previousSleepClock = sleepClock; }
+        boolean wakeTrigger = trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON
+                || trigger == Trigger.HOME_RESUME || trigger == Trigger.RESTART;
+        boolean wake = wakeTrigger && ("yes".equals(prefs.getString("loader_sleep_pending_v1", ""))
+                || sleepClock - previousSleepClock >= 1000L);
+        boolean enabled = UiPersonalizationPrefs.startupLoader(context);
+        if (!enabled && loader.active()) dismissLoader();
+        // Do not consume a sleep/boot signal while a lock screen or call prevents preparation.
+        if (enabled && !safeScreen()) return;
+        if (wakeTrigger) {
+            prefs.edit().remove("loader_sleep_pending_v1")
+                    .putString("loader_sleep_clock_v1", Long.toString(sleepClock)).apply();
+        }
+        if (!StartupLoaderPolicy.shouldStart(enabled, UiPersonalizationPrefs.startupLoaderAfterSleep(context),
+                boot, consumed, wake) || loader.active()) return;
+        prefs.edit().putString("loader_boot_v1", Long.toString(boot)).apply();
+        loader.begin(SystemClock.elapsedRealtime()); loaderEpoch++; suppressLoaderStaging = false;
+        MediaEventTrace.record("startup-loader", "begin", boot != consumed ? "android-boot" : "observed-wake-acc-unverified");
+        handler.post(loaderTick);
+    }
+
+    private void finishLoader(String reason) {
+        if (!loader.active()) return;
+        loader.finish(); loaderEpoch++;
+        handler.removeCallbacks(loaderTick);
+        if (loaderUi != null) {
+            loaderUi.hide();
+            if ("incomplete".equals(reason) || "deadline-incomplete".equals(reason)) loaderUi.incomplete();
+        }
+        MediaEventTrace.record("startup-loader", reason, summary());
+    }
+
+    private void updateLoader() {
+        handler.removeCallbacks(loaderTick);
+        if (!loader.active() || destroyed) return;
+        if (!safeScreen() || !HomeMode.isDefaultHome(context)) { finishLoader("unsafe-screen-or-home"); return; }
+        if (loader.expired(SystemClock.elapsedRealtime())) {
+            finishLoader("deadline-incomplete"); suppressLoaderStaging = true;
+            // Keep accepted cleanup bounded; cancel only an unadmitted foreground turn.
+            if (!foregroundBusy) cancelForeground("loader-deadline"); return;
+        }
+        boolean complete = true, settled = !foregroundBusy && (navigation == null || !navigation.busy());
+        StringBuilder text = new StringBuilder();
+        for (Source source : Source.values()) {
+            String pkg = packageFor(source);
+            if (text.length() > 0) text.append('\n');
+            text.append(source == Source.MUSIC ? "Music" : source == Source.RADIO ? "Radio" : "Maps").append(": ");
+            if (pkg.isEmpty()) { text.append("not selected"); continue; }
+            boolean usable = ready(source, pkg);
+            State state = policy.record(source).state;
+            complete &= usable;
+            settled &= usable || StartupLoaderPolicy.terminal(state);
+            text.append(usable ? "ready" : state == State.STARTING || state == State.UNAVAILABLE
+                    ? "preparing…" : "needs attention");
+        }
+        if (complete || settled) { finishLoader(complete ? "ready" : "incomplete"); return; }
+        if (loaderUi != null) {
+            loaderUi.render(text.toString(), homeResumed);
+            if (loaderUi.canMask()) probeLoaderOwner(); else loaderUi.mask(false);
+        }
+        handler.postDelayed(loaderTick, 500L);
+    }
+
+    private void probeLoaderOwner() {
+        long now = SystemClock.elapsedRealtime();
+        if (loaderProbePending || now - lastLoaderProbeAt < 1000L) return;
+        lastLoaderProbeAt = now; loaderProbePending = true;
+        final int epoch = loaderEpoch;
+        observer.execute(() -> {
+            // Prefer the existing Binder bridge. A visual mask does not justify repeated
+            // legacy dumpsys collections; when unavailable, retain HOME-only presentation.
+            final StartupForegroundPolicy top = StartupForegroundPolicy.fromHelper(rootFallback.observe());
+            // Resolve the real alias target off-main; a same-package permission/settings
+            // Activity does not qualify as the selected Maps entry.
+            String map = packageFor(Source.NAVIGATION), mapEntry = "";
+            try {
+                Intent entry = map.isEmpty() ? null : context.getPackageManager().getLaunchIntentForPackage(map);
+                if (entry != null && entry.getComponent() != null)
+                    mapEntry = AuxioPreparationContract.canonicalEntry(context, entry.getComponent());
+            } catch (RuntimeException unavailable) { /* Unknown is not permission to mask. */ }
+            final String expectedMap = mapEntry;
+            handler.post(() -> {
+                loaderProbePending = false;
+                if (destroyed || !loader.active() || loaderEpoch != epoch || loaderUi == null) return;
+                Activity activity = home.get();
+                boolean atHome = top != null && activity != null && top.matches(AndroidUserId.current(),
+                        activity.getTaskId(), context.getPackageName() + "/.LauncherActivity");
+                boolean staged = top != null && foregroundBusy && stagedTask > 0
+                        && top.matches(AndroidUserId.current(), stagedTask, stagedEntry);
+                boolean maps = top != null && navigation != null && navigation.taskId() > 0
+                        && !expectedMap.isEmpty() && top.matches(AndroidUserId.current(), navigation.taskId(), expectedMap);
+                loaderUi.mask(safeScreen() && (staged || maps));
+                boolean enteringSource = top != null && foregroundBusy && stageAdmission.get() == 1
+                        && top.isEntry(AndroidUserId.current(), stagedEntry);
+                boolean enteringMaps = top != null && navigation != null && navigation.busy()
+                        && !expectedMap.isEmpty() && top.isEntry(AndroidUserId.current(), expectedMap);
+                if (top != null && !atHome && !staged && !maps && !enteringSource && !enteringMaps) {
+                    // Never cover another app, a same-package permission Activity or a call.
+                    finishLoader("foreign-foreground");
+                    yielded = true; cancelForeground("loader-foreign-foreground");
+                }
+            });
+        });
+    }
+
     private boolean safeScreen() {
         try {
             PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
@@ -722,7 +897,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 ? NavigationProvider.ORGANIC_MAPS_INCAR : pkg;
     }
     void destroy() {
-        destroyed = true; cancelForeground("destroyed"); handler.removeCallbacksAndMessages(null);
+        finishLoader("destroyed"); destroyed = true; cancelForeground("destroyed"); handler.removeCallbacksAndMessages(null);
         ProcessMediaSessionMonitor.removeObserver(this); media().setStartupObserver(() -> { }); observer.shutdownNow();
     }
 }
