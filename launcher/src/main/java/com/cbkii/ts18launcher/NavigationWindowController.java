@@ -314,17 +314,14 @@ final class NavigationWindowController {
         suspendForLauncherSurface("launcher overlay");
     }
 
-    /** Show the drawer first; skip a redundant root focus when HOME already owns window focus. */
+    /** Show the drawer first, then park the foreign task; View focus does not prove task z-order. */
     void openLauncherOverlay(Runnable show) {
         if (state == State.DESTROYED || !uiState.onLauncherOverlayOpened()) return;
         desire(Presentation.BACKGROUND_FULLSCREEN);
         overlayGate.cancel(); if (show != null) show.run();
-        if (activity.hasWindowFocus()) {
-            pendingSuspendReason = ""; state = State.SUSPENDED; needsValidation = true; needsPresentation = true;
-            Log.i(TAG, "launcher overlay visible with HOME already focused; root parking skipped");
-            MediaEventTrace.record("drawer", "home-focus-already-owned"); return;
-        }
-        Log.i(TAG, "launcher overlay visible; guarded navigation parking required");
+        // This also queues parking behind an admitted operation. Its late result may reveal
+        // a task that was not known when the user opened the drawer.
+        Log.i(TAG, "launcher overlay visible; guarded navigation parking requested");
         suspendForLauncherSurface("launcher overlay");
     }
 

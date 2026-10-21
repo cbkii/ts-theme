@@ -153,6 +153,21 @@ public static void main(String[] args)throws Exception{
  check(RawFreeformTaskBackend.departures==1,"focus loss failed to request guarded departure");
  int[] drawer={0};c.openLauncherOverlay(()->drawer[0]++);android.view.View.drain();
  check(drawer[0]==1&&RawFreeformTaskBackend.suspends==1,"unfocused drawer failed to park map");
+ // HOME View focus cannot prove that a foreign task is behind the drawer.
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ int[] focusedDrawer={0};c.openLauncherOverlay(()->focusedDrawer[0]++);
+ check(focusedDrawer[0]==1&&RawFreeformTaskBackend.suspends==1,"focused drawer left foreign map unparked");
+ // Show immediately even while acquiring; park exactly once after adopting the late task.
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
+ int[] earlyDrawer={0};c.openLauncherOverlay(()->earlyDrawer[0]++);
+ check(earlyDrawer[0]==1&&RawFreeformTaskBackend.suspends==0,"drawer blocked on admitted acquisition");
+ RawFreeformTaskBackend.delayed=false;RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());android.view.View.drain();
+ check(earlyDrawer[0]==1&&RawFreeformTaskBackend.suspends==1&&RawFreeformTaskBackend.presents==1&&p.configured==0,"late task covered drawer or restarted presentation");c.destroy();
+ // A newer external app intent cancels queued parking so it cannot focus HOME later.
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
+ c.openLauncherOverlay(()->{});int[] external={0};c.launchAfterSuspension(()->external[0]++);
+ RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());android.view.View.drain();
+ check(external[0]==1&&RawFreeformTaskBackend.suspends==0&&p.configured==0,"obsolete drawer parking stole external app focus");c.destroy();
  // A successful fullscreen goal is complete; a resumed HOME without onStop may compact again.
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
  RawFreeformTaskBackend.fullscreenCode="SUCCESS";c.openFullscreen(null);c.onHomeVisible();android.view.View.drain();
