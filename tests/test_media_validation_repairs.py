@@ -50,7 +50,7 @@ public MediaController(android.content.Context c,MediaSession.Token t){}public M
 public String getPackageName(){return pkg;}public PlaybackState getPlaybackState(){return state;}
 public android.media.MediaMetadata metadata;public java.util.List<MediaSession.QueueItem> queue;public java.util.List<MediaSession.QueueItem> getQueue(){return queue;}public android.media.MediaMetadata getMetadata(){return metadata;}public MediaSession.Token getSessionToken(){return token;}private final MediaSession.Token token=new MediaSession.Token();
 public void registerCallback(Callback c){} public void unregisterCallback(Callback c){}
-public Controls getTransportControls(){return new Controls();}public class Controls {public void sendCustomAction(String a,android.os.Bundle b){customPlays++;lastDeadline=b.get("deadline_elapsed_ms");long remaining=lastDeadline-android.os.SystemClock.elapsedRealtime();if(b.get("protocol")!=1||remaining<=0||remaining>5000)return;plays++;state.state=3;}
+public Controls getTransportControls(){return new Controls();}public class Controls {public void sendCustomAction(String a,android.os.Bundle b){customPlays++;lastDeadline=b.get("deadline_elapsed_ms");long remaining=lastDeadline-android.os.SystemClock.elapsedRealtime();if(b.get("protocol")!=1||remaining<=0||remaining>5000)return;plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=3;}
 public void play(){ordinaryPlays++;plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause){if(pauseDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=2,pauseDelay);else state.state=2;}}
 public void prepare(){}public void skipToPrevious(){}public void skipToNext(){}}
 public static class Callback {public void onPlaybackStateChanged(PlaybackState p){}public void onMetadataChanged(android.media.MediaMetadata m){}public void onQueueChanged(java.util.List<MediaSession.QueueItem> q){}public void onSessionDestroyed(){}} }
@@ -175,6 +175,11 @@ public static void main(String[] args)throws Exception {
  check(prepared[0]==1&&music.plays==beforeCold,"cold tap bypassed preparation gate");
  music.metadata=new android.media.MediaMetadata();music.metadata.text="Restored track";Handler.until(1250);
  check(music.plays==beforeCold+1,"prepared cold tap did not PLAY");b.destroy();
+ // Cold restore may acknowledge after the warm 1.6s interval, within the original deadline.
+ b=create();AuxioPreparationContract.paired=true;music.metadata=null;music.state.state=2;music.playDelay=2500;result[0]=0;
+ int coldDispatches=music.customPlays;
+ b.command("Music",music.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->result[0]=ok?1:-1);
+ Handler.until(7000);check(result[0]==1&&music.customPlays==coldDispatches+1,"slow valid cold restore was failed or replayed");b.destroy();music.playDelay=0;
  System.out.println("PASS cold guard/coalescing/buffering/handover/content/newer intent");
 }}
 ''',

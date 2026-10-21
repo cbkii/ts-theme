@@ -892,8 +892,9 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
             finish(pending, true, "");
             return;
         }
-        pending.ackDeadlineMs = Math.min(pending.deadlineMs,
-                SystemClock.uptimeMillis() + ACK_TIMEOUT_MS);
+        pending.ackDeadlineMs = pending.coldRestoreDispatched
+                ? pending.deadlineMs - (pending.pauseOnPlayPackage.isEmpty() ? 0L : ACK_TIMEOUT_MS)
+                : Math.min(pending.deadlineMs, SystemClock.uptimeMillis() + ACK_TIMEOUT_MS);
         mark(pending.packageName, MediaCommandPolicy.Phase.STARTING,
                 pending.desired == MediaCommandPolicy.Desired.PLAY
                         ? "Play dispatched; awaiting playback acknowledgement"
@@ -903,6 +904,9 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
 
     private void awaitAcknowledgement(MediaController controller, Pending pending) {
         if (destroyed || pending.settled) return;
+        if (expiredHomePlay(pending)) {
+            finish(pending, false, "Music Play request expired before acknowledgement"); return;
+        }
         int state;
         try {
             PlaybackState playback = controller.getPlaybackState();
@@ -1008,6 +1012,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
                 // V1 accepts at most five seconds. Shorten, never renew, the tap's deadline.
                 extras.putLong("deadline_elapsed_ms", Math.min(pending.deadlineElapsedMs,
                         SystemClock.elapsedRealtime() + 5000L));
+                pending.coldRestoreDispatched = true;
                 controller.getTransportControls().sendCustomAction("org.oxycblt.auxio.action.HOME_PLAY_V1", extras);
                 return true;
             } catch (RuntimeException rejected) { return false; }
@@ -1204,6 +1209,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         boolean coldPlayGuarded;
         boolean coldPlayGuardLogged;
         boolean preparingAuxio;
+        boolean coldRestoreDispatched;
         long prepareUntilMs;
         long ackDeadlineMs;
         String pauseOnPlayPackage = "";
