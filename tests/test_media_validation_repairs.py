@@ -180,6 +180,18 @@ public static void main(String[] args)throws Exception {
  int coldDispatches=music.customPlays;
  b.command("Music",music.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->result[0]=ok?1:-1);
  Handler.until(7000);check(result[0]==1&&music.customPlays==coldDispatches+1,"slow valid cold restore was failed or replayed");b.destroy();music.playDelay=0;
+ // An active paused replacement token must outrank a stale bound browser token.
+ b=create();music.state.state=2;music.metadata=new android.media.MediaMetadata();music.metadata.text="Current session";
+ var stale=new MediaController("com.tw.media");stale.state.state=2;
+ Class<?> connectionClass=Class.forName("com.cbkii.ts18launcher.MediaSourceBootstrapper$Connection");
+ var connectionCtor=connectionClass.getDeclaredConstructors()[0];connectionCtor.setAccessible(true);
+ Object connection=connectionCtor.newInstance(MediaSourceAdapter.resolve(null,music.pkg));
+ var controllerField=connectionClass.getDeclaredField("controller");controllerField.setAccessible(true);controllerField.set(connection,stale);
+ var connectionsField=MediaSourceBootstrapper.class.getDeclaredField("connections");connectionsField.setAccessible(true);((Map)connectionsField.get(b)).put(music.pkg,connection);
+ b.refreshStartupObservation();int currentPlays=music.plays;
+ b.command("Music",music.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->{});
+ check(music.plays==currentPlays+1&&stale.plays==0,"stale browser stole paused replacement transport");
+ controllerField.set(connection,null);b.destroy();
  System.out.println("PASS cold guard/coalescing/buffering/handover/content/newer intent");
 }}
 ''',

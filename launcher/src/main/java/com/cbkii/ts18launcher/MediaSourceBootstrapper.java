@@ -223,11 +223,15 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
                 boolean complete = false;
                 try {
                     if (sessionManager != null && MediaListenerService.hasNotificationAccess(context)) {
+                        Map<String, MediaController> active = new HashMap<>();
                         for (MediaController c : sessionManager.getActiveSessions(listenerComponent)) {
                             if (c == null) continue;
                             String pkg = c.getPackageName();
-                            if (!selected.containsKey(pkg) || isPlaying(c)) selected.put(pkg, c);
+                            if (!active.containsKey(pkg) || isPlaying(c)) active.put(pkg, c);
                         }
+                        // Authoritative membership wins even for a paused replacement session;
+                        // retain a bound browser only when no active token exists for its package.
+                        selected.putAll(active);
                         complete = true;
                         for (Map.Entry<String, MediaController> entry : selected.entrySet())
                             next.put(entry.getKey(), StartupMediaObservation.read(entry.getKey(), entry.getValue()));
