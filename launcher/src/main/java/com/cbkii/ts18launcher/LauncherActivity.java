@@ -808,10 +808,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         // fill a missing field for the same current track/station, never replace it.
         boolean placeholder = RadioFrequency.NAVRADIO.equals(primary.packageName)
                 && primaryStation.isEmpty();
-        String title = primary.title.isEmpty() || placeholder ? secondary.title : primary.title;
+        String title = placeholder ? secondary.title : primary.title;
         boolean sameTrack = !primary.title.isEmpty() && primary.title.equalsIgnoreCase(secondary.title);
         String artist = primary.artist.isEmpty() && (sameTrack || placeholder)
                 ? secondary.artist : primary.artist;
+        if (RadioFrequency.NAVRADIO.equals(primary.packageName) && sameTrack
+                && primary.radioFrequency == null && secondary.radioFrequency != null) {
+            artist = primary.artist + (primary.artist.isEmpty() ? "" : " ") + secondary.radioFrequency.display();
+        }
         return new MediaListenerService.Snapshot(primary.packageName, title, artist,
                 primary.state, primary.actions, primary.sessionIdentity);
     }

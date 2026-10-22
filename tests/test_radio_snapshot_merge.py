@@ -65,6 +65,7 @@ association.notification("Station B");check(association.current(),"direct statio
 var fresh=snap("music","Track B","Artist B");var stale=snap("music","Track A","Artist A");
 var merged=mergeSessionSnapshot(fresh,stale,true);
 check(merged.title.equals("Track B")&&merged.artist.equals("Artist B"),"fresh Track B overwritten by stale Track A");
+check(mergeSessionSnapshot(snap("music","","New artist"),stale,true).title.isEmpty(),"unknown track inherited stale title");
 var paused=new MediaListenerService.Snapshot("music","Track B","Artist B",2,7,"same-token");
 check(mergeSessionSnapshot(paused,stale,true).state==2,"external PAUSE overwritten");
 String radio=RadioFrequency.NAVRADIO;
@@ -74,6 +75,7 @@ MediaListenerService.Snapshot current=snap(radio,"New station","");
 check(mergeSessionSnapshot(current,snap(radio,"Old station","105.9 FM"),true)==current,"new station cannot inherit old frequency");
 check(mergeSessionSnapshot(current,snap(radio,"","105.9 FM"),true)==current,"frequency needs station association");
 check(mergeSessionSnapshot(current,snap(radio,"New station","106.3 FM"),true).radioFrequency.khz==106300,"same station enrichment");
+check(mergeSessionSnapshot(snap(radio,"Station","Pop Music"),snap(radio,"Station","105.9 FM"),true).artist.equals("Pop Music 105.9 FM"),"valid frequency lost behind current RDS");
 current=snap(radio,"Station","106.3 FM");
 check(mergeSessionSnapshot(current,snap(radio,"Station","105.9 FM"),true)==current,"authoritative frequency wins");
 check(mergeSessionSnapshot(snap(radio,"NavRadio+",""),snap(radio,"2CA","1053 AM"),true).title.equals("2CA"),"placeholder can enrich");
