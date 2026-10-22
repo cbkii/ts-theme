@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.location.LocationManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -13,7 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Visible HOME uses an already-observed in-process fix; no location-service IPC or subscription. */
+/** Visible-only offline resolution using cached system fixes; no GPS subscription or permission request. */
 final class RadioMetadataResolver {
     private static volatile AustralianRadioDirectory directory;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
@@ -33,16 +34,7 @@ final class RadioMetadataResolver {
     }
 
     void start() {
-        if (started) {
-            Location observed = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                    == PackageManager.PERMISSION_GRANTED ? MapPanel.observedLocationSnapshot() : null;
-            if (observed == null && location != null) { location = null; updateRegions(); }
-            if (usable(observed) && (location == null
-                    || observed.getElapsedRealtimeNanos() > location.getElapsedRealtimeNanos())) {
-                location = observed; updateRegions();
-            }
-            return;
-        }
+        if (started) return;
         started = true;
         final int request = ++generation;
         if (directory == null) LOADER.execute(() -> {
@@ -53,9 +45,26 @@ final class RadioMetadataResolver {
                 main.post(() -> { if (started && generation == request) updateRegions(); });
             } catch (java.io.IOException | RuntimeException ignored) { /* fail empty */ }
         });
-        location = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED ? MapPanel.observedLocationSnapshot() : null;
         updateRegions();
+        LOADER.execute(() -> {
+            Location cached = null;
+            try {
+                if (context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+                    if (manager != null) for (String provider : new String[] {
+                            LocationManager.PASSIVE_PROVIDER, LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
+                        Location candidate = manager.getLastKnownLocation(provider);
+                        if (usable(candidate) && (cached == null || candidate.getElapsedRealtimeNanos() > cached.getElapsedRealtimeNanos()))
+                            cached = new Location(candidate);
+                    }
+                }
+            } catch (RuntimeException unavailable) { /* No permission/service/provider: keep reference ambiguous. */ }
+            final Location fix = cached;
+            main.post(() -> {
+                if (!started || generation != request) return;
+                location = fix; updateRegions();
+            });
+        });
     }
 
     void stop() {
@@ -80,7 +89,7 @@ final class RadioMetadataResolver {
         if (fresh && regionRanks == null) return "";
         AustralianRadioDirectory.Match match = data.match(snapshot.title, snapshot.artist,
                 fresh ? regionRanks : data.regionRanks(null, null), !fresh);
-        return match == null ? resolved("", "unresolved") : resolved(match.station.frequency.display(),
+        return match == null ? resolved("", "unresolved") : resolved(match.station.frequency.display() + " (reference)",
                 "directory:" + match.confidence + ":" + match.station.state);
     }
 

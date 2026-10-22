@@ -40,7 +40,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** In-HOME app list. It overlays only the map surface, leaving the media strip visible. */
+/** Shared app catalogue, shortcuts and search, hosted by the full-page drawer Activity. */
 @SuppressLint({"SetTextI18n", "ViewConstructor"})
 final class AppDrawerPanel extends android.widget.FrameLayout {
     private TextView title;
@@ -418,6 +418,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     private void openDrawerQuick(int index) {
         if (!ShortcutSlot.launch(activity, LauncherPrefs.DRAWER_QUICK_KEYS[index])) openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]);
+        else if (activity instanceof AppDrawerActivity) activity.finish();
     }
 
     private void openPicker(String key) {
@@ -443,6 +444,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         if (AppResolver.launchComponent(activity, entry.packageName, entry.activityName)) {
             dismissKeyboard();
             setVisibility(View.GONE);
+            if (activity instanceof AppDrawerActivity) activity.finish();
             return;
         }
         Toast.makeText(activity, "App unavailable", Toast.LENGTH_SHORT).show();

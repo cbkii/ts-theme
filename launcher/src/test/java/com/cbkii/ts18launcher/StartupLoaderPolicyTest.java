@@ -22,9 +22,9 @@ public class StartupLoaderPolicyTest {
     @Test public void duplicateBeginCannotExtendDeadline() {
         StartupLoaderPolicy p = new StartupLoaderPolicy();
         assertTrue(p.begin(100));
-        assertFalse(p.begin(10000));
-        assertFalse(p.expired(45099));
-        assertTrue(p.expired(45100));
+        assertFalse(p.begin(1000));
+        assertFalse(p.expired(8099));
+        assertTrue(p.expired(8100));
     }
     @Test public void dismissalDoesNotRemainActive() {
         StartupLoaderPolicy p = new StartupLoaderPolicy();

@@ -45,6 +45,7 @@ final class CompactStartupClient {
     void setHomeReturnCallback(java.util.function.IntConsumer callback) { homeReturn = callback; }
     private boolean busy, closed, dirty;
     private int failures;
+    private String lastQueryFailure = "";
     private int request;
     private long until;
     private CancellationSignal cancel;
@@ -160,8 +161,13 @@ final class CompactStartupClient {
                     }
                 }
             } catch (android.content.pm.PackageManager.NameNotFoundException | RuntimeException unavailable) {
-                MediaEventTrace.record("compact-startup", "query-unavailable", unavailable.getClass().getSimpleName());
+                String failure = unavailable.getClass().getSimpleName();
+                if (!failure.equals(lastQueryFailure)) {
+                    lastQueryFailure = failure;
+                    MediaEventTrace.record("compact-startup", "query-unavailable", failure);
+                }
             }
+            if (result.compatible) lastQueryFailure = "";
             final Snapshot snapshot = signal.isCanceled() ? Snapshot.unknown() : result;
             main.post(() -> {
                 main.removeCallbacks(timeout);

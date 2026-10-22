@@ -55,6 +55,8 @@
 
         <activity
             android:name=".AppDrawerActivity"
+            android:taskAffinity="${applicationId}.drawer"
+            android:excludeFromRecents="true"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false" />
 

@@ -59,6 +59,14 @@ association.notification("Station A");check(!association.current(),"delayed old 
 association.observe("token","Station B");check(!association.current(),"new station inherited old notification");
 association.notification("Station B");check(association.current(),"new matching notification refused");
 association.observe("another-token","Station B");check(!association.current(),"token replacement retained association");
+association.observe("direct-token","Station A");association.notification("Station A");
+association.observe("direct-token","Station B");check(!association.current(),"direct A-to-B retained old notification generation");
+association.notification("Station B");check(association.current(),"direct station notification not admitted");
+var fresh=snap("music","Track B","Artist B");var stale=snap("music","Track A","Artist A");
+var merged=mergeSessionSnapshot(fresh,stale,true);
+check(merged.title.equals("Track B")&&merged.artist.equals("Artist B"),"fresh Track B overwritten by stale Track A");
+var paused=new MediaListenerService.Snapshot("music","Track B","Artist B",2,7,"same-token");
+check(mergeSessionSnapshot(paused,stale,true).state==2,"external PAUSE overwritten");
 String radio=RadioFrequency.NAVRADIO;
 var frequencyOnly=MediaListenerService.applyRadioFallback(snap(radio,"NavRadio+","105.9 FM"),"","");
 check(frequencyOnly.title.equals("NavRadio+")&&frequencyOnly.artist.equals("105.9 FM"),"listener promoted frequency into station row");

@@ -53,7 +53,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertNotIn("startForeground(", java)
         self.assertNotIn("com.qihoo360", java)
         self.assertIn("MediaSessionManager", media)
-        self.assertIn("requestRebind(", media)
+        self.assertIn("MediaNotificationAccessBootstrapper.ensureConnected(this)", media)
         self.assertIn("PlaybackState.ACTION_SKIP_TO_PREVIOUS", media)
         self.assertIn("PlaybackState.ACTION_SKIP_TO_NEXT", media)
         self.assertIn("PlaybackState.ACTION_PLAY_PAUSE", media)

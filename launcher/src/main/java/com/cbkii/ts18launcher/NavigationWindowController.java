@@ -92,6 +92,14 @@ final class NavigationWindowController {
         if (backend != null) backend.setPresentationEpoch(presentationEpoch);
     }
 
+    void finishLoaderPresentation() {
+        if (!startupNavigationReady()) { cancelAutomaticColdStart(); return; }
+        // Keep the already rendered map intact, but revoke automatic late presentation.
+        desire(Presentation.BACKGROUND_FULLSCREEN);
+        automaticColdYielded = true;
+        cancelRecovery(); updateColdPolicy();
+    }
+
     void cancelAutomaticColdStart() {
         if (state == State.DESTROYED) return;
         desire(Presentation.BACKGROUND_FULLSCREEN);

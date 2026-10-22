@@ -17,6 +17,7 @@ final class AuxioPreparationContract {
             ActivityInfo entry = pm.getActivityInfo(ComponentName.unflattenFromString(COMPONENT), 0);
             return app.enabled && app.uid / AndroidUserId.UID_RANGE_PER_USER == AndroidUserId.current()
                     && app.metaData != null && app.metaData.getInt(CAPABILITY, 0) == 1
+                    && app.metaData.getInt("org.oxycblt.auxio.PREPARE_HOME_DEADLINE_PROTOCOL", 0) == 1
                     && entry.enabled && !entry.exported && "com.tw.media".equals(entry.packageName)
                     && entry.applicationInfo != null && entry.applicationInfo.uid == app.uid;
         } catch (PackageManager.NameNotFoundException | RuntimeException unavailable) { return false; }

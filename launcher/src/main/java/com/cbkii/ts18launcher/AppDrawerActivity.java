@@ -41,6 +41,7 @@ public final class AppDrawerActivity extends Activity {
     private final List<Entry> visibleEntries = new ArrayList<>();
     private final AppsAdapter adapter = new AppsAdapter();
     private String pickKey;
+    private AppDrawerPanel fullPage;
     private EditText search;
     private LinearLayout root;
     private LinearLayout searchRow;
@@ -55,6 +56,12 @@ public final class AppDrawerActivity extends Activity {
         super.onCreate(state);
         pickKey = getIntent().getStringExtra(EXTRA_PICK_KEY);
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
+        if (pickKey == null || pickKey.isEmpty()) {
+            fullPage = new AppDrawerPanel(this, this::finish);
+            Ts18SafeArea.setContent(this, fullPage);
+            fullPage.showPanel();
+            return;
+        }
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
@@ -137,10 +144,19 @@ public final class AppDrawerActivity extends Activity {
         applyAppearance();
     }
 
-    @Override protected void onStart() { super.onStart(); appearanceController.start(); }
+    @Override protected void onStart() {
+        super.onStart(); appearanceController.start();
+        if (fullPage != null) { fullPage.refreshPreferences(); fullPage.showPanel(); }
+    }
+    @Override protected void onDestroy() {
+        if (fullPage != null) fullPage.destroy();
+        super.onDestroy();
+    }
+    @Override public void onBackPressed() { finish(); }
     @Override protected void onStop() { appearanceController.stop(); super.onStop(); }
 
     private void applyAppearance() {
+        if (fullPage != null) { fullPage.applyAppearance(); return; }
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         header.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
         searchRow.setBackground(AutomotiveUi.cardBackground(this));
@@ -159,6 +175,7 @@ public final class AppDrawerActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == VoiceSearch.REQUEST_CODE && resultCode == RESULT_OK) {
             String spoken = VoiceSearch.firstResult(data);
+            if (fullPage != null) { fullPage.applyVoiceSearch(spoken); return; }
             if (!spoken.isEmpty()) {
                 search.setText(spoken);
                 search.setSelection(search.length());

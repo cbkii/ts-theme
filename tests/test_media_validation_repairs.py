@@ -49,7 +49,7 @@ public class MediaController {public String pkg;public PlaybackState state=new P
 public MediaController(android.content.Context c,MediaSession.Token t){}public MediaController(String p){pkg=p;}
 public String getPackageName(){return pkg;}public PlaybackState getPlaybackState(){return state;}
 public android.media.MediaMetadata metadata;public java.util.List<MediaSession.QueueItem> queue;public java.util.List<MediaSession.QueueItem> getQueue(){return queue;}public android.media.MediaMetadata getMetadata(){return metadata;}public MediaSession.Token getSessionToken(){return token;}private final MediaSession.Token token=new MediaSession.Token();
-public void registerCallback(Callback c){} public void unregisterCallback(Callback c){}
+public void registerCallback(Callback c){}public void registerCallback(Callback c,android.os.Handler h){} public void unregisterCallback(Callback c){}
 public Controls getTransportControls(){return new Controls();}public class Controls {public void sendCustomAction(String a,android.os.Bundle b){customPlays++;lastDeadline=b.get("deadline_elapsed_ms");long remaining=lastDeadline-android.os.SystemClock.elapsedRealtime();if(b.get("protocol")!=1||remaining<=0||remaining>5000)return;plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=3;}
 public void play(){ordinaryPlays++;plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause){if(pauseDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=2,pauseDelay);else state.state=2;}}
 public void prepare(){}public void skipToPrevious(){}public void skipToNext(){}}
@@ -59,13 +59,14 @@ public static class Callback {public void onPlaybackStateChanged(PlaybackState p
 public class MediaSessionManager {public static int queries;public static List<MediaController> sessions=new ArrayList<>();
 public List<MediaController> getActiveSessions(android.content.ComponentName n){queries++;return sessions;}}''',
             "android/media/browse/MediaBrowser.java": '''package android.media.browse;public class MediaBrowser {
-public MediaBrowser(android.content.Context c,android.content.ComponentName n,ConnectionCallback cb,android.os.Bundle b){}
-public boolean isConnected(){return false;}public void connect(){}public void disconnect(){}
+public static int failures,attempts;ConnectionCallback callback;
+public MediaBrowser(android.content.Context c,android.content.ComponentName n,ConnectionCallback cb,android.os.Bundle b){callback=cb;}
+public boolean isConnected(){return false;}public void connect(){attempts++;if(failures-->0)callback.onConnectionFailed();}public void disconnect(){}
 public android.media.session.MediaSession.Token getSessionToken(){return null;}
 public static class ConnectionCallback {public void onConnected(){}public void onConnectionSuspended(){}public void onConnectionFailed(){}}}''',
             "com/cbkii/ts18launcher/platform/TopwayAdapter.java": "package com.cbkii.ts18launcher.platform;public class TopwayAdapter {public static String defaultMusicPackage(android.content.Context c){return \"com.tw.media\";}}",
             "com/cbkii/ts18launcher/Doubles.java": '''package com.cbkii.ts18launcher;
-class ProcessMediaSessionMonitor {interface Observer {void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
+class ProcessMediaSessionMonitor {static android.media.session.MediaController selectedController(String p){return null;}interface Observer {void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
 class MediaListenerService {static class Snapshot {}enum Command {PLAY_PAUSE,PREVIOUS,NEXT}
 static boolean hasNotificationAccess(android.content.Context c){return true;} static void refreshActiveSessions(){}
 static void observeExternalController(android.media.session.MediaController c){} static void forgetExternalController(android.media.session.MediaController c){} }
@@ -192,6 +193,12 @@ public static void main(String[] args)throws Exception {
  b.command("Music",music.pkg,MediaListenerService.Command.PLAY_PAUSE,(ok,m)->{});
  check(music.plays==currentPlays+1&&stale.plays==0,"stale browser stole paused replacement transport");
  controllerField.set(connection,null);b.destroy();
+ // Failed startup binds retry with backoff only inside the first preparation deadline.
+ b=create();MediaSourceAdapter adapter=new MediaSourceAdapter();adapter.packageName="browser.test";adapter.kind=MediaSourceAdapter.Kind.MEDIA_BROWSER;
+ android.media.browse.MediaBrowser.attempts=0;android.media.browse.MediaBrowser.failures=20;
+ Method browser=MediaSourceBootstrapper.class.getDeclaredMethod("queueBrowser",MediaSourceAdapter.class,pc);browser.setAccessible(true);
+ browser.invoke(b,adapter,null);Handler.until(6000);
+ check(android.media.browse.MediaBrowser.attempts==3,"browser discovery unbounded or no retry");b.destroy();
  System.out.println("PASS cold guard/coalescing/buffering/handover/content/newer intent");
 }}
 ''',

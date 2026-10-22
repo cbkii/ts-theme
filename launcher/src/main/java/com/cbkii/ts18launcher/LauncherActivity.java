@@ -112,6 +112,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
             @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
             @Override public void cancelAutomaticColdStart() { navigationWindowController.cancelAutomaticColdStart(); }
+            @Override public void finishLoaderPresentation() { navigationWindowController.finishLoaderPresentation(); }
             @Override public void yieldForMediaPreparation() { navigationWindowController.yieldForMediaPreparation(); }
             @Override public void deferAutomaticPresentation(boolean defer) {
                 navigationWindowController.deferAutomaticStartupPresentation(defer);
@@ -128,18 +129,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaText.setLongClickable(false);
         root.addView(mediaText);
         buildDate();
-        appDrawerPanel = new AppDrawerPanel(this, () -> root.post(() -> {
-            if (hasWindowFocus()) StartupReadinessCoordinator.get(this).onHomeResumed(this);
-            updateMapVisibility();
-        }));
-        root.addView(appDrawerPanel);
-        appDrawerPanel.preload();
         readinessLoader = new StartupReadinessLoader(this, root,
                 () -> StartupReadinessCoordinator.get(this).dismissLoader());
         loaderUi = new StartupReadinessCoordinator.LoaderUi() {
             @Override public void render(String status, boolean visible) { readinessLoader.show(status, visible); }
             @Override public void mask(boolean show) { if (show) readinessLoader.showMask(); else readinessLoader.hideMask(); }
             @Override public boolean canMask() { return readinessLoader.canMask(); }
+            @Override public boolean ownsMask() { return readinessLoader.ownsMask(); }
             @Override public void hide() { readinessLoader.hide(); }
             @Override public void incomplete() {
                 android.widget.Toast.makeText(LauncherActivity.this, R.string.startup_loader_incomplete,
@@ -187,7 +183,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onWindowFocusChanged(hasFocus);
         StartupReadinessCoordinator.get(this).onHomeFocusChanged();
         if (hasFocus && navigationWindowController != null) navigationWindowController.onHomeFocusAvailable();
-        if (!hasFocus && navigationWindowController != null)
+        if (!hasFocus && navigationWindowController != null
+                && (readinessLoader == null || !readinessLoader.ownsMask()))
             navigationWindowController.onHomeFocusLost();
         if (root != null && hasFocus) scheduleGeometry();
         if (root != null && hasFocus && !redirectingToHome
@@ -223,6 +220,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
         ProcessMediaSessionMonitor.addObserver(this, this);
+        ProcessMediaSessionMonitor.setVisible(this, true);
+        MediaNotificationAccessBootstrapper.ensureConnected(this);
         MediaListenerService.addObserver(this);
         ProcessMediaSessionMonitor.refresh(this);
         MediaListenerService.refreshActiveSessions();
@@ -234,11 +233,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onStop() {
         if (root == null) { super.onStop(); return; }
-        if (readinessLoader != null) readinessLoader.hide();
+        // The application-owned preparation session retains its mask across staged apps.
+        // Permission/foreign ownership and the eight-second deadline are checked by its owner.
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
         mediaStatusGeneration++;
         mediaStatusActive = false;
+        ProcessMediaSessionMonitor.setVisible(this, false);
         ProcessMediaSessionMonitor.removeObserver(this);
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
@@ -618,7 +619,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             place(nativeNavigationPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (appDrawerPanel != null) place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
-        if (readinessLoader != null) readinessLoader.geometry(g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
+        if (readinessLoader != null) readinessLoader.geometry(leftInset, topInset, width - leftInset - rightInset, height - topInset - bottomInset);
     }
 
     private void place(View view, int x, int y, int width, int height) {
@@ -723,18 +724,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void toggleAppDrawer() {
-        if (appDrawerPanel.isOpen()) appDrawerPanel.hidePanel();
-        else {
-            MediaEventTrace.record("drawer", "open-request");
-            StartupReadinessCoordinator.get(this).noteExternalNavigation();
-            if (mapPanel != null) mapPanel.stop();
-            Runnable show = () -> {
-                if (isFinishing() || isDestroyed()) return;
-                appDrawerPanel.showPanel();
-            };
-            if (!ExperimentalMapPolicy.enabled(this)) navigationWindowController.openLauncherOverlay(show);
-            else show.run();
-        }
+        MediaEventTrace.record("drawer", "open-request");
+        StartupReadinessCoordinator.get(this).noteExternalNavigation();
+        if (mapPanel != null) mapPanel.stop();
+        Runnable show = () -> {
+            if (!isFinishing() && !isDestroyed()) startActivity(new Intent(this, AppDrawerActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+        };
+        if (!ExperimentalMapPolicy.enabled(this)) navigationWindowController.openLauncherOverlay(show);
+        else show.run();
     }
 
     private boolean redirectToCanonicalHome() {
@@ -806,8 +804,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (RadioFrequency.NAVRADIO.equals(primary.packageName)
                 && primary.radioFrequency != null && secondary.radioFrequency != null
                 && !primary.radioFrequency.display().equals(secondary.radioFrequency.display())) return primary;
-        String title = secondary.title.isEmpty() ? primary.title : secondary.title;
-        String artist = secondary.artist.isEmpty() ? primary.artist : secondary.artist;
+        // The process controller is the selected live authority. Listener data may only
+        // fill a missing field for the same current track/station, never replace it.
+        boolean placeholder = RadioFrequency.NAVRADIO.equals(primary.packageName)
+                && primaryStation.isEmpty();
+        String title = primary.title.isEmpty() || placeholder ? secondary.title : primary.title;
+        boolean sameTrack = !primary.title.isEmpty() && primary.title.equalsIgnoreCase(secondary.title);
+        String artist = primary.artist.isEmpty() && (sameTrack || placeholder)
+                ? secondary.artist : primary.artist;
         return new MediaListenerService.Snapshot(primary.packageName, title, artist,
                 primary.state, primary.actions, primary.sessionIdentity);
     }

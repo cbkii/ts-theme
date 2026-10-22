@@ -54,7 +54,7 @@ class MediaSourceBootstrapper {interface PreparationRequester{void request(Strin
 boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radioReady;}
 boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
 boolean startupSessionAbsent(String p){return !hasUsableQueue(p);}boolean startupPlaying(String p){return isPlaying(p);}void setStartupObserver(Runnable r){}long userCommandGeneration(){return commands;}String userCommandPackage(){return "com.tw.media";}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
-class AuxioPreparationContract {static boolean capability=true;static boolean supported(android.content.Context c){return capability;}static String canonicalEntry(android.content.Context c,android.content.ComponentName n){return n.flattenToShortString();}}
+class AuxioPreparationContract {static String COMPONENT="com.tw.media/org.oxycblt.auxio.headunit.LauncherPreparationActivity";static boolean capability=true;static boolean supported(android.content.Context c){return capability;}static String canonicalEntry(android.content.Context c,android.content.ComponentName n){return n.flattenToShortString();}}
 class UiPersonalizationPrefs {static boolean loader=false,afterSleep=false;static boolean startupLoader(android.content.Context c){return loader;}static boolean startupLoaderAfterSleep(android.content.Context c){return afterSleep;}static boolean enabled=true;static boolean mediaStartupWarmup(android.content.Context c){return enabled;}}
 class TestingProfiles {static String mode="auto";static String startup(android.content.Context c){return mode;}}
 class LauncherPrefs {static String KEY_MUSIC="music",KEY_NAV="nav";static String music="com.tw.media";
@@ -70,7 +70,7 @@ static LaunchOutcome launchForStartup(android.content.Context c,String p){launch
 if(outcome==LaunchOutcome.ACCEPTED){RootShell.top=RootShell.forComponent(p+"/"+p+".Main",20);launched.run();}return outcome;}}
 class NavigationHelperResult {boolean success;int userId=0,taskId=10;String component="";String code;NavigationHelperResult(boolean s,String c){success=s;code=c;}}
 class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static boolean fast=false;static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}NavigationHelperResult observe(){if(!fast)return null;StartupForegroundPolicy p=StartupForegroundPolicy.parse(RootShell.top);if(p==null)return new NavigationHelperResult(false,"UNKNOWN");NavigationHelperResult r=new NavigationHelperResult(true,"FOREGROUND");r.userId=p.user;r.taskId=p.task;r.component=p.component;return r;}
-NavigationHelperResult launch(String p,String e,int h){starts++;before.run();if(code.equals("STARTUP_SOURCE_DISPATCHED")){RootShell.top=RootShell.forComponent(e,20);launched.run();}return new NavigationHelperResult(code.equals("STARTUP_SOURCE_DISPATCHED"),code);}
+NavigationHelperResult launch(String p,String e,int h,long d){starts++;before.run();if(code.equals("STARTUP_SOURCE_DISPATCHED")){RootShell.top=RootShell.forComponent(e,20);launched.run();}return new NavigationHelperResult(code.equals("STARTUP_SOURCE_DISPATCHED"),code);}
 NavigationHelperResult restoreHome(String p,String e,int t,int h){returns++;if(returnCode.equals("STARTUP_HOME_RESTORED"))android.app.Activity.focused=true;android.app.ActivityManager.moved.run();return new NavigationHelperResult(returnCode.equals("STARTUP_HOME_RESTORED"),returnCode);}
 static boolean definitelyNotStarted(NavigationHelperResult r){return r.code.equals("STARTUP_SOURCE_REJECTED");}}
 
@@ -130,6 +130,10 @@ StartupReadinessCoordinator fallback=create();TestingProfiles.mode="aggressive";
 check(AppResolver.launches==1&&StartupRootFallback.starts==1,"definite root refusal did not allow normal once");fallback.destroy();
 StartupReadinessCoordinator ambiguous=create();TestingProfiles.mode="aggressive";StartupRootFallback.code="PHASE_TIMEOUT";Handler.until(15000);
 check(AppResolver.launches==0&&StartupRootFallback.starts==1,"root uncertainty replayed normal launch");ambiguous.destroy();
+StartupReadinessCoordinator lateAccepted=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;StartupRootFallback.code="PHASE_TIMEOUT";
+StartupRootFallback.before=()->{RootShell.top=RootShell.forComponent("com.navimods.radio/com.navimods.radio.Main",20);lateAccepted.onHomePaused();};
+Handler.until(4000);Field task=StartupReadinessCoordinator.class.getDeclaredField("stagedTask");task.setAccessible(true);
+check(task.getInt(lateAccepted)==20&&StartupRootFallback.starts==1&&AppResolver.launches==1,"uncertain admitted task not adopted");lateAccepted.destroy();
 StartupReadinessCoordinator normalUnknown=create();AppResolver.outcome=AppResolver.LaunchOutcome.UNCERTAIN;Handler.until(15000);
 check(StartupRootFallback.starts==0,"uncertain normal start replayed via root");normalUnknown.destroy();
 StartupReadinessCoordinator homeRejected=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;
@@ -254,7 +258,12 @@ check(AppResolver.launches==1,"duplicate loader triggers replayed admission");
 check(loaded.dismissLoader()&&!loaded.dismissLoader()&&!ui.masked,"BACK-style dismissal did not remain dismissed");
 Ts18LauncherApplication.shared.radioReady=true;
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);loaded.onHomeResumed(new android.app.Activity());};
-Handler.until(5000);check(android.app.ActivityManager.moves==1,"dismissal lost admitted exact-HOME cleanup");loaded.destroy();
+Handler.until(10000);check(android.app.ActivityManager.moves==0&&StartupRootFallback.returns==0,"dismissal allowed late foreground cleanup");loaded.destroy();
+StartupReadinessCoordinator expires=create(false);Ui expiryUi=new Ui();expires.attachLoader(expiryUi);
+Handler.until(8099);check(expiryUi.hides==0,"splash ended early without readiness");
+Handler.until(8100);check(expiryUi.hides==1&&!expires.dismissLoader(),"eight-second visual ceiling extended");
+Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
+check(android.app.ActivityManager.moves==0&&StartupRootFallback.returns==0,"expired splash permitted late focus");expires.destroy();
 // Same-boot process recreation does not repeat the cold-boot loader.
 UiPersonalizationPrefs.enabled=true;
 StartupReadinessCoordinator consumed=create(false,false);check(!consumed.dismissLoader(),"same boot replayed loader");consumed.destroy();

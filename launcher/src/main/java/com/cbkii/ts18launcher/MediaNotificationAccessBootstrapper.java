@@ -36,7 +36,7 @@ final class MediaNotificationAccessBootstrapper {
         ComponentName listener = new ComponentName(app, MediaListenerService.class);
         if (MediaListenerService.hasNotificationAccess(app)) {
             MediaEventTrace.record("listener-access", "already-granted");
-            requestRebind(listener);
+            ensureConnected(app);
             ProcessMediaSessionMonitor.refresh(app);
             return;
         }
@@ -57,11 +57,47 @@ final class MediaNotificationAccessBootstrapper {
             MediaEventTrace.record("listener-access", "root-grant-verified",
                     "user=" + userId + " component=" + listener.flattenToShortString());
             MAIN.post(() -> {
-                requestRebind(listener);
+                ensureConnected(app);
                 ProcessMediaSessionMonitor.refresh(app);
                 MediaListenerService.refreshActiveSessions();
             });
         });
+    }
+
+    private static int connectionEpoch;
+    private static boolean connectionPending;
+    private static final long[] REBIND_DELAYS = {0L, 1000L, 2500L, 5000L, 10000L};
+
+    static void connected() {
+        connectionEpoch++; connectionPending = false;
+    }
+
+    static void ensureConnected(Context context) {
+        Context app = context.getApplicationContext();
+        MAIN.post(() -> {
+            if (MediaListenerService.isConnected() || connectionPending
+                    || !MediaListenerService.hasNotificationAccess(app)) return;
+            connectionPending = true;
+            recoverConnection(app, ++connectionEpoch, 0);
+        });
+    }
+
+    private static void recoverConnection(Context app, int epoch, int attempt) {
+        MAIN.postDelayed(() -> {
+            if (epoch != connectionEpoch) return;
+            if (MediaListenerService.isConnected() || !MediaListenerService.hasNotificationAccess(app)) {
+                connectionPending = false; return;
+            }
+            android.os.PowerManager power = (android.os.PowerManager) app.getSystemService(Context.POWER_SERVICE);
+            android.app.KeyguardManager keyguard = (android.app.KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
+            if (power == null || !power.isInteractive() || keyguard == null || keyguard.isKeyguardLocked()) {
+                connectionPending = false; return; // Unlock/wake/HOME will re-arm, without any root mutation.
+            }
+            requestRebind(new ComponentName(app, MediaListenerService.class));
+            ProcessMediaSessionMonitor.refresh(app);
+            if (attempt + 1 < REBIND_DELAYS.length) recoverConnection(app, epoch, attempt + 1);
+            else connectionPending = false;
+        }, REBIND_DELAYS[attempt]);
     }
 
     static String rootGrantCommand(ComponentName listener, int userId) {

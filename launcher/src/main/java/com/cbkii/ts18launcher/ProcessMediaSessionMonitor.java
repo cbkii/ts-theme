@@ -67,6 +67,52 @@ final class ProcessMediaSessionMonitor {
         this.listenerComponent = new ComponentName(this.context, MediaListenerService.class);
     }
 
+    // Only the two displayed controllers are sampled. Membership remains event-driven.
+    private final java.util.concurrent.ExecutorService sampler = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "ts18-visible-media"); thread.setDaemon(true); return thread;
+    });
+    private boolean visible, sampling;
+    private int sampleEpoch;
+    private final Runnable visibleTick = new Runnable() {
+        @Override public void run() {
+            if (destroyed || !visible) return;
+            if (!MediaListenerService.hasNotificationAccess(context)) {
+                markUnavailable("visible-access-lost", true);
+            } else if (!sampling) {
+                MediaController music = watched.get(lastGeneric.sessionIdentity);
+                MediaController radio = watched.get(lastRadio.sessionIdentity);
+                int epoch = sampleEpoch;
+                sampling = true;
+                sampler.execute(() -> {
+                    MediaListenerService.Snapshot m = snapshotOf(music), r = snapshotOf(radio);
+                    main.post(() -> {
+                        sampling = false;
+                        if (destroyed || !visible || epoch != sampleEpoch) return;
+                        if (!MediaListenerService.hasNotificationAccess(context)) return;
+                        boolean changed = false;
+                        if (music != null && java.util.Objects.equals(lastGeneric.sessionIdentity, m.sessionIdentity)) {
+                            changed |= !same(lastGeneric, m); lastGeneric = m;
+                        }
+                        if (radio != null && java.util.Objects.equals(lastRadio.sessionIdentity, r.sessionIdentity)) {
+                            changed |= !same(lastRadio, r); lastRadio = r;
+                        }
+                        if (changed) notifyObservers();
+                    });
+                });
+            }
+            main.postDelayed(this, 1000L);
+        }
+    };
+
+    static void setVisible(Context context, boolean value) {
+        ProcessMediaSessionMonitor owner = monitor(context);
+        owner.main.post(() -> {
+            owner.visible = value; owner.sampleEpoch++;
+            owner.main.removeCallbacks(owner.visibleTick);
+            if (value && !owner.destroyed) owner.main.post(owner.visibleTick);
+        });
+    }
+
     private void handleActiveSessionsChanged(List<MediaController> controllers) {
         if (destroyed || !sessionListenerRegistered) return;
         if (!MediaListenerService.hasNotificationAccess(context)) {
@@ -78,6 +124,16 @@ final class ProcessMediaSessionMonitor {
 
     static void start(Context context) {
         monitor(context).ensureStarted();
+    }
+
+    /** Main-looper caller: transport and presentation use the same selected token. */
+    static MediaController selectedController(String packageName) {
+        synchronized (LOCK) {
+            if (instance == null || !instance.authoritative || packageName == null) return null;
+            MediaListenerService.Snapshot selected = packageName.equals(instance.lastRadio.packageName)
+                    ? instance.lastRadio : instance.lastGeneric;
+            return packageName.equals(selected.packageName) ? instance.watched.get(selected.sessionIdentity) : null;
+        }
     }
 
     static void refresh(Context context) {
@@ -181,33 +237,9 @@ final class ProcessMediaSessionMonitor {
             main.post(() -> reconcile(copy));
             return;
         }
+        sampleEpoch++;
         List<MediaController> active = controllers == null ? new ArrayList<>() : controllers;
-        Map<MediaSession.Token, MediaController> next = new HashMap<>();
-        for (MediaController controller : active) {
-            MediaSession.Token token = tokenOf(controller);
-            if (controller == null || token == null) continue;
-            if (watched.containsKey(token)) {
-                next.put(token, controller);
-                continue;
-            }
-            try {
-                controller.registerCallback(controllerCallback, main);
-                next.put(token, controller);
-            } catch (RuntimeException ignored) {
-                // Leave it unwatched so the next reconciliation retries registration.
-            }
-        }
-        for (Map.Entry<MediaSession.Token, MediaController> entry : watched.entrySet()) {
-            if (!next.containsKey(entry.getKey())) {
-                try {
-                    entry.getValue().unregisterCallback(controllerCallback);
-                } catch (RuntimeException ignored) {
-                    // Session may already have been destroyed.
-                }
-            }
-        }
-        watched.clear();
-        watched.putAll(next);
+        active = SessionControllerRegistry.reconcile(watched, active, controllerCallback, main);
 
         String radioPackage = RadioProvider.resolvePackage(context);
         MediaController radio = pickExact(active, radioPackage);
@@ -323,6 +355,7 @@ final class ProcessMediaSessionMonitor {
                     MediaMetadata.METADATA_KEY_ALBUM_ARTIST,
                     MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE);
         }
+        if (RadioFrequency.NAVRADIO.equals(packageName)) artist = MediaListenerService.radioDetails(metadata, artist);
         int stateValue = state == null ? PlaybackState.STATE_NONE : state.getState();
         long actions = state == null ? 0L : state.getActions();
         return new MediaListenerService.Snapshot(packageName, title, artist, stateValue, actions,
@@ -425,6 +458,7 @@ final class ProcessMediaSessionMonitor {
         destroyed = true;
         refreshPosted = false;
         main.removeCallbacks(refreshRunnable);
+        main.removeCallbacks(visibleTick); sampler.shutdownNow();
         detachSessionListener();
         releaseWatched();
         authoritative = false;

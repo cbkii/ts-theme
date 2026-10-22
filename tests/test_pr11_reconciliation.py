@@ -10,7 +10,7 @@ class Pr11ReconciliationTests(unittest.TestCase):
 
     def test_launcher_keeps_drawer_preload_direct_settings_and_background_readiness(self):
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
-        self.assertIn("appDrawerPanel.preload()", launcher)
+        self.assertIn("AppDrawerActivity.class", launcher)
         self.assertIn("appsButton.setOnLongClickListener", launcher)
         self.assertIn("new Intent(this, SettingsActivity.class)", launcher)
         self.assertIn("StartupReadinessCoordinator.get(this).onTrigger", launcher)

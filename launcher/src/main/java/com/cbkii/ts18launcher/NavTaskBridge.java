@@ -84,16 +84,19 @@ public final class NavTaskBridge {
     private static final class Request {
         final long id, deadline, epoch;
         final String[] fields;
+        final String maskTitle;
         String windowComponent;
         long windowAt;
         Request(String[] line) {
             id = Long.parseLong(line[1]); deadline = Long.parseLong(line[2]); epoch = Long.parseLong(line[3]);
-            fields = java.util.Arrays.copyOfRange(line, 4, line.length);
+            String tail = line[line.length - 1];
+            maskTitle = StartupMaskFocus.validTitle(tail) ? tail : "";
+            fields = java.util.Arrays.copyOfRange(line, 4, line.length - (maskTitle.isEmpty() ? 0 : 1));
             long now = android.os.SystemClock.elapsedRealtime();
             if (id <= 0 || epoch < 0 || deadline <= now || deadline - now > 60000L)
                 throw new IllegalArgumentException("BAD_DEADLINE");
         }
-        Request() { id = deadline = epoch = -1L; fields = new String[0]; }
+        Request() { id = deadline = epoch = -1L; fields = new String[0]; maskTitle = ""; }
         void current() {
             if (android.os.SystemClock.elapsedRealtime() >= deadline) throw new IllegalStateException("PHASE_TIMEOUT");
             if (epoch != EPOCH.get()) throw new IllegalStateException("STALE_PRESENTATION");
@@ -265,13 +268,13 @@ public final class NavTaskBridge {
         }
         // Stack focus alone cannot authorise a mutation through a permission/call/dialog window.
         java.lang.Process probe = new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",
-                "/system/bin/dumpsys", "window", "displays").redirectErrorStream(true).start();
+                "/system/bin/dumpsys", "window", request.maskTitle.isEmpty() ? "displays" : "windows").redirectErrorStream(true).start();
         StringBuilder text = new StringBuilder();
         try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(probe.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                if (text.length() + line.length() > 65536) throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
-                if (line.contains("mCurrentFocus=")) text.append(line).append('\n');
+                if (text.length() + line.length() > 524288) throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
+                if (!request.maskTitle.isEmpty() || line.contains("mCurrentFocus=")) text.append(line).append('\n');
             }
         }
         if (!probe.waitFor(100L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
@@ -279,6 +282,11 @@ public final class NavTaskBridge {
             throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
         }
         if (probe.exitValue() != 0) throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
+        if (StartupMaskFocus.ownsFocusedWindow(text.toString(), request.maskTitle, user)) {
+            request.windowComponent = activity;
+            request.windowAt = android.os.SystemClock.elapsedRealtime();
+            request.current(); return;
+        }
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("mCurrentFocus=Window\\{[^\\n]*? u(\\d+) ([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)").matcher(text);
         if (!matcher.find() || Integer.parseInt(matcher.group(1)) != user)
             throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");

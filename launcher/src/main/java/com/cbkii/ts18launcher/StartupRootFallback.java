@@ -19,14 +19,14 @@ final class StartupRootFallback {
                 "observe", Integer.toString(AndroidUserId.current()));
         return result != null && "BRIDGE_API_UNSUPPORTED".equals(result.code) ? null : result;
     }
-    NavigationHelperResult launch(String pkg, String entry, int homeTask) {
+    NavigationHelperResult launch(String pkg, String entry, int homeTask, long deadline) {
         if (!eligible(pkg, entry) || homeTask <= 0) return NavigationHelperResult.failure("STARTUP_INELIGIBLE", "");
         if (MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg)) {
             if (!AuxioPreparationContract.supported(context))
                 return NavigationHelperResult.failure("AUXIO_PREPARE_CAPABILITY_REQUIRED", "Install the paired silent-preparation Auxio candidate");
             entry = AuxioPreparationContract.COMPONENT;
         }
-        helper.setDeadline(SystemClock.elapsedRealtime() + 6500L);
+        helper.setDeadline(Math.min(deadline, SystemClock.elapsedRealtime() + 6500L));
         return helper.run("startup-source", pkg, entry, context.getPackageName(), Integer.toString(homeTask));
     }
     NavigationHelperResult restoreHome(String pkg, String entry, int sourceTask, int homeTask) {

@@ -401,7 +401,8 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         if (sessionManager == null || packageName == null || packageName.isEmpty()
                 || !MediaListenerService.hasNotificationAccess(context)) return null;
         // Membership/queue discovery crosses Binder only on the bounded readiness worker.
-        return observedControllers.get(packageName);
+        MediaController displayed = ProcessMediaSessionMonitor.selectedController(packageName);
+        return displayed != null ? displayed : observedControllers.get(packageName);
     }
 
     private void queueBrowser(MediaSourceAdapter adapter, Pending pending) {
@@ -552,7 +553,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
                 handler.post(() -> browserSessionDestroyed(connection, generation));
             }
         };
-        controller.registerCallback(callback);
+        controller.registerCallback(callback, handler);
         connection.controllerCallback = callback;
     }
 
@@ -590,6 +591,16 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
     private void browserFailed(Connection connection, int generation, String message) {
         if (!valid(connection, generation)) return;
         String packageName = connection.adapter.packageName;
+        long retryDelay = 300L << connection.retries;
+        if (connection.retries < 2 && SystemClock.uptimeMillis() + retryDelay < connection.prepareDeadlineMs) {
+            int retryGeneration = ++connection.generation;
+            disconnect(connection);
+            connection.preparing = true;
+            connection.retries++;
+            MediaEventTrace.record("browser", "retry-pending", packageName + " attempt=" + connection.retries);
+            handler.postDelayed(() -> connectBrowser(connection, retryGeneration, connection.prepareDeadlineMs), retryDelay);
+            return;
+        }
         List<Pending> pending = new ArrayList<>(connection.pending);
         connection.pending.clear();
         connections.remove(packageName);
@@ -1180,7 +1191,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         MediaController.Callback controllerCallback;
         Runnable connectTimeout;
         boolean preparing;
-        int generation;
+        int generation, retries;
         long prepareDeadlineMs;
 
         Connection(MediaSourceAdapter adapter) {

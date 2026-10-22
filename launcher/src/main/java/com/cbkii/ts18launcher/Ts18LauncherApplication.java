@@ -49,8 +49,11 @@ public final class Ts18LauncherApplication extends Application
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
             if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                ProcessMediaSessionMonitor.setVisible(Ts18LauncherApplication.this, false);
                 StartupReadinessCoordinator.get(Ts18LauncherApplication.this).onScreenOff(); return;
             }
+            MediaNotificationAccessBootstrapper.ensureConnected(Ts18LauncherApplication.this);
+            ProcessMediaSessionMonitor.setVisible(Ts18LauncherApplication.this, launcherResumed);
             // Screen-on is a wake observation only; it is never treated as verified ACC-on.
             StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
                     .onTrigger(StartupReadinessPolicy.Trigger.SCREEN_ON);

@@ -9,6 +9,8 @@ import android.media.session.MediaSession;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.service.notification.NotificationListenerService;
@@ -113,6 +115,7 @@ public final class MediaListenerService extends NotificationListenerService {
     private final Map<MediaSession.Token, MediaController> watched = new HashMap<>();
     private final Map<MediaSession.Token, MediaController> external = new HashMap<>();
     private final Map<MediaSession.Token, MediaController.Callback> externalCallbacks = new HashMap<>();
+    private final Handler main = new Handler(Looper.getMainLooper());
     private MediaSessionManager sessionManager;
     private ComponentName listenerComponent;
     private String radioNotificationKey = "";
@@ -129,7 +132,7 @@ public final class MediaListenerService extends NotificationListenerService {
     };
 
     private final MediaSessionManager.OnActiveSessionsChangedListener sessionsChangedListener =
-            controllers -> reconcile(controllers == null ? new ArrayList<>() : controllers);
+            controllers -> main.post(() -> reconcile(controllers == null ? new ArrayList<>() : controllers));
 
     @Override public void onCreate() {
         super.onCreate();
@@ -141,6 +144,7 @@ public final class MediaListenerService extends NotificationListenerService {
     @Override public void onListenerConnected() {
         super.onListenerConnected();
         instance = this;
+        MediaNotificationAccessBootstrapper.connected();
         MediaEventTrace.record("listener", "connected");
         if (sessionManager == null) {
             MediaEventTrace.record("listener", "manager-unavailable");
@@ -149,7 +153,7 @@ public final class MediaListenerService extends NotificationListenerService {
         }
         try {
             sessionManager.addOnActiveSessionsChangedListener(
-                    sessionsChangedListener, listenerComponent);
+                    sessionsChangedListener, listenerComponent, main);
         } catch (SecurityException ignored) {
             MediaEventTrace.record("listener", "session-access-denied");
             publishEmpty();
@@ -166,7 +170,7 @@ public final class MediaListenerService extends NotificationListenerService {
         instance = null;
         notifyObservers();
         super.onListenerDisconnected();
-        if (listenerComponent != null) requestRebind(listenerComponent);
+        MediaNotificationAccessBootstrapper.ensureConnected(this);
     }
 
     @Override public void onDestroy() {
@@ -188,11 +192,16 @@ public final class MediaListenerService extends NotificationListenerService {
                 Notification.EXTRA_TITLE_BIG);
         String text = firstNotificationText(extras, Notification.EXTRA_TEXT,
                 Notification.EXTRA_BIG_TEXT, Notification.EXTRA_SUB_TEXT);
+        text = MediaTickerPolicy.join(text,
+                firstNotificationText(extras, Notification.EXTRA_SUB_TEXT),
+                firstNotificationText(extras, "frequency", "freq"));
         if (title.isEmpty() && text.isEmpty()) return;
+        Object notificationToken = extras.getParcelable(Notification.EXTRA_MEDIA_SESSION);
+        Snapshot currentRadio = snapshotOf(findRadioController());
+        if (notificationToken != null && !notificationToken.equals(currentRadio.sessionIdentity)) return;
         radioNotificationKey = sbn.getKey() == null ? "" : sbn.getKey();
         radioNotificationTitle = title;
         radioNotificationText = text;
-        Snapshot currentRadio = snapshotOf(findRadioController());
         radioAssociation.observe(currentRadio.sessionIdentity, meaningfulRadioTitle(currentRadio));
         radioNotificationStation = notificationStation(title, currentRadio);
         radioAssociation.notification(radioNotificationStation);
@@ -221,6 +230,7 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     private void refresh() {
+        if (Looper.myLooper() != Looper.getMainLooper()) { main.post(this::refresh); return; }
         if (sessionManager == null) {
             publishEmpty();
             return;
@@ -236,32 +246,7 @@ public final class MediaListenerService extends NotificationListenerService {
     private void reconcile(List<MediaController> activeControllers) {
         List<MediaController> active = activeControllers == null
                 ? new ArrayList<>() : activeControllers;
-        Map<MediaSession.Token, MediaController> next = new HashMap<>();
-        for (MediaController controller : active) {
-            MediaSession.Token token = tokenOf(controller);
-            if (controller == null || token == null) continue;
-            next.put(token, controller);
-            if (!watched.containsKey(token)) {
-                try {
-                    controller.registerCallback(callback);
-                } catch (RuntimeException ignored) {
-                    // A single broken session must not break HOME.
-                }
-            }
-        }
-
-        for (Map.Entry<MediaSession.Token, MediaController> entry : watched.entrySet()) {
-            if (!next.containsKey(entry.getKey())) {
-                try {
-                    entry.getValue().unregisterCallback(callback);
-                } catch (RuntimeException ignored) {
-                    // Framework may already have removed it.
-                }
-            }
-        }
-        watched.clear();
-        watched.putAll(next);
-
+        active = SessionControllerRegistry.reconcile(watched, active, callback, main);
         List<MediaController> controllers = mergedControllers(active);
         MediaController genericController = selectGenericController(controllers);
         MediaController radioController = pickExactPackage(
@@ -366,7 +351,7 @@ public final class MediaListenerService extends NotificationListenerService {
             }
         };
         try {
-            controller.registerCallback(observer);
+            controller.registerCallback(observer, main);
         } catch (RuntimeException ignored) {
             forgetRegisteredExternalController(token, controller);
             return;
@@ -479,7 +464,24 @@ public final class MediaListenerService extends NotificationListenerService {
                 MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE);
         int state = playbackState == null ? PlaybackState.STATE_NONE : playbackState.getState();
         long actions = playbackState == null ? 0L : playbackState.getActions();
+        if (RadioFrequency.NAVRADIO.equals(controller.getPackageName())) artist = radioDetails(metadata, artist);
         return new Snapshot(controller.getPackageName(), title, artist, state, actions, token);
+    }
+
+    static String radioDetails(MediaMetadata metadata, String artist) {
+        if (metadata == null) return artist;
+        java.util.List<String> fields = new java.util.ArrayList<>();
+        fields.add(artist);
+        // Unit-bearing text only. Unqualified vendor integers never become tuner state.
+        for (String key : new String[] {MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+                MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, MediaMetadata.METADATA_KEY_ALBUM,
+                MediaMetadata.METADATA_KEY_GENRE, "frequency", "freq", "band", "rds"}) {
+            try {
+                CharSequence value = metadata.getText(key);
+                if (value != null && value.length() <= 256) fields.add(value.toString());
+            } catch (RuntimeException wrongType) { /* Numeric/private contracts remain unknown. */ }
+        }
+        return MediaTickerPolicy.join(fields.toArray(new String[0]));
     }
 
     private static String firstNonBlank(MediaMetadata metadata, String... keys) {
@@ -668,6 +670,8 @@ public final class MediaListenerService extends NotificationListenerService {
             if (candidate == null || candidate == observer) OBSERVERS.remove(reference);
         }
     }
+
+    static boolean isConnected() { return instance != null; }
 
     public static void refreshActiveSessions() {
         MediaListenerService service = instance;

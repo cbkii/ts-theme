@@ -49,6 +49,7 @@ final class StartupForegroundPolicy {
     private static String normalise(String value) {
         if (value == null) return "";
         int slash = value.indexOf('/');
+        value = value.replace("com.tw.media/com.tw.music.MusicActivity", "com.tw.media/org.oxycblt.auxio.MainActivity");
         value = value.replace("com.cbkii.ts18launcher/.HomeAlias", "com.cbkii.ts18launcher/.LauncherActivity")
                 .replace("com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias", "com.cbkii.ts18launcher/.LauncherActivity");
         slash = value.indexOf('/');

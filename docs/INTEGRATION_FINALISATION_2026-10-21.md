@@ -30,7 +30,9 @@ The attached secondary review's claim that Activity preparation is wholly prohib
 
 Regression gates: actual panel click routing; warm ordinary PLAY; cold V1 admission at both 6.1/7.7-second originating budgets; expiry/newer intent; single preparation admission and exact HOME return; initial frame wait; focus refusal/re-arm; drawer/app escape during pending presentation; caption/inset dimensions. Qualify the replacement signed triplet on TS18 before merge. A local loading state must never intercept rail/drawer controls. Around three seconds remains a soft target; CI does not prove audible output, useful map pixels/touch or ACC behaviour.
 
-## Optional readiness loader follow-up
+## Capture-driven follow-up — 22 October 2026
 
-The 22 October follow-up adds opt-in Startup Readiness Loader and after-sleep settings, using
-the existing source/task owners. See [audit, external research, BACK limitations and device gates](STARTUP_READINESS_LOADER.md).
+The former map-sized 45-second loader and drawer were physically rejected. Their replacements,
+media observation corrections and paired Auxio expiry contract are documented in
+[CAPTURE_FIXES_2026-10-22.md](CAPTURE_FIXES_2026-10-22.md). Previous CI and APK hashes above are
+historical and do not qualify the new heads. Physical acceptance remains pending.

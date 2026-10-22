@@ -52,7 +52,10 @@ writeFocus();}
 public List<StackInfo> getAllStackInfos(){return Arrays.asList(map,home,music,foreign);}
 public StackInfo getFocusedStackInfo(){return focused==7?home:focused==84?music:focused==99?foreign:map;}
 void writeFocus(){try{String component=getFocusedStackInfo().topActivity.flattenToString();if("dialog".equals(System.getenv("CASE")))component="com.android.permissioncontroller/.GrantPermissionsActivity";
-Files.writeString(Path.of(System.getenv("FOCUS_FILE")),"mCurrentFocus=Window{abc u0 "+component+"}\\n");}catch(Exception e){throw new RuntimeException(e);}}
+String mask="TS18Ready_10211_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+String dump="mCurrentFocus=Window{abc u0 "+component+"}\\n";
+if("mask".equals(System.getenv("CASE")))dump="  Window #0 Window{abc u0 "+mask+"}:\\n    mOwnerUid=10211 showForAllUsers=false\\n    mAttrs={ ty=APPLICATION_OVERLAY fmt=OPAQUE }\\n  mCurrentFocus=Window{abc u0 "+mask+"}\\n";
+Files.writeString(Path.of(System.getenv("FOCUS_FILE")),dump);}catch(Exception e){throw new RuntimeException(e);}}
 public void setFocusedTask(int id){System.out.println("FOCUS "+id);focused=id;writeFocus();}
 public void setTaskWindowingMode(int id,int mode,boolean top){if(top)throw new AssertionError("mode stole focus");System.out.println("MODE "+id+" "+mode);
 map.configuration.windowConfiguration.mode=mode;
@@ -62,11 +65,12 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
 }}
 """
         source = SOURCE.read_text().replace(
-            'new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",\n                "/system/bin/dumpsys", "window", "displays")',
+            'new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",\n                "/system/bin/dumpsys", "window", request.maskTitle.isEmpty() ? "displays" : "windows")',
             'new ProcessBuilder("/bin/cat", System.getenv("FOCUS_FILE"))',
         )
         assert 'new ProcessBuilder("/bin/cat"' in source
         stubs["NavTaskBridge.java"] = source
+        stubs["StartupMaskFocus.java"] = SOURCE.with_name("StartupMaskFocus.java").read_text()
         for name, text in stubs.items():
             p = cls.root / name
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -129,6 +133,14 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
                 self.assertIn("FAIL code=", result[-1])
                 self.assertFalse(any(x.startswith(("MODE", "RESIZE", "FOCUS")) for x in result))
                 self.finish(child)
+
+    def test_owned_focusable_mask_preserves_task_and_window_authority(self):
+        child = self.launch("mask")
+        title = "TS18Ready_10211_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        result = self.request(child, ["observe", 0, title])
+        self.assertIn("OK code=FOREGROUND", result[-1])
+        self.assertFalse(any(x.startswith(("MODE", "RESIZE", "FOCUS")) for x in result))
+        self.finish(child)
 
     def test_fullscreen_departure_does_not_focus_the_map(self):
         child = self.launch("foreign")

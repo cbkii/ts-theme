@@ -2,7 +2,7 @@ package com.cbkii.ts18launcher;
 
 /** Pure bounded presentation session. Never owns an app launch, media command or Maps claim. */
 final class StartupLoaderPolicy {
-    static final long DEADLINE_MS = 45000L;
+    static final long DEADLINE_MS = 8000L;
     private long deadline;
     private boolean active;
 
@@ -14,6 +14,7 @@ final class StartupLoaderPolicy {
     }
     boolean active() { return active; }
     boolean expired(long now) { return active && now >= deadline; }
+    long remaining(long now) { return active ? Math.max(0L, deadline - now) : 0L; }
     void finish() { active = false; }
 
     static boolean shouldStart(boolean enabled, boolean afterSleep, long boot, long consumedBoot,

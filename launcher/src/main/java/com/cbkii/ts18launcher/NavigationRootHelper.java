@@ -83,6 +83,8 @@ final class NavigationRootHelper {
         long shellDeadline = (android.os.SystemClock.elapsedRealtime() + budget) / 1000L;
         StringBuilder command = new StringBuilder("TS18_DEADLINE_S=").append(shellDeadline)
                 .append(" TS18_STATE_DIR=").append(singleQuote(rootDir))
+                .append(" TS18_STAGE_UNTIL=").append(deadline)
+                .append(" TS18_MASK_TITLE=").append(singleQuote(StartupMaskFocus.activeTitle))
                 .append(" TS18_COLD_POLICY=").append(coldPolicy)
                 .append(" TS18_METHOD=").append(TestingProfiles.navigation(context))
                 .append(" TS18_TRANSITION=").append(TestingProfiles.transition(context))

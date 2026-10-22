@@ -8,7 +8,7 @@ final class RadioStationAssociation {
     private int generation;
     private int notificationGeneration = -1;
     void observe(Object identity, String meaningfulStation) {
-        if (!java.util.Objects.equals(token, identity) || !station.isEmpty() && meaningfulStation.isEmpty()) {
+        if (!java.util.Objects.equals(token, identity) || !station.isEmpty() && !station.equalsIgnoreCase(meaningfulStation)) {
             retiredStation = station;
             generation++;
         }

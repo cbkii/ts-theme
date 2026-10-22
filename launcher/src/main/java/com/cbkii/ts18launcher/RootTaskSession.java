@@ -96,6 +96,8 @@ final class RootTaskSession {
                 if (requestEpoch != epoch) return NavigationHelperResult.failure("STALE_PRESENTATION", "before IPC");
                 input.write("REQUEST\t" + id + "\t" + deadline + "\t" + requestEpoch);
                 for (String field : fields) { input.write('\t'); input.write(field); }
+                String mask = StartupMaskFocus.activeTitle;
+                if (StartupMaskFocus.validTitle(mask)) { input.write('\t'); input.write(mask); }
                 // A failed flush can follow server admission. Treat it as uncertain.
                 dispatched = true;
                 input.write('\n'); input.flush();

@@ -62,11 +62,11 @@ public static void main(String[] a)throws Exception{
  check(fixture.match("Shared","",null,null).station.state.equals("ACT"),"ACT > NSW > VIC");
  check(fixture.match("Shared","",Collections.singletonMap("NSW",0),false).station.state.equals("NSW"),"current state wins");
  check(fixture.match("2BBB","Shared",null,null).station.state.equals("NSW"),"callsign outranks brand");
- check(MediaTickerPolicy.resolve("NavRadio+","105.9 FM","NavRadio+","radio",RadioFrequency.NAVRADIO,"105.9 FM").primary.isEmpty(),"frequency duplicated into station row");
+ check(MediaTickerPolicy.resolve("NavRadio+","105.9 FM","NavRadio+","radio",RadioFrequency.NAVRADIO,"105.9 FM").primary.equals("105.9 FM"),"frequency one row");
  check(MediaTickerPolicy.resolve("NavRadio+","Station 105.9 FM","NavRadio+","radio",RadioFrequency.NAVRADIO,"105.9 FM").primary.equals("Station 105.9 FM"),"station subtitle discarded");
- check(MediaTickerPolicy.resolve("Station","DJ","NavRadio+","radio",RadioFrequency.NAVRADIO,"105.9 FM").secondary.equals("105.9 FM"),"frequency second line");
+ check(MediaTickerPolicy.resolve("Station","DJ","NavRadio+","radio",RadioFrequency.NAVRADIO,"105.9 FM").primary.equals("Station 105.9 FM DJ"),"single row metadata");
  check(MediaTickerPolicy.resolve("Track","Artist","Auxio","music","com.tw.media","105.9 FM").secondary.equals("Artist"),"music preserved");
- check(MediaTickerPolicy.resolve("Station","DJ","Radio","radio","com.tw.radio","105.9 FM").secondary.equals("DJ"),"other radios preserved");
+ check(MediaTickerPolicy.resolve("Station","DJ","Radio","radio","com.tw.radio","105.9 FM").primary.equals("Station 105.9 FM DJ"),"other radios single row");
  System.out.println("PASS radio frequency / all eight regions / ambiguity / source isolation");}}
 ''')
             subprocess.run(['java','-m','jdk.compiler/com.sun.tools.javac.Main','-d',str(work),*map(str,pkg.glob('*.java'))],check=True,timeout=30)

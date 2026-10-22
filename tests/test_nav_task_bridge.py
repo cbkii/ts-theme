@@ -87,7 +87,7 @@ class NavTaskBridgeTest(unittest.TestCase):
             files.append(str(file))
         # Use the JDK compiler module: also works where javac's wrapper is not installed.
         subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "-d", str(cls.work),
-                        *files, str(SOURCE)], check=True, capture_output=True, text=True)
+                        *files, str(SOURCE), str(SOURCE.with_name("StartupMaskFocus.java"))], check=True, capture_output=True, text=True)
 
     @classmethod
     def tearDownClass(cls):

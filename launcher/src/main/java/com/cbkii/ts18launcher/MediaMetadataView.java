@@ -86,6 +86,7 @@ final class MediaMetadataView extends LinearLayout {
                 snapshot == null ? "" : snapshot.packageName,
                 radioResolver.frequency(snapshot));
 
+        primary.setGravity(MediaSelection.RADIO.equals(selected) ? Gravity.CENTER_VERTICAL : Gravity.BOTTOM);
         MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
                 lastPrimary, lastSecondary, lastSourceIdentity, sourceIdentity,
                 display.primary, display.secondary);

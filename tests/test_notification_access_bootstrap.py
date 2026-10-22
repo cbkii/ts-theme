@@ -22,7 +22,7 @@ class NotificationAccessBootstrapTest(unittest.TestCase):
         self.assertIn("ProcessMediaSessionMonitor.refresh(this);", APP)
 
     def test_grant_refreshes_sessions_without_waiting_for_listener_connection(self):
-        self.assertEqual(2, BOOT.count("ProcessMediaSessionMonitor.refresh(app);"))
+        self.assertGreaterEqual(BOOT.count("ProcessMediaSessionMonitor.refresh(app);"), 2)
         verified = BOOT.split('MediaEventTrace.record("listener-access", "root-grant-verified"', 1)[1]
         verified = verified.split("});\n    }", 1)[0]
         self.assertIn("MAIN.post", verified)

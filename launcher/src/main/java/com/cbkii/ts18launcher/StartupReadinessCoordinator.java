@@ -26,6 +26,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         default int taskId() { return -1; }
         default void refreshEvidence() { }
         default void cancelAutomaticColdStart() { }
+        default void finishLoaderPresentation() { cancelAutomaticColdStart(); }
         default void yieldForMediaPreparation() { cancelAutomaticColdStart(); }
     }
     interface LoaderUi {
@@ -33,6 +34,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         void mask(boolean show);
         void hide();
         default boolean canMask() { return false; }
+        default boolean ownsMask() { return false; }
         default void incomplete() { }
     }
     private final StartupLoaderPolicy loader = new StartupLoaderPolicy();
@@ -65,6 +67,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private String stagedEntry = "";
     private int homeTask = -1;
     private long stagedCommands;
+    private long foregroundDeadline;
     private boolean pauseSent;
     private boolean stagedForExplicitPlay;
     private int navigationWaitGeneration = -1;
@@ -232,7 +235,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 && policy.record(Source.MUSIC).state == State.STARTING
                 && !policy.record(Source.MUSIC).activityLaunchAccepted) return true;
         if (!homeResumed || activity == null || activity.isFinishing()) return false;
-        if (!activity.hasWindowFocus()) {
+        if (!homeWindowEligible(activity)) {
             // onResume can precede a new HOME's first focus callback. Retain the already
             // reserved Music turn across that gap, without authorising any Activity launch.
             // A lost focus after the first callback, or a missing callback past the bound,
@@ -369,13 +372,16 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         }, 500L);
     }
 
+    private boolean homeWindowEligible(Activity activity) {
+        return activity.hasWindowFocus() || loader.active() && loaderUi != null && loaderUi.ownsMask();
+    }
+
     private boolean foregroundAllowed() {
         return sourceForegroundAllowed(Source.MUSIC) || sourceForegroundAllowed(Source.RADIO);
     }
     private boolean sourceForegroundAllowed(Source source) {
-        // Dismissing presentation cancels future loader staging, but an already admitted
-        // transaction still owns its bounded exact-HOME return.
-        if (foregroundBusy && source == foregroundSource && stagedByLoader) return true;
+        // Dismissal/expiry revokes automatic focus changes, including admitted late results.
+        if (suppressLoaderStaging && stagedByLoader && !explicitMusicPreparation()) return false;
         return !yielded && (source == Source.MUSIC && explicitMusicPreparation()
                 || !suppressLoaderStaging && (loader.active() || StartupReadinessPolicy.foregroundAllowed(mode()))
                     && automaticMediaPreparation());
@@ -391,7 +397,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (SystemClock.uptimeMillis() < interactionUntil) { runForegroundSoon(); return; }
         Activity activity = home.get();
         if (!foregroundAllowed() || !safeScreen() || activity == null || activity.isFinishing()
-                || !activity.hasWindowFocus() || !HomeMode.isDefaultHome(context)) return;
+                || !homeWindowEligible(activity) || !HomeMode.isDefaultHome(context)) return;
         if (navigation != null && navigation.busy()) {
             handler.postDelayed(this::runForegroundSoon, 100L); return;
         }
@@ -421,6 +427,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             policy.block(source, r.generation, "auxio-prepare-capability-required", SystemClock.uptimeMillis());
             updateNavigationAdmission(); runForegroundSoon(); return;
         }
+        if (loader.active() && loaderUi != null) {
+            loaderUi.render("", true);
+            if (loaderUi.canMask()) loaderUi.mask(true);
+        }
         final Intent entry;
         try { entry = context.getPackageManager().getLaunchIntentForPackage(pkg); }
         catch (RuntimeException unknown) {
@@ -443,6 +453,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         stagedCommands = media().userCommandGeneration(); pauseSent = false;
         stagedForExplicitPlay = source == Source.MUSIC && explicitMusicPreparation()
                 && pkg.equals(media().userCommandPackage());
+        long nowElapsed = SystemClock.elapsedRealtime();
+        foregroundDeadline = Math.min(nowElapsed + 12000L, Math.min(
+                loader.active() ? nowElapsed + loader.remaining(nowElapsed) : Long.MAX_VALUE,
+                stagedForExplicitPlay ? explicitMusicPreparationUntil : Long.MAX_VALUE));
         claimMediaAdmission(source, pkg, token, () -> observe(token, top -> {
             if (!homeResumed || !foregroundAllowed() || !safeScreen() || top == null
                     || !(top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.LauncherActivity")
@@ -525,6 +539,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         else if (outcome == AppResolver.LaunchOutcome.REJECTED && allowRoot) {
             stageAdmission.set(0); startWithRoot(source, g, pkg, token, false);
         }
+        else if (outcome == AppResolver.LaunchOutcome.UNCERTAIN) observeSourceAfterLaunch(source, g, pkg, token);
         else yieldStage(source, g, "normal-launch-" + outcome);
     }
     private void startWithRoot(Source source, int g, String pkg, int token, boolean allowNormal) {
@@ -532,9 +547,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         final java.util.concurrent.atomic.AtomicInteger admission = stageAdmission;
         final String entry = stagedEntry;
         final int targetHome = homeTask;
+        final long deadline = foregroundDeadline;
         observer.execute(() -> {
             if (!lease.get() || !admission.compareAndSet(0, 1)) return;
-            NavigationHelperResult result = rootFallback.launch(pkg, entry, targetHome);
+            NavigationHelperResult result = rootFallback.launch(pkg, entry, targetHome, deadline);
             handler.post(() -> {
                 if (token != foregroundToken || !lease.get()) return;
                 if (StartupRootFallback.definitelyNotStarted(result)) admission.set(0);
@@ -550,12 +566,14 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                         }
                         startNormally(source, g, pkg, token, false);
                     });
+                } else if (!StartupRootFallback.definitelyNotStarted(result)) {
+                    observeSourceAfterLaunch(source, g, pkg, token);
                 } else yieldStage(source, g, "root-launch-" + result.code);
             });
         });
     }
     private void observeSourceAfterLaunch(Source source, int g, String pkg, int token) {
-        awaitSourceEntry(source, g, pkg, token, SystemClock.uptimeMillis() + 4000L);
+        awaitSourceEntry(source, g, pkg, token, stageDeadline(4000L));
     }
     private void awaitSourceEntry(Source source, int g, String pkg, int token, long deadline) {
         handler.postDelayed(() -> observe(token, owner -> {
@@ -567,7 +585,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 // Observe only: never replay it. A known foreign/permission owner yields at once.
                 boolean waitingAtHome = owner != null && owner.matches(AndroidUserId.current(),
                         homeTask, context.getPackageName() + "/.LauncherActivity");
-                if ((owner == null || waitingAtHome) && SystemClock.uptimeMillis() < deadline) {
+                boolean trampoline = source == Source.MUSIC && owner != null
+                        && owner.isEntry(AndroidUserId.current(), AuxioPreparationContract.COMPONENT);
+                if ((owner == null || waitingAtHome || trampoline) && SystemClock.uptimeMillis() < deadline) {
                     awaitSourceEntry(source, g, pkg, token, deadline); return;
                 }
                 yieldStage(source, g, "source-entry-not-foreground"); return;
@@ -575,11 +595,15 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             stagedTask = owner.task;
             if (source == Source.MUSIC && MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg))
                 finishStage(source, g, pkg, token);
-            else awaitStage(source, g, pkg, token, SystemClock.uptimeMillis() + 8000L);
+            else awaitStage(source, g, pkg, token, stageDeadline(8000L));
         }), 150L);
     }
+    private long stageDeadline(long phaseMs) {
+        return SystemClock.uptimeMillis() + Math.min(phaseMs,
+                Math.max(0L, foregroundDeadline - SystemClock.elapsedRealtime()));
+    }
     private boolean validStage(int token) {
-        return token == foregroundToken && sourceForegroundAllowed(foregroundSource) && safeScreen()
+        return SystemClock.elapsedRealtime() < foregroundDeadline && token == foregroundToken && sourceForegroundAllowed(foregroundSource) && safeScreen()
                 && foregroundSource != null
                 && (foregroundSource != Source.RADIO || MediaListenerService.hasNotificationAccess(context))
                 && packageFor(foregroundSource).equals(packages[foregroundSource.ordinal()])
@@ -614,7 +638,12 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         expectingHomeReturn = true;
         // A pause dispatch is not proof of silence. Leave uncertain rather than recording READY.
         observe(token, top -> {
-            if (!validStage(token) || top == null || !top.matches(AndroidUserId.current(), stagedTask, stagedEntry)) {
+            if (!validStage(token)) { yieldStage(source, g, "home-return-cancelled"); return; }
+            if (top != null && top.matches(AndroidUserId.current(), homeTask,
+                    context.getPackageName() + "/.LauncherActivity")) {
+                verifyHomeReturn(source, g, token); return; // Already HOME; never refocus/relaunch it.
+            }
+            if (top == null || !top.matches(AndroidUserId.current(), stagedTask, stagedEntry)) {
                 yieldStage(source, g, "home-return-owner-changed"); return;
             }
             // Restore the exact existing HOME task. No root am-start or component relaunch.
@@ -654,7 +683,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         handler.postDelayed(() -> {
             if (token != foregroundToken) return;
             Activity activity = home.get();
-            if (!homeResumed || activity == null || activity.getTaskId() != homeTask || !activity.hasWindowFocus()) {
+            if (!homeResumed || activity == null || activity.getTaskId() != homeTask || !homeWindowEligible(activity)) {
                 yieldStage(source, g, "home-return-unconfirmed"); return;
             }
             String pkg = packageFor(source);
@@ -691,7 +720,19 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
     private void yieldStage(Source source, int g, String boundary) {
         policy.uncertain(source, g, boundary, SystemClock.uptimeMillis());
+        boolean unadmitted = stageAdmission.get() == 0;
         yielded = true; cancelForeground(boundary);
+        if (unadmitted) handler.postDelayed(() -> {
+            Activity activity = home.get();
+            if (destroyed || suppressLoaderStaging || !homeResumed || activity == null
+                    || !homeWindowEligible(activity) || !safeScreen()) return;
+            observe(foregroundToken, fresh -> {
+                if (fresh != null && fresh.matches(AndroidUserId.current(), activity.getTaskId(),
+                        context.getPackageName() + "/.LauncherActivity")) {
+                    yielded = false; onTrigger(Trigger.READINESS_CHANGED);
+                }
+            });
+        }, 1000L);
     }
     private void cancelForeground(String boundary) {
         expectingHomeReturn = false;
@@ -745,15 +786,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (!loader.active()) return false;
         finishLoader("dismissed");
         suppressLoaderStaging = true;
-        if (!foregroundBusy) cancelForeground("loader-dismissed");
-        else {
-            while (!foregroundQueue.isEmpty()) {
-                Source source = foregroundQueue.poll();
-                policy.block(source, policy.record(source).generation, "loader-dismissed", SystemClock.uptimeMillis());
-            }
-        }
-        // Hide immediately. An accepted foreground transaction retains its exact-task
-        // cleanup; dismissal never proves that a dispatched Activity did not start.
+        cancelForeground("loader-dismissed");
         return true;
     }
 
@@ -791,7 +824,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
 
     private void finishLoader(String reason) {
         if (!loader.active()) return;
-        loader.finish(); loaderEpoch++;
+        loader.finish(); loaderEpoch++; suppressLoaderStaging = true;
+        if (navigation != null) navigation.finishLoaderPresentation();
         handler.removeCallbacks(loaderTick);
         if (loaderUi != null) {
             loaderUi.hide();
@@ -806,8 +840,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (!safeScreen() || !HomeMode.isDefaultHome(context)) { finishLoader("unsafe-screen-or-home"); return; }
         if (loader.expired(SystemClock.elapsedRealtime())) {
             finishLoader("deadline-incomplete"); suppressLoaderStaging = true;
-            // Keep accepted cleanup bounded; cancel only an unadmitted foreground turn.
-            if (!foregroundBusy) cancelForeground("loader-deadline"); return;
+            // Preserve accepted claims; revoke all later automatic focus changes.
+            cancelForeground("loader-deadline"); return;
         }
         boolean complete = true, settled = !foregroundBusy && (navigation == null || !navigation.busy());
         StringBuilder text = new StringBuilder();
@@ -828,7 +862,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             loaderUi.render(text.toString(), homeResumed);
             if (loaderUi.canMask()) probeLoaderOwner(); else loaderUi.mask(false);
         }
-        handler.postDelayed(loaderTick, 500L);
+        handler.postDelayed(loaderTick, Math.min(500L, loader.remaining(SystemClock.elapsedRealtime())));
     }
 
     private void probeLoaderOwner() {
@@ -859,11 +893,11 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                         && top.matches(AndroidUserId.current(), stagedTask, stagedEntry);
                 boolean maps = top != null && navigation != null && navigation.taskId() > 0
                         && !expectedMap.isEmpty() && top.matches(AndroidUserId.current(), navigation.taskId(), expectedMap);
-                loaderUi.mask(safeScreen() && (staged || maps));
                 boolean enteringSource = top != null && foregroundBusy && stageAdmission.get() == 1
                         && top.isEntry(AndroidUserId.current(), stagedEntry);
                 boolean enteringMaps = top != null && navigation != null && navigation.busy()
                         && !expectedMap.isEmpty() && top.isEntry(AndroidUserId.current(), expectedMap);
+                loaderUi.mask(safeScreen() && (atHome || staged || maps || enteringSource || enteringMaps));
                 if (top != null && !atHome && !staged && !maps && !enteringSource && !enteringMaps) {
                     // Never cover another app, a same-package permission Activity or a call.
                     finishLoader("foreign-foreground");

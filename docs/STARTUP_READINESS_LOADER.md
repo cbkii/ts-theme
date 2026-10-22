@@ -40,38 +40,38 @@ preparation capability; root `startservice`, normal autoplay launches and invent
 service routes remain excluded. Existing/opposite playback, permissions and protected flows keep
 their guards. Third-party Radio silence and actual tuner usability remain device qualification gates.
 
-Each source reports preparing, ready, not selected or needs attention. A usable Music/Radio session
-requires content and playback capability; Maps requires verified compact task and renderer evidence.
-These statuses do not prove audible output, GNSS fixes or OEM route readiness. Completion has no
-minimum spinner dwell. It closes immediately on verified readiness or settled incomplete work,
-and at most 45 seconds after activation; incomplete work produces a HOME notice. The elapsed
-clock is never renewed by retries or duplicate triggers. BACK/dismiss cancels further loader-sponsored
-Activity turns while preserving an already admitted transaction's bounded exact-HOME cleanup.
+Readiness remains internal evidence: usable Music/Radio content and playback capability, and a
+verified compact Maps task with fresh renderer evidence. It does not prove audible output or touch.
+The visual presentation is now an opaque, theme-matched splash with one centred spinner, covering
+the complete usable app area. There is no debug text or Continue button. It ends on readiness,
+settled incomplete work, BACK, protected/foreign ownership, or **eight seconds**, whichever is first.
+The original elapsed-time deadline survives triggers and Activity recreation. Eight seconds is a
+visual ceiling, not a claim that all sources will be ready in that time.
 
-## Overlay and BACK contract
+## Overlay, BACK and cancellation
 
-The HOME progress panel occupies the map rectangle and leaves the media strip, rail and residual
-SystemUI insets available. With existing overlay app-op access, a TYPE_APPLICATION_OVERLAY mask may
-cover that same screen rectangle only after fresh, exact foreground user/task/component evidence
-identifies an owned staged source or managed Maps task. A same-package permission/settings Activity
-is not an eligible entry. Unknown evidence hides the mask; foreign foreground, screen-off, call,
-user app/drawer navigation and destruction remove it. The optional mask uses the existing Binder
-bridge, at most one read-only check in flight and at most one per second, only during the bounded
-session. If that bridge is unavailable the loader stays HOME-only; it does not add recurring dumpsys
-work or change startup caller authority just for a cosmetic mask.
+With existing overlay permission, the mask is established before staged app launch. Without that
+permission it is confined to HOME and cannot conceal another Activity. SystemUI regions remain
+outside its bounds. The overlay receives BACK directly; HOME handles BACK when no overlay exists.
+No global key interceptor, accessibility service or protected input hook is added.
 
-The mask deliberately uses FLAG_NOT_FOCUSABLE so it cannot invalidate the task/focus guards or
-capture automotive keys. BACK on HOME dismisses immediately before drawer handling; an explicit
-HOME intent also dismisses. BACK returning from a staged source to HOME dismisses unless the
-coordinator itself requested that return. The visible Continue button dismisses at any stage.
-A third-party app can consume BACK internally; in that case a non-focusable overlay cannot receive
-that key. Universal BACK interception over another app would require changing input/focus authority
-and is NOT implemented or claimed. No root input hook or accessibility service is introduced.
+The mask has a random per-instance title. The existing private root pipes carry that title;
+window checks additionally verify the exact focused window ID, launcher UID/user and application
+overlay type. All underlying task/component, display, permission/call and peer checks remain in
+force. Unknown or foreign ownership removes the mask; critical system windows retain priority.
+The guard probes run only during the bounded loader session. These exact OEM window formats and
+physical key behaviour still require TS18 qualification.
 
-Because exact ownership is checked before masking, short transitions into a source Activity can
-remain visible. Permission/protected UI visibility takes priority over an uninterrupted splash.
-The loader never guarantees permanent process residency or success when an installed source,
-permission, storage, root capability, surface or OEM contract is unavailable.
+Dismissal/expiry revokes automatic foreground staging and pending Maps presentation, preserving
+accepted/uncertain claims. Late results may update readiness but cannot request another automatic
+focus change. A healthy, rendered compact map is preserved when the splash closes. Explicit later
+user navigation remains available. Quiet background discovery may continue.
+
+Paired Auxio advertises `PREPARE_HOME_DEADLINE_PROTOCOL=1`. The launcher passes the original
+elapsed expiry to its non-exported preparation trampoline. Neither that trampoline nor its
+one-use MainActivity nonce may renew the lease; expired preparation finishes without starting the
+player. Install the matching Auxio candidate: older silent-preparation builds do not qualify for
+this deadline contract. Normal MediaSession transport remains player-owned.
 
 ## External implementation research
 
@@ -90,25 +90,13 @@ Open Headunit source was inspected at `bafdcb2e4be22fda48770b733a038e73779dc8f2`
 
 ## Validation and physical acceptance
 
-Production-coordinator boundary tests cover loader opt-in, serial media/Maps ownership, boot
-coalescing, same-boot restart, wake opt-out/opt-in, suspend across process death, permission unmasking,
-source BACK return, dismiss retaining admitted cleanup and the confirmed once-ready/source-loss gap.
-Pure policy tests cover the original deadline, dismissal, unknown boot and incomplete states.
-Canonical CI must compile/test/lint and qualify the signed/minified API29 candidate.
+Production-path regressions cover callback wrapper lifetime and registration failure, external
+state changes, stale track/station enrichment, bounded listener reconnection, browser backoff,
+uncertain admission observation, preparation aliases, owned/foreign mask identity, BACK, expiry,
+wake settings and late-result cancellation. Canonical CI compiles/tests/lints the signed API29
+candidate. See `CAPTURE_FIXES_2026-10-22.md` for the evidence and delivery matrix.
 
-Physical tests, NOT_RUN until exercised on the unit:
-
-1. OFF: existing startup/media/Maps behaviour and HOME controls remain unchanged.
-2. ON: untouched cold boot with all selected apps cold; no unsolicited audio, duplicate task or
-   repeated accepted launch. Observe usable session content and compact Maps pixels/touch separately.
-3. BACK on HOME, during source preparation, during compact Maps acquisition and after an internal
-   third-party BACK: verify the documented key ownership and Continue escape. Tap Apps/rail and
-   protected SystemUI while loading; confirm immediate responsiveness and no late focus theft.
-4. Allow, deny and revoke overlay access; trigger permission UI/call/camera. Overlay must fail open,
-   disappear on foreign/unknown ownership and never obscure protected flows.
-5. Same-boot HOME return/process death: no repeated cold loader; opted-in genuine sleep/wake runs
-   once, opted-out wake does not. Screen toggle and actual ACC are recorded separately.
-6. Missing app, denied access, unavailable USB/root and failed renderer: truthful incomplete result
-   within the original 45-second window. Restore prerequisites and validate existing bounded recovery.
-7. Freeze launcher/Auxio/Maps source SHAs, APK hashes, packages and signers before testing. No default
-   merge, stable release or physical-success claim follows from CI.
+Physical acceptance must use the matched signed APKs. Test app-cold and sessions-present reboots;
+actual ACC sleep with the option off/on; eight-second splash/BACK; full-page drawer search/app
+launch during Maps admission; external Music track/PLAY/PAUSE; rapid Radio changes; delayed USB;
+listener/source loss; permission/call/camera. Do not infer physical success from CI.
