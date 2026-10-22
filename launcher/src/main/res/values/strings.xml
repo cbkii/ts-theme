@@ -12,12 +12,11 @@
     <string name="appearance_defaults">Day at 07:00; night at 19:00. Switches directly at each anchor.</string>
     <string name="appearance_invalid_schedule">Day and night must start at different times. The previous schedule is unchanged.</string>
     <string name="startup_loader_title">Startup Readiness Loader</string>
-    <string name="startup_loader_summary">Prepare selected Music, Radio and Maps at startup, with a dismissible progress screen. Uses guarded fallbacks; unavailable apps or access are reported. BACK on HOME or Continue dismisses the loader.</string>
+    <string name="startup_loader_summary">Prepare selected Music, Radio and Maps behind a simple splash for up to 8 seconds. Press BACK to dismiss. Apps may still need attention if access or media is unavailable.</string>
     <string name="startup_loader_after_sleep">Also prepare after sleep</string>
     <string name="startup_loader_after_sleep_summary">Run the loader after observed sleep/wake as well as a new Android boot. Screen wake is not proof of vehicle ACC.</string>
     <string name="startup_loader_overlay">Display loader over preparing apps</string>
-    <string name="startup_loader_overlay_granted">Allowed. The loader leaves media, rail and SystemUI areas uncovered.</string>
-    <string name="startup_loader_overlay_missing">Allow display over other apps to mask preparation. Without access, progress appears on HOME only.</string>
-    <string name="startup_loader_dismiss">Continue</string>
+    <string name="startup_loader_overlay_granted">Allowed. The splash hides app preparation while leaving system controls visible.</string>
+    <string name="startup_loader_overlay_missing">Allow display over other apps to hide preparation. Without access, the splash appears on HOME only.</string>
     <string name="startup_loader_incomplete">Startup preparation incomplete. Check Music, Radio and Maps on HOME.</string>
 </resources>
