@@ -58,6 +58,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 Thread t = new Thread(r, "ts18-startup-observe"); t.setDaemon(true); return t;
             });
     private final String[] packages = new String[Source.values().length];
+    private final int[] preDispatchRearms = new int[Source.values().length];
     private WeakReference<Activity> home = new WeakReference<>(null);
     private NavigationHook navigation;
     private boolean homeResumed, foregroundBusy, yielded, destroyed;
@@ -141,6 +142,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         // BOOT_COMPLETED can arrive after process/HOME startup: never reset active admissions twice.
         if (boot >= 0 && boot != seen) {
             cancelForeground("new-boot"); policy.resetForBoot(); yielded = false;
+            java.util.Arrays.fill(preDispatchRearms, 0);
             prefs.edit().putLong("boot_count", boot).apply();
         }
         boolean resumedYield = yielded && (trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON || trigger == Trigger.HOME_RESUME);
@@ -160,6 +162,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             if (!pkg.equals(packages[index])) {
                 if (foregroundSource == source) cancelForeground("source-changed");
                 foregroundQueue.remove(source); policy.configurationChanged(source); packages[index] = pkg;
+                preDispatchRearms[index] = 0;
             }
             if (pkg.isEmpty()) continue;
             if (releasingAdmissions.contains(source)) continue;
@@ -722,7 +725,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         policy.uncertain(source, g, boundary, SystemClock.uptimeMillis());
         boolean unadmitted = stageAdmission.get() == 0;
         yielded = true; cancelForeground(boundary);
-        if (unadmitted) handler.postDelayed(() -> {
+        if (unadmitted && ++preDispatchRearms[source.ordinal()] < StartupReadinessPolicy.MAX_ATTEMPTS_PER_BOOT)
+            handler.postDelayed(() -> {
             Activity activity = home.get();
             if (destroyed || suppressLoaderStaging || !homeResumed || activity == null
                     || !homeWindowEligible(activity) || !safeScreen()) return;

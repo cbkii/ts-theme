@@ -128,6 +128,8 @@ StartupReadinessCoordinator rootFirst=create();TestingProfiles.mode="aggressive"
 check(AppResolver.launches==0&&StartupRootFallback.starts==1,"aggressive did not select root first");rootFirst.destroy();
 StartupReadinessCoordinator fallback=create();TestingProfiles.mode="aggressive";StartupRootFallback.code="STARTUP_SOURCE_REJECTED";Handler.until(4000);
 check(AppResolver.launches==1&&StartupRootFallback.starts==1,"definite root refusal did not allow normal once");fallback.destroy();
+StartupReadinessCoordinator refused=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;StartupRootFallback.code="STARTUP_SOURCE_REJECTED";
+Handler.until(15000);check(StartupRootFallback.starts==3&&AppResolver.launches==3,"pre-dispatch refusals re-armed without a bound");refused.destroy();
 StartupReadinessCoordinator ambiguous=create();TestingProfiles.mode="aggressive";StartupRootFallback.code="PHASE_TIMEOUT";Handler.until(15000);
 check(AppResolver.launches==0&&StartupRootFallback.starts==1,"root uncertainty replayed normal launch");ambiguous.destroy();
 StartupReadinessCoordinator lateAccepted=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;StartupRootFallback.code="PHASE_TIMEOUT";
