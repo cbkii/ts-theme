@@ -18,13 +18,15 @@ import java.util.concurrent.TimeUnit;
  * Run: adb shell am instrument -w com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation
  */
 public final class MediaSessionApi29Instrumentation extends Instrumentation {
-    private boolean observeLive;
+    private boolean observeLive, coldConsent;
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
+        coldConsent = arguments != null && "1".equals(arguments.getString("cold_consent"));
         observeLive = arguments != null && "1".equals(arguments.getString("observe_live"));
         start();
     }
     @Override public void onStart() {
+        if (coldConsent) { rejectUntrustedColdConsent(); return; }
         if (observeLive) { observeSelectedAuxio(); return; }
         Bundle result = new Bundle();
         MediaSession session = new MediaSession(getTargetContext(), "TS18-media-contract-test");
@@ -77,6 +79,19 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
             finish(Activity.RESULT_CANCELED, result);
         } finally {
             controller.unregisterCallback(callback); session.release();
+        }
+    }
+    /** CI fixture has a matching package/protocol and an intentionally untrusted signer. */
+    private void rejectUntrustedColdConsent() {
+        Bundle result = new Bundle();
+        try {
+            int uid = getTargetContext().getPackageManager().getApplicationInfo(CompactStartupPeer.PACKAGE, 0).uid;
+            check(!CompactStartupPeer.trusted(getTargetContext(), uid), "fixture unexpectedly trusted");
+            check(CompactStartupConsent.read(getTargetContext()) == null, "untrusted cold consent accepted");
+            result.putString("stream", "PASS untrusted cold-consent peer rejected\n");
+            finish(Activity.RESULT_OK, result);
+        } catch (Exception | AssertionError error) {
+            result.putString("stream", "FAIL " + error + "\n"); finish(Activity.RESULT_CANCELED, result);
         }
     }
     /** Optional read-only physical probe. No synthetic session or transport is created here.

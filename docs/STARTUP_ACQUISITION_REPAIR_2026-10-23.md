@@ -76,7 +76,11 @@ permission/call/screen protections remain regression gates.
 
 CI now executes the actual broker/dumpsys/reflection/IPC in an isolated API29 root
 emulator, with real HOME and Settings ownership and an absent signed Maps peer;
-it also executes the MediaSession instrumentation APK. It must pass, along with
+it also executes the MediaSession instrumentation APK. A generated CI-only peer
+then exercises actual PM/process/Os/private XML default/OFF/backup/live-process
+boundaries; the launcher-UID instrumentation rejects that peer's untrusted signer.
+The fixture has no app code, no Gradle module/product, and no distributed artefact;
+its temporary key/APKs are excluded from uploaded evidence. It must pass, along with
 host tests, Android unit/API29 Robolectric tests, lint, debug and signed/minified
 builds. It does not validate Magisk, the signed peer cold-consent file under TS18
 SELinux, radio tuning, USB, map pixels/touch or audible playback.

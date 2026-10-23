@@ -136,7 +136,7 @@ jobs:
         with:
           name: startup-api29-${{ env.SOURCE_REVISION }}
           path: |
-            ${{ runner.temp }}/startup-boundary-proof
+            ${{ runner.temp }}/startup-boundary-proof/*.txt
             ${{ runner.temp }}/startup-emulator.txt
             ${{ runner.temp }}/startup-avd-create.txt
           if-no-files-found: ignore
