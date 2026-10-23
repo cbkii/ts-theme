@@ -63,6 +63,10 @@ use exact media ID or exact media URI equality. No Auxio defect was demonstrated
 no companion branch was edited. Framework metadata/state/queue reads are separate IPCs,
 not an atomic transaction: the reader verifies state/queue and metadata across two reads,
 and declines conflicting evidence rather than choosing whichever text arrived last.
+A follow-up integrated test also reproduced a failed membership query promoting a
+suppressed stale browser token (`failed membership query promoted stale browser authority`).
+That path now publishes unknown, retains registration ownership, and waits for a bounded
+visible verification or a new callback/explicit refresh; it does not enter an immediate retry loop.
 
 Architecture **A selected**: consolidate effective publication into the existing
 application/process monitor. Keep listener notification/radio enrichment and browser
@@ -87,6 +91,9 @@ Mutable owners/caches and lifetimes:
 | Activity process/listener snapshots | Observe during onStart/onStop. Generic listener state is never effective; unavailable process means unknown. New observer replay is freshness checked. |
 | Metadata view | Receives effective Snapshot, not diagnostics. Marquee identity includes token, owner generation, media ID and queue item; identical text on a different track resets it. |
 
+Playback glyph and accessibility description update together without crossfading an old
+PLAY/PAUSE claim into a new unknown/loading state.
+
 Native PLAYING, supported actions, command intention and audible output are separate
 facts. Loading states can still be interrupted by PAUSE through the existing directional
 command policy. An already dispatched command is never replayed onto a replacement
@@ -101,7 +108,9 @@ controller. Rapid-double-tap semantics were not redesigned.
   and worker queues/clock; no sleeps. Covers automatic A->blank B->B, same token/new ID,
   old callback and old artwork versus current queue, new token/similar text, native
   PLAYING/loading/PAUSED/STOPPED, same-package selection, AUTO/dedicated, stale browser,
-  timeout/backlog, stale worker, removed/recreated Activity and fresh access/reconnect.
+  timeout/backlog, expired queued result, stale worker, torn Binder reads, identical-title
+  marquee reset, actual listener-disconnect method alongside a valid process observation,
+  removed/recreated Activity and fresh access/reconnect.
 - API29 Robolectric `MediaObservationApi29Test`: actual Android metadata/queue/state
   objects and actual listener disconnect/destroy/static replay. Controller Binder is an
   explicit test boundary; this is not device IPC or an emulator result.

@@ -275,7 +275,10 @@ public final class MediaListenerService extends NotificationListenerService {
             reconcile(sessionManager.getActiveSessions(listenerComponent));
         } catch (SecurityException ignored) {
             MediaEventTrace.record("listener", "refresh-access-denied");
-            publishEmpty();
+            releaseAll(); publishEmpty();
+        } catch (RuntimeException unavailable) {
+            MediaEventTrace.record("listener", "refresh-unavailable");
+            releaseAll(); publishEmpty();
         }
     }
 

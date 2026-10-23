@@ -143,8 +143,8 @@ final class ProcessMediaSessionMonitor {
     static String selectedMusicPackage() {
         ProcessMediaSessionMonitor owner = instance;
         Owner entry = owner == null ? null : owner.watched.get(owner.musicToken);
-        return entry != null && entry.current() && owner.selected.get(entry.controller.getPackageName()) == entry
-                ? entry.controller.getPackageName() : "";
+        return entry != null && entry.current() && owner.selected.get(packageOf(entry.controller)) == entry
+                ? packageOf(entry.controller) : "";
     }
     static void addObserver(Context context, Observer observer) {
         if (observer == null) return;
@@ -192,6 +192,7 @@ final class ProcessMediaSessionMonitor {
         } else if (!access && registered) detachMembership();
         busy = true; dirty = false;
         long ticket = revision;
+        long startedAt = SystemClock.uptimeMillis();
         List<MediaController> bound = new ArrayList<>(external.values());
         String radioPackage = RadioProvider.resolvePackage(context);
         Runnable timeout = () -> {
@@ -207,6 +208,12 @@ final class ProcessMediaSessionMonitor {
             main.post(() -> {
                 if (destroyed) return;
                 if (ticket != revision) { finishRead(timeout); return; }
+                if (!known) {
+                    // Unknown membership is not proof that a live package vanished. Never
+                    // promote a dormant browser alternative after an active-session query error.
+                    selected.clear(); invalidate(); dirty = false; discoveryNeeded = true;
+                    finishRead(timeout); return;
+                }
                 if (discover) reconcile(active, bound);
                 List<Owner> owners = new ArrayList<>();
                 if (discover) owners.addAll(watched.values());
@@ -219,9 +226,12 @@ final class ProcessMediaSessionMonitor {
                     Map<Owner, MediaListenerService.Snapshot> observations = new LinkedHashMap<>();
                     for (Owner owner : owners) observations.put(owner, MediaItemObservation.read(
                             owner.controller, owner.generation, SystemClock.uptimeMillis(),
-                            radioPackage.equals(owner.controller.getPackageName())));
+                            radioPackage.equals(packageOf(owner.controller))));
                     main.post(() -> {
                         if (destroyed) return;
+                        if (ticket == revision && SystemClock.uptimeMillis() - startedAt > READ_TIMEOUT_MS) {
+                            selected.clear(); invalidate();
+                        }
                         if (ticket == revision) {
                             for (Map.Entry<Owner, MediaListenerService.Snapshot> entry : observations.entrySet())
                                 if (entry.getKey().current()) entry.getKey().snapshot = entry.getValue();
@@ -245,7 +255,7 @@ final class ProcessMediaSessionMonitor {
         // Browser acquisition supplements absent packages, never overrides a live token from that package.
         for (MediaController c : bound) {
             boolean livePackage = false;
-            for (MediaController a : active) if (a != null && a.getPackageName().equals(c.getPackageName())) livePackage = true;
+            for (MediaController a : active) if (a != null && packageOf(a).equals(packageOf(c))) livePackage = true;
             if (!livePackage && !destroyedTokens.contains(c.getSessionToken())) candidates.putIfAbsent(c.getSessionToken(), c);
         }
         for (Owner owner : new ArrayList<>(watched.values())) if (!candidates.containsKey(owner.token)) {
@@ -260,7 +270,7 @@ final class ProcessMediaSessionMonitor {
     private void publish(boolean available) {
         selected.clear();
         for (Owner owner : watched.values()) {
-            String pkg = owner.controller.getPackageName();
+            String pkg = packageOf(owner.controller);
             Owner old = selected.get(pkg);
             if (old == null || rank(owner) > rank(old)
                     || (rank(owner) == rank(old) && (Objects.equals(owner.token, musicToken)
@@ -300,6 +310,10 @@ final class ProcessMediaSessionMonitor {
         if (state == PlaybackState.STATE_PLAYING) return 3;
         if (MediaCommandPolicy.usesPauseAction(state)) return 2;
         return state == PlaybackState.STATE_PAUSED || state == PlaybackState.STATE_STOPPED ? 1 : 0;
+    }
+    private static String packageOf(MediaController controller) {
+        try { String pkg = controller.getPackageName(); return pkg == null ? "" : pkg; }
+        catch (RuntimeException unavailable) { return ""; }
     }
     private static boolean eligible(String pkg, String radio) {
         return !pkg.isEmpty() && !pkg.equals(radio) && !"com.android.server.telecom".equals(pkg)

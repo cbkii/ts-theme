@@ -668,7 +668,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     mediaText.setMetadata("Media access required", "Use Settings gear · Notification access");
                 else mediaText.setMetadata(radioLabel, "Radio");
             }
-            updatePlaybackButton(playPause, emptyMediaSnapshot(), getString(R.string.media_source_music));
+            updatePlaybackButton(playPause, genericSnapshot, getString(R.string.media_source_music));
             setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
             updateMediaPresentation();
             return;
@@ -689,7 +689,12 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void updatePlaybackButton(ImageButton button, MediaListenerService.Snapshot snapshot, String source) {
-        AutomotiveUi.setIconWithCrossfade(this, button, MediaPlaybackPresentation.icon(snapshot.state));
+        int icon = MediaPlaybackPresentation.icon(snapshot.state);
+        // A transition must not leave the previous PLAY/PAUSE claim visible during a crossfade.
+        if (!(button.getTag() instanceof Integer) || ((Integer) button.getTag()) != icon) {
+            button.setTag(icon);
+            button.setImageResource(icon);
+        }
         button.setContentDescription(getString(MediaPlaybackPresentation.description(snapshot.state), source));
     }
 

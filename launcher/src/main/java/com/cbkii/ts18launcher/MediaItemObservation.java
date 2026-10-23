@@ -13,15 +13,16 @@ final class MediaItemObservation {
     private MediaItemObservation() { }
 
     static MediaListenerService.Snapshot read(MediaController controller, long generation, long now) {
-        return read(controller, generation, now, controller != null
-                && RadioFrequency.NAVRADIO.equals(controller.getPackageName()));
+        return read(controller, generation, now, false);
     }
 
     static MediaListenerService.Snapshot read(MediaController controller, long generation, long now, boolean radio) {
         if (controller == null) return new MediaListenerService.Snapshot("", "", "", false);
-        String pkg = controller.getPackageName();
-        Object token = controller.getSessionToken();
+        String pkg = "";
+        Object token = null;
         try {
+            pkg = controller.getPackageName();
+            token = controller.getSessionToken();
             PlaybackState before = controller.getPlaybackState();
             MediaMetadata metadata = controller.getMetadata();
             List<MediaSession.QueueItem> queue = controller.getQueue();
@@ -45,9 +46,10 @@ final class MediaItemObservation {
                 verified = current != null && matches(pkg, id, metadata, current);
             }
             // Radio's station contract is separate from individual music items. Never retain text.
-            String title = coherent && (verified || radio) ? first(metadata,
+            boolean station = radio || RadioFrequency.NAVRADIO.equals(pkg);
+            String title = coherent && (verified || station) ? first(metadata,
                     MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_TITLE) : "";
-            String artist = coherent && (verified || radio) ? first(metadata,
+            String artist = coherent && (verified || station) ? first(metadata,
                     MediaMetadata.METADATA_KEY_ARTIST, MediaMetadata.METADATA_KEY_ALBUM_ARTIST,
                     MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE) : "";
             if (RadioFrequency.NAVRADIO.equals(pkg) && coherent) artist = MediaListenerService.radioDetails(metadata, artist);
