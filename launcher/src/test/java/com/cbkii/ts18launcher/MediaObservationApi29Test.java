@@ -94,6 +94,13 @@ public class MediaObservationApi29Test {
         current.onDestroy();
         assertTrue(((MediaListenerService.Snapshot) ReflectionHelpers.getStaticField(MediaListenerService.class, "lastGeneric")).isEmpty());
     }
+    @Test public void identicalTitleCanRestartTheRealMarqueeForANewItem() {
+        SlowMarqueeTextView marquee = new SlowMarqueeTextView(org.robolectric.RuntimeEnvironment.getApplication());
+        marquee.setText("Same title"); marquee.scrollTo(42, 0);
+        marquee.setText("Same title"); assertEquals(42, marquee.getScrollX());
+        marquee.restartForItem(); assertEquals(0, marquee.getScrollX());
+    }
+
     @Test public void nativeLoadingStatesRemainInterruptibleWithoutClaimingPlayback() {
         for (int value : new int[] { PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING }) {
             MediaListenerService.Snapshot snapshot = new MediaListenerService.Snapshot("music", "", "", value, PlaybackState.ACTION_PAUSE, new Object());

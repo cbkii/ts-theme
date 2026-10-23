@@ -33,7 +33,7 @@ public static class LayoutParams{public static int MATCH_PARENT=-1;public Layout
             "com/cbkii/ts18launcher/Doubles.java": '''package com.cbkii.ts18launcher;
 class MetadataFadeRow extends android.view.View {MetadataFadeRow(android.content.Context c,android.widget.TextView t){}}
 class RadioMetadataResolver {RadioMetadataResolver(android.content.Context c,Runnable r){}void start(){}void stop(){}String frequency(MediaListenerService.Snapshot s){return "";}}
-class SlowMarqueeTextView extends android.widget.TextView{SlowMarqueeTextView(android.content.Context c){super(c);}}
+class SlowMarqueeTextView extends android.widget.TextView{SlowMarqueeTextView(android.content.Context c){super(c);}void restartForItem(){}}
 class R{static class dimen{static int ui_metadata_padding_horizontal,driver_gap,ui_metadata_text,ui_metadata_secondary_text;}static class color{static int ui_text,ui_text_secondary;}}
 class AutomotiveUi{static int dimen(android.content.Context c,int n){return 1;}static int color(android.content.Context c,int n){return 1;}}
 class MediaSelection{static String MUSIC="music",RADIO="radio";}

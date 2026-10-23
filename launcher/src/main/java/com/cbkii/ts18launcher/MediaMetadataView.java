@@ -90,10 +90,12 @@ final class MediaMetadataView extends LinearLayout {
         MediaMetadataPolicy.Change change = MediaMetadataPolicy.update(
                 lastPrimary, lastSecondary, lastSourceIdentity, sourceIdentity,
                 display.primary, display.secondary);
+        boolean itemChanged = lastSourceIdentity != null && !lastSourceIdentity.equals(sourceIdentity);
         lastSourceIdentity = sourceIdentity;
         if (change.primaryChanged) {
             lastPrimary = change.primary;
             primary.setText(change.primary);
+            if (itemChanged) primary.restartForItem();
         }
         if (change.secondaryChanged) {
             lastSecondary = change.secondary;

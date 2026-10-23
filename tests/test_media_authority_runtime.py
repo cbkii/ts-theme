@@ -16,13 +16,17 @@ class MediaAuthorityRuntimeTest(unittest.TestCase):
         tree=ast.parse((ROOT/'tests/test_metadata_effective_snapshot.py').read_text())
         files=ast.literal_eval(next(n.value for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='stubs' for t in n.targets)))
         files.pop('com/cbkii/ts18launcher/Harness.java')
-        files['android/widget/TextView.java']=files['android/widget/TextView.java'].replace('public void setText(String s){text=s;}', 'public int writes;public void setText(String s){text=s;writes++;}')
+        files['android/widget/TextView.java']=files['android/widget/TextView.java'].replace('public void setText(String s){text=s;}', 'public int writes;public enum BufferType{NORMAL} public void setText(String s){setText((CharSequence)s,BufferType.NORMAL);}public void setText(CharSequence s,BufferType b){text=s.toString();writes++;}public CharSequence getText(){return text;}')
+        files['android/widget/TextView.java']=files['android/widget/TextView.java'].replace('public TextView(android.content.Context c){}', 'android.content.Context context;public TextView(android.content.Context c){context=c;}public TextView(android.content.Context c,android.util.AttributeSet a){context=c;}public android.content.res.Resources getResources(){return context.getResources();}public android.graphics.Paint getPaint(){return new android.graphics.Paint();}public int getPaddingLeft(){return 0;}public int getPaddingRight(){return 0;}')
+        files['android/view/View.java']=files['android/view/View.java'].replace('public void invalidate(){}', 'int scroll;public void scrollTo(int x,int y){scroll=x;}public int getScrollX(){return scroll;}public int getWidth(){return 400;}public int getVisibility(){return VISIBLE;}public int getWindowVisibility(){return VISIBLE;}public void setHorizontalFadingEdgeEnabled(boolean v){}public void setFadingEdgeLength(int n){}protected void onVisibilityChanged(View v,int n){}protected void onSizeChanged(int w,int h,int ow,int oh){}public void invalidate(){}')
+        files['android/content/res/Resources.java']=files['android/content/res/Resources.java'].replace('public float getDimension', 'public android.util.DisplayMetrics getDisplayMetrics(){return new android.util.DisplayMetrics();}public float getDimension')
         doubles=files['com/cbkii/ts18launcher/Doubles.java']
         a=doubles.index('class MediaSelection');b=doubles.index('class AppResolver',a)
         listener=(SRC/'MediaListenerService.java').read_text()
         snapshot=method(listener,'public static final class Snapshot')
         helpers='\n'.join(method(listener,x) for x in ('private static String normalise(', 'private static boolean usesPauseAction(', 'static String radioDetails(', 'static String meaningfulRadioTitle(', 'private static boolean isRadioPlaceholder('))
         doubles=doubles[:a]+doubles[b:]
+        doubles=doubles.replace('class SlowMarqueeTextView extends android.widget.TextView{SlowMarqueeTextView(android.content.Context c){super(c);}void restartForItem(){}}','')
         doubles=doubles[:doubles.index('class LauncherPrefs')]+'''class LauncherPrefs {
 static String KEY_MUSIC="music",MEDIA_MODE_PREFER_MUSIC="dedicated",mode="auto",remembered="A",configured="A";
 static String lastMusicPackage(android.content.Context c){return remembered;}static String packageFor(android.content.Context c,String k){return configured;}
@@ -44,14 +48,21 @@ enum Command {PREVIOUS,PLAY_PAUSE,NEXT}static boolean access=true;static boolean
         files['android/service/notification/NotificationListenerService.java']='package android.service.notification;public class NotificationListenerService extends android.content.Context{public void onListenerDisconnected(){}}'
         files['com/cbkii/ts18launcher/MediaNotificationAccessBootstrapper.java']='package com.cbkii.ts18launcher;class MediaNotificationAccessBootstrapper{static void ensureConnected(android.content.Context c){}}'
         files.update({
+'android/util/AttributeSet.java':'package android.util;public interface AttributeSet{}',
+'android/util/DisplayMetrics.java':'package android.util;public class DisplayMetrics{public float density=1f;}',
+'android/graphics/Paint.java':'package android.graphics;public class Paint{public float measureText(String s){return s.length()*10f;}}',
+'android/animation/Animator.java':'package android.animation;public class Animator{}',
+'android/animation/AnimatorListenerAdapter.java':'package android.animation;public class AnimatorListenerAdapter{public void onAnimationEnd(Animator a){}}',
+'android/view/animation/LinearInterpolator.java':'package android.view.animation;public class LinearInterpolator{}',
+'android/animation/ValueAnimator.java':'package android.animation;public class ValueAnimator extends Animator{public interface AnimatorUpdateListener{void onAnimationUpdate(ValueAnimator a);}public static ValueAnimator ofInt(int a,int b){return new ValueAnimator();}public Object getAnimatedValue(){return 0;}public void setInterpolator(Object o){}public void setDuration(long n){}public void addUpdateListener(AnimatorUpdateListener l){}public void addListener(AnimatorListenerAdapter a){}public void start(){}public void cancel(){}}',
 'android/content/ComponentName.java':'package android.content;public class ComponentName{public ComponentName(Context c,Class<?> k){}}',
 'android/content/Context.java':'''package android.content;public class Context {public static String MEDIA_SESSION_SERVICE="media";public static android.media.session.MediaSessionManager manager=new android.media.session.MediaSessionManager();public Context getApplicationContext(){return this;}public Object getSystemService(String s){return manager;}public android.content.res.Resources getResources(){return new android.content.res.Resources();}}''',
 'android/os/Looper.java':'''package android.os;public class Looper{static Looper main=new Looper();public static boolean onMain=true;public static Looper getMainLooper(){return main;}public static Looper myLooper(){return onMain?main:null;}}''',
 'android/os/SystemClock.java':'package android.os;public class SystemClock{public static long now=1000;public static long uptimeMillis(){return now;}}',
 'android/os/Handler.java':'''package android.os;import java.util.*;public class Handler {
-record Task(Runnable r,long at){}static List<Task> tasks=new ArrayList<>();public Handler(Looper l){}
-public boolean post(Runnable r){return postDelayed(r,0);}public boolean postDelayed(Runnable r,long d){tasks.add(new Task(r,SystemClock.now+d));return true;}
-public void removeCallbacks(Runnable r){tasks.removeIf(t->t.r==r);}public static boolean step(){Task next=null;for(Task t:tasks)if(t.at<=SystemClock.now&&(next==null||t.at<next.at))next=t;if(next==null)return false;tasks.remove(next);next.r.run();return true;}}
+record Task(Handler owner,Runnable r,long at){}static List<Task> tasks=new ArrayList<>();public Handler(Looper l){}
+public boolean post(Runnable r){return postDelayed(r,0);}public boolean postDelayed(Runnable r,long d){tasks.add(new Task(this,r,SystemClock.now+d));return true;}
+public void removeCallbacks(Runnable r){tasks.removeIf(t->t.owner==this&&t.r==r);}public void removeCallbacksAndMessages(Object token){tasks.removeIf(t->t.owner==this);}public static boolean step(){Task next=null;for(Task t:tasks)if(t.at<=SystemClock.now&&(next==null||t.at<next.at))next=t;if(next==null)return false;tasks.remove(next);next.r.run();return true;}}
 ''',
 'android/media/MediaDescription.java':'''package android.media;public class MediaDescription{String id,uri;public MediaDescription(String id){this.id=id;}public String getMediaId(){return id;}public String getMediaUri(){return uri;}}''',
 'android/media/MediaMetadata.java':'''package android.media;import java.util.*;public class MediaMetadata{
@@ -111,7 +122,7 @@ a.metadata=new MediaMetadata("a","OLD ART");a.callback.onMetadataChanged(a.metad
 a.track("b","Track B",2,3);refresh();check(title().equals("Track B"),"current B did not recover");
 for(int state:new int[]{6,8,3,2,1}){a.track("b","Track B",2,state);a.callback.onPlaybackStateChanged(a.state);pump();check(effective.playing==(state==3),"false confirmed playback");check(MediaPlaybackPresentation.icon(state)==(state==3?1:state==6?3:state==8?4:2),"native state icon");check(button.icon==MediaPlaybackPresentation.icon(state)&&button.description.equals(MediaPlaybackPresentation.description(state)+":Music"),"actual Activity icon and accessibility diverged");if(state==6||state==8)check(MediaCommandPolicy.resolve(MediaListenerService.Command.PLAY_PAUSE,MediaCommandPolicy.usesPauseAction(state))==MediaCommandPolicy.Desired.PAUSE,"loading duplicate PLAY");}
 // An item change with identical displayed text still resets the actual view's marquee text.
-int writes=primary().writes;a.track("c","Track B",3,1);refresh();check(primary().writes==writes+1&&title().equals("Track B"),"same-title new ID did not reset marquee");
+primary().scrollTo(42,0);a.track("c","Track B",3,1);refresh();check(primary().getScrollX()==0&&title().equals("Track B"),"same-title new ID did not reset actual marquee");primary().scrollTo(31,0);refresh();check(primary().getScrollX()==31,"same item unnecessarily reset marquee");
 a.track("b","Track B",2,1);refresh();
 // A mid-read transition cannot combine the old queue identity with new metadata.
 a.duringRead=()->a.track("c","Track C",3,1);refresh();check(title().isEmpty(),"torn Binder observation published mixed track");refresh();check(title().equals("Track C"),"coherent transition did not recover");a.track("b","Track B",2,1);refresh();
@@ -150,7 +161,7 @@ ProcessMediaSessionMonitor.forgetExternal(staleBrowser);pump();check(ProcessMedi
 ProcessMediaSessionMonitor.stop();pump();check(a2.callback==null,"process stop leaked registration");
 System.out.println("PASS actual observer -> Activity merge -> metadata view: automatic transition, delayed callbacks/artwork, native state, selection, ownership, timeout, recreation and reconnect");}}
 '''
-        for name in ('ProcessMediaSessionMonitor','MediaItemObservation','MediaSelection','MediaCommandPolicy','MediaMetadataView','MediaMetadataPolicy','MediaTickerPolicy','MediaPlaybackPresentation','RadioFrequency'):
+        for name in ('ProcessMediaSessionMonitor','MediaItemObservation','MediaSelection','MediaCommandPolicy','MediaMetadataView','MediaMetadataPolicy','MediaTickerPolicy','MediaPlaybackPresentation','RadioFrequency','SlowMarqueeTextView','SlowMarqueePolicy','SlowMarqueeSchedule'):
             files['com/cbkii/ts18launcher/'+name+'.java']=(SRC/(name+'.java')).read_text()
         with tempfile.TemporaryDirectory() as tmp:
             out=Path(tmp)

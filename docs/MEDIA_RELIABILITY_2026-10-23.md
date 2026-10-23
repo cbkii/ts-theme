@@ -43,6 +43,12 @@ paths; observed TS18 symptoms still require exact-binary physical qualification.
 The original regression ran **before production edits** and failed four assertions
 (F1, F2 twice, F6). F3/F5 have exact code-path proof above; their newly structured
 integrated/lifecycle regressions exercise the repaired publication boundaries.
+A final integrated regression compiled the real marquee widget and reproduced
+`same-title new ID did not reset actual marquee`: its existing content-equality guard
+ignored the same text despite a new item identity. The view now explicitly restarts the
+marquee for an item change, while repeated observations of the same item preserve scroll.
+An API29 real-widget test also covers the underlying scroll/reset semantics.
+
 Earlier tests explicitly requiring same-token stale retention and remembered-paused
 priority were corrected to the new specification, rather than counted as proof of safety.
 
@@ -104,7 +110,7 @@ controller. Rapid-double-tap semantics were not redesigned.
 - `test_media_reliability_regressions.py`: extracts actual Snapshot/stability methods and
   compiles actual MediaSelection. Demonstrated red before and green after.
 - `test_media_authority_runtime.py`: compiles the **whole production monitor, reader,
-  metadata view and policies**, plus the actual Activity merge method. Controlled main
+  metadata view, real marquee widget and policies**, plus the actual Activity merge/button methods. Controlled main
   and worker queues/clock; no sleeps. Covers automatic A->blank B->B, same token/new ID,
   old callback and old artwork versus current queue, new token/similar text, native
   PLAYING/loading/PAUSED/STOPPED, same-package selection, AUTO/dedicated, stale browser,
