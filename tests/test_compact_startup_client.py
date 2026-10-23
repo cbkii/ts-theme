@@ -26,6 +26,7 @@ public static void until(long time){for(int n=0;;n++){Job next;synchronized(jobs
             'android/os/Messenger.java': 'package android.os; public class Messenger {public static Handler handler;public Messenger(Handler h){handler=h;}public IBinder getBinder(){return null;}}',
             'android/os/Bundle.java': 'package android.os; public class Bundle {public void putInt(String k,int v){}public void putBinder(String k,IBinder b){}}',
             'android/os/CancellationSignal.java': 'package android.os; public class CancellationSignal {volatile boolean stopped;public void cancel(){stopped=true;}public boolean isCanceled(){return stopped;}}',
+            'android/os/Process.java': 'package android.os;public class Process{public static int myUid(){return 10223;}}',
             'android/os/Build.java': 'package android.os;public class Build{public static class VERSION{public static int SDK_INT=29;}}',
             'android/os/PowerManager.java': 'package android.os;public class PowerManager{public boolean isInteractive(){return true;}}',
             'android/os/UserManager.java': 'package android.os;public class UserManager{public boolean isUserUnlocked(){return true;}}',
@@ -37,14 +38,15 @@ public static void until(long time){for(int n=0;;n++){Job next;synchronized(jobs
             'android/content/pm/ApplicationInfo.java': 'package android.content.pm;public class ApplicationInfo{public int uid=24000;}',
             'android/content/pm/PackageManager.java': 'package android.content.pm;public class PackageManager{public static class NameNotFoundException extends Exception{}public ApplicationInfo getApplicationInfo(String p,int f)throws NameNotFoundException{return new ApplicationInfo();}}',
             'android/content/SharedPreferences.java': 'package android.content;public class SharedPreferences{public int getInt(String k,int d){return d;}public SharedPreferences edit(){return this;}public SharedPreferences putInt(String k,int v){return this;}public void apply(){}}',
-            'android/content/Context.java': '''package android.content;public class Context{public static String POWER_SERVICE="p",KEYGUARD_SERVICE="k",AUDIO_SERVICE="a",USER_SERVICE="u";public static int MODE_PRIVATE=0;public Context getApplicationContext(){return this;}public Object getSystemService(String k){return null;}public SharedPreferences getSharedPreferences(String k,int f){return new SharedPreferences();}public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}public ContentResolver getContentResolver(){return new ContentResolver();}}''',
+            'android/content/Context.java': '''package android.content;public class Context{public static String POWER_SERVICE="p",KEYGUARD_SERVICE="k",AUDIO_SERVICE="a",USER_SERVICE="u";public static int MODE_PRIVATE=0;public Context getApplicationContext(){return this;}public Object getSystemService(String k){return k.equals(POWER_SERVICE)?new android.os.PowerManager():k.equals(KEYGUARD_SERVICE)?new android.app.KeyguardManager():k.equals(AUDIO_SERVICE)?new android.media.AudioManager():new android.os.UserManager();}public SharedPreferences getSharedPreferences(String k,int f){return new SharedPreferences();}public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}public ContentResolver getContentResolver(){return new ContentResolver();}}''',
             'android/content/ContentResolver.java': '''package android.content;public class ContentResolver{
 public static final java.util.concurrent.atomic.AtomicInteger observes=new java.util.concurrent.atomic.AtomicInteger();public static volatile boolean block;public static java.util.concurrent.CountDownLatch release=new java.util.concurrent.CountDownLatch(1);
-public Object call(android.net.Uri u,String m,String a,android.os.Bundle b){if(m.equals("observe")){observes.incrementAndGet();if(block)try{release.await();}catch(InterruptedException e){Thread.currentThread().interrupt();}}return null;}
+public android.os.Bundle call(android.net.Uri u,String m,String a,android.os.Bundle b){if(m.equals("observe")){observes.incrementAndGet();if(block)try{release.await();}catch(InterruptedException e){Thread.currentThread().interrupt();}}return null;}
 public android.database.Cursor query(android.net.Uri u,String[] p,String s,String[] a,String o,android.os.CancellationSignal c){return null;}}
 ''',
             'Doubles.java': '''package com.cbkii.ts18launcher;
 class CompactStartupPeer{static String PACKAGE="app.organicmaps.incar";static java.util.concurrent.atomic.AtomicInteger auth=new java.util.concurrent.atomic.AtomicInteger();static boolean trusted(android.content.Context c,int uid){if(Thread.currentThread().getName().equals("main"))throw new AssertionError("PM on main");auth.incrementAndGet();return uid==24000;}static boolean ownsProvider(android.content.Context c,String a){return true;}}
+class CompactStartupConsent{static Boolean next;static Boolean read(android.content.Context c){return next;}}
 class AndroidUserId{static int current(){return 0;}}class HomeMode{static boolean isDefaultHome(android.content.Context c){return true;}}class MediaEventTrace{static void record(String a,String b,String... c){}}
 ''',
             'Harness.java': '''package com.cbkii.ts18launcher;
@@ -97,7 +99,23 @@ for(int n=0;n<3;n++){
  waitFor(()->CompactStartupPeer.auth.get()>beforeAuth);waitFor(()->dpool.getActiveCount()==0);Handler.until(checkpoint+3500);
  check(returns[0]==(n==2?1:0));
 }
+// The actual client must publish a finite terminal state, even with no more lifecycle events.
+Handler originalHandler=Messenger.handler;boolean[] ended={false};CompactStartupClient terminal=new CompactStartupClient(new Context(),s->ended[0]=s.acquisitionEnded);
+var terminalUntil=CompactStartupClient.class.getDeclaredField("until");terminalUntil.setAccessible(true);terminalUntil.setLong(terminal,SystemClock.now+1);
+schedule.invoke(terminal,CompactStartupClient.Snapshot.unknown());Handler.until(SystemClock.now+2);check(ended[0]);terminal.close();Messenger.handler=originalHandler;
 d.close();d.close();
+// Real client: registered provider returns no cursor, authenticated cold preference
+// can admit one launch but supplies neither a task nor a renderer; OFF remains OFF.
+for(Boolean consent:new Boolean[]{true,false,null}) {
+ CompactStartupConsent.next=consent;boolean[] got={false};
+ CompactStartupClient cold=new CompactStartupClient(new Context(),s->{
+  check(!s.rendererReady&&s.task<0);check(s.compatible==(consent!=null));
+  if(consent!=null)check(s.consentOnly&&s.enabled==consent);got[0]=true;
+ });
+ int previous=ContentResolver.observes.get();cold.watch();waitFor(()->ContentResolver.observes.get()>previous);
+ var coldPool=(java.util.concurrent.ThreadPoolExecutor)field.get(cold);waitFor(()->coldPool.getActiveCount()==0);
+ Handler.until(SystemClock.now);check(got[0]);cold.close();
+}
 System.out.println("PASS actual client timeout/replacement/saturation/off-main-auth/double-close");}}
 ''',
         }

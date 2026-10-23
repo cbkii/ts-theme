@@ -144,6 +144,13 @@ public final class NavTaskBridge {
     private static String transition(Request request) throws Exception {
         request.current();
         String[] a = request.fields;
+        if (a.length == 2 && "compact-consent".equals(a[0])) {
+            int user = Integer.parseInt(a[1]);
+            boolean enabled = NavCompactConsent.read(user);
+            request.current();
+            return "OK code=COMPACT_CONSENT_" + (enabled ? "ENABLED" : "DISABLED")
+                    + " user=" + user + " package=app.organicmaps.incar phase=persistent-consent";
+        }
         if (a.length == 2 && "observe".equals(a[0])) {
             int expectedUser = Integer.parseInt(a[1]);
             Object service = Class.forName("android.app.ActivityTaskManager").getDeclaredMethod("getService").invoke(null);
@@ -306,23 +313,18 @@ public final class NavTaskBridge {
 
     private static String windowDump(String scope, Request request) throws Exception {
         request.current();
-        java.lang.Process probe = new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",
-                "/system/bin/dumpsys", "window", scope).redirectErrorStream(true).start();
-        StringBuilder text = new StringBuilder();
+        long started = android.os.SystemClock.elapsedRealtime();
         try {
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(
-                    probe.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (text.length() + line.length() > 524288) throw focusUnknown("PROBE_CAPPED");
-                    if (!"displays".equals(scope) || line.contains("mCurrentFocus=")) text.append(line).append('\n');
-                }
-            }
-            if (!probe.waitFor(100L, java.util.concurrent.TimeUnit.MILLISECONDS) || probe.exitValue() != 0)
-                throw focusUnknown("PROBE_TIMEOUT");
+            String text = NavWindowProbe.read(new ProcessBuilder("/system/bin/dumpsys", "window", scope),
+                    Math.min(1200L, request.deadline - started - 50L));
             request.current();
-            return text.toString();
-        } finally { probe.destroy(); }
+            return text;
+        } catch (NavWindowProbe.Failure unavailable) {
+            android.util.Log.i("TS18Nav", "focus probe scope=" + scope + " reason=" + unavailable.reason
+                    + " elapsedMs=" + (android.os.SystemClock.elapsedRealtime() - started)
+                    + " " + unavailable.getMessage());
+            throw focusUnknown(unavailable.reason);
+        }
     }
 
     private static Task resolve(Object raw, String pkg, int user, int hint) throws Exception {

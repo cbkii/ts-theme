@@ -63,13 +63,13 @@ public boolean equals(Object o){return o instanceof NavigationWindowBounds;} pub
 class NativeNavigationPanel {int configured;String error="";Runnable retry,fullscreen;
 interface BoundsListener{void onBoundsChanged(NavigationWindowBounds b);} void setBoundsListener(BoundsListener l){}
 NavigationWindowBounds currentBounds(){return new NavigationWindowBounds();} void setAction(String l,Runnable r){fullscreen=r;}
-void setRecoveryActions(Runnable r,Runnable f){} void showStarting(String l,String b){} void showConfigured(String d,Runnable r){configured++;fullscreen=r;}
+void setRecoveryActions(Runnable r,Runnable f){} void showStartupUnavailable(Runnable action){error="STARTUP_UNAVAILABLE";retry=action;}void showStarting(String l,String b){} void showConfigured(String d,Runnable r){configured++;fullscreen=r;}
 void showFailure(String d,Runnable r,Runnable f){error=d;retry=r;fullscreen=f;} void showUnavailable(String d,Runnable r){}
 void showFullscreenOnly(String d,Runnable r){} }
 class CompactStartupClient {static void suppressForBoot(android.app.Activity a){} static boolean automaticAllowed(android.app.Activity a){return true;}
 static CompactStartupClient latest;static Snapshot next=Snapshot.known();
-static final class Snapshot {final boolean compatible,enabled,rendererReady;final int task;
-Snapshot(boolean c,boolean e,boolean r,int t){compatible=c;enabled=e;rendererReady=r;task=t;}
+static final class Snapshot {final boolean compatible,enabled,rendererReady;boolean acquisitionEnded;final int task;
+Snapshot(boolean c,boolean e,boolean r,int t){compatible=c;enabled=e;rendererReady=r;task=t;acquisitionEnded=false;}
 boolean surfaceMatches(int w,int h){return rendererReady;} static Snapshot unknown(){return new Snapshot(false,false,false,-1);}static Snapshot known(){return new Snapshot(true,true,true,42);}}
 private final java.util.function.Consumer<Snapshot> callback;
 CompactStartupClient(android.app.Activity a,java.util.function.Consumer<Snapshot> c){callback=c;latest=this;}
@@ -232,7 +232,11 @@ public static void main(String[] args)throws Exception{
  check(RawFreeformTaskBackend.presents==0&&RawFreeformTaskBackend.fullscreens==0&&NavigationProvider.launches==1,"N0 depends on root");
  // Unresolved preference is fail-closed; opt-out is passed to the sole helper owner.
  RawFreeformTaskBackend.reset();CompactStartupClient.next=null;p=new NativeNavigationPanel();c=start(p);
- check(RawFreeformTaskBackend.presents==0&&!c.startupNavigationReady(),"unresolved preference admitted navigation");c.destroy();
+ check(RawFreeformTaskBackend.presents==0&&!c.startupNavigationReady(),"unresolved preference admitted navigation");
+ CompactStartupClient.next=CompactStartupClient.Snapshot.unknown();CompactStartupClient.next.acquisitionEnded=true;CompactStartupClient.deliver();
+ check("STARTUP_UNAVAILABLE".equals(p.error)&&p.retry!=null,"exhausted acquisition still shows waiting");
+ CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();android.view.View.drain();
+ check(c.startupNavigationReady(),"late authenticated evidence failed to recover on first HOME");c.destroy();
  RawFreeformTaskBackend.reset();CompactStartupClient.next=new CompactStartupClient.Snapshot(true,false,false,-1);p=new NativeNavigationPanel();c=start(p);
  check("deny".equals(RawFreeformTaskBackend.coldPolicy),"disabled preference admitted automatic cold launch");c.destroy();
  RawFreeformTaskBackend.reset();CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,true,99);p=new NativeNavigationPanel();c=start(p);android.view.View.drain();

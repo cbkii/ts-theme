@@ -71,6 +71,10 @@ final class NativeNavigationPanel extends FrameLayout {
                 ? "Open navigation" : "Open navigation · " + detail);
         openNavigation.setVisibility(action == null ? View.GONE : View.VISIBLE);
     }
+    void showStartupUnavailable(Runnable retry) {
+        status.setText(activity.getString(R.string.navigation_startup_unavailable));
+        showAction(activity.getString(R.string.navigation_retry_action), retry);
+    }
     void showStarting(String label, String backend) { status.setText(backend); showAction("Restore map here", compactAction); }
     void showConfigured(String detail, Runnable openFullscreen) { status.setText(""); showAction("Restore map here", compactAction); }
     void showFailure(String detail, Runnable retry, Runnable openFullscreen) { status.setText(activity.getString(R.string.navigation_retry_status, detail)); showAction("Restore map here", retry); }

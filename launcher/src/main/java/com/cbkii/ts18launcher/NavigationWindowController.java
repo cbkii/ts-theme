@@ -208,7 +208,8 @@ final class NavigationWindowController {
                     || !snapshot.rendererReady || snapshot.task != activeTaskId);
             boolean changed = compactSnapshot.compatible != snapshot.compatible
                     || compactSnapshot.enabled != snapshot.enabled
-                    || compactSnapshot.rendererReady != snapshot.rendererReady || compactSnapshot.task != snapshot.task;
+                    || compactSnapshot.rendererReady != snapshot.rendererReady || compactSnapshot.task != snapshot.task
+                    || compactSnapshot.acquisitionEnded != snapshot.acquisitionEnded;
             compactSnapshot = snapshot;
             compactResolved = snapshot.compatible;
             if (!startupConsentObserved && snapshot.compatible && snapshot.enabled) {
@@ -470,6 +471,11 @@ final class NavigationWindowController {
                         retainObservedTask(result, configuredPackage);
                         if (activeTaskId > 0) reconcile(false);
                     });
+                }
+                if (!compactResolved && compactSnapshot.acquisitionEnded) {
+                    panel.showStartupUnavailable(this::retry);
+                    if (startupListener != null) startupListener.accept(false, "CONSENT_ACQUISITION_ENDED");
+                    return;
                 }
                 panel.showStarting(label(configuredPackage), !compactResolved
                         ? "Waiting for Maps startup preference"

@@ -48,7 +48,7 @@ public class FrameLayout extends View {public FrameLayout(android.app.Activity a
  public ImageButton(android.app.Activity a){}public void setImageResource(int i){}public void setImageTintList(Object c){}
  public void setScaleType(ScaleType s){} }''',
             'com/cbkii/ts18launcher/Support.java': '''package com.cbkii.ts18launcher;
-class R {static class string {static int navigation_retry_status=1;}static class dimen {static int driver_gap=1;}static class drawable {static int ic_navigation_filled=1;} static class color {static int ui_black=2,ui_text=3;}}
+class R {static class string {static int navigation_startup_unavailable=910,navigation_retry_action=911,navigation_retry_status=1;}static class dimen {static int driver_gap=1;}static class drawable {static int ic_navigation_filled=1;} static class color {static int ui_black=2,ui_text=3;}}
 class AutomotiveUi {static int dimen(Object c,int i){return 8;}static void attachFeedback(Object v){} static int color(Object c,int id){return id;}}
 class NavigationWindowBounds {static NavigationWindowBounds fromView(Object v){return new NavigationWindowBounds();}}
 ''',

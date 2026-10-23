@@ -129,9 +129,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     void onTrigger(Trigger trigger) {
         if (Looper.myLooper() != Looper.getMainLooper()) { handler.post(() -> onTrigger(trigger)); return; }
         if (destroyed) return;
-        if (navigation != null && trigger == Trigger.USER_UNLOCKED) navigation.watchEvidence();
-        if (navigation != null && (trigger == Trigger.HOME_RESUME || trigger == Trigger.SCREEN_ON
-                || trigger == Trigger.ACC_ON)) navigation.refreshEvidence();
+        if (navigation != null && (trigger == Trigger.USER_UNLOCKED || trigger == Trigger.BOOT
+                || trigger == Trigger.SCREEN_ON || trigger == Trigger.HOME_RESUME
+                || trigger == Trigger.ACC_ON)) navigation.watchEvidence();
         long now = SystemClock.uptimeMillis(), boot = bootCount();
         SharedPreferences prefs = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
         long seen = prefs.getLong("boot_count", -1L);
@@ -556,9 +556,18 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         observer.execute(() -> {
             if (!lease.get() || !admission.compareAndSet(0, 1)) return;
             NavigationHelperResult result = rootFallback.launch(pkg, entry, targetHome, deadline);
+            boolean notStarted = StartupRootFallback.definitelyNotStarted(result);
+            if (notStarted) admission.compareAndSet(1, 0);
             handler.post(() -> {
-                if (token != foregroundToken || !lease.get()) return;
-                if (StartupRootFallback.definitelyNotStarted(result)) admission.set(0);
+                if (token != foregroundToken || !lease.get()) {
+                    // Cancellation can win before a definite refusal returns. That is still
+                    // proof of no Activity dispatch, so do not poison the durable boot claim.
+                    if (notStarted && policy.record(source).generation == g) {
+                        preDispatchRearms[source.ordinal()]++;
+                        releaseUnadmittedJournal(source, g, pkg);
+                    }
+                    return;
+                }
                 MediaEventTrace.record("startup", "root-admission", source + " " + result.code);
                 if (result.success && "STARTUP_SOURCE_DISPATCHED".equals(result.code))
                     observeSourceAfterLaunch(source, g, pkg, token);
@@ -717,7 +726,11 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
     private StartupForegroundPolicy readForeground() {
         NavigationHelperResult fast = rootFallback.observe();
-        if (fast != null) return StartupForegroundPolicy.fromHelper(fast);
+        StartupForegroundPolicy observed = StartupForegroundPolicy.fromHelper(fast);
+        if (observed != null) return observed;
+        // Failed/unsupported observation is not foreign ownership. Try one independent
+        // read-only surface; the mutation helper still revalidates atomically.
+        if (fast != null && "FOREGROUND_CHANGED".equals(fast.code)) return null;
         RootShell.Result result = RootShell.runWithin(
                 "dumpsys activity activities | /system/bin/toybox grep 'mResumedActivity:'; "
                         + "dumpsys window displays | /system/bin/toybox grep 'mCurrentFocus='", 1800L);
@@ -725,20 +738,19 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
     private void yieldStage(Source source, int g, String boundary) {
         policy.uncertain(source, g, boundary, SystemClock.uptimeMillis());
-        boolean unadmitted = stageAdmission.get() == 0;
-        yielded = true; cancelForeground(boundary);
-        if (unadmitted && ++preDispatchRearms[source.ordinal()] < StartupReadinessPolicy.MAX_ATTEMPTS_PER_BOOT)
-            handler.postDelayed(() -> {
-            Activity activity = home.get();
-            if (destroyed || suppressLoaderStaging || !homeResumed || activity == null
-                    || !homeWindowEligible(activity) || !safeScreen()) return;
-            observe(foregroundToken, fresh -> {
-                if (fresh != null && fresh.matches(AndroidUserId.current(), activity.getTaskId(),
-                        context.getPackageName() + "/.LauncherActivity")) {
-                    yielded = false; onTrigger(Trigger.READINESS_CHANGED);
-                }
-            });
-        }, 1000L);
+        // A source-local failure must not discard the independent source queue or
+        // disable Maps. Every subsequent transaction acquires fresh HOME ownership.
+        stageLease.set(false);
+        int admission = stageAdmission.getAndSet(2);
+        foregroundToken++; foregroundBusy = false; expectingHomeReturn = false;
+        foregroundSource = null;
+        if (admission == 0) {
+            preDispatchRearms[source.ordinal()]++;
+            releaseUnadmittedJournal(source, g, packageFor(source));
+        }
+        updateNavigationAdmission(); runForegroundSoon();
+        MediaEventTrace.record("startup", "source-yield", source + " boundary=" + boundary
+                + " dispatch=" + (admission == 0 ? "not-started" : "uncertain-or-accepted"));
     }
     private void cancelForeground(String boundary) {
         expectingHomeReturn = false;
@@ -762,7 +774,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private void releaseUnadmittedJournal(Source source, int generation, String pkg) {
         String prefix = mediaJournalPrefix(pkg);
         if (prefix.isEmpty()) return;
-        releasingAdmissions.add(source);
+        if (!releasingAdmissions.add(source)) return;
         try {
             observer.execute(() -> {
                 SharedPreferences prefs = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
@@ -771,8 +783,15 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 handler.post(() -> {
                     releasingAdmissions.remove(source);
                     if (destroyed || policy.record(source).generation != generation) return;
-                    if (released) policy.releaseUnadmitted(source, generation);
-                    if (homeResumed && !yielded) onTrigger(Trigger.READINESS_CHANGED);
+                    if (released) {
+                        policy.releaseUnadmitted(source, generation);
+                        if (preDispatchRearms[source.ordinal()] >= StartupReadinessPolicy.MAX_ATTEMPTS_PER_BOOT)
+                            policy.observedUnavailable(source, "pre-dispatch-retry-exhausted", SystemClock.uptimeMillis());
+                    }
+                    updateNavigationAdmission(); runForegroundSoon();
+                    if (homeResumed && !yielded) handler.postDelayed(() -> {
+                        if (!destroyed && homeResumed && !yielded) onTrigger(Trigger.READINESS_CHANGED);
+                    }, 500L);
                 });
             });
         } catch (java.util.concurrent.RejectedExecutionException unavailable) {

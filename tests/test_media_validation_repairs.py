@@ -25,6 +25,9 @@ public class Context { public static String MEDIA_SESSION_SERVICE="media";
 public Context getApplicationContext(){return this;} public Object getSystemService(String s){return new android.media.session.MediaSessionManager();}
 public ComponentName startService(Intent i){return null;} public ComponentName startForegroundService(Intent i){return null;} }''',
             "android/content/ComponentName.java": 'package android.content; public class ComponentName {public ComponentName(Context c,Class<?> t){}public String flattenToString(){return "service";}}',
+            "android/content/ContextWrapper.java": 'package android.content;public class ContextWrapper extends Context{public ContextWrapper(Context c){}public boolean bindService(Intent i,ServiceConnection c,int flags){return true;}}',
+            "android/content/ServiceConnection.java": 'package android.content;public interface ServiceConnection{}',
+            "android/os/Process.java": 'package android.os;public class Process{public static int myUid(){return 10223;}}',
             "android/content/Intent.java": "package android.content; public class Intent {}",
             "android/os/Bundle.java": "package android.os; public class Bundle {public java.util.Map<String,Long> values=new java.util.HashMap<>();public void putInt(String k,int v){values.put(k,(long)v);}public void putLong(String k,long v){values.put(k,v);}public long get(String k){return values.getOrDefault(k,-1L);}}",
             "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long now=1000,elapsedOffset;public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now+elapsedOffset;}}",

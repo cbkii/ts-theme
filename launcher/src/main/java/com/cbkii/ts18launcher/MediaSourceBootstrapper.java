@@ -478,18 +478,40 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
             }
 
             @Override public void onConnectionSuspended() {
+                MediaEventTrace.record("browser", "suspended", packageName + " generation=" + generation);
                 browserFailed(connection, generation, "MediaBrowser connection suspended");
             }
 
             @Override public void onConnectionFailed() {
+                MediaEventTrace.record("browser", "connection-failed", packageName + " generation=" + generation);
                 browserFailed(connection, generation, "MediaBrowser connection failed");
             }
         };
 
+        // Observe the actual framework bind return without adding a second binding or
+        // replacing MediaBrowser's ServiceConnection/owner.
+        android.content.Context bindingContext = new android.content.ContextWrapper(context) {
+            @Override public boolean bindService(android.content.Intent intent,
+                    android.content.ServiceConnection service, int flags) {
+                try {
+                    boolean bound = super.bindService(intent, service, flags);
+                    MediaEventTrace.record("browser", "bind-result", packageName + " generation=" + generation
+                            + " accepted=" + bound + " uid=" + android.os.Process.myUid());
+                    return bound;
+                } catch (RuntimeException unavailable) {
+                    MediaEventTrace.record("browser", "bind-exception", packageName + " generation=" + generation
+                            + " type=" + unavailable.getClass().getSimpleName());
+                    throw unavailable;
+                }
+            }
+        };
         connection.browser = new MediaBrowser(
-                context, connection.adapter.service, callback, (Bundle) null);
-        connection.connectTimeout = () -> browserFailed(connection, generation,
-                "MediaBrowser connect callback timed out");
+                bindingContext, connection.adapter.service, callback, (Bundle) null);
+        connection.connectTimeout = () -> {
+            MediaEventTrace.record("browser", "callback-timeout", packageName + " generation=" + generation
+                    + " deadline=" + deadlineMs + " now=" + SystemClock.uptimeMillis());
+            browserFailed(connection, generation, "MediaBrowser connect callback timed out");
+        };
         long delay = MediaCommandPolicy.boundedDelay(now, deadlineMs, BROWSER_CONNECT_TIMEOUT_MS);
         handler.postDelayed(connection.connectTimeout, Math.max(1L, delay));
         try {

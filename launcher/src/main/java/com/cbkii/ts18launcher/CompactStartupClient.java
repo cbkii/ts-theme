@@ -15,15 +15,19 @@ import java.util.concurrent.TimeUnit;
 final class CompactStartupClient {
     private static final Uri URI = Uri.parse("content://app.organicmaps.incar.compact.startup/status");
     static final class Snapshot {
-        final boolean compatible, enabled, rendererReady;
+        final boolean compatible, enabled, rendererReady, acquisitionEnded, consentOnly;
         final int task;
         final int width, height;
         Snapshot(boolean compatible, boolean enabled, boolean ready, int task) {
             this(compatible, enabled, ready, task, -1, -1);
         }
         Snapshot(boolean compatible, boolean enabled, boolean ready, int task, int width, int height) {
+            this(compatible, enabled, ready, task, width, height, false, false);
+        }
+        private Snapshot(boolean compatible, boolean enabled, boolean ready, int task, int width, int height,
+                boolean ended, boolean consentOnly) {
             this.compatible = compatible; this.enabled = enabled; rendererReady = ready; this.task = task;
-            this.width = width; this.height = height;
+            this.width = width; this.height = height; this.acquisitionEnded = ended; this.consentOnly = consentOnly;
         }
         boolean surfaceMatches(int width, int height) {
             // Maps reports its content area, excluding any task caption/insets. A stale
@@ -31,6 +35,8 @@ final class CompactStartupClient {
             return rendererReady && this.width > 0 && this.height > 0
                     && this.width <= width && this.height <= height;
         }
+        Snapshot ended() { return new Snapshot(compatible, enabled, rendererReady, task, width, height, true, consentOnly); }
+        static Snapshot consent(boolean enabled) { return new Snapshot(true, enabled, false, -1, -1, -1, false, true); }
         static Snapshot unknown() { return new Snapshot(false, false, false, -1); }
     }
     private final Context context;
@@ -49,9 +55,13 @@ final class CompactStartupClient {
     private int request;
     private long until;
     private CancellationSignal cancel;
-    private final Runnable poll = () -> {
+    private Snapshot lastSnapshot = Snapshot.unknown();
+    private final Runnable poll = this::pollEvidence;
+    private void pollEvidence() {
+        if (closed) return;
         if (SystemClock.elapsedRealtime() < until) refresh();
-    };
+        else { lastSnapshot = lastSnapshot.ended(); callback.accept(lastSnapshot); }
+    }
 
     CompactStartupClient(Context context, java.util.function.Consumer<Snapshot> callback) {
         this.context = context.getApplicationContext(); this.callback = callback;
@@ -108,8 +118,11 @@ final class CompactStartupClient {
 
     void watch() {
         if (closed) return;
-        until = SystemClock.elapsedRealtime() + 45000L;
-        failures = 0;
+        // Coalesce overlapping HOME/boot/unlock edges without moving the deadline.
+        if (SystemClock.elapsedRealtime() >= until) {
+            until = SystemClock.elapsedRealtime() + 45000L;
+            failures = 0;
+        }
         refresh();
     }
     void refresh() {
@@ -125,7 +138,7 @@ final class CompactStartupClient {
                 // workers can remain stuck; saturation fails closed without an unbounded queue.
                 request++; busy = false;
                 MediaEventTrace.record("compact-startup", "query-unavailable", "phase=binder reason=PROBE_TIMEOUT");
-                callback.accept(Snapshot.unknown());
+                publish(Snapshot.unknown());
                 workerCancel(signal);
                 scheduleNext(Snapshot.unknown());
             }
@@ -144,9 +157,13 @@ final class CompactStartupClient {
                     android.os.Bundle observation = new android.os.Bundle();
                     observation.putInt("boot", boot);
                     observation.putBinder("observer", messenger.getBinder());
+                    MediaEventTrace.record("compact-startup", "acquire", "boot=" + boot
+                            + " callerUid=" + android.os.Process.myUid() + " peerUid=" + uid
+                            + " user=" + AndroidUserId.current() + " pmAuthority=verified");
                     phase = "observe";
                     try {
-                        context.getContentResolver().call(URI, "observe", "1", observation);
+                        android.os.Bundle subscribed = context.getContentResolver().call(URI, "observe", "1", observation);
+                        if (subscribed == null) MediaEventTrace.record("compact-startup", "observe-null", "provider not acquired");
                     } catch (IllegalArgumentException observerUnavailable) {
                         // Subscription failure is not a consent answer. A separately
                         // authenticated query can still establish the read-only preference.
@@ -154,6 +171,7 @@ final class CompactStartupClient {
                     }
                     phase = "query";
                     try (Cursor c = context.getContentResolver().query(uri, null, null, null, null, signal)) {
+                        if (c == null) MediaEventTrace.record("compact-startup", "cursor-null", "provider not acquired");
                         if (c != null && c.moveToFirst() && number(c, "protocol") == 1
                                 && CompactStartupPeer.PACKAGE.equals(c.getString(c.getColumnIndexOrThrow("package")))
                                 && number(c, "boot") == boot && number(c, "user") == AndroidUserId.current()
@@ -173,20 +191,28 @@ final class CompactStartupClient {
             } catch (android.content.pm.PackageManager.NameNotFoundException | RuntimeException unavailable) {
                 traceFailure(phase, unavailable);
             }
+            if (!result.compatible && !signal.isCanceled() && automaticAllowed(context)) {
+                Boolean consent = CompactStartupConsent.read(context);
+                if (consent != null) result = Snapshot.consent(consent);
+            }
             if (result.compatible) lastQueryFailure = "";
             final Snapshot snapshot = signal.isCanceled() ? Snapshot.unknown() : result;
             main.post(() -> {
                 main.removeCallbacks(timeout);
                 if (closed || request != token) return;
                 busy = false;
-                callback.accept(snapshot);
+                publish(snapshot);
                 scheduleNext(snapshot);
             });
         }); } catch (java.util.concurrent.RejectedExecutionException full) {
             main.removeCallbacks(timeout); busy = false;
-            callback.accept(Snapshot.unknown());
+            publish(Snapshot.unknown());
             scheduleNext(Snapshot.unknown());
         }
+    }
+    private void publish(Snapshot snapshot) {
+        lastSnapshot = SystemClock.elapsedRealtime() >= until ? snapshot.ended() : snapshot;
+        callback.accept(lastSnapshot);
     }
     private void scheduleNext(Snapshot snapshot) {
         main.removeCallbacks(poll);
@@ -196,7 +222,8 @@ final class CompactStartupClient {
         if (dirty) main.post(this::refresh);
         else if (SystemClock.elapsedRealtime() < until
                 && (snapshot.compatible && !snapshot.rendererReady || failures > 0))
-            main.postDelayed(poll, snapshot.compatible ? 500L : Math.min(3000L, 500L * failures));
+            main.postDelayed(poll, Math.min(until - SystemClock.elapsedRealtime(),
+                    snapshot.compatible ? 500L : Math.min(3000L, 500L * failures)));
     }
     // Cancellation may itself cross Binder; do not block HOME's main thread.
     private void workerCancel(CancellationSignal signal) {

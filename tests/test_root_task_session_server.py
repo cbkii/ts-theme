@@ -65,11 +65,13 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
 }}
 """
         source = SOURCE.read_text().replace(
-            'new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",\n                "/system/bin/dumpsys", "window", scope)',
+            'new ProcessBuilder("/system/bin/dumpsys", "window", scope)',
             'new ProcessBuilder("/bin/cat", System.getenv("FOCUS_FILE"))',
         )
         assert 'new ProcessBuilder("/bin/cat"' in source
         stubs["NavTaskBridge.java"] = source
+        stubs["NavWindowProbe.java"] = SOURCE.with_name("NavWindowProbe.java").read_text()
+        stubs["NavCompactConsent.java"] = SOURCE.with_name("NavCompactConsent.java").read_text()
         stubs["StartupMaskFocus.java"] = SOURCE.with_name("StartupMaskFocus.java").read_text()
         for name, text in stubs.items():
             p = cls.root / name

@@ -69,7 +69,7 @@ class AppResolver {enum LaunchOutcome {ACCEPTED,REJECTED,UNCERTAIN}static Launch
 static LaunchOutcome launchForStartup(android.content.Context c,String p){launches++;
 if(outcome==LaunchOutcome.ACCEPTED){RootShell.top=RootShell.forComponent(p+"/"+p+".Main",20);launched.run();}return outcome;}}
 class NavigationHelperResult {boolean success;int userId=0,taskId=10;String component="";String code;NavigationHelperResult(boolean s,String c){success=s;code=c;}}
-class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static boolean fast=false;static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}NavigationHelperResult observe(){if(!fast)return null;StartupForegroundPolicy p=StartupForegroundPolicy.parse(RootShell.top);if(p==null)return new NavigationHelperResult(false,"UNKNOWN");NavigationHelperResult r=new NavigationHelperResult(true,"FOREGROUND");r.userId=p.user;r.taskId=p.task;r.component=p.component;return r;}
+class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static boolean fast=false,failedObservation=false;static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}NavigationHelperResult observe(){if(!fast)return null;if(failedObservation)return new NavigationHelperResult(false,"STARTUP_FOCUS_UNKNOWN");StartupForegroundPolicy p=StartupForegroundPolicy.parse(RootShell.top);if(p==null)return new NavigationHelperResult(false,"UNKNOWN");NavigationHelperResult r=new NavigationHelperResult(true,"FOREGROUND");r.userId=p.user;r.taskId=p.task;r.component=p.component;return r;}
 NavigationHelperResult launch(String p,String e,int h,long d){starts++;before.run();if(code.equals("STARTUP_SOURCE_DISPATCHED")){RootShell.top=RootShell.forComponent(e,20);launched.run();}return new NavigationHelperResult(code.equals("STARTUP_SOURCE_DISPATCHED"),code);}
 NavigationHelperResult restoreHome(String p,String e,int t,int h){returns++;if(returnCode.equals("STARTUP_HOME_RESTORED"))android.app.Activity.focused=true;android.app.ActivityManager.moved.run();return new NavigationHelperResult(returnCode.equals("STARTUP_HOME_RESTORED"),returnCode);}
 static boolean definitelyNotStarted(NavigationHelperResult r){return r.code.equals("STARTUP_SOURCE_REJECTED");}}
@@ -92,7 +92,7 @@ static StartupReadinessCoordinator create(boolean ready)throws Exception{return 
 static StartupReadinessCoordinator create(boolean ready,boolean clear)throws Exception{
 navReady=ready;navigationStarts=0;AuxioPreparationContract.capability=true;
 Handler.reset();if(clear)android.content.SharedPreferences.strings.clear();android.content.SharedPreferences.commitOk=true;android.app.Activity.focused=!coldHomeUnfocused;navigationDeferred=false;TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
-StartupRootFallback.fast=false;StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
+StartupRootFallback.fast=false;StartupRootFallback.failedObservation=false;StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
 StartupRootFallback.code="STARTUP_SOURCE_DISPATCHED";StartupRootFallback.starts=0;StartupRootFallback.returns=0;StartupRootFallback.before=()->{};
 android.app.ActivityManager.reject=false;android.app.ActivityManager.uncertain=false;
 MediaListenerService.access=true;RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
@@ -118,6 +118,9 @@ Handler.until(4000);check(AppResolver.launches==1&&navigationDeferred,"radio sta
 Ts18LauncherApplication.shared.radioReady=true;
 android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);s.onHomeResumed(new android.app.Activity());};
 Handler.until(8000);check(android.app.ActivityManager.moves==1,"exact HOME not restored");check(ledger(s).record(Source.RADIO).state==State.READY,"content not ready");check(!navigationDeferred,"Maps stayed deferred after media");s.destroy();
+// An immediate broker failure must reach the independent read-only fallback.
+StartupReadinessCoordinator fastFailure=create();StartupRootFallback.fast=true;StartupRootFallback.failedObservation=true;
+Handler.until(4000);check(AppResolver.launches==1,"failed fast observation suppressed independent fallback");fastFailure.destroy();
 StartupReadinessCoordinator ordered=create(false);Handler.until(4000);
 check(navigationStarts==1&&AppResolver.launches==0,"Radio postponed the primary map surface");
 Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.moved=()->ordered.onHomeResumed(new android.app.Activity());
@@ -299,7 +302,7 @@ check(!protection.masked&&!protectedUi.dismissLoader()&&android.app.ActivityMana
 StartupReadinessCoordinator back=create(false);Handler.until(1600);
 RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);back.onHomeResumed(new android.app.Activity());
 check(!back.dismissLoader()&&AppResolver.launches==1,"source BACK did not dismiss loader");back.destroy();
-UiPersonalizationPrefs.loader=false;UiPersonalizationPrefs.afterSleep=false;UiPersonalizationPrefs.enabled=true;StartupRootFallback.fast=false;
+UiPersonalizationPrefs.loader=false;UiPersonalizationPrefs.afterSleep=false;UiPersonalizationPrefs.enabled=true;StartupRootFallback.fast=false;StartupRootFallback.failedObservation=false;
 // A once-ready journal plus definite source death revokes an UNCERTAIN stale admission.
 StartupReadinessCoordinator lostReady=create(true);var record=ledger(lostReady).record(Source.RADIO);
 record.state=State.UNCERTAIN;record.activityLaunchAccepted=true;
