@@ -29,6 +29,30 @@ final class MediaTickerPolicy {
         return new Display(primary, secondary);
     }
 
+    static Display resolve(String title, String artist, String appLabel, String selectedSource,
+                           String packageName, String radioFrequency) {
+        Display normal = resolve(title, artist, appLabel, selectedSource);
+        if (MediaSelection.RADIO.equals(selectedSource)) {
+            return new Display(join(normal.primary, radioFrequency, normal.secondary), "");
+        }
+        return normal;
+    }
+
+    static String join(String... values) {
+        java.util.LinkedHashMap<String, String> distinct = new java.util.LinkedHashMap<>();
+        for (String value : values) {
+            String text = clean(value);
+            if (text.isEmpty() || "-".equals(text) || "--".equals(text)
+                    || "unknown".equalsIgnoreCase(text) || "null".equalsIgnoreCase(text)) continue;
+            String key = text.toLowerCase(java.util.Locale.ROOT);
+            boolean included = false;
+            for (String existing : distinct.keySet())
+                if ((" " + existing + " ").contains(" " + key + " ")) { included = true; break; }
+            if (!included) distinct.putIfAbsent(key, text);
+        }
+        return String.join(" ", distinct.values());
+    }
+
     private static boolean isSourcePlaceholder(String title, String appLabel, String selectedSource) {
         if (title.isEmpty()) return false;
         if (!appLabel.isEmpty() && title.equalsIgnoreCase(appLabel)) return true;

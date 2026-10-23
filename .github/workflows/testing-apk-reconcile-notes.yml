@@ -1,0 +1,43 @@
+name: Reconcile TESTING Release Notes
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: testing-only-draft-release-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout trusted reconciler
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Reconcile existing managed draft without rebuilding or changing assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "$DEFAULT_BRANCH" ]] || {
+            echo "::error::Run reconciliation from the default branch."
+            exit 1
+          }
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == true and .name == "000 Testing Only Version" and (.body // "" | contains("<!-- testing-apk-draft-managed -->"))) | .id' \
+            > "$RUNNER_TEMP/managed-draft-ids.txt"
+          mapfile -t release_ids < "$RUNNER_TEMP/managed-draft-ids.txt"
+          (("${#release_ids[@]}" == 1)) || {
+            echo "::error::Expected exactly one marked TESTING draft, found ${#release_ids[@]}."
+            exit 1
+          }
+          python3 scripts/ci/reconcile_testing_release.py --release-id "${release_ids[0]}"
+          echo "TESTING release notes reconciled and verified; no APK assets changed." >> "$GITHUB_STEP_SUMMARY"

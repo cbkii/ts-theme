@@ -5,7 +5,7 @@ set -u
 umask 077
 usage() {
 cat <<'HELP'
-TS18 consolidated qualification 2026-10-16 — PR24 startup candidate
+TS18 consolidated qualification — coordinated compact startup candidate
   help
   guide                     interactive, resumable one-letter test flow
   cases                     show every case and latest manual result
@@ -34,7 +34,7 @@ BB=/data/adb/magisk/busybox
 [ -x "$BB" ] || { echo 'STOPPED FOR SAFETY: enter the established Termux Kit s/st root lane; Magisk BusyBox is required.'; exit 1; }
 [ "$("$BB" id -u)" = 0 ] || { echo 'STOPPED FOR SAFETY: this comprehensive collector requires the explicit s/st root lane. It never calls su.'; exit 1; }
 SELF=$("$BB" readlink -f "$0") || exit 1
-ROOT=/data/data/com.termux/files/home/.ts18-pr-validation-startup-pr24-20261016-v2
+ROOT=/data/data/com.termux/files/home/.ts18-pr-validation-compact-startup-v1
 BASE=$ROOT/toolkit
 EXPORT=/storage/emulated/0/Download/TS18-PR-Validation
 valid_label() {
@@ -578,7 +578,7 @@ EOF
   else
     trace_mode=forensic
     [ "$id" != D15c ] || trace_mode=performance
-    case "$id" in W*|C*) trace_mode=mapwindow ;; esac
+    case "$id" in W*|C*|A*) trace_mode=mapwindow ;; esac
     trial_seconds=300; [ "$group" != Screening ] || trial_seconds=90
     printf 'Prepare the app before the %s trace. The 300-second measurement window begins after initial probes.\n' "$trace_mode"
     echo 'A long sleep/boot/idle sequence may exceed it. Note the actual boundary and use N for uncovered variants.'
@@ -610,8 +610,17 @@ EOF
 }
 group_flow() {
   group=$1
+  compact_smoke_passed=0
   for id in $("$BB" awk -F '\t' -v group="$group" '$2==group {print $1}' "$CASES"); do
+    if [ "$group" = Compact ] && [ "$id" != A0 ] && [ "$compact_smoke_passed" != 1 ]; then
+      echo 'Compact smoke A0 has not passed. Result retained; returning to menu before long trials.'
+      return
+    fi
     previous=$(result_for "$id")
+    if [ "$group" = Compact ] && [ "$id" = A0 ]; then
+      echo 'A fresh A0 is required on every Compact guide visit for the current installed pair.'
+      previous=''
+    fi
     if [ -n "$previous" ]; then
       printf '\n%s already recorded: %s. Enter=next, r=repeat, b=menu: ' "$id" "$previous"
       IFS= read -r reply || exit 0
@@ -619,6 +628,9 @@ group_flow() {
     fi
     while :; do
       case_action "$id"; rc=$?
+      if [ "$group" = Compact ] && [ "$id" = A0 ] && [ "$rc" = 0 ] && [ "$(result_for A0)" = PASS ]; then
+        compact_smoke_passed=1
+      fi
       [ "$rc" != 2 ] || return
       [ "$group" = 'Map window' ] || [ "$group" = Screening ] || break
       echo 'One row is one observed trial; target counts apply separately to each exact APK pair.'
@@ -681,19 +693,20 @@ echo 'TS18 TESTING guided validation — one key plus Enter; no case ID to type.
 echo 'This guide never installs apps, changes HOME/settings or decides physical success for you.'
 echo 'Use it while parked. A passenger must handle any capture in a moving vehicle.'
 while :; do
-  printf '\n1 Baseline / APK identity  2 Launcher  3 Organic Maps  4 Diagnostics  5 Integration\n6 Cases/progress  7 Export archive  8 Status  9 Map-window trials  s Smoke gate  c Screening  b Startup B1-B10  0 Exit\n'
+  printf '\n1 Baseline / APK identity  2 Launcher  3 Organic Maps  4 Diagnostics  5 Integration\n6 Cases/progress  7 Export archive  8 Status  9 Map-window trials  s Smoke gate  c Screening  b Startup B1-B10  a Compact auto-start A0-A16  0 Exit\n'
   ask 'Choose one number:'
   case "$answer" in
     s) smoke_flow ;;
     c) screen_flow ;;
     b) group_flow Startup ;;
+    a) group_flow Compact ;;
     1) baseline ;;
     2) group_flow Launcher ;;
     3) group_flow 'Organic Maps' ;;
     4) group_flow Diagnostics ;;
     5) group_flow Integration ;;
     9)
-      echo 'Use the repair candidate with ONE unchanged Maps APK. Finish Smoke and Screening first.'
+      echo 'Use the matched compact-startup pair. Complete Compact A0-A2 before long trials.'
       echo 'Run baseline after each APK change. Record one transition per trial; no Retry before failure capture.'
       group_flow 'Map window' ;;
     6) run cases; pause ;;
@@ -763,6 +776,29 @@ B7	Startup	Natural permission/setup	If Maps or a media source naturally opens a 
 B8	Startup	Normal process recreation	Only if a safe ordinary app/process restart is naturally available, return HOME after launcher or source process recreation. Never clear data or force-stop from Termux.	Session/task adopted or recovered once; queue and navigation preserved. Unavailable restart is N.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
 B9	Startup	Call/camera non-disruption	One naturally available phone call or reverse-camera display at a time while parked; dismiss it normally then return HOME. Record each variant separately.	Protected UI remains visible/usable; no startup HOME theft or unsolicited audio. Unavailable variant is N.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
 B10	Startup	User override during startup	During a fresh startup/loading phase tap a Music/Radio app icon or normal HOME control once. Return HOME normally and wait 20 seconds.	Requested action responds immediately; no stale startup action later steals the screen or pauses user-requested playback.	Exact installed/source/profile identity, startup trace/history and phone video. P/F/N plus Enter.
+A0	Compact	Cold boot ON smoke	Install the matched signed TESTING pair after checking source/build SHA, package, version, signer and APK hashes. Retain rollback APKs. In Organic Maps > In-Car Settings enable Auto-start in compact window; confirm compatible ts-theme is HOME and Native navigation window is selected. Film genuine Android cold boot with a phone; leave HOME untouched for 45 seconds. Do this BEFORE starting the collector. Then open this guide and record the result.	One rendered, correctly bounded, touchable compact map without manually opening Maps or Retry. Stop here after failure; do not run the long campaign.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A1	Compact	Cold boot OFF smoke	Turn the Organic Maps toggle OFF. Film a separate genuine cold boot before starting this collector. Leave HOME untouched for 45 seconds; then explicitly open Navigation once.	No automatic cold Maps Activity. Explicit opening still works. Film first because opening Maps manually changes the starting state.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A2	Compact	Map touch smoke	After a successful A0 boot pan the map once; open its menu, close it normally, then use fullscreen and return HOME.	Visible map updates and aligned touch; the same task survives fullscreen and compact return.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A3	Compact	Media disabled Maps ON	Disable launcher media startup warm-up, leave Maps auto-start ON. Film a separate genuine Android reboot before starting this collector; leave HOME untouched.	Maps starts independently. No Music/Radio Activity staging is required to admit Maps.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A4	Compact	ACC versus Android boot	With no collector running, film normal ignition OFF/ON while parked. If Android uptime/boot identity reset, record reboot instead of ACC. Then collect a checkpoint.	Healthy task reused on verified same-boot wake. Screen-on alone remains an unverified hint; no duplicate task.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A5	Compact	HOME recreation	Only if an ordinary safe launcher recreation occurs, return HOME and record it. Do not clear data, force-stop packages or change HOME from Termux.	Existing task adopted. No second automatic cold Activity admission for this boot. If task is truly lost, truthful explicit recovery is available.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A6	Compact	Maps process loss	If Maps process is naturally reclaimed, return HOME. Do not manufacture memory pressure or force-stop. Otherwise record N.	No replay of accepted or uncertain cold admission. Existing task recovered where available; missing task exposes explicit recovery and keeps route state intact.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A7	Compact	Warm active task	Build a normal mapped route, press START while parked, then HOME. Pan/zoom and return fullscreen and HOME once; END normally.	Same task, one active route; START/active/END, camera and Follow remain coherent.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A8	Compact	N1 comparison	Choose N1 through launcher Testing methods. Film a genuine reboot before collector start with toggle ON. Repeat from a comparable cold state on two separate boots, recording each trial.	One direct mode-5 admission; record time to visible/touchable map and any fullscreen flash. Median/slowest require separate boot videos.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A9	Compact	N2 comparison	Choose N2 and Bridge through Testing methods. Film another genuine reboot before collector start. Leave Maps unopened. Repeat separately if practical.	One ordinary admission followed by conversion of that exact task. Record visible flash, renderer delay and time to touchable map; never count warm N2 as cold.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A10	Compact	Root unavailable/refused	Only if root or mode control naturally refuses, record the exact displayed failure; do not revoke root or alter SELinux to create it. Then use ordinary Open navigation.	Automatic path yields safely; manual fullscreen remains available. Missing prerequisite is BLOCKED, not a renderer failure.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A11	Compact	Setup or slow renderer	On a naturally slow first start, permission, settings or download page, leave it visible and complete it normally. Do not clear data or revoke permissions. Otherwise N.	Setup remains usable; task existence is not renderer readiness. No repeated Activity admission while waiting.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A12	Compact	User overrides startup	During fresh startup tap Music or Radio app icon or open another app normally. Wait 20 seconds, then return HOME yourself.	Requested app responds. No delayed automatic cold launch steals focus. Explicit Navigation/Retry remains a separate user action.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A13	Compact	Media failure independence	If Music or Radio naturally fails readiness, leave its failure alone and observe Maps. Do not alter media app data. Record each source separately or N.	Maps remains independently operable; failed media preparation cannot hold the navigation lane indefinitely.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A14	Compact	Call and reverse	While parked test one normal phone interruption or reverse-camera view, exit normally and return HOME. Run each variant separately, or N if unavailable.	Protected view is not interrupted; warm map and route survive. Android focus does not alone prove vehicle video visibility.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A15	Compact	Late storage and GNSS	With downloaded local maps, test normally delayed GNSS or normally disconnected USB, then restore via normal controls. Do not move the vehicle to create a fault.	Usable offline map without a fix; location and map data status reported independently. No repeated launch or source interruption.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A16	Compact	Missing or incompatible peer	Only when a naturally installed old/missing controller is available, open In-Car Settings; otherwise N. Do not uninstall the candidate or clear data for this test.	Unavailable status is explicit; saved choice retained and no automatic cold launch. Debug or wrong-signer peers are not trusted.	P/F/N plus optional comment; correlate installed provenance, boot/user, task/window logs, InCarCompactStartup/compact-startup stages and phone video.
+A17	Compact	Station-change association	After A0 passes, select Radio on HOME. Using NavRadio normally, change between two known Canberra stations several times and return HOME after each. Watch intermediate placeholder/loading states; do not retune while driving.	No old station frequency appears under a new station or placeholder. Temporary empty text is acceptable when identity is unknown.	Phone video plus existing media-session/notification diagnostic snapshots. Record installed NavRadio version; reference matches are inferred.
+A18	Compact	Frequency-only display	While Radio is selected, observe any naturally occurring NavRadio+ or Radio placeholder with a frequency-only subtitle; otherwise choose N. Also check one normal named station and one Auxio track.	Frequency stays on the second row and is not duplicated as the station name. Named stations and Music still show their ordinary text.	Screenshots/phone video and the same-session diagnostic export.
+A19	Compact	Location-free radio fallback	Use normal HOME with native Organic Maps, then select Radio. Deny launcher location access through Android Settings if appropriate and restore your original choice afterwards. Do not enable the experimental map solely for this case.	HOME remains responsive. Ambiguous frequency may be blank; no new location prompt or provider subscription is needed. No claimed tuner proof from a directory match.	Permission state, visible station/frequency and diagnostic provenance; N if permission change is unsuitable.
+A20	Compact	Long metadata fade	Choose a naturally long Music title and Radio station name. Observe a whole primary marquee cycle, switch normal appearance once, then restore it.	Fixed right fade, legible padding and existing holds/motion remain; short strings have no fade. No claim of a speed gain without matching traces.	Phone video; use existing performance capture for measured comparisons.
+A21	Compact	HOME process-only recovery	Only with a qualified operator: after a source Activity has been admitted but before content becomes ready, kill only the launcher process, then return HOME. Do not use Force stop, clear data, reinstall or kill a wildcard PID. Otherwise choose N.	No duplicate automatic Activity admission without corroborated loss of a previously usable session. Explicit source icons remain usable.	Exact launcher PID and admission trace before/after, candidate hashes, source task/session identities; unknown result is N.
+A22	Compact	Maps silent-loss reconciliation	Only with a qualified operator: after renderer-ready Maps is stable, kill only the Maps process without a normal close, then perform an ordinary HOME/focus/wake transition. Do not clear data or use Force stop. Otherwise choose N.	The next reconciliation revokes stale readiness and exposes the navigation fallback; no duplicate automatic cold claim. An idle screen without a reconciliation event is not this gate.	Exact PID/task and renderer readiness trace; phone video and existing diagnostic export.
 TS18_EMBEDDED_PAYLOAD_3_END
     cat > "$stage/pr-heads.json" <<'TS18_EMBEDDED_PAYLOAD_4_END'
 [
@@ -1183,8 +1219,8 @@ TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
 cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
-5a9633354a01e031f13dcbcdb4fe7e19244d46e7054795d890d7c1a3e26a25fb  guide.sh
-1e5c9c56df4ec0e74afafd82a447f9aa999ef175f6f328963522e2c2da544e03  cases.tsv
+3886ea78d402d783e62d5b3fdecf80780ed9780584a7ffb6f6708250fa433fad  guide.sh
+d092aeb9953018bb86a43dad6549874ab416872b01f9a8976c83c71586932e3e  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json
 792384359fcb97ef695c5be56a516340e3baa309cdcae7dca04704e573309b80  candidates.tsv
 49e7cffda51dbf04adc863f69435bedf670111d4ebb3c48cfcc8cabe7cfd5f77  ts18-startup-1.3.sh

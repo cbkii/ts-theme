@@ -7,6 +7,17 @@ import java.util.Arrays;
 import org.junit.Test;
 
 public class MediaSelectionTest {
+    @Test public void loadingDoesNotSwitchTheDisplayedSource() {
+        MediaSelection selection = new MediaSelection(MediaSelection.RADIO);
+        assertEquals(MediaSelection.MUSIC, selection.reconcile(false, true));
+        assertEquals(MediaSelection.MUSIC, selection.reconcileObservedPlayback(false, false, true));
+    }
+
+    @Test public void dedicatedAbsentAppDoesNotFallThroughToAnotherPlayer() {
+        assertEquals(-1, MediaSelection.pick(Arrays.asList(
+                new MediaSelection.Candidate("B", true, true, true, false)), "A", true, "B"));
+    }
+
     @Test public void explicitSourceWinsWhenBothSessionsPlay() {
         MediaSelection selection = new MediaSelection(MediaSelection.MUSIC);
         assertEquals(MediaSelection.MUSIC, selection.reconcile(true, true));
@@ -37,8 +48,8 @@ public class MediaSelectionTest {
                 selection.reconcileAfterFailedSwitch(true, true));
     }
 
-    @Test public void rememberedUsablePackagePrecedesOtherActiveFallback() {
-        assertEquals(1, MediaSelection.pick(Arrays.asList(
+    @Test public void playingPackagePrecedesRememberedPausedPackage() {
+        assertEquals(0, MediaSelection.pick(Arrays.asList(
                 new MediaSelection.Candidate("other", true, true, true, false),
                 new MediaSelection.Candidate("remembered", true, true, false, true)),
                 "configured", false, "remembered"));

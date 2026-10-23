@@ -29,6 +29,11 @@ final class AutomotiveUi {
         return context.getResources().getDimensionPixelSize(id);
     }
 
+    static int activityTheme(Context context) {
+        return LauncherPrefs.APPEARANCE_DAY.equals(AppearanceController.resolvedMode(context))
+                ? R.style.AppTheme_Day : R.style.AppTheme;
+    }
+
     static int color(Context context, int id) {
         if (id == R.color.ui_accent || id == R.color.ui_high_accent || id == R.color.ui_night_accent)
             return AccentPalette.color(context, false);
@@ -36,8 +41,17 @@ final class AutomotiveUi {
         return context.getColor(mappedColor(AppearanceController.resolvedMode(context), id));
     }
 
+    /** Dark accent for text/icons on light surfaces; bright fill remains black-glyph compatible. */
+    static int accentForeground(Context context) {
+        int base = AccentPalette.color(context, false);
+        return LauncherPrefs.APPEARANCE_DAY.equals(AppearanceController.resolvedMode(context))
+                ? blend(Color.BLACK, base, 0.48f) : base;
+    }
+
     private static int mappedColor(String mode, int id) {
-        if (LauncherPrefs.APPEARANCE_HIGH_CONTRAST.equals(mode)) {
+        if (LauncherPrefs.APPEARANCE_DAY.equals(mode)) {
+            if (id == R.color.ui_destructive) return R.color.ui_day_destructive;
+            if (id == R.color.ui_ripple) return R.color.ui_day_ripple;
             if (id == R.color.ui_black) return R.color.ui_high_black;
             if (id == R.color.ui_surface) return R.color.ui_high_surface;
             if (id == R.color.ui_surface_elevated || id == R.color.ui_surface_pressed
@@ -53,10 +67,6 @@ final class AutomotiveUi {
             if (id == R.color.ui_text || id == R.color.ui_icon) return R.color.ui_night_text;
             if (id == R.color.ui_text_secondary) return R.color.ui_night_secondary;
             if (id == R.color.ui_accent || id == R.color.ui_accent_dark) return R.color.ui_night_accent;
-        } else if (LauncherPrefs.APPEARANCE_DIM.equals(mode)) {
-            if (id == R.color.ui_black) return R.color.ui_night_black;
-            if (id == R.color.ui_surface) return R.color.ui_night_surface;
-            if (id == R.color.ui_surface_elevated) return R.color.ui_night_surface_elevated;
         }
         return id;
     }
@@ -117,7 +127,7 @@ final class AutomotiveUi {
         int visual = dimen(context, R.dimen.ui_play_visual);
         int inset = Math.max(0, (target - visual) / 2);
         int surface = color(context, R.color.ui_surface_elevated);
-        int accent = color(context, R.color.ui_accent);
+        int accent = accentForeground(context);
         StateListDrawable states = new StateListDrawable();
         states.addState(new int[] {android.R.attr.state_focused},
                 new InsetDrawable(circleColors(context, blend(surface, accent, 0.13f), accent, 3), inset));
@@ -176,7 +186,7 @@ final class AutomotiveUi {
 
     static void styleSourcePrimaryButton(Context context, ImageButton button, boolean active) {
         button.setBackground(active ? primaryTransportBackground(context) : subtleTransportBackground(context));
-        button.setImageTintList(ColorStateList.valueOf(active ? Color.BLACK : color(context, R.color.ui_accent)));
+        button.setImageTintList(ColorStateList.valueOf(active ? Color.BLACK : accentForeground(context)));
         int pad = dimen(context, R.dimen.ui_icon_button_padding);
         button.setPadding(pad, pad, pad, pad);
         button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
@@ -184,11 +194,11 @@ final class AutomotiveUi {
         attachFeedback(button);
     }
 
-    static void styleRailButton(Context context, ImageButton button) { styleRailButton(context, button, false); }
+    static void styleRailButton(Context context, ImageButton button) { styleRailButton(context, button, true); }
 
-    static void styleRailButton(Context context, ImageButton button, boolean accent) {
+    static void styleRailButton(Context context, ImageButton button, boolean endpoint) {
         button.setBackground(transparentActionBackground(context));
-        button.setImageTintList(ColorStateList.valueOf(color(context, accent ? R.color.ui_accent : R.color.ui_icon)));
+        button.setImageTintList(ColorStateList.valueOf(endpoint ? color(context, R.color.ui_icon) : accentForeground(context)));
         int pad = dimen(context, R.dimen.driver_gap_large);
         button.setPadding(pad, pad, pad, pad);
         button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
@@ -241,7 +251,7 @@ final class AutomotiveUi {
     static ColorStateList followTint(Context context) {
         return new ColorStateList(new int[][] {
                 new int[] {android.R.attr.state_selected}, new int[] {}
-        }, new int[] {color(context, R.color.ui_accent), color(context, R.color.ui_icon)});
+        }, new int[] {accentForeground(context), color(context, R.color.ui_icon)});
     }
 
     static void linkVertical(List<? extends View> views) { linkFocus(views, true); }
@@ -285,7 +295,8 @@ final class AutomotiveUi {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color(context, fillId));
         drawable.setCornerRadius(dimen(context, R.dimen.ui_corner_radius));
-        if (strokeDp > 0) drawable.setStroke(Math.max(1, dimen(context, R.dimen.ui_focus_stroke)), color(context, strokeId));
+        if (strokeDp > 0) drawable.setStroke(Math.max(1, dimen(context, R.dimen.ui_focus_stroke)),
+                strokeId == R.color.ui_accent ? accentForeground(context) : color(context, strokeId));
         return drawable;
     }
 

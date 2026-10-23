@@ -26,6 +26,8 @@ public ActivityInfo getActivityInfo(android.content.ComponentName n,int f)throws
 public ApplicationInfo getApplicationInfo(String p,int f)throws NameNotFoundException{return info.applicationInfo;}public CharSequence getApplicationLabel(ApplicationInfo i){return "app";}}''',
 'android/os/SystemClock.java':'package android.os;public class SystemClock {public static long elapsedRealtime(){return 100;}}',
 'com/cbkii/ts18launcher/Doubles.java':'''package com.cbkii.ts18launcher;
+class AuxioPreparationContract{static boolean capability=true;static String COMPONENT="com.tw.media/org.oxycblt.auxio.headunit.LauncherPreparationActivity";static boolean supported(android.content.Context c){return capability;}static String canonicalEntry(android.content.Context c,android.content.ComponentName n){return "com.tw.media/org.oxycblt.auxio.MainActivity";}}
+class RootTaskSession{static RootTaskSession get(android.content.Context c){return new RootTaskSession();}NavigationHelperResult runCurrent(long d,String... f){return null;}}
 class AndroidUserId{static int UID_RANGE_PER_USER=100000;static int current(){return 0;}static int fromUid(int u){return u/100000;}}
 class MediaSourceAdapter{static String AUXIO_PACKAGE="com.tw.media",NAVRADIO_PACKAGE="com.navimods.radio";}
 class NavigationHelperResult{String code;NavigationHelperResult(String c){code=c;}static NavigationHelperResult failure(String c,String r){return new NavigationHelperResult(c);}}
@@ -35,16 +37,17 @@ class MediaListenerService{static void noteExplicitLaunch(android.content.Contex
 'com/cbkii/ts18launcher/Harness.java':'''package com.cbkii.ts18launcher;import android.content.*;import android.content.pm.*;
 public class Harness {static void check(boolean b,String m){if(!b)throw new AssertionError(m);}
 public static void main(String[] x){Context c=new Context();StartupRootFallback f=new StartupRootFallback(c);
-f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10);check(NavigationRootHelper.calls==1,"current Auxio entry rejected");
-check(NavigationRootHelper.args[1].equals("com.tw.media/com.tw.music.MusicActivity"),"component changed");
-f.launch("com.tw.radio","com.tw.radio/.RadioActivity",10);f.launch("com.tw.media","com.tw.media/.Other",10);f.restoreHome("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10,10);
+f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10,7000L);check(NavigationRootHelper.calls==1,"current Auxio entry rejected");
+check(NavigationRootHelper.args[1].equals(AuxioPreparationContract.COMPONENT),"silent preparation entry was not used");
+f.launch("com.tw.radio","com.tw.radio/.RadioActivity",10,7000L);f.launch("com.tw.media","com.tw.media/.Other",10,7000L);f.restoreHome("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10,10);
 check(NavigationRootHelper.calls==1,"protected/arbitrary/shared identity admitted");
-PackageManager.info.exported=false;f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10);check(NavigationRootHelper.calls==1,"non-exported entry admitted");PackageManager.info.exported=true;
-PackageManager.info.applicationInfo.enabled=false;f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10);check(NavigationRootHelper.calls==1,"disabled app admitted");PackageManager.info.applicationInfo.enabled=true;
-PackageManager.info.applicationInfo.flags=1;f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10);check(NavigationRootHelper.calls==1,"system app admitted");PackageManager.info.applicationInfo.flags=0;
-PackageManager.info.applicationInfo.uid=110179;f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10);check(NavigationRootHelper.calls==1,"other Android user admitted");PackageManager.info.applicationInfo.uid=10179;
+PackageManager.info.exported=false;f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10,7000L);check(NavigationRootHelper.calls==1,"non-exported entry admitted");PackageManager.info.exported=true;
+PackageManager.info.applicationInfo.enabled=false;f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10,7000L);check(NavigationRootHelper.calls==1,"disabled app admitted");PackageManager.info.applicationInfo.enabled=true;
+PackageManager.info.applicationInfo.flags=1;f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10,7000L);check(NavigationRootHelper.calls==1,"system app admitted");PackageManager.info.applicationInfo.flags=0;
+PackageManager.info.applicationInfo.uid=110179;f.launch("com.tw.media","com.tw.media/com.tw.music.MusicActivity",10,7000L);check(NavigationRootHelper.calls==1,"other Android user admitted");PackageManager.info.applicationInfo.uid=10179;
 check(StartupRootFallback.definitelyNotStarted(new NavigationHelperResult("STARTUP_SOURCE_REJECTED")),"explicit rejection unknown");
-for(String code:new String[]{"STARTUP_SOURCE_UNCERTAIN","PHASE_TIMEOUT","STARTUP_FOCUS_CHANGED","HELPER_EXIT_1"}) check(!StartupRootFallback.definitelyNotStarted(new NavigationHelperResult(code)),"uncertainty permits replay");
+check(StartupRootFallback.definitelyNotStarted(new NavigationHelperResult("STARTUP_FOCUS_CHANGED")),"pre-dispatch focus refusal was not classified");
+for(String code:new String[]{"STARTUP_SOURCE_UNCERTAIN","PHASE_TIMEOUT","HELPER_EXIT_1"}) check(!StartupRootFallback.definitelyNotStarted(new NavigationHelperResult(code)),"uncertainty permits replay");
 check(AppResolver.launchForStartup(c,"com.tw.media")==AppResolver.LaunchOutcome.ACCEPTED,"acceptance lost");
 c.error=new SecurityException();check(AppResolver.launchForStartup(c,"com.tw.media")==AppResolver.LaunchOutcome.REJECTED,"permission refusal uncertain");
 c.error=new ActivityNotFoundException();check(AppResolver.launchForStartup(c,"com.tw.media")==AppResolver.LaunchOutcome.REJECTED,"missing Activity uncertain");

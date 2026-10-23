@@ -2,4 +2,32 @@
 <resources>
     <string name="app_name">TS18 Launcher</string>
     <string name="media_listener_label">TS18 Launcher media access</string>
+    <string name="display_mode">Display mode</string>
+    <string name="appearance_scheduled">Scheduled (default)</string>
+    <string name="appearance_day">Day / high contrast</string>
+    <string name="appearance_night">Night</string>
+    <string name="appearance_dawn">Day starts</string>
+    <string name="appearance_dusk">Night starts</string>
+    <string name="appearance_reset">Reset schedule</string>
+    <string name="appearance_defaults">Day at 07:00; night at 19:00. Switches directly at each anchor.</string>
+    <string name="appearance_invalid_schedule">Day and night must start at different times. The previous schedule is unchanged.</string>
+    <string name="startup_loader_title">Startup Readiness Loader</string>
+    <string name="startup_loader_summary">Prepare selected Music, Radio and Maps behind a simple splash for up to 8 seconds. Press BACK to dismiss. Apps may still need attention if access or media is unavailable.</string>
+    <string name="startup_loader_after_sleep">Also prepare after sleep</string>
+    <string name="startup_loader_after_sleep_summary">Run the loader after observed sleep/wake as well as a new Android boot. Screen wake is not proof of vehicle ACC.</string>
+    <string name="startup_loader_overlay">Display loader over preparing apps</string>
+    <string name="startup_loader_overlay_granted">Allowed. The splash hides app preparation while leaving system controls visible.</string>
+    <string name="startup_loader_overlay_missing">Allow display over other apps to hide preparation. Without access, the splash appears on HOME only.</string>
+    <string name="startup_loader_incomplete">Startup preparation incomplete. Check Music, Radio and Maps on HOME.</string>
+    <string name="media_source_music">Music</string>
+    <string name="media_source_radio">Radio</string>
+    <string name="media_playing_pause">%1$s playing. Pause</string>
+    <string name="media_paused_play">%1$s paused or stopped. Play</string>
+    <string name="media_buffering_pause">%1$s buffering. Pause loading playback</string>
+    <string name="media_connecting_pause">%1$s connecting. Pause loading playback</string>
+    <string name="media_unavailable">%1$s unavailable. Retry playback</string>
+    <string name="media_state_unknown">%1$s playback unknown. Play or pause</string>
+    <string name="navigation_retry_status">%1$s · Tap to retry</string>
+    <string name="navigation_startup_unavailable">Maps startup unavailable. Tap to retry.</string>
+    <string name="navigation_retry_action">Retry Maps</string>
 </resources>

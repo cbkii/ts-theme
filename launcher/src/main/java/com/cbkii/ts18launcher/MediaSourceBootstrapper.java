@@ -29,8 +29,11 @@ import java.util.concurrent.Executors;
  * deliberately distinct. Root activation is bounded/off-main-thread and never expands the original
  * command deadline. No path in this class launches an Activity or owns audio focus/queue/session.
  */
-final class MediaSourceBootstrapper {
+final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observer {
     interface ResultCallback { void onResult(boolean success, String message); }
+    interface PreparationRequester { void request(String packageName, long deadlineElapsedMs); }
+    private PreparationRequester preparationRequester = (pkg, deadline) -> { };
+    void setPreparationRequester(PreparationRequester requester) { preparationRequester = requester; }
 
     static final long COMMAND_TIMEOUT_MS = 4500L;
     static final long PREPARE_TIMEOUT_MS = 5000L;
@@ -79,6 +82,7 @@ final class MediaSourceBootstrapper {
                 (MediaSessionManager) this.context.getSystemService(Context.MEDIA_SESSION_SERVICE);
         listenerComponent = new ComponentName(this.context, MediaListenerService.class);
         MediaEventTrace.record("coordinator", "created");
+        ProcessMediaSessionMonitor.addObserver(this.context, this);
     }
 
     void warmConfiguredSources() {
@@ -97,6 +101,7 @@ final class MediaSourceBootstrapper {
 
     void warm(String packageName) {
         if (destroyed || packageName == null || packageName.isEmpty()) return;
+        refreshStartupObservation();
         MediaEventTrace.record("readiness", "warm-request", packageName);
         MediaController controller = controllerForPackage(packageName);
         if (controller != null) {
@@ -133,7 +138,9 @@ final class MediaSourceBootstrapper {
             return;
         }
         MediaController controller = controllerForPackage(packageName);
-        deferredPauseCandidate = controller != null && isPlaying(controller) ? packageName : "";
+        // Unknown membership must not lose a handover request. Commit rechecks the live
+        // observed source after replacement PLAY, and never pauses an inactive source.
+        deferredPauseCandidate = controller == null || isPlaying(controller) ? packageName : "";
         MediaEventTrace.record("switch", "opposite-candidate",
                 deferredPauseCandidate.isEmpty() ? "none" : deferredPauseCandidate);
     }
@@ -147,26 +154,109 @@ final class MediaSourceBootstrapper {
     }
 
     private long userCommandGeneration;
+    private String userCommandPackage = "";
 
     long userCommandGeneration() { return userCommandGeneration; }
+    String userCommandPackage() { return userCommandPackage; }
 
-    /** Session capability plus non-empty source content; a token or empty metadata is insufficient. */
-    boolean hasUsableQueue(String pkg) {
-        MediaController c = controllerForPackage(pkg);
-        if (!controllerReadyForPlay(c)) return false;
-        try {
-            java.util.List<android.media.session.MediaSession.QueueItem> queue = c.getQueue();
-            if (queue != null && !queue.isEmpty()) return true;
-            android.media.MediaMetadata m = c.getMetadata();
-            return m != null && (hasText(m, android.media.MediaMetadata.METADATA_KEY_MEDIA_ID)
-                    || hasText(m, android.media.MediaMetadata.METADATA_KEY_TITLE)
-                    || hasText(m, android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE));
-        } catch (RuntimeException ignored) { return false; }
+    // Main-looper-owned immutable observations. Readiness ticks never cross Binder.
+    private final Map<String, StartupMediaObservation> startupObservations = new HashMap<>();
+    private final Map<String, MediaController> observedControllers = new HashMap<>();
+
+    private boolean preparedController(MediaController controller) {
+        if (controller == null || !hasUsableQueue(controller.getPackageName())) return false;
+        MediaController observed = observedControllers.get(controller.getPackageName());
+        return observed != null && observed.getSessionToken().equals(controller.getSessionToken());
+    }
+    private final ExecutorService readinessWorker = new java.util.concurrent.ThreadPoolExecutor(
+            0, 2, 15L, java.util.concurrent.TimeUnit.SECONDS,
+            new java.util.concurrent.SynchronousQueue<>(), r -> {
+                Thread t = new Thread(r, "ts18-media-observe"); t.setDaemon(true); return t;
+            });
+    private Runnable startupObserver = () -> { };
+    void setStartupObserver(Runnable observer) { startupObserver = observer; }
+    private int readinessGeneration;
+    private boolean readinessBusy, readinessDirty, readinessAuthoritative;
+
+    boolean hasUsableQueue(String pkg) { return startupObservation(pkg).ready; }
+    boolean startupPlaying(String pkg) { return startupObservation(pkg).playing; }
+    boolean startupSessionAbsent(String pkg) {
+        return readinessAuthoritative && MediaListenerService.hasNotificationAccess(context)
+                && !startupObservations.containsKey(pkg);
     }
 
-    private static boolean hasText(android.media.MediaMetadata m, String key) {
-        String text = m.getString(key);
-        return text != null && !text.trim().isEmpty();
+    private StartupMediaObservation startupObservation(String pkg) {
+        if (!MediaListenerService.hasNotificationAccess(context)) return StartupMediaObservation.UNKNOWN;
+        StartupMediaObservation value = startupObservations.get(pkg);
+        return value == null ? StartupMediaObservation.UNKNOWN : value;
+    }
+
+    @Override public void onProcessMediaStateChanged(MediaListenerService.Snapshot music,
+            MediaListenerService.Snapshot radio, boolean authoritative) {
+        refreshStartupObservation();
+    }
+
+    /** Only connection/membership/metadata/queue events or explicit warm requests refresh this cache. */
+    void refreshStartupObservation() {
+        if (destroyed) return;
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post(this::refreshStartupObservation); return;
+        }
+        if (readinessBusy) { readinessDirty = true; return; }
+        readinessBusy = true; readinessDirty = false;
+        final int ticket = ++readinessGeneration;
+        final Map<String, MediaController> bound = new HashMap<>();
+        for (Connection c : connections.values()) {
+            if (c.controller != null) bound.put(c.adapter.packageName, c.controller);
+        }
+        Runnable timeout = () -> {
+            if (destroyed || ticket != readinessGeneration) return;
+            readinessGeneration++; readinessBusy = false; readinessDirty = false;
+            readinessAuthoritative = false;
+            startupObservations.clear(); // Unknown is not evidence of source death.
+        };
+        handler.postDelayed(timeout, 2000L);
+        try {
+            readinessWorker.execute(() -> {
+                Map<String, StartupMediaObservation> next = new HashMap<>();
+                Map<String, MediaController> selected = new HashMap<>(bound);
+                boolean complete = false;
+                try {
+                    if (sessionManager != null && MediaListenerService.hasNotificationAccess(context)) {
+                        Map<String, MediaController> active = new HashMap<>();
+                        for (MediaController c : sessionManager.getActiveSessions(listenerComponent)) {
+                            if (c == null) continue;
+                            String pkg = c.getPackageName();
+                            if (!active.containsKey(pkg) || isPlaying(c)) active.put(pkg, c);
+                        }
+                        // Authoritative membership wins even for a paused replacement session;
+                        // retain a bound browser only when no active token exists for its package.
+                        selected.putAll(active);
+                        complete = true;
+                        for (Map.Entry<String, MediaController> entry : selected.entrySet())
+                            next.put(entry.getKey(), StartupMediaObservation.read(entry.getKey(), entry.getValue()));
+                    }
+                } catch (RuntimeException unavailable) { next.clear(); complete = false; }
+                final boolean known = complete;
+                handler.post(() -> {
+                    handler.removeCallbacks(timeout);
+                    if (destroyed || ticket != readinessGeneration) return;
+                    readinessBusy = false;
+                    if (readinessDirty) { refreshStartupObservation(); return; }
+                    startupObservations.clear();
+                    readinessAuthoritative = known && MediaListenerService.hasNotificationAccess(context);
+                    if (readinessAuthoritative) {
+                        startupObservations.putAll(next);
+                        observedControllers.clear();
+                        observedControllers.putAll(selected);
+                    } else if (!MediaListenerService.hasNotificationAccess(context)) observedControllers.clear();
+                    startupObserver.run();
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException saturated) {
+            handler.removeCallbacks(timeout); readinessBusy = false; readinessAuthoritative = false;
+            startupObservations.clear(); // A timed-out query cannot revoke a known token.
+        }
     }
 
     /** Suppress startup playback once; never override a later HOME transport request. */
@@ -203,6 +293,7 @@ final class MediaSourceBootstrapper {
     void command(String sourceLabel, String packageName, MediaListenerService.Command command,
                  ResultCallback callback) {
         userCommandGeneration++;
+        userCommandPackage = packageName == null ? "" : packageName;
         if (destroyed) {
             finishCallback(callback, false, "Launcher unavailable");
             return;
@@ -215,10 +306,11 @@ final class MediaSourceBootstrapper {
         }
 
         cancelPendingForOtherPackages(packageName);
+        refreshStartupObservation();
         MediaController controller = controllerForPackage(packageName);
         MediaCommandPolicy.Desired desired = MediaCommandPolicy.resolve(command, isPlaying(controller));
         MediaEventTrace.record("command", "request",
-                packageName + " desired=" + desired + " controller=" + (controller != null));
+                packageName + " desired=" + desired + " controller=" + (controller != null) + " origin=launcher");
         Pending pending = new Pending(sourceLabel, packageName, desired, callback,
                 SystemClock.uptimeMillis() + commandTimeoutMs(packageName, desired, !deferredPauseCandidate.isEmpty()));
         if (desired == MediaCommandPolicy.Desired.PLAY) {
@@ -229,7 +321,7 @@ final class MediaSourceBootstrapper {
         if (desired == MediaCommandPolicy.Desired.PLAY
                 || desired == MediaCommandPolicy.Desired.PAUSE) {
             Pending existing = inFlightToggle.get(packageName);
-            if (existing != null && !existing.settled && existing.desired == desired) {
+            if (existing != null && !existing.settled && existing.desired == desired && !expiredHomePlay(existing)) {
                 existing.callbacks.addAll(pending.callbacks);
                 if (existing.pauseOnPlayPackage.isEmpty()) {
                     existing.pauseOnPlayPackage = pending.pauseOnPlayPackage;
@@ -241,6 +333,16 @@ final class MediaSourceBootstrapper {
                 finish(existing, false, "Superseded by a newer Play/Pause request");
             }
             inFlightToggle.put(packageName, pending);
+        }
+
+        if (desired == MediaCommandPolicy.Desired.PLAY
+                && MediaSourceAdapter.AUXIO_PACKAGE.equals(packageName)
+                && !preparedController(controller)) {
+            pending.preparingAuxio = true;
+            pending.prepareUntilMs = Math.min(pending.deadlineMs - acknowledgementReserveMs(pending),
+                    SystemClock.uptimeMillis() + 2500L);
+            preparationRequester.request(packageName, pending.deadlineElapsedMs);
+            maybePrepareAuxio(controller, true);
         }
 
         if (controller != null && supports(controller, desired)) {
@@ -262,6 +364,9 @@ final class MediaSourceBootstrapper {
     void destroy() {
         if (destroyed) return;
         destroyed = true;
+        readinessGeneration++; startupObservations.clear(); observedControllers.clear();
+        ProcessMediaSessionMonitor.removeObserver(this);
+        readinessWorker.shutdownNow();
         MediaEventTrace.record("coordinator", "destroyed");
         handler.removeCallbacksAndMessages(null);
         for (Connection connection : new ArrayList<>(connections.values())) {
@@ -286,26 +391,13 @@ final class MediaSourceBootstrapper {
     }
 
     private MediaController controllerForPackage(String packageName) {
-        MediaController exact = exactController(packageName);
-        if (exact != null) return exact;
-        Connection connection = connections.get(packageName);
-        return connection == null ? null : connection.controller;
+        return exactController(packageName);
     }
 
     private MediaController exactController(String packageName) {
-        if (sessionManager == null || packageName == null || packageName.isEmpty()
-                || !MediaListenerService.hasNotificationAccess(context)) return null;
-        try {
-            MediaController fallback = null;
-            for (MediaController controller : sessionManager.getActiveSessions(listenerComponent)) {
-                if (controller == null || !packageName.equals(controller.getPackageName())) continue;
-                if (isPlaying(controller)) return controller;
-                if (fallback == null) fallback = controller;
-            }
-            return fallback;
-        } catch (RuntimeException ignored) {
-            return null;
-        }
+        // Discovery/readiness caches may prepare controllers; only the registered selected
+        // authority can dispatch or supply effective playback state.
+        return ProcessMediaSessionMonitor.selectedController(packageName);
     }
 
     private void queueBrowser(MediaSourceAdapter adapter, Pending pending) {
@@ -317,6 +409,7 @@ final class MediaSourceBootstrapper {
         Pending actual = pending == null ? null : addPending(connection.pending, pending);
         if (connection.controller != null) {
             MediaListenerService.observeExternalController(connection.controller);
+            ProcessMediaSessionMonitor.observeExternal(context, connection.controller);
             maybePrepareAuxio(connection.controller);
             if (actual != null) issueConnected(connection.controller, actual);
             return;
@@ -358,7 +451,8 @@ final class MediaSourceBootstrapper {
         if (connection.browser != null) return;
 
         final String packageName = connection.adapter.packageName;
-        MediaEventTrace.record("browser", "connect-start", packageName);
+        MediaEventTrace.record("browser", "connect-start", packageName + " generation=" + generation
+                + " component=" + (connection.adapter.service == null ? "none" : connection.adapter.service.flattenToString()));
         MediaBrowser.ConnectionCallback callback = new MediaBrowser.ConnectionCallback() {
             @Override public void onConnected() {
                 if (!valid(connection, generation) || connection.browser == null
@@ -368,9 +462,11 @@ final class MediaSourceBootstrapper {
                     connection.controller =
                             new MediaController(context, connection.browser.getSessionToken());
                     attachBrowserController(connection, generation);
+                    refreshStartupObservation();
                     connection.preparing = false;
                     MediaListenerService.observeExternalController(connection.controller);
-                    MediaEventTrace.record("browser", "connected", packageName);
+                    ProcessMediaSessionMonitor.observeExternal(context, connection.controller);
+                    MediaEventTrace.record("browser", "connected", packageName + " generation=" + generation + " token=available");
                     maybePrepareAuxio(connection.controller);
                     markController(packageName, connection.controller);
                     MediaListenerService.refreshActiveSessions();
@@ -382,18 +478,40 @@ final class MediaSourceBootstrapper {
             }
 
             @Override public void onConnectionSuspended() {
+                MediaEventTrace.record("browser", "suspended", packageName + " generation=" + generation);
                 browserFailed(connection, generation, "MediaBrowser connection suspended");
             }
 
             @Override public void onConnectionFailed() {
+                MediaEventTrace.record("browser", "connection-failed", packageName + " generation=" + generation);
                 browserFailed(connection, generation, "MediaBrowser connection failed");
             }
         };
 
+        // Observe the actual framework bind return without adding a second binding or
+        // replacing MediaBrowser's ServiceConnection/owner.
+        android.content.Context bindingContext = new android.content.ContextWrapper(context) {
+            @Override public boolean bindService(android.content.Intent intent,
+                    android.content.ServiceConnection service, int flags) {
+                try {
+                    boolean bound = super.bindService(intent, service, flags);
+                    MediaEventTrace.record("browser", "bind-result", packageName + " generation=" + generation
+                            + " accepted=" + bound + " uid=" + android.os.Process.myUid());
+                    return bound;
+                } catch (RuntimeException unavailable) {
+                    MediaEventTrace.record("browser", "bind-exception", packageName + " generation=" + generation
+                            + " type=" + unavailable.getClass().getSimpleName());
+                    throw unavailable;
+                }
+            }
+        };
         connection.browser = new MediaBrowser(
-                context, connection.adapter.service, callback, (Bundle) null);
-        connection.connectTimeout = () -> browserFailed(connection, generation,
-                "MediaBrowser connect callback timed out");
+                bindingContext, connection.adapter.service, callback, (Bundle) null);
+        connection.connectTimeout = () -> {
+            MediaEventTrace.record("browser", "callback-timeout", packageName + " generation=" + generation
+                    + " deadline=" + deadlineMs + " now=" + SystemClock.uptimeMillis());
+            browserFailed(connection, generation, "MediaBrowser connect callback timed out");
+        };
         long delay = MediaCommandPolicy.boundedDelay(now, deadlineMs, BROWSER_CONNECT_TIMEOUT_MS);
         handler.postDelayed(connection.connectTimeout, Math.max(1L, delay));
         try {
@@ -406,12 +524,17 @@ final class MediaSourceBootstrapper {
     private final java.util.Set<android.media.session.MediaSession.Token> preparedTokens = new java.util.HashSet<>();
 
     private void maybePrepareAuxio(MediaController controller) {
+        maybePrepareAuxio(controller, false);
+    }
+
+    private void maybePrepareAuxio(MediaController controller, boolean requestedByPlay) {
         if (controller == null || !TestingProfiles.prepareAuxio(context)
                 || !MediaSourceAdapter.AUXIO_PACKAGE.equals(controller.getPackageName())
                 || !MediaListenerService.hasNotificationAccess(context) || isPlaying(controller)) return;
         Pending interactive = inFlightToggle.get(controller.getPackageName());
-        // Auxio's advertised PLAY performs its own cold restore. Do not race it with PREPARE.
-        if (interactive != null && !interactive.settled) return;
+        // Passive PREPARE never races a command. A cold user PLAY may prepare once before dispatch.
+        if (interactive != null && !interactive.settled && !requestedByPlay) return;
+        if (preparedTokens.contains(controller.getSessionToken())) return;
         try {
             android.media.MediaMetadata metadata = controller.getMetadata();
             if (metadata != null && metadata.getString(android.media.MediaMetadata.METADATA_KEY_MEDIA_ID) != null) return;
@@ -436,14 +559,21 @@ final class MediaSourceBootstrapper {
         MediaController.Callback callback = new MediaController.Callback() {
             @Override public void onPlaybackStateChanged(PlaybackState state) {
                 if (!valid(connection, generation)) return;
+                refreshStartupObservation();
                 maybePrepareAuxio(connection.controller);
                 markController(connection.adapter.packageName, connection.controller);
+            }
+            @Override public void onMetadataChanged(android.media.MediaMetadata metadata) {
+                if (valid(connection, generation)) refreshStartupObservation();
+            }
+            @Override public void onQueueChanged(List<android.media.session.MediaSession.QueueItem> queue) {
+                if (valid(connection, generation)) refreshStartupObservation();
             }
             @Override public void onSessionDestroyed() {
                 handler.post(() -> browserSessionDestroyed(connection, generation));
             }
         };
-        controller.registerCallback(callback);
+        controller.registerCallback(callback, handler);
         connection.controllerCallback = callback;
     }
 
@@ -455,6 +585,8 @@ final class MediaSourceBootstrapper {
         connection.pending.clear();
         connections.remove(packageName);
         disconnect(connection);
+        startupObservations.remove(packageName);
+        refreshStartupObservation();
         MediaEventTrace.record("session", "bound-destroyed", packageName);
         mark(packageName, MediaCommandPolicy.Phase.FAILED,
                 "Bound MediaSession ended; a future request will reconnect");
@@ -479,10 +611,22 @@ final class MediaSourceBootstrapper {
     private void browserFailed(Connection connection, int generation, String message) {
         if (!valid(connection, generation)) return;
         String packageName = connection.adapter.packageName;
+        long retryDelay = 300L << connection.retries;
+        if (connection.retries < 2 && SystemClock.uptimeMillis() + retryDelay < connection.prepareDeadlineMs) {
+            int retryGeneration = ++connection.generation;
+            disconnect(connection);
+            connection.preparing = true;
+            connection.retries++;
+            MediaEventTrace.record("browser", "retry-pending", packageName + " attempt=" + connection.retries);
+            handler.postDelayed(() -> connectBrowser(connection, retryGeneration, connection.prepareDeadlineMs), retryDelay);
+            return;
+        }
         List<Pending> pending = new ArrayList<>(connection.pending);
         connection.pending.clear();
         connections.remove(packageName);
         disconnect(connection);
+        startupObservations.remove(packageName);
+        refreshStartupObservation();
         MediaEventTrace.record("browser", "failed", packageName + " · " + message);
         mark(packageName, MediaCommandPolicy.Phase.FAILED, message);
         for (Pending command : pending) retryExact(command);
@@ -501,6 +645,7 @@ final class MediaSourceBootstrapper {
                 connection.controllerCallback = null;
             }
             MediaListenerService.forgetExternalController(connection.controller);
+            ProcessMediaSessionMonitor.forgetExternal(connection.controller);
             connection.controller = null;
         } else {
             connection.controllerCallback = null;
@@ -531,6 +676,8 @@ final class MediaSourceBootstrapper {
 
     private void issueConnected(MediaController controller, Pending pending) {
         if (pending.settled) return;
+        controller = controllerForPackage(pending.packageName);
+        if (controller == null) { retryExact(pending); return; }
         if (MediaCommandPolicy.acknowledged(pending.desired, stateOf(controller))) {
             completeAcknowledged(controller, pending);
             return;
@@ -659,7 +806,7 @@ final class MediaSourceBootstrapper {
             return;
         }
 
-        MediaListenerService.refreshActiveSessions();
+        refreshStartupObservation();
         MediaController controller = controllerForPackage(pending.packageName);
         if (controller != null) {
             maybePrepareAuxio(controller);
@@ -722,6 +869,12 @@ final class MediaSourceBootstrapper {
 
     private void dispatchToController(MediaController controller, Pending pending) {
         if (destroyed || pending.settled) return;
+        if (controller != controllerForPackage(pending.packageName)) {
+            retryExact(pending); return;
+        }
+        if (expiredHomePlay(pending)) {
+            finish(pending, false, "Music Play request expired"); return;
+        }
         long now = SystemClock.uptimeMillis();
         long notBefore = coldPlayNotBeforeMs(pending);
         if (now >= pending.deadlineMs - acknowledgementReserveMs(pending)) {
@@ -746,15 +899,26 @@ final class MediaSourceBootstrapper {
             completeAcknowledged(controller, pending);
             return;
         }
+        if (pending.preparingAuxio && !pending.dispatched
+                && !preparedController(controller)
+                && now < pending.prepareUntilMs) {
+            maybePrepareAuxio(controller, true);
+            handler.postDelayed(() -> retryExact(pending), Math.min(COMMAND_RETRY_MS,
+                    pending.prepareUntilMs - now));
+            return;
+        }
         if (!guardedColdPlay && !supports(controller, pending.desired)) {
             retryExact(pending);
             return;
         }
         if (pending.dispatched) {
-            awaitAcknowledgement(controller, pending);
+            if (pending.desired == MediaCommandPolicy.Desired.PREVIOUS || pending.desired == MediaCommandPolicy.Desired.NEXT)
+                awaitSkipAcknowledgement(controller, pending);
+            else awaitAcknowledgement(controller, pending);
             return;
         }
-        if (!sendDesired(controller, pending.desired)) {
+        pending.skipFrom = ProcessMediaSessionMonitor.selectedSnapshot(pending.packageName);
+        if (!sendPending(controller, pending)) {
             MediaEventTrace.record("command", "dispatch-rejected",
                     pending.packageName + " desired=" + pending.desired);
             mark(pending.packageName, MediaCommandPolicy.Phase.FAILED,
@@ -765,15 +929,17 @@ final class MediaSourceBootstrapper {
         pending.dispatched = true;
         pending.coldPlayGuarded = false;
         MediaEventTrace.record("command", "dispatched",
-                pending.packageName + " desired=" + pending.desired);
+                pending.packageName + " desired=" + pending.desired + " " + pending.skipFrom.observationEvidence());
         MediaListenerService.refreshActiveSessions();
         if (pending.desired == MediaCommandPolicy.Desired.PREVIOUS
                 || pending.desired == MediaCommandPolicy.Desired.NEXT) {
-            finish(pending, true, "");
+            pending.ackDeadlineMs = Math.min(pending.deadlineMs, SystemClock.uptimeMillis() + ACK_TIMEOUT_MS);
+            awaitSkipAcknowledgement(controller, pending);
             return;
         }
-        pending.ackDeadlineMs = Math.min(pending.deadlineMs,
-                SystemClock.uptimeMillis() + ACK_TIMEOUT_MS);
+        pending.ackDeadlineMs = pending.coldRestoreDispatched
+                ? pending.deadlineMs - (pending.pauseOnPlayPackage.isEmpty() ? 0L : ACK_TIMEOUT_MS)
+                : Math.min(pending.deadlineMs, SystemClock.uptimeMillis() + ACK_TIMEOUT_MS);
         mark(pending.packageName, MediaCommandPolicy.Phase.STARTING,
                 pending.desired == MediaCommandPolicy.Desired.PLAY
                         ? "Play dispatched; awaiting playback acknowledgement"
@@ -783,6 +949,13 @@ final class MediaSourceBootstrapper {
 
     private void awaitAcknowledgement(MediaController controller, Pending pending) {
         if (destroyed || pending.settled) return;
+        if (controller != controllerForPackage(pending.packageName)) {
+            finish(pending, false, pending.sourceLabel + " session changed before acknowledgement");
+            return; // A dispatched command is never replayed onto a replacement token.
+        }
+        if (expiredHomePlay(pending)) {
+            finish(pending, false, "Music Play request expired before acknowledgement"); return;
+        }
         int state;
         try {
             PlaybackState playback = controller.getPlaybackState();
@@ -814,6 +987,31 @@ final class MediaSourceBootstrapper {
         handler.postDelayed(() -> awaitAcknowledgement(controller, pending),
                 Math.max(1L, MediaCommandPolicy.boundedDelay(
                         now, pending.ackDeadlineMs, ACK_RETRY_MS)));
+    }
+
+    private void awaitSkipAcknowledgement(MediaController controller, Pending pending) {
+        if (destroyed || pending.settled) return;
+        if (controller != controllerForPackage(pending.packageName)) {
+            finish(pending, false, "Session changed before track acknowledgement"); return;
+        }
+        MediaListenerService.Snapshot current = ProcessMediaSessionMonitor.selectedSnapshot(pending.packageName);
+        MediaListenerService.Snapshot before = pending.skipFrom;
+        boolean sameOwner = before != null && before.sessionIdentity != null
+                && before.sessionIdentity.equals(current.sessionIdentity)
+                && before.observationGeneration == current.observationGeneration;
+        if (sameOwner && before.itemVerified && current.itemVerified
+                && (!before.mediaId.equals(current.mediaId) || before.queueItemId != current.queueItemId)) {
+            MediaEventTrace.record("command", "item-acknowledged",
+                    pending.packageName + " desired=" + pending.desired + " " + current.observationEvidence());
+            finish(pending, true, ""); return;
+        }
+        if (SystemClock.uptimeMillis() >= pending.ackDeadlineMs) {
+            MediaEventTrace.record("command", "dispatched-unconfirmed", pending.packageName + " desired=" + pending.desired);
+            mark(pending.packageName, MediaCommandPolicy.Phase.DISPATCHED_UNCONFIRMED, "Track change not confirmed");
+            finish(pending, false, "Command sent once; track change not confirmed"); return;
+        }
+        handler.postDelayed(() -> awaitSkipAcknowledgement(controller, pending),
+                Math.max(1L, MediaCommandPolicy.boundedDelay(SystemClock.uptimeMillis(), pending.ackDeadlineMs, ACK_RETRY_MS)));
     }
 
     private void completeAcknowledged(MediaController controller, Pending pending) {
@@ -873,6 +1071,33 @@ final class MediaSourceBootstrapper {
         }
         handler.postDelayed(() -> awaitOppositePause(opposite, pending, deadline),
                 Math.min(ACK_RETRY_MS, deadline - now));
+    }
+
+    private boolean sendPending(MediaController controller, Pending pending) {
+        if (MediaSourceAdapter.AUXIO_PACKAGE.equals(pending.packageName)
+                && pending.desired == MediaCommandPolicy.Desired.PLAY && AuxioPreparationContract.supported(context)) {
+            if (expiredHomePlay(pending)) return false;
+            // Prepared sessions use the same public PLAY path as native/steering controls.
+            if (preparedController(controller))
+                return sendDesired(controller, pending.desired);
+            try {
+                Bundle extras = new Bundle();
+                extras.putInt("protocol", 1);
+                // V1 accepts at most five seconds. Shorten, never renew, the tap's deadline.
+                extras.putLong("deadline_elapsed_ms", Math.min(pending.deadlineElapsedMs,
+                        SystemClock.elapsedRealtime() + 5000L));
+                pending.coldRestoreDispatched = true;
+                controller.getTransportControls().sendCustomAction("org.oxycblt.auxio.action.HOME_PLAY_V1", extras);
+                return true;
+            } catch (RuntimeException rejected) { return false; }
+        }
+        return sendDesired(controller, pending.desired);
+    }
+
+    private static boolean expiredHomePlay(Pending pending) {
+        return MediaSourceAdapter.AUXIO_PACKAGE.equals(pending.packageName)
+                && pending.desired == MediaCommandPolicy.Desired.PLAY
+                && SystemClock.elapsedRealtime() >= pending.deadlineElapsedMs;
     }
 
     private static boolean sendDesired(MediaController controller, MediaCommandPolicy.Desired desired) {
@@ -958,7 +1183,7 @@ final class MediaSourceBootstrapper {
         if (incoming.desired == MediaCommandPolicy.Desired.PLAY
                 || incoming.desired == MediaCommandPolicy.Desired.PAUSE) {
             for (Pending existing : queue) {
-                if (!existing.settled && !existing.dispatched
+                if (!existing.settled && !existing.dispatched && !expiredHomePlay(existing)
                         && existing.desired == incoming.desired) {
                     existing.callbacks.addAll(incoming.callbacks);
                     if (existing.pauseOnPlayPackage.isEmpty()) {
@@ -1025,7 +1250,7 @@ final class MediaSourceBootstrapper {
         MediaController.Callback controllerCallback;
         Runnable connectTimeout;
         boolean preparing;
-        int generation;
+        int generation, retries;
         long prepareDeadlineMs;
 
         Connection(MediaSourceAdapter adapter) {
@@ -1052,11 +1277,16 @@ final class MediaSourceBootstrapper {
         final MediaCommandPolicy.Desired desired;
         final List<ResultCallback> callbacks = new ArrayList<>();
         final long deadlineMs;
+        final long deadlineElapsedMs;
         boolean dispatched;
         boolean settled;
         boolean coldPlayGuarded;
         boolean coldPlayGuardLogged;
+        boolean preparingAuxio;
+        boolean coldRestoreDispatched;
+        long prepareUntilMs;
         long ackDeadlineMs;
+        MediaListenerService.Snapshot skipFrom;
         String pauseOnPlayPackage = "";
 
         Pending(String sourceLabel, String packageName, MediaCommandPolicy.Desired desired,
@@ -1066,6 +1296,8 @@ final class MediaSourceBootstrapper {
             this.desired = desired;
             if (callback != null) callbacks.add(callback);
             this.deadlineMs = deadlineMs;
+            this.deadlineElapsedMs = SystemClock.elapsedRealtime()
+                    + Math.max(0L, deadlineMs - SystemClock.uptimeMillis());
         }
     }
 }

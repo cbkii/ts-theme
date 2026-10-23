@@ -21,6 +21,9 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private volatile long requestedDeadline;
     private long runningDeadline;
 
+    @Override public void setColdLaunchPolicy(String policy) { helper.setColdLaunchPolicy(policy); }
+    @Override public void setPresentationEpoch(long epoch) { helper.setPresentationEpoch(epoch); }
+
     @Override public void setDeadline(long deadline) { requestedDeadline = deadline; }
     private long remaining() { return Math.max(0L, runningDeadline - android.os.SystemClock.elapsedRealtime()); }
     private volatile NavigationHelperResult lastKnownTaskObservation;
@@ -95,6 +98,11 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     @Override public void status(String packageName, int taskId, Callback callback) {
         submit(() -> retryKnownTaskMiss(packageName, taskId, "status",
                 () -> helper.run("status", packageName, taskHint(taskId))), callback);
+    }
+
+    @Override public void returnHome(String packageName, int taskId, String homePackage, int homeTaskId, Callback callback) {
+        submit(() -> helper.run("return-home", packageName, Integer.toString(taskId),
+                homePackage, Integer.toString(homeTaskId)), callback);
     }
 
     @Override public void fullscreen(String packageName, String launchComponent, int taskId, Callback callback) {

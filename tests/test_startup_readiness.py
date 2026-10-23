@@ -41,12 +41,14 @@ class StartupReadinessTests(unittest.TestCase):
     def test_background_media_layer_still_has_no_activity_launch(self):
         self.assertNotIn("startActivity", read("MediaSourceBootstrapper.java"))
 
-    def test_startup_modes_exposed_in_testing_methods(self):
+    def test_startup_profile_is_fixed_without_rejected_comparators(self):
         settings = read("SettingsActivity.java")
         profiles = read("TestingProfiles.java")
-        for label in ("Background only", "Automatic fallback", "Aggressive"):
-            self.assertIn(label, settings)
-        self.assertIn('"background", "auto", "aggressive"', profiles)
+        self.assertIn("N2 / Bridge / fullscreen departure", settings)
+        self.assertNotIn('chooseTesting("departure"', settings)
+        self.assertNotIn('chooseTesting("navigation"', settings)
+        self.assertIn('static String navigation(Context c) { return "N2"; }', profiles)
+        self.assertIn('static boolean retainCompact(Context c) { return false; }', profiles)
 
     def test_navigation_ready_requires_verified_presentation(self):
         controller = read("NavigationWindowController.java")

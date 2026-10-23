@@ -48,9 +48,16 @@ public final class Ts18LauncherApplication extends Application
     private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
+            if (Intent.ACTION_USER_UNLOCKED.equals(intent.getAction())) {
+                StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
+                        .onTrigger(StartupReadinessPolicy.Trigger.USER_UNLOCKED); return;
+            }
             if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                ProcessMediaSessionMonitor.setVisible(Ts18LauncherApplication.this, false);
                 StartupReadinessCoordinator.get(Ts18LauncherApplication.this).onScreenOff(); return;
             }
+            MediaNotificationAccessBootstrapper.ensureConnected(Ts18LauncherApplication.this);
+            ProcessMediaSessionMonitor.setVisible(Ts18LauncherApplication.this, launcherResumed);
             // Screen-on is a wake observation only; it is never treated as verified ACC-on.
             StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
                     .onTrigger(StartupReadinessPolicy.Trigger.SCREEN_ON);
@@ -75,6 +82,7 @@ public final class Ts18LauncherApplication extends Application
 
     @Override public void onCreate() {
         super.onCreate();
+        if (HomeMode.isDefaultHome(this)) RootTaskSession.warm(this);
         NavigationPermissionBootstrapper.ensureEarly(this);
         MediaNotificationAccessBootstrapper.ensureEarly(this);
         ProcessMediaSessionMonitor.start(this);
@@ -91,8 +99,10 @@ public final class Ts18LauncherApplication extends Application
         IntentFilter wake = new IntentFilter(Intent.ACTION_SCREEN_ON);
         wake.addAction(Intent.ACTION_SCREEN_OFF);
         wake.addAction(Intent.ACTION_USER_PRESENT);
+        wake.addAction(Intent.ACTION_USER_UNLOCKED);
         registerReceiver(wakeReceiver, wake);
         MediaEventTrace.record("process", "created");
+        MediaEventTrace.record("startup", "profile", TestingProfiles.summary(this));
         // Process (re)creation: classify against the persisted boot counter and reconcile.
         StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.RESTART);
     }

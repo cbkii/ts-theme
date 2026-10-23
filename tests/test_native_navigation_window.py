@@ -123,7 +123,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
                 f"PATH={bin_dir}",
                 1,
             ).replace(
-                "ROOT_DIR=/data/adb/ts18-launcher",
+                "ROOT_DIR=${TS18_STATE_DIR:?launcher private runtime directory required}",
                 f"ROOT_DIR={helper_root}",
                 1,
             )
@@ -132,6 +132,8 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             test_helper.write_text(source, encoding="utf-8")
             environment = os.environ.copy()
             environment.update({
+                "TS18_METHOD": "N1",
+                "TS18_TRANSITION": "intent",
                 "FAKE_ACTIVITY_FILE": str(activity),
                 "FAKE_AM_HELP": help_text,
                 "FAKE_AM_HELP_EXIT": str(help_exit),
@@ -336,10 +338,17 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("LAUNCH_PENDING", self.helper)
         self.assertIn("beginReacquisitionGeneration()", self.controller)
 
-    def test_failure_latch_is_explicit_retry_and_fullscreen_only(self):
+    def test_failure_latch_preserves_controller_recovery_with_single_open_circle(self):
         self.assertIn("failureGeneration == authorityGeneration", self.controller)
         self.assertIn("panel.showFailure", self.controller)
-        self.assertIn('setActions("Retry",retry,"Open fullscreen",openFullscreen)', self.panel)
+        self.assertIn("showAction(detail, openFullscreen)", self.panel)
+        self.assertNotIn("secondaryAction", self.panel)
+        self.assertNotIn("new Button", self.panel)
+        self.assertIn("R.drawable.ic_navigation_filled", self.panel)
+        self.assertIn("availableHeight * 0.75f", self.panel)
+        self.assertIn("Math.min(availableWidth", self.panel)
+        self.assertIn("circle.setColor(Color.WHITE)", self.panel)
+        self.assertIn("ColorStateList.valueOf(Color.BLACK)", self.panel)
         self.assertIn("private void retry()", self.controller)
         self.assertNotIn("NavigationProvider.open(activity, pkg, null));\n        Log.w(TAG, \"native navigation failed", self.controller)
 

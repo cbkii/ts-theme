@@ -25,6 +25,7 @@ android {
         applicationId = "com.cbkii.ts18launcher"
         minSdk = 29
         targetSdk = 29
+        testInstrumentationRunner = "com.cbkii.ts18launcher.MediaSessionApi29Instrumentation"
         versionCode = versionCodeAuthority
         versionName = versionNameAuthority
         resValue("string", "build_source_revision", sourceRevision)
@@ -72,6 +73,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     lint {
         abortOnError = true
         checkDependencies = false
@@ -115,6 +120,7 @@ tasks.matching { it.name == "assembleRelease" }.configureEach {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
     // JVM tests need a real JSONObject implementation; Android's compile stubs throw
     // at runtime. This remains test-only and never enters the launcher APK.
     testImplementation("org.json:json:20240303")

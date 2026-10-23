@@ -45,7 +45,8 @@ jobs:
           set -euo pipefail
           sdkmanager="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
           test -x "$sdkmanager"
-          "$sdkmanager" "platforms;android-29" "build-tools;36.0.0" >/dev/null
+          "$sdkmanager" "platforms;android-29" "build-tools;36.0.0" \
+            "platform-tools" "emulator" "system-images;android-29;default;x86_64" >/dev/null
 
       - name: Validate source and release state machine
         shell: bash
@@ -87,7 +88,7 @@ jobs:
           set -euo pipefail
           if ! gradle --no-daemon --stacktrace \
               :theme:lintDebug :theme:assembleDebug \
-              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug; then
+              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug :launcher:assembleDebugAndroidTest; then
             theme_report="theme/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
             launcher_report="launcher/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
             for report in "$theme_report" "$launcher_report"; do
@@ -96,6 +97,50 @@ jobs:
             find theme/build launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
             exit 1
           fi
+
+      - name: Exercise real API29 startup command and framework boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT}"
+          export PATH="$sdk/platform-tools:$PATH"
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/startup-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
+          avd_log="$RUNNER_TEMP/startup-avd-create.txt"
+          set +e
+          printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd --force \
+            -n ts18-startup-api29 -k 'system-images;android-29;default;x86_64' > "$avd_log" 2>&1
+          avd_status=${PIPESTATUS[1]}
+          set -e
+          if [[ "$avd_status" != 0 ]]; then cat "$avd_log"; exit "$avd_status"; fi
+          "$sdk/emulator/emulator" -avd ts18-startup-api29 -no-window -no-audio \
+            -no-boot-anim -no-snapshot -memory 2048 -gpu swiftshader_indirect \
+            > "$RUNNER_TEMP/startup-emulator.txt" 2>&1 &
+          emulator_pid=$!
+          trap 'adb emu kill >/dev/null 2>&1 || true; kill "$emulator_pid" 2>/dev/null || true' EXIT
+          booted=0
+          for attempt in $(seq 1 120); do
+            if [[ $(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') == 1 ]]; then booted=1; break; fi
+            sleep 2
+          done
+          if [[ "$booted" != 1 ]]; then tail -100 "$RUNNER_TEMP/startup-emulator.txt"; exit 1; fi
+          bash scripts/ci/api29-startup-boundary-smoke.sh \
+            launcher/build/outputs/apk/debug/launcher-debug.apk \
+            launcher/build/outputs/apk/androidTest/debug/launcher-debug-androidTest.apk \
+            "$RUNNER_TEMP/startup-boundary-proof"
+
+      - name: Upload startup boundary evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: startup-api29-${{ env.SOURCE_REVISION }}
+          path: |
+            ${{ runner.temp }}/startup-boundary-proof/*.txt
+            ${{ runner.temp }}/startup-emulator.txt
+            ${{ runner.temp }}/startup-avd-create.txt
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Exercise signed release build with configuration cache
         shell: bash

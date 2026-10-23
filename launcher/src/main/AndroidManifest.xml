@@ -11,6 +11,8 @@
     <!-- Optional: cold-start foreground priming is used only when this app-op is already granted. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <queries><package android:name="app.organicmaps.incar" /></queries>
+
     <application
         android:name=".Ts18LauncherApplication"
         android:allowBackup="false"
@@ -53,6 +55,8 @@
 
         <activity
             android:name=".AppDrawerActivity"
+            android:taskAffinity="${applicationId}.drawer"
+            android:excludeFromRecents="true"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false" />
 
@@ -86,6 +90,11 @@
             android:authorities="com.cbkii.ts18launcher.ExportedProvider"
             android:exported="true"
             android:grantUriPermissions="false"
+            tools:ignore="ExportedContentProvider" />
+
+        <provider android:name=".CompactStartupProvider"
+            android:authorities="com.cbkii.ts18launcher.compact.startup"
+            android:exported="true" android:grantUriPermissions="false"
             tools:ignore="ExportedContentProvider" />
 
         <!-- Signals startup reconciliation only; it never starts an Activity. -->

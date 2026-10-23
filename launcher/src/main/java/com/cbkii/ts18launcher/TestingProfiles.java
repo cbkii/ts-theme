@@ -3,16 +3,16 @@ package com.cbkii.ts18launcher;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-/** Explicit local experiment choices, isolated from ordinary user configuration backups. */
+/** Selected integration profile; retained Radio preference remains independent. */
 final class TestingProfiles {
     private TestingProfiles() { }
     private static SharedPreferences prefs(Context c) { return c.getSharedPreferences("testing_profiles", Context.MODE_PRIVATE); }
-    static String navigation(Context c) { return choice(c, "navigation", "N1", "N0", "N1", "N2"); }
-    static String transition(Context c) { return choice(c, "transition", "bridge", "bridge", "intent"); }
+    static String navigation(Context c) { return "N2"; }
+    static String transition(Context c) { return "bridge"; }
     static String radio(Context c) { return choice(c, "radio", "auto", "auto", "root", "normal"); }
-    static String startup(Context c) { return choice(c, "startup", "auto", "background", "auto", "aggressive"); }
-    static boolean prepareAuxio(Context c) { return "prepare".equals(choice(c, "music", "prepare", "prepare", "bind")); }
-    static boolean retainCompact(Context c) { return "retain".equals(choice(c, "departure", "fullscreen", "fullscreen", "retain")); }
+    static String startup(Context c) { return "auto"; }
+    static boolean prepareAuxio(Context c) { return true; }
+    static boolean retainCompact(Context c) { return false; }
     private static String choice(Context c, String key, String fallback, String... allowed) {
         String value = prefs(c).getString(key, fallback);
         for (String item : allowed) if (item.equals(value)) return value;

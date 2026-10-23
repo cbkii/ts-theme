@@ -68,6 +68,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private AppearanceController appearanceController;
     private MediaSourceBootstrapper mediaBootstrapper;
     private StartupReadinessCoordinator.NavigationHook startupHook;
+    private StartupReadinessLoader readinessLoader;
+    private StartupReadinessCoordinator.LoaderUi loaderUi;
     private boolean launchedAsHome;
     private boolean redirectingToHome;
     private boolean locationPermissionRequested;
@@ -84,6 +86,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private MediaListenerService.Snapshot radioSnapshot = emptyMediaSnapshot();
 
     @Override protected void onCreate(Bundle state) {
+        setTheme(AutomotiveUi.activityTheme(this));
         super.onCreate(state);
         if (redirectToCanonicalHome()) return;
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
@@ -98,12 +101,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         nativeNavigationPanel = new NativeNavigationPanel(this);
         root.addView(nativeNavigationPanel);
         navigationWindowController = new NavigationWindowController(this, nativeNavigationPanel);
+        navigationWindowController.setExplicitNavigationListener(() ->
+                StartupReadinessCoordinator.get(this).noteExternalNavigation());
         navigationWindowController.setStartupListener((ready, boundary) ->
                 StartupReadinessCoordinator.get(this).reportNavigation(ready, boundary));
         startupHook = new StartupReadinessCoordinator.NavigationHook() {
+            @Override public void refreshEvidence() { navigationWindowController.reconcileStartupEvidence(); }
+            @Override public void watchEvidence() { navigationWindowController.watchStartupEvidence(); }
             @Override public boolean ready() { return navigationWindowController.startupNavigationReady(); }
+            @Override public int taskId() { return navigationWindowController.startupTaskId(); }
             @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }
             @Override public void reconcile() { navigationWindowController.reconcileStartup(); }
+            @Override public void cancelAutomaticColdStart() { navigationWindowController.cancelAutomaticColdStart(); }
+            @Override public void finishLoaderPresentation() { navigationWindowController.finishLoaderPresentation(); }
+            @Override public void yieldForMediaPreparation() { navigationWindowController.yieldForMediaPreparation(); }
             @Override public void deferAutomaticPresentation(boolean defer) {
                 navigationWindowController.deferAutomaticStartupPresentation(defer);
             }
@@ -119,9 +130,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaText.setLongClickable(false);
         root.addView(mediaText);
         buildDate();
-        appDrawerPanel = new AppDrawerPanel(this, () -> root.post(this::updateMapVisibility));
-        root.addView(appDrawerPanel);
-        appDrawerPanel.preload();
+        readinessLoader = new StartupReadinessLoader(this, root,
+                () -> StartupReadinessCoordinator.get(this).dismissLoader());
+        loaderUi = new StartupReadinessCoordinator.LoaderUi() {
+            @Override public void render(String status, boolean visible) { readinessLoader.show(status, visible); }
+            @Override public void mask(boolean show) { if (show) readinessLoader.showMask(); else readinessLoader.hideMask(); }
+            @Override public boolean canMask() { return readinessLoader.canMask(); }
+            @Override public boolean ownsMask() { return readinessLoader.ownsMask(); }
+            @Override public void hide() { readinessLoader.hide(); }
+            @Override public void incomplete() {
+                android.widget.Toast.makeText(LauncherActivity.this, R.string.startup_loader_incomplete,
+                        android.widget.Toast.LENGTH_LONG).show();
+            }
+        };
+        StartupReadinessCoordinator.get(this).attachLoader(loaderUi);
         updateMediaPresentation();
         root.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 scheduleGeometry());
@@ -139,6 +161,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (redirectingToHome || root == null) return;
         launchedAsHome = intent != null && intent.hasCategory(Intent.CATEGORY_HOME);
         if (launchedAsHome) {
+            StartupReadinessCoordinator.get(this).dismissLoader();
             if (navigationWindowController != null) navigationWindowController.cancelLauncherOverlay();
             if (appDrawerPanel != null) appDrawerPanel.restoreDashboardRoot();
             root.clearFocus();
@@ -159,7 +182,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (!hasFocus && navigationWindowController != null)
+        StartupReadinessCoordinator.get(this).onHomeFocusChanged();
+        if (hasFocus && navigationWindowController != null) navigationWindowController.onHomeFocusAvailable();
+        if (!hasFocus && navigationWindowController != null
+                && (readinessLoader == null || !readinessLoader.ownsMask()))
             navigationWindowController.onHomeFocusLost();
         if (root != null && hasFocus) scheduleGeometry();
         if (root != null && hasFocus && !redirectingToHome
@@ -179,9 +205,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         for (ImageButton button : new ImageButton[] {radioRole, radioPrevious, radioNext,
                 musicRole, mediaPrevious, mediaNext}) AutomotiveUi.styleTransportButton(this, button, false);
         updateMediaPresentation();
-        AutomotiveUi.styleRailButton(this, appsButton);
+        AutomotiveUi.styleRailButton(this, appsButton, true);
         AutomotiveUi.styleRailButton(this, navigationButton, true);
-        for (ImageButton button : quickButtons) AutomotiveUi.styleRailButton(this, button);
+        for (ImageButton button : quickButtons) AutomotiveUi.styleRailButton(this, button, false);
         applyRailConfiguration();
         if (nativeNavigationPanel != null) nativeNavigationPanel.applyAppearance(this);
         if (appDrawerPanel != null) appDrawerPanel.applyAppearance();
@@ -194,7 +220,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         reconcileMediaConfiguration();
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
+        processSnapshotAuthoritative = false;
+        genericSnapshot = emptyMediaSnapshot(); radioSnapshot = emptyMediaSnapshot();
         ProcessMediaSessionMonitor.addObserver(this, this);
+        ProcessMediaSessionMonitor.setVisible(this, true);
+        MediaNotificationAccessBootstrapper.ensureConnected(this);
         MediaListenerService.addObserver(this);
         ProcessMediaSessionMonitor.refresh(this);
         MediaListenerService.refreshActiveSessions();
@@ -206,10 +236,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onStop() {
         if (root == null) { super.onStop(); return; }
+        // The application-owned preparation session retains its mask across staged apps.
+        // Permission/foreign ownership and the eight-second deadline are checked by its owner.
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
         mediaStatusGeneration++;
         mediaStatusActive = false;
+        ProcessMediaSessionMonitor.setVisible(this, false);
         ProcessMediaSessionMonitor.removeObserver(this);
         MediaListenerService.removeObserver(this);
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
@@ -224,6 +257,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onDestroy() {
+        StartupReadinessCoordinator.get(this).detachLoader(loaderUi);
+        if (readinessLoader != null) readinessLoader.destroy();
         StartupReadinessCoordinator.get(this).detachNavigationHook(startupHook);
         if (root != null) root.removeCallbacks(geometryUpdate);
         mediaRefreshHandler.removeCallbacksAndMessages(null);
@@ -234,22 +269,21 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override public void onBackPressed() {
+        if (StartupReadinessCoordinator.get(this).dismissLoader()) return;
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) { appDrawerPanel.hidePanel(); return; }
         if (launchedAsHome || HomeMode.isDefaultHome(this)) return;
         super.onBackPressed();
     }
 
     private void runMediaReadiness() {
-        if (mediaBootstrapper != null && UiPersonalizationPrefs.mediaStartupWarmup(this)) {
+        if (mediaBootstrapper != null) {
             StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.HOME_RESUME);
         }
     }
 
     private void scheduleMediaReadiness() {
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        if (UiPersonalizationPrefs.mediaStartupWarmup(this)) {
-            mediaRefreshHandler.postDelayed(mediaReadyReconcile, MEDIA_READY_RECONCILE_DELAY_MS);
-        }
+        mediaRefreshHandler.postDelayed(mediaReadyReconcile, MEDIA_READY_RECONCILE_DELAY_MS);
     }
 
     private void reconcileMediaConfiguration() {
@@ -284,6 +318,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         rail.setGravity(Gravity.CENTER_HORIZONTAL);
         rail.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         appsButton = railButton(R.drawable.ic_apps, "Apps");
+        AutomotiveUi.styleRailButton(this, appsButton, true);
         appsButton.setOnClickListener(v -> toggleAppDrawer());
         appsButton.setOnLongClickListener(v -> {
             startActivity(new Intent(this, SettingsActivity.class));
@@ -313,7 +348,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         }
 
-        navigationButton = railButton(R.drawable.ic_navigation, "Navigation");
+        navigationButton = railButton(R.drawable.ic_navigation_filled, "Navigation");
         AutomotiveUi.styleRailButton(this, navigationButton, true);
         navigationButton.setOnClickListener(v -> openNavigation(null));
         rail.addView(navigationButton, new LinearLayout.LayoutParams(
@@ -325,7 +360,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         ImageButton button = new ImageButton(this);
         button.setImageResource(icon);
         button.setContentDescription(description);
-        AutomotiveUi.styleRailButton(this, button);
+        AutomotiveUi.styleRailButton(this, button, false);
         return button;
     }
 
@@ -339,6 +374,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             quickCells[i].setVisibility(visible ? View.VISIBLE : View.GONE);
             if (visible) {
                 ShortcutSlot.bind(this, quickButtons[i], LauncherPrefs.QUICK_KEYS[i]);
+                AutomotiveUi.styleRailButton(this, quickButtons[i], false);
                 focus.add(quickButtons[i]);
             }
         }
@@ -418,7 +454,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private String musicControlPackage() {
-        if (!genericSnapshot.packageName.isEmpty()) return genericSnapshot.packageName;
+        if (LauncherPrefs.MEDIA_MODE_AUTO.equals(LauncherPrefs.mediaMode(this))) {
+            String selected = ProcessMediaSessionMonitor.selectedMusicPackage();
+            if (!selected.isEmpty()) return selected;
+            if (!genericSnapshot.packageName.isEmpty()) return genericSnapshot.packageName;
+        }
         return configuredMusicPackage();
     }
 
@@ -585,6 +625,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             place(nativeNavigationPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (mapPanel != null) place(mapPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
         if (appDrawerPanel != null) place(appDrawerPanel, g.mapX(), g.mapY(), g.mapWidth(), g.mapHeight());
+        if (readinessLoader != null) readinessLoader.geometry(leftInset, topInset, width - leftInset - rightInset, height - topInset - bottomInset);
     }
 
     private void place(View view, int x, int y, int width, int height) {
@@ -613,12 +654,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void updateLabels() {
+        if (LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(LauncherPrefs.mediaMode(this))
+                && !configuredMusicPackage().equals(genericSnapshot.packageName))
+            genericSnapshot = emptyMediaSnapshot();
         boolean tickerRadio = MediaSelection.RADIO.equals(mediaSelection.displayed());
         mediaText.setSnapshot(tickerRadio ? radioSnapshot : genericSnapshot, mediaSelection.displayed());
         String radioPackage = RadioProvider.resolvePackage(this);
         String radioLabel = AppResolver.labelFor(this, radioPackage, radioPackage.isEmpty() ? "Set radio" : "Radio");
-        AutomotiveUi.setIconWithCrossfade(this, radioPlayPause,
-                radioSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
+        updatePlaybackButton(radioPlayPause, radioSnapshot, getString(R.string.media_source_radio));
         setMediaButtonsReady(radioPrevious, radioPlayPause, radioNext);
         if (!MediaListenerService.hasNotificationAccess(this)) {
             if (!mediaStatusActive) {
@@ -626,7 +669,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     mediaText.setMetadata("Media access required", "Use Settings gear · Notification access");
                 else mediaText.setMetadata(radioLabel, "Radio");
             }
-            AutomotiveUi.setIconWithCrossfade(this, playPause, R.drawable.ic_play);
+            updatePlaybackButton(playPause, genericSnapshot, getString(R.string.media_source_music));
             setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
             updateMediaPresentation();
             return;
@@ -641,10 +684,19 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (!mediaStatusActive) {
             mediaText.setMetadata(primaryMetadata(displayed, label), secondaryMetadata(displayed, label));
         }
-        AutomotiveUi.setIconWithCrossfade(this, playPause,
-                genericSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
+        updatePlaybackButton(playPause, genericSnapshot, getString(R.string.media_source_music));
         setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
         updateMediaPresentation();
+    }
+
+    private void updatePlaybackButton(ImageButton button, MediaListenerService.Snapshot snapshot, String source) {
+        int icon = MediaPlaybackPresentation.icon(snapshot.state);
+        // A transition must not leave the previous PLAY/PAUSE claim visible during a crossfade.
+        if (!(button.getTag() instanceof Integer) || ((Integer) button.getTag()) != icon) {
+            button.setTag(icon);
+            button.setImageResource(icon);
+        }
+        button.setContentDescription(getString(MediaPlaybackPresentation.description(snapshot.state), source));
     }
 
     private void updateMediaPresentation() {
@@ -655,10 +707,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         musicPanel.setBackground(AutomotiveUi.mediaGroupBackground(this, !radioActive, radioOnRight));
         AutomotiveUi.styleSourcePrimaryButton(this, radioPlayPause, radioActive);
         AutomotiveUi.styleSourcePrimaryButton(this, playPause, !radioActive);
-        radioRole.setImageTintList(ColorStateList.valueOf(AutomotiveUi.color(this,
-                radioActive ? R.color.ui_accent : R.color.ui_text_secondary)));
-        musicRole.setImageTintList(ColorStateList.valueOf(AutomotiveUi.color(this,
-                radioActive ? R.color.ui_text_secondary : R.color.ui_accent)));
+        radioRole.setImageTintList(ColorStateList.valueOf(radioActive ? AutomotiveUi.accentForeground(this)
+                : AutomotiveUi.color(this, R.color.ui_text_secondary)));
+        musicRole.setImageTintList(ColorStateList.valueOf(radioActive ? AutomotiveUi.color(this, R.color.ui_text_secondary)
+                : AutomotiveUi.accentForeground(this)));
     }
 
     private void setMediaButtonsReady(ImageButton... buttons) {
@@ -686,17 +738,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void toggleAppDrawer() {
-        if (appDrawerPanel.isOpen()) appDrawerPanel.hidePanel();
-        else {
-            MediaEventTrace.record("drawer", "open-request");
-            if (mapPanel != null) mapPanel.stop();
-            Runnable show = () -> {
-                if (isFinishing() || isDestroyed()) return;
-                appDrawerPanel.showPanel();
-            };
-            if (!ExperimentalMapPolicy.enabled(this)) navigationWindowController.openLauncherOverlay(show);
-            else show.run();
-        }
+        MediaEventTrace.record("drawer", "open-request");
+        StartupReadinessCoordinator.get(this).noteExternalNavigation();
+        if (mapPanel != null) mapPanel.stop();
+        Runnable show = () -> {
+            if (!isFinishing() && !isDestroyed()) startActivity(new Intent(this, AppDrawerActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+        };
+        if (!ExperimentalMapPolicy.enabled(this)) navigationWindowController.openLauncherOverlay(show);
+        else show.run();
     }
 
     private boolean redirectToCanonicalHome() {
@@ -738,7 +788,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     processGenericSnapshot, listenerGenericSnapshot, processSnapshotAuthoritative);
             radioSnapshot = mergeSessionSnapshot(
                     processRadioSnapshot, listenerRadioSnapshot, processSnapshotAuthoritative);
-            mediaSelection.reconcile(radioSnapshot.playing, genericSnapshot.playing);
+            if (processSnapshotAuthoritative)
+                mediaSelection.reconcileObservedPlayback(radioSnapshot.playing, genericSnapshot.playing,
+                        MediaCommandPolicy.usesPauseAction(radioSnapshot.state)
+                                || MediaCommandPolicy.usesPauseAction(genericSnapshot.state));
             updateLabels();
         });
     }
@@ -751,20 +804,38 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             MediaListenerService.Snapshot core, MediaListenerService.Snapshot enriched,
             boolean coreAuthoritative) {
         MediaListenerService.Snapshot secondary = normaliseSnapshot(enriched);
-        if (!coreAuthoritative) return secondary;
+        if (!coreAuthoritative) return emptyMediaSnapshot();
         MediaListenerService.Snapshot primary = normaliseSnapshot(core);
         if (primary.packageName.isEmpty()) return primary;
+        // Generic music has exactly one publisher; title equality cannot prove an item match.
+        if (!RadioFrequency.NAVRADIO.equals(primary.packageName)) return primary;
         if (secondary.packageName.isEmpty() || !primary.packageName.equals(secondary.packageName)) {
             return primary;
         }
-        if (primary.sessionIdentity != null && secondary.sessionIdentity != null
-                && !primary.sessionIdentity.equals(secondary.sessionIdentity)) {
+        if (primary.sessionIdentity == null || secondary.sessionIdentity == null
+                || !primary.sessionIdentity.equals(secondary.sessionIdentity)) {
             return primary;
         }
-        String title = secondary.title.isEmpty() ? primary.title : secondary.title;
-        String artist = secondary.artist.isEmpty() ? primary.artist : secondary.artist;
-        return new MediaListenerService.Snapshot(primary.packageName, title, artist,
-                primary.state, primary.actions, primary.sessionIdentity);
+        String primaryStation = MediaListenerService.meaningfulRadioTitle(primary);
+        if (RadioFrequency.NAVRADIO.equals(primary.packageName)
+                && !primaryStation.isEmpty()
+                && !primaryStation.equalsIgnoreCase(secondary.title)) return primary;
+        if (RadioFrequency.NAVRADIO.equals(primary.packageName)
+                && primary.radioFrequency != null && secondary.radioFrequency != null
+                && !primary.radioFrequency.display().equals(secondary.radioFrequency.display())) return primary;
+        // The process controller is the selected live authority. Listener data may only
+        // fill a missing field for the same current track/station, never replace it.
+        boolean placeholder = RadioFrequency.NAVRADIO.equals(primary.packageName)
+                && primaryStation.isEmpty();
+        String title = placeholder ? secondary.title : primary.title;
+        boolean sameTrack = !primary.title.isEmpty() && primary.title.equalsIgnoreCase(secondary.title);
+        String artist = primary.artist.isEmpty() && (sameTrack || placeholder)
+                ? secondary.artist : primary.artist;
+        if (RadioFrequency.NAVRADIO.equals(primary.packageName) && sameTrack
+                && primary.radioFrequency == null && secondary.radioFrequency != null) {
+            artist = primary.artist + (primary.artist.isEmpty() ? "" : " ") + secondary.radioFrequency.display();
+        }
+        return primary.withMetadata(title, artist);
     }
 
     private static MediaListenerService.Snapshot emptyMediaSnapshot() {
@@ -784,6 +855,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void launchAfterNavigation(Runnable launch) {
+        StartupReadinessCoordinator.get(this).noteExternalNavigation();
         if (ExperimentalMapPolicy.enabled(this) || navigationWindowController == null) launch.run();
         else navigationWindowController.launchAfterSuspension(launch);
     }

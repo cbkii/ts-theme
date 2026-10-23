@@ -14,7 +14,7 @@ import java.util.Map;
 final class StartupReadinessPolicy {
     enum Source { MUSIC, RADIO, NAVIGATION }
     enum State { UNAVAILABLE, STARTING, READY, ACTIVE, FAILED, BLOCKED, UNCERTAIN }
-    enum Trigger { BOOT, SCREEN_ON, ACC_ON, HOME_RESUME, STORAGE_MOUNT, SESSION_LOST, RESTART }
+    enum Trigger { BOOT, SCREEN_ON, ACC_ON, HOME_RESUME, STORAGE_MOUNT, SESSION_LOST, READINESS_CHANGED, RESTART, USER_UNLOCKED }
     enum Kind { FULL_BOOT, SAME_BOOT_WAKE, HOME_RETURN }
     enum Mode { BACKGROUND_ONLY, AUTOMATIC_FALLBACK, AGGRESSIVE }
     enum Method { NONE, SESSION, BROWSER, SERVICE, ACTIVITY_BOOTSTRAP, TASK_ADOPTION }
@@ -156,6 +156,14 @@ final class StartupReadinessPolicy {
         }
     }
 
+    /** Evidence loss does not revoke an accepted Activity claim or authorise another admission. */
+    void observedUnavailable(Source source, String boundary, long now) {
+        Record r = records.get(source);
+        r.state = State.UNCERTAIN;
+        r.finishedMs = now;
+        if (r.firstFailingBoundary.isEmpty()) r.firstFailingBoundary = boundary;
+    }
+
     void configurationChanged(Source source) {
         Record replacement = new Record();
         replacement.generation = ++nextGeneration;
@@ -167,6 +175,13 @@ final class StartupReadinessPolicy {
         if (r.activityLaunchAccepted) return false;
         r.activityLaunchAccepted = true;
         return true;
+    }
+    void releaseUnadmitted(Source source, int generation) {
+        Record r = records.get(source);
+        if (r.generation != generation) return;
+        r.activityLaunchAccepted = false;
+        r.state = State.UNAVAILABLE;
+        r.attempts = Math.max(0, r.attempts - 1);
     }
 
     private boolean finish(Source source, int generation, State state, String boundary, long now) {

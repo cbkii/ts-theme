@@ -5,6 +5,8 @@ import android.content.SharedPreferences;
 
 /** Optional UI-personalisation preferences layered over the core launcher contract. */
 final class UiPersonalizationPrefs {
+    static final String KEY_STARTUP_LOADER = "startup.loader.enabled";
+    static final String KEY_STARTUP_LOADER_AFTER_SLEEP = "startup.loader.after_sleep";
     static final String KEY_MEDIA_STARTUP_WARMUP = "media.startup.warmup";
     static final String KEY_NAV_ROOT_PERMISSION_GRANT = "navigation.permissions.root_grant";
     static final String KEY_ACCENT_HUE = "ui.accent.hue";
@@ -31,6 +33,19 @@ final class UiPersonalizationPrefs {
     };
 
     private UiPersonalizationPrefs() {}
+
+    static boolean startupLoader(Context context) {
+        return prefs(context).getBoolean(KEY_STARTUP_LOADER, false);
+    }
+    static void setStartupLoader(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_STARTUP_LOADER, enabled).apply();
+    }
+    static boolean startupLoaderAfterSleep(Context context) {
+        return startupLoader(context) && prefs(context).getBoolean(KEY_STARTUP_LOADER_AFTER_SLEEP, false);
+    }
+    static void setStartupLoaderAfterSleep(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_STARTUP_LOADER_AFTER_SLEEP, enabled).apply();
+    }
 
     static boolean mediaStartupWarmup(Context context) {
         return prefs(context).getBoolean(KEY_MEDIA_STARTUP_WARMUP, true);

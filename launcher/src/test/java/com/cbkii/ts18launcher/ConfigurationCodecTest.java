@@ -26,6 +26,15 @@ public class ConfigurationCodecTest {
         assertTrue(preview.summary().contains("com.example.player"));
     }
 
+    @Test public void readinessLoaderOptionsRoundTripIndependently() throws Exception {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put(UiPersonalizationPrefs.KEY_STARTUP_LOADER, false);
+        values.put(UiPersonalizationPrefs.KEY_STARTUP_LOADER_AFTER_SLEEP, true);
+        ConfigurationCodec.Preview preview = ConfigurationCodec.decode(ConfigurationCodec.encode(values), name -> true);
+        assertEquals(Boolean.FALSE, preview.values.get(UiPersonalizationPrefs.KEY_STARTUP_LOADER));
+        assertEquals(Boolean.TRUE, preview.values.get(UiPersonalizationPrefs.KEY_STARTUP_LOADER_AFTER_SLEEP));
+    }
+
     @Test(expected = JSONException.class)
     public void unknownSettingIsRejected() throws Exception {
         ConfigurationCodec.decode("{\"schema\":\"com.cbkii.ts18launcher.config\",\"version\":1,\"settings\":{\"secret\":true}}", name -> true);

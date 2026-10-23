@@ -30,6 +30,8 @@ final class ConfigurationCodec {
         for (String key : UiPersonalizationPrefs.DRAWER_ICON_KEYS) keys.put(key, Type.ICON);
         keys.put(UiPersonalizationPrefs.KEY_ACCENT_HUE, Type.HUE);
         keys.put(UiPersonalizationPrefs.KEY_MEDIA_STARTUP_WARMUP, Type.BOOLEAN);
+        keys.put(UiPersonalizationPrefs.KEY_STARTUP_LOADER, Type.BOOLEAN);
+        keys.put(UiPersonalizationPrefs.KEY_STARTUP_LOADER_AFTER_SLEEP, Type.BOOLEAN);
         keys.put(UiPersonalizationPrefs.KEY_NAV_ROOT_PERMISSION_GRANT, Type.BOOLEAN);
         keys.put(UiPersonalizationPrefs.KEY_HOME_SHORTCUTS_ENABLED, Type.BOOLEAN);
         keys.put(LauncherPrefs.KEY_QUICK_COUNT, Type.COUNT);
@@ -96,11 +98,14 @@ final class ConfigurationCodec {
                 if (name.isEmpty()) continue;
                 if (!packages.available(name)) { unavailable.add(key + ": " + name); continue; }
             }
+            if (KEYS.get(key) == Type.APPEARANCE) value = LauncherPrefs.canonicalAppearance((String) value);
+            if (KEYS.get(key) == Type.AUTO_SOURCE) value = LauncherPrefs.AUTO_SOURCE_SCHEDULE;
             values.put(key, value);
         }
         Object day = values.get(LauncherPrefs.KEY_APPEARANCE_DAY_START);
         Object night = values.get(LauncherPrefs.KEY_APPEARANCE_NIGHT_START);
-        if (day instanceof Integer && (Integer) day >= 0 && day.equals(night))
+        if (!AppearanceSchedule.valid(day instanceof Integer ? (Integer) day : -1,
+                night instanceof Integer ? (Integer) night : -1))
             throw new JSONException("Day and night anchors must differ");
         return new Preview(values, unavailable);
     }

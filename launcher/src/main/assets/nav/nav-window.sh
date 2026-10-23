@@ -7,28 +7,32 @@ export PATH
 unset LD_PRELOAD LD_LIBRARY_PATH
 umask 077
 
-ROOT_DIR=/data/adb/ts18-launcher
+ROOT_DIR=${TS18_STATE_DIR:?launcher private runtime directory required}
 SNAPSHOT="$ROOT_DIR/.activity.$$"
 START_HELP="$ROOT_DIR/.am-help.$$"
 LAUNCH_OUTPUT="$ROOT_DIR/.am-start.$$"
 RECENTS="$ROOT_DIR/.recents.$$"
 STACKS="$ROOT_DIR/.stacks.$$"
 WINDOWS="$ROOT_DIR/.windows.$$"
+FOCUS_AFTER="$ROOT_DIR/.focus-after.$$"
+WINDOW_OWNERS="$ROOT_DIR/.window-owners.$$"
 read -r start_uptime _ < /proc/uptime
 DEADLINE=$(( ${start_uptime%%.*} + 10 ))
 case "${TS18_DEADLINE_S:-}" in
   ''|*[!0-9]*) ;;
   *) [ "$TS18_DEADLINE_S" -lt "$DEADLINE" ] && DEADLINE=$TS18_DEADLINE_S ;;
 esac
-METHOD=${TS18_METHOD:-N1}
-TRANSITION=${TS18_TRANSITION:-intent}
+METHOD=${TS18_METHOD:-N2}
+TRANSITION=${TS18_TRANSITION:-bridge}
 case "$METHOD" in N0|N1|N2) ;; *) METHOD=N1 ;; esac
 case "$TRANSITION" in bridge|intent) ;; *) TRANSITION=bridge ;; esac
+COLD_POLICY=${TS18_COLD_POLICY:-manual}
+case "$COLD_POLICY" in manual|automatic|deny) ;; *) COLD_POLICY=deny ;; esac
 PHASE=admission
 VISIBLE=unknown
 DRAWN=unknown
 IDENTITY_SOURCE=unknown
-trap 'rm -f "$SNAPSHOT" "$START_HELP" "$LAUNCH_OUTPUT" "$RECENTS" "$STACKS" "$WINDOWS"' EXIT HUP INT TERM
+trap 'rm -f "$SNAPSHOT" "$START_HELP" "$LAUNCH_OUTPUT" "$RECENTS" "$STACKS" "$WINDOWS" "$FOCUS_AFTER" "$WINDOW_OWNERS"' EXIT HUP INT TERM
 
 TASK_SNAPSHOT_AWK='
 function digits_after_hash(line, value) {
@@ -411,7 +415,7 @@ read_task_once() {
   fi
   # Preserve bounded parser-miss context locally for the next collector.
   if [ -s "$SNAPSHOT" ]; then
-    head -c 65536 "$SNAPSHOT" >"$ROOT_DIR/task-miss-latest.txt"
+    : # The bounded diagnostic collector owns exports; retain no private dump copies here.
   fi
   bridge_record="$(run_bridge status "$observed_pkg" "$observed_hint" 2>/dev/null)"
   bridge_rc=$?
@@ -566,15 +570,38 @@ launch_freeform_once() {
     *) fail COMPONENT_PACKAGE_MISMATCH ;;
   esac
   PHASE=launch
-  native_launch_supported || fail FREEFORM_LAUNCH_UNSUPPORTED
+  # Unsupported direct launch options are a pre-admission refusal: compare N2 once,
+  # using ordinary Activity admission followed by the existing same-task bridge.
+  direct_options=1
+  if ! native_launch_supported; then
+    [ "$HELP_EXIT" = 0 ] || fail LAUNCH_CAPABILITY_UNCERTAIN
+    METHOD=N2
+    TRANSITION=bridge
+    direct_options=0
+  fi
   claim_cold_launch
   journal_launch dispatching
   cold_mode=5
   [ "$METHOD" != N2 ] || cold_mode=1
-  bounded am start --user "$ANDROID_USER" --display 0 --windowingMode "$cold_mode" \
-    -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
-    -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
-  LAUNCH_EXIT=$?
+  if [ "$direct_options" = 1 ]; then
+    bounded am start --user "$ANDROID_USER" --display 0 --windowingMode "$cold_mode" \
+      -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+      -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
+    LAUNCH_EXIT=$?
+    if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
+      # Framework parser refusal proves the first command did not admit an Activity.
+      METHOD=N2
+      TRANSITION=bridge
+      direct_options=0
+      journal_launch dispatching
+    fi
+  fi
+  if [ "$direct_options" = 0 ]; then
+    bounded am start --user "$ANDROID_USER" \
+      -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+      -f 0x10000000 -n "$component" >"$LAUNCH_OUTPUT" 2>&1
+    LAUNCH_EXIT=$?
+  fi
   check_cold_launch_result FREEFORM_LAUNCH_FAILED FREEFORM_LAUNCH_UNSUPPORTED
   LAUNCHED=1
   PHASE=bootstrap
@@ -588,7 +615,38 @@ launch_claim_path() {
 }
 
 claim_cold_launch() {
+  [ "$COLD_POLICY" != deny ] || fail AUTOSTART_DISABLED_OR_UNAVAILABLE
   launch_claim_path || fail LAUNCH_MARKER_FAILED
+  # Changing runtime storage on upgrade must not forget an accepted/uncertain
+  # current-boot launch. Legacy journals are read-only and need no migration write.
+  legacy_launch="/data/adb/ts18-launcher/launch-$ANDROID_USER-$PKG-$current_boot"
+  if [ -e "$legacy_launch" ] || [ -L "$legacy_launch" ]; then fail LAUNCH_PENDING; fi
+  automatic_marker="$ROOT_DIR/auto-v1-$ANDROID_USER-$PKG-$current_boot"
+  if [ "$COLD_POLICY" = automatic ]; then
+    legacy_auto="/data/adb/ts18-launcher/auto-v1-$ANDROID_USER-$PKG-$current_boot"
+    if [ -e "$legacy_auto" ] || [ -L "$legacy_auto" ]; then fail AUTOSTART_ALREADY_CLAIMED; fi
+    require_startup_window_focus com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity
+    # Accepted/uncertain startup never repeats. A previously verified MwmActivity owner
+    # may recover only after its exact PID/start-time lifetime has ended AND the caller
+    # has already proved complete task absence. Closing a task in a live process is not
+    # sufficient. Each dead lifetime has one atomic recovery admission.
+    if ! mkdir "$automatic_marker" 2>/dev/null; then
+      [ -f "$automatic_marker/ready-owner" ] || fail AUTOSTART_ALREADY_CLAIMED
+      read -r ready_pid ready_ticks ready_task < "$automatic_marker/ready-owner"
+      if ! valid_uint "$ready_pid" || ! valid_uint "$ready_ticks" || ! valid_uint "$ready_task"; then fail AUTOSTART_ALREADY_CLAIMED; fi
+      if [ "$ready_pid" -le 0 ] || [ "$ready_task" -le 0 ]; then fail AUTOSTART_ALREADY_CLAIMED; fi
+      live_ticks=$(awk '{sub(/^.*\) /, ""); print $20}' "/proc/$ready_pid/stat" 2>/dev/null)
+      if [ -d "/proc/$ready_pid" ]; then
+        valid_uint "$live_ticks" || fail AUTOSTART_ALREADY_CLAIMED
+        [ "$live_ticks" != "$ready_ticks" ] || fail AUTOSTART_ALREADY_CLAIMED
+      fi
+      mkdir "$automatic_marker/recovered-$ready_pid-$ready_ticks" 2>/dev/null || fail AUTOSTART_ALREADY_CLAIMED
+    fi
+    printf 'version=1 boot=%s user=%s package=%s generation=1\n' "$current_boot" "$ANDROID_USER" "$PKG" > "$automatic_marker/identity" || {
+      clear_automatic_refusal
+      fail LAUNCH_JOURNAL_FAILED
+    }
+  fi
   # Atomic across every cold-launch path and helper process. Time alone cannot
   # resolve an accepted/uncertain dispatch, including an explicit fullscreen one.
   mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING
@@ -608,11 +666,18 @@ clear_launch_claim() {
   rmdir "$launch_marker" 2>/dev/null || true
 }
 
+clear_automatic_refusal() {
+  [ "$COLD_POLICY" = automatic ] || return 0
+  rm -f "$automatic_marker/identity"
+  rmdir "$automatic_marker" 2>/dev/null || true
+}
+
 check_cold_launch_result() {
   failure_code="$1"
   unsupported_code="$2"
   if grep -q -i -E 'Unknown option.*(--windowingMode|--display)' "$LAUNCH_OUTPUT"; then
     clear_launch_claim
+    clear_automatic_refusal
     fail "$unsupported_code"
   fi
   if [ "$LAUNCH_EXIT" -ne 0 ] || grep -Eq '^(Error:|Error type|Exception|Security exception:)' "$LAUNCH_OUTPUT"; then
@@ -621,6 +686,7 @@ check_cold_launch_result() {
     # a nonzero producer exit alone does not prove server-side cancellation.
     if grep -Eq '^(Error type|Error: Activity not started|Error: [Uu]nable to resolve Intent|Security exception:|Permission Denial:)' "$LAUNCH_OUTPUT"; then
       clear_launch_claim
+      clear_automatic_refusal
       fail "$failure_code"
     fi
     journal_launch uncertain
@@ -640,6 +706,20 @@ resolve_launch_claim_if_ready() {
   # Cleanup is optional on a proven warm task; metadata refusal must not
   # invalidate an already verified fullscreen/windowed transition.
   launch_claim_path || return 0
+  ready_marker="$ROOT_DIR/auto-v1-$ANDROID_USER-$PKG-$current_boot"
+  if [ "$PKG" = app.organicmaps.incar ] && [ -d "$ready_marker" ] && command -v pidof >/dev/null 2>&1; then
+    ready_source=$(pidof "$PKG" 2>/dev/null)
+    if valid_uint "$ready_source" && [ "$ready_source" -gt 0 ]; then
+      ready_command=$(tr '\000' '\n' < "/proc/$ready_source/cmdline" 2>/dev/null | head -n 1)
+      if [ "$ready_command" = "$PKG" ]; then
+        ready_start=$(awk '{sub(/^.*\) /, ""); print $20}' "/proc/$ready_source/stat" 2>/dev/null)
+        if valid_uint "$ready_start"; then
+          printf '%s %s %s\n' "$ready_source" "$ready_start" "$TASK_ID" > "$ready_marker/ready-owner.$$" \
+            && mv "$ready_marker/ready-owner.$$" "$ready_marker/ready-owner"
+        fi
+      fi
+    fi
+  fi
   clear_launch_claim
 }
 
@@ -717,22 +797,53 @@ move_task_fullscreen() {
 # Exact foreground ownership for media staging; no mode/geometry or vendor mutations.
 require_startup_window_focus() {
   focus_expected="$1"
-  bounded dumpsys window windows >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
-  focus_component=$(awk -v user="$ANDROID_USER" '
+  mask_title="${TS18_MASK_TITLE:-}"
+  mask_uid=$(printf '%s' "$mask_title" | sed -n 's/^TS18Ready_\([0-9][0-9]*\)_[a-f0-9]\{32\}$/\1/p')
+  # TS18 puts focus in displays, not windows. Window ownership is a separate
+  # surface; never switch away from display focus merely because a mask exists.
+  focus_after="${FOCUS_AFTER:-$WINDOWS.after}"
+  window_owners="${WINDOW_OWNERS:-$WINDOWS.owners}"
+  focus_started=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
+  bounded dumpsys window displays >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  focus_before=$(awk '/mCurrentFocus=/ {n++; sub(/^.*mCurrentFocus=/, ""); value=$0} END {if(n==1) print value}' "$WINDOWS")
+  case "$focus_before" in Window\{*\}) ;; *) log_event 'focus reason=FOCUS_MISSING'; fail STARTUP_FOCUS_UNKNOWN ;; esac
+  : >"$window_owners"
+  if [ -n "$mask_uid" ] && printf '%s\n' "$focus_before" | grep -F " $mask_title}" >/dev/null; then
+    bounded dumpsys window windows >"$window_owners" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  fi
+  bounded dumpsys window displays >"$focus_after" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  focus_latest=$(awk '/mCurrentFocus=/ {n++; sub(/^.*mCurrentFocus=/, ""); value=$0} END {if(n==1) print value}' "$focus_after")
+  [ "$focus_before" = "$focus_latest" ] || { log_event 'focus reason=WINDOW_TOKEN_MISMATCH'; fail STARTUP_FOCUS_UNKNOWN; }
+  focus_finished=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
+  [ $((focus_finished - focus_started)) -le 2000 ] || { log_event 'focus reason=FOCUS_STALE'; fail STARTUP_FOCUS_UNKNOWN; }
+  check_deadline
+  focus_component=$(awk -v user="$ANDROID_USER" -v mask="$mask_title" -v uid="$mask_uid" -v expected="$focus_expected" '
     function normalise(c, a) {
       split(c,a,"/"); if (substr(a[2],1,1)==".") c=a[1] "/" a[1] a[2]
       if(c=="com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias") c="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity"
       return c
     }
-    /mCurrentFocus=/ {
+    /Window #[0-9]+ Window\{/ {
+      owned=0; block=$0; sub(/^.*Window\{/,"",block); sub(/ .*$/, "", block)
+      if (uid!="" && index($0," u" user " " mask "}")) owned=1
+    }
+    owned && index($0,"mOwnerUid=" uid " ") {owner[block]=1}
+    owned && /ty=(2038|APPLICATION_OVERLAY)[ }]/ {overlay[block]=1}
+    FILENAME==ARGV[1] && /mCurrentFocus=/ {
       if ($0 !~ (" u" user " ")) {bad=1; next}
       v=$0; sub(/^.* u[0-9]+ /,"",v); sub(/[}[:space:]].*$/,"",v)
+      count++; focus_id=$0; sub(/^.*Window\{/,"",focus_id); sub(/ .*$/, "", focus_id)
+      if(uid!="" && v==mask) {masked=1; next}
       if(index(v,"/")<2) {bad=1; next}
-      count++; component=normalise(v)
+      component=normalise(v)
     }
-    END {if(count==1 && !bad) print component}
-  ' "$WINDOWS")
-  [ "$focus_component" = "$focus_expected" ] || fail STARTUP_FOCUS_CHANGED
+    END {if(count==1 && !bad) {
+      if(masked && owner[focus_id] && overlay[focus_id] && int(uid/100000)==user && uid%100000>=10000) print expected
+      else if(!masked) print component
+    }}
+  ' "$WINDOWS" "$window_owners")
+  [ -n "$focus_component" ] || { log_event 'focus reason=MASK_OWNER_MISMATCH'; fail STARTUP_FOCUS_UNKNOWN; }
+  [ "$focus_component" = "$focus_expected" ] || { log_event 'focus reason=FOREIGN_FOCUS'; fail STARTUP_FOCUS_CHANGED; }
 }
 
 validate_startup_source() {
@@ -839,7 +950,9 @@ case "$action" in
 
     wanted_task="$TASK_ID"
     restore_home=0
-    if [ "$METHOD" = N2 ] && launch_claim_path && [ -r "$launch_marker/state" ]; then
+    if launch_claim_path && [ -r "$launch_marker/state" ] && grep -q ' method=N2 ' "$launch_marker/state"; then
+      METHOD=N2
+      TRANSITION=bridge
       # A delayed launch may first become visible in this invocation. Preserve the
       # original admission identity while adopting its unique current-user renderer.
       # Reserved/dispatching or different-task claims never grant HOME restoration.
@@ -1039,8 +1152,16 @@ case "$action" in
     require_handoff_foreground "$home_task" "$home_task"
     require_startup_window_focus com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity
     PHASE=dispatch
-    bounded am start --user "$ANDROID_USER" --display 0 -a android.intent.action.MAIN \
-      -c android.intent.category.LAUNCHER -f 0x10000000 -n "$startup_entry" >"$LAUNCH_OUTPUT" 2>&1
+    if [ "$PKG" = com.tw.media ]; then
+      prepare_until="${TS18_STAGE_UNTIL:-0}"
+      valid_uint "$prepare_until" || fail BAD_DEADLINE
+      bounded am start --user "$ANDROID_USER" --display 0 -a android.intent.action.MAIN \
+        -c android.intent.category.LAUNCHER -f 0x10000000 -n "$startup_entry" \
+        --el org.oxycblt.auxio.extra.PREPARE_UNTIL "$prepare_until" >"$LAUNCH_OUTPUT" 2>&1
+    else
+      bounded am start --user "$ANDROID_USER" --display 0 -a android.intent.action.MAIN \
+        -c android.intent.category.LAUNCHER -f 0x10000000 -n "$startup_entry" >"$LAUNCH_OUTPUT" 2>&1
+    fi
     startup_rc=$?
     if [ "$startup_rc" != 0 ] || grep -q -E 'Error:|Error type|Exception|Permission Denial:' "$LAUNCH_OUTPUT"; then
       # Timeout or a generic exception can occur after admission. Never call it rejected.
@@ -1051,6 +1172,26 @@ case "$action" in
     fi
     TASK_ID=unknown; TASK_COMPONENT="$startup_entry"; PKG="${3:-}"
     emit_protocol OK STARTUP_SOURCE_DISPATCHED
+    ;;
+
+  return-home)
+    PKG="${3:-}"; startup_task="${4:-0}"; HOME_PKG="${5:-}"; home_task="${6:-0}"
+    [ "$PKG" = app.organicmaps.incar ] || fail STARTUP_PACKAGE_BLOCKED
+    [ "$HOME_PKG" = com.cbkii.ts18launcher ] || fail BAD_HOME_PACKAGE
+    valid_uint "$startup_task" || fail BAD_TASK
+    [ "$startup_task" -gt 0 ] || fail TASK_AUTHORITY_REQUIRED
+    valid_uint "$home_task" || fail BAD_HOME_TASK
+    [ "$home_task" -gt 0 ] || fail HOME_TASK_AUTHORITY_REQUIRED
+    require_startup_home
+    require_task "$PKG" "$startup_task" 2
+    [ "$DISPLAY_ID" = 0 ] || fail DISPLAY_MISMATCH
+    [ "$TASK_COMPONENT" = app.organicmaps.incar/app.organicmaps.MwmActivity ] || fail COMPONENT_MISMATCH
+    require_handoff_foreground "$startup_task" "$startup_task"
+    require_startup_window_focus app.organicmaps.incar/app.organicmaps.MwmActivity
+    PHASE=focus
+    bounded am task focus "$home_task" >"$LAUNCH_OUTPUT" 2>&1 || fail HOME_FOCUS_FAILED
+    require_foreground_task "$home_task" HOME_NOT_FOREGROUND
+    emit_protocol OK HOME_RETURNED
     ;;
 
   startup-home)

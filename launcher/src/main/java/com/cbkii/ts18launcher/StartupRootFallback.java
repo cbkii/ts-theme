@@ -14,9 +14,19 @@ final class StartupRootFallback {
         this.context = context.getApplicationContext();
         helper = new NavigationRootHelper(this.context);
     }
-    NavigationHelperResult launch(String pkg, String entry, int homeTask) {
+    NavigationHelperResult observe() {
+        NavigationHelperResult result = RootTaskSession.get(context).runCurrent(SystemClock.elapsedRealtime() + 1800L,
+                "observe", Integer.toString(AndroidUserId.current()));
+        return result != null && "BRIDGE_API_UNSUPPORTED".equals(result.code) ? null : result;
+    }
+    NavigationHelperResult launch(String pkg, String entry, int homeTask, long deadline) {
         if (!eligible(pkg, entry) || homeTask <= 0) return NavigationHelperResult.failure("STARTUP_INELIGIBLE", "");
-        helper.setDeadline(SystemClock.elapsedRealtime() + 6500L);
+        if (MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg)) {
+            if (!AuxioPreparationContract.supported(context))
+                return NavigationHelperResult.failure("AUXIO_PREPARE_CAPABILITY_REQUIRED", "Install the paired silent-preparation Auxio candidate");
+            entry = AuxioPreparationContract.COMPONENT;
+        }
+        helper.setDeadline(Math.min(deadline, SystemClock.elapsedRealtime() + 6500L));
         return helper.run("startup-source", pkg, entry, context.getPackageName(), Integer.toString(homeTask));
     }
     NavigationHelperResult restoreHome(String pkg, String entry, int sourceTask, int homeTask) {
@@ -28,7 +38,10 @@ final class StartupRootFallback {
     }
     static boolean definitelyNotStarted(NavigationHelperResult result) {
         return result != null && ("STARTUP_SOURCE_REJECTED".equals(result.code)
-                || "ROOT_UNAVAILABLE".equals(result.code) || "ASSET_COPY_FAILED".equals(result.code));
+                || "ROOT_UNAVAILABLE".equals(result.code) || "ASSET_COPY_FAILED".equals(result.code)
+                || "INSTALL_TIMEOUT".equals(result.code) || "STARTUP_INELIGIBLE".equals(result.code)
+                || "STARTUP_FOCUS_CHANGED".equals(result.code) || "STARTUP_FOCUS_UNKNOWN".equals(result.code)
+                || "AUXIO_PREPARE_CAPABILITY_REQUIRED".equals(result.code));
     }
     private boolean eligible(String pkg, String entry) {
         if (!"com.cbkii.ts18launcher".equals(context.getPackageName())
@@ -37,7 +50,8 @@ final class StartupRootFallback {
             Intent intent = context.getPackageManager().getLaunchIntentForPackage(pkg);
             ComponentName component = intent == null ? null : intent.getComponent();
             if (component == null || !pkg.equals(component.getPackageName())
-                    || !component.flattenToShortString().equals(entry)) return false;
+                    || !(component.flattenToShortString().equals(entry)
+                        || AuxioPreparationContract.canonicalEntry(context, component).equals(entry))) return false;
             ActivityInfo info = context.getPackageManager().getActivityInfo(component, 0);
             return info != null && info.enabled && info.exported && info.applicationInfo != null
                     && info.applicationInfo.enabled && pkg.equals(info.packageName)
