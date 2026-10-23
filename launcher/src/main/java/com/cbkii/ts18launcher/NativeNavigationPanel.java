@@ -11,12 +11,14 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 /** Launcher-owned fallback only; a foreign map never renders inside this View. */
 @SuppressLint("ViewConstructor")
 final class NativeNavigationPanel extends FrameLayout {
     interface BoundsListener { void onBoundsChanged(NavigationWindowBounds bounds); }
     private final ImageButton openNavigation;
+    private final TextView status;
     private final GradientDrawable actionCircle = new GradientDrawable();
     private BoundsListener boundsListener;
     private NavigationWindowBounds lastBounds;
@@ -46,6 +48,14 @@ final class NativeNavigationPanel extends FrameLayout {
         openNavigation.setOnClickListener(v -> { if (openAction != null) openAction.run(); });
         openNavigation.setVisibility(View.GONE);
         addView(openNavigation, new LayoutParams(0, 0, Gravity.CENTER));
+        status = new TextView(activity);
+        status.setTextSize(18);
+        status.setGravity(Gravity.CENTER);
+        status.setMaxLines(2);
+        status.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        int gap = AutomotiveUi.dimen(activity, R.dimen.driver_gap);
+        status.setPadding(gap, gap, gap, gap);
+        addView(status, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
         applyAppearance(activity);
     }
 
@@ -59,14 +69,15 @@ final class NativeNavigationPanel extends FrameLayout {
                 ? "Open navigation" : "Open navigation · " + detail);
         openNavigation.setVisibility(action == null ? View.GONE : View.VISIBLE);
     }
-    void showStarting(String label, String backend) { showAction("Restore map here", compactAction); }
-    void showConfigured(String detail, Runnable openFullscreen) { showAction("Restore map here", compactAction); }
-    void showFailure(String detail, Runnable retry, Runnable openFullscreen) { showAction("Restore map here", retry); }
-    void showUnavailable(String detail, Runnable openFullscreen) { showAction(detail, openFullscreen); }
-    void showFullscreenOnly(String label, Runnable openFullscreen) { showAction(label, openFullscreen); }
+    void showStarting(String label, String backend) { status.setText(backend); showAction("Restore map here", compactAction); }
+    void showConfigured(String detail, Runnable openFullscreen) { status.setText(""); showAction("Restore map here", compactAction); }
+    void showFailure(String detail, Runnable retry, Runnable openFullscreen) { status.setText(detail + " · Tap to retry"); showAction("Restore map here", retry); }
+    void showUnavailable(String detail, Runnable openFullscreen) { status.setText(detail); showAction(detail, openFullscreen); }
+    void showFullscreenOnly(String label, Runnable openFullscreen) { status.setText(label); showAction(label, openFullscreen); }
     void applyAppearance(Activity activity) {
         setBackgroundColor(AutomotiveUi.color(activity, R.color.ui_black));
         actionCircle.setColor(AutomotiveUi.color(activity, R.color.ui_text));
+        status.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
         openNavigation.setImageTintList(ColorStateList.valueOf(AutomotiveUi.color(activity, R.color.ui_black)));
     }
 

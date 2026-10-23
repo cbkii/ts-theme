@@ -14,6 +14,8 @@ LAUNCH_OUTPUT="$ROOT_DIR/.am-start.$$"
 RECENTS="$ROOT_DIR/.recents.$$"
 STACKS="$ROOT_DIR/.stacks.$$"
 WINDOWS="$ROOT_DIR/.windows.$$"
+FOCUS_AFTER="$ROOT_DIR/.focus-after.$$"
+WINDOW_OWNERS="$ROOT_DIR/.window-owners.$$"
 read -r start_uptime _ < /proc/uptime
 DEADLINE=$(( ${start_uptime%%.*} + 10 ))
 case "${TS18_DEADLINE_S:-}" in
@@ -30,7 +32,7 @@ PHASE=admission
 VISIBLE=unknown
 DRAWN=unknown
 IDENTITY_SOURCE=unknown
-trap 'rm -f "$SNAPSHOT" "$START_HELP" "$LAUNCH_OUTPUT" "$RECENTS" "$STACKS" "$WINDOWS"' EXIT HUP INT TERM
+trap 'rm -f "$SNAPSHOT" "$START_HELP" "$LAUNCH_OUTPUT" "$RECENTS" "$STACKS" "$WINDOWS" "$FOCUS_AFTER" "$WINDOW_OWNERS"' EXIT HUP INT TERM
 
 TASK_SNAPSHOT_AWK='
 function digits_after_hash(line, value) {
@@ -797,9 +799,24 @@ require_startup_window_focus() {
   focus_expected="$1"
   mask_title="${TS18_MASK_TITLE:-}"
   mask_uid=$(printf '%s' "$mask_title" | sed -n 's/^TS18Ready_\([0-9][0-9]*\)_[a-f0-9]\{32\}$/\1/p')
-  window_scope=displays
-  [ -z "$mask_uid" ] || window_scope=windows
-  bounded dumpsys window "$window_scope" >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  # TS18 puts focus in displays, not windows. Window ownership is a separate
+  # surface; never switch away from display focus merely because a mask exists.
+  focus_after="${FOCUS_AFTER:-$WINDOWS.after}"
+  window_owners="${WINDOW_OWNERS:-$WINDOWS.owners}"
+  focus_started=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
+  bounded dumpsys window displays >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  focus_before=$(awk '/mCurrentFocus=/ {n++; sub(/^.*mCurrentFocus=/, ""); value=$0} END {if(n==1) print value}' "$WINDOWS")
+  case "$focus_before" in Window\{*\}) ;; *) log_event 'focus reason=FOCUS_MISSING'; fail STARTUP_FOCUS_UNKNOWN ;; esac
+  : >"$window_owners"
+  if [ -n "$mask_uid" ] && printf '%s\n' "$focus_before" | grep -F " $mask_title}" >/dev/null; then
+    bounded dumpsys window windows >"$window_owners" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  fi
+  bounded dumpsys window displays >"$focus_after" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
+  focus_latest=$(awk '/mCurrentFocus=/ {n++; sub(/^.*mCurrentFocus=/, ""); value=$0} END {if(n==1) print value}' "$focus_after")
+  [ "$focus_before" = "$focus_latest" ] || { log_event 'focus reason=WINDOW_TOKEN_MISMATCH'; fail STARTUP_FOCUS_UNKNOWN; }
+  focus_finished=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
+  [ $((focus_finished - focus_started)) -le 2000 ] || { log_event 'focus reason=FOCUS_STALE'; fail STARTUP_FOCUS_UNKNOWN; }
+  check_deadline
   focus_component=$(awk -v user="$ANDROID_USER" -v mask="$mask_title" -v uid="$mask_uid" -v expected="$focus_expected" '
     function normalise(c, a) {
       split(c,a,"/"); if (substr(a[2],1,1)==".") c=a[1] "/" a[1] a[2]
@@ -812,7 +829,7 @@ require_startup_window_focus() {
     }
     owned && index($0,"mOwnerUid=" uid " ") {owner[block]=1}
     owned && /ty=(2038|APPLICATION_OVERLAY)[ }]/ {overlay[block]=1}
-    /mCurrentFocus=/ {
+    FILENAME==ARGV[1] && /mCurrentFocus=/ {
       if ($0 !~ (" u" user " ")) {bad=1; next}
       v=$0; sub(/^.* u[0-9]+ /,"",v); sub(/[}[:space:]].*$/,"",v)
       count++; focus_id=$0; sub(/^.*Window\{/,"",focus_id); sub(/ .*$/, "", focus_id)
@@ -824,8 +841,9 @@ require_startup_window_focus() {
       if(masked && owner[focus_id] && overlay[focus_id] && int(uid/100000)==user && uid%100000>=10000) print expected
       else if(!masked) print component
     }}
-  ' "$WINDOWS")
-  [ "$focus_component" = "$focus_expected" ] || fail STARTUP_FOCUS_CHANGED
+  ' "$WINDOWS" "$window_owners")
+  [ -n "$focus_component" ] || { log_event 'focus reason=MASK_OWNER_MISMATCH'; fail STARTUP_FOCUS_UNKNOWN; }
+  [ "$focus_component" = "$focus_expected" ] || { log_event 'focus reason=FOREIGN_FOCUS'; fail STARTUP_FOCUS_CHANGED; }
 }
 
 validate_startup_source() {

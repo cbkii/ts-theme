@@ -310,7 +310,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         MediaController controller = controllerForPackage(packageName);
         MediaCommandPolicy.Desired desired = MediaCommandPolicy.resolve(command, isPlaying(controller));
         MediaEventTrace.record("command", "request",
-                packageName + " desired=" + desired + " controller=" + (controller != null));
+                packageName + " desired=" + desired + " controller=" + (controller != null) + " origin=launcher");
         Pending pending = new Pending(sourceLabel, packageName, desired, callback,
                 SystemClock.uptimeMillis() + commandTimeoutMs(packageName, desired, !deferredPauseCandidate.isEmpty()));
         if (desired == MediaCommandPolicy.Desired.PLAY) {
@@ -451,7 +451,8 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         if (connection.browser != null) return;
 
         final String packageName = connection.adapter.packageName;
-        MediaEventTrace.record("browser", "connect-start", packageName);
+        MediaEventTrace.record("browser", "connect-start", packageName + " generation=" + generation
+                + " component=" + (connection.adapter.service == null ? "none" : connection.adapter.service.flattenToString()));
         MediaBrowser.ConnectionCallback callback = new MediaBrowser.ConnectionCallback() {
             @Override public void onConnected() {
                 if (!valid(connection, generation) || connection.browser == null
@@ -465,7 +466,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
                     connection.preparing = false;
                     MediaListenerService.observeExternalController(connection.controller);
                     ProcessMediaSessionMonitor.observeExternal(context, connection.controller);
-                    MediaEventTrace.record("browser", "connected", packageName);
+                    MediaEventTrace.record("browser", "connected", packageName + " generation=" + generation + " token=available");
                     maybePrepareAuxio(connection.controller);
                     markController(packageName, connection.controller);
                     MediaListenerService.refreshActiveSessions();
@@ -889,9 +890,12 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
             return;
         }
         if (pending.dispatched) {
-            awaitAcknowledgement(controller, pending);
+            if (pending.desired == MediaCommandPolicy.Desired.PREVIOUS || pending.desired == MediaCommandPolicy.Desired.NEXT)
+                awaitSkipAcknowledgement(controller, pending);
+            else awaitAcknowledgement(controller, pending);
             return;
         }
+        pending.skipFrom = ProcessMediaSessionMonitor.selectedSnapshot(pending.packageName);
         if (!sendPending(controller, pending)) {
             MediaEventTrace.record("command", "dispatch-rejected",
                     pending.packageName + " desired=" + pending.desired);
@@ -903,11 +907,12 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         pending.dispatched = true;
         pending.coldPlayGuarded = false;
         MediaEventTrace.record("command", "dispatched",
-                pending.packageName + " desired=" + pending.desired);
+                pending.packageName + " desired=" + pending.desired + " " + pending.skipFrom.observationEvidence());
         MediaListenerService.refreshActiveSessions();
         if (pending.desired == MediaCommandPolicy.Desired.PREVIOUS
                 || pending.desired == MediaCommandPolicy.Desired.NEXT) {
-            finish(pending, true, "");
+            pending.ackDeadlineMs = Math.min(pending.deadlineMs, SystemClock.uptimeMillis() + ACK_TIMEOUT_MS);
+            awaitSkipAcknowledgement(controller, pending);
             return;
         }
         pending.ackDeadlineMs = pending.coldRestoreDispatched
@@ -960,6 +965,31 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         handler.postDelayed(() -> awaitAcknowledgement(controller, pending),
                 Math.max(1L, MediaCommandPolicy.boundedDelay(
                         now, pending.ackDeadlineMs, ACK_RETRY_MS)));
+    }
+
+    private void awaitSkipAcknowledgement(MediaController controller, Pending pending) {
+        if (destroyed || pending.settled) return;
+        if (controller != controllerForPackage(pending.packageName)) {
+            finish(pending, false, "Session changed before track acknowledgement"); return;
+        }
+        MediaListenerService.Snapshot current = ProcessMediaSessionMonitor.selectedSnapshot(pending.packageName);
+        MediaListenerService.Snapshot before = pending.skipFrom;
+        boolean sameOwner = before != null && before.sessionIdentity != null
+                && before.sessionIdentity.equals(current.sessionIdentity)
+                && before.observationGeneration == current.observationGeneration;
+        if (sameOwner && before.itemVerified && current.itemVerified
+                && (!before.mediaId.equals(current.mediaId) || before.queueItemId != current.queueItemId)) {
+            MediaEventTrace.record("command", "item-acknowledged",
+                    pending.packageName + " desired=" + pending.desired + " " + current.observationEvidence());
+            finish(pending, true, ""); return;
+        }
+        if (SystemClock.uptimeMillis() >= pending.ackDeadlineMs) {
+            MediaEventTrace.record("command", "dispatched-unconfirmed", pending.packageName + " desired=" + pending.desired);
+            mark(pending.packageName, MediaCommandPolicy.Phase.DISPATCHED_UNCONFIRMED, "Track change not confirmed");
+            finish(pending, false, "Command sent once; track change not confirmed"); return;
+        }
+        handler.postDelayed(() -> awaitSkipAcknowledgement(controller, pending),
+                Math.max(1L, MediaCommandPolicy.boundedDelay(SystemClock.uptimeMillis(), pending.ackDeadlineMs, ACK_RETRY_MS)));
     }
 
     private void completeAcknowledged(MediaController controller, Pending pending) {
@@ -1234,6 +1264,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         boolean coldRestoreDispatched;
         long prepareUntilMs;
         long ackDeadlineMs;
+        MediaListenerService.Snapshot skipFrom;
         String pauseOnPlayPackage = "";
 
         Pending(String sourceLabel, String packageName, MediaCommandPolicy.Desired desired,

@@ -80,6 +80,7 @@ final class NavigationWindowController {
     private long presentationEpoch = NEXT_PRESENTATION.incrementAndGet();
     private long operationPresentationEpoch;
     private boolean startupDiscoveryPerformed;
+    private boolean startupConsentObserved;
     private int pendingHomeReturn;
     private NavigationHelperResult pendingPeerResult;
     private NavigationWindowBounds pendingPeerBounds;
@@ -93,11 +94,9 @@ final class NavigationWindowController {
     }
 
     void finishLoaderPresentation() {
-        if (!startupNavigationReady()) { cancelAutomaticColdStart(); return; }
-        // Keep the already rendered map intact, but revoke automatic late presentation.
-        desire(Presentation.BACKGROUND_FULLSCREEN);
-        automaticColdYielded = true;
-        cancelRecovery(); updateColdPolicy();
+        // The loader owns no task/presentation authority. Explicit user departure is
+        // handled by cancelAutomaticColdStart; a visual deadline cannot revoke consent.
+        updateColdPolicy();
     }
 
     void cancelAutomaticColdStart() {
@@ -147,6 +146,7 @@ final class NavigationWindowController {
     void deferAutomaticStartupPresentation(boolean defer) {
         if (startupPresentationDeferred == defer || state == State.DESTROYED) return;
         startupPresentationDeferred = defer;
+        if (!defer && uiState.canPresentNavigation() && !automaticColdYielded) reconcile(false);
     }
 
     private java.util.function.BiConsumer<Boolean, String> startupListener;
@@ -177,6 +177,11 @@ final class NavigationWindowController {
     void reconcileStartupEvidence() {
         if (state != State.DESTROYED) compactStartup.refresh();
     }
+    void watchStartupEvidence() {
+        if (state == State.DESTROYED) return;
+        if (uiState.canPresentNavigation()) compactStartup.watch();
+        else compactStartup.refresh();
+    }
 
     void reconcileStartup() {
         reconcileStartupEvidence();
@@ -206,6 +211,10 @@ final class NavigationWindowController {
                     || compactSnapshot.rendererReady != snapshot.rendererReady || compactSnapshot.task != snapshot.task;
             compactSnapshot = snapshot;
             compactResolved = snapshot.compatible;
+            if (!startupConsentObserved && snapshot.compatible && snapshot.enabled) {
+                startupConsentObserved = true;
+                if (activeTaskId <= 0 && activeOperationId == 0) recovery.reset();
+            }
             if (changed) startupDiscoveryPerformed = false;
             if (changed) clearFailureLatch();
             updateColdPolicy();
@@ -718,6 +727,7 @@ final class NavigationWindowController {
     }
 
     private boolean scheduleRecovery(String pkg, String code) {
+        if ("BOOTSTRAP_PENDING".equals(code) && activeTaskId <= 0) code = "TASK_OBSERVATION_UNCERTAIN";
         lastHelperCode = code; observationOnly = true;
         needsValidation = true; needsPresentation = true;
         if ("STARTUP_FOCUS_CHANGED".equals(code)) {

@@ -264,8 +264,21 @@ Handler.until(10000);check(android.app.ActivityManager.moves==0&&StartupRootFall
 StartupReadinessCoordinator expires=create(false);Ui expiryUi=new Ui();expires.attachLoader(expiryUi);
 Handler.until(8099);check(expiryUi.hides==0,"splash ended early without readiness");
 Handler.until(8100);check(expiryUi.hides==1&&!expires.dismissLoader(),"eight-second visual ceiling extended");
-Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
-check(android.app.ActivityManager.moves==0&&StartupRootFallback.returns==0,"expired splash permitted late focus");expires.destroy();
+Field expiryLease=StartupReadinessCoordinator.class.getDeclaredField("foregroundDeadline");expiryLease.setAccessible(true);
+long afterLease=expiryLease.getLong(expires)+1;Handler.until(afterLease);
+int priorMoves=android.app.ActivityManager.moves,priorRootReturns=StartupRootFallback.returns;
+Ts18LauncherApplication.shared.radioReady=true;Handler.until(afterLease+2000);
+check(android.app.ActivityManager.moves==priorMoves&&StartupRootFallback.returns==priorRootReturns,"expired source lease permitted late focus");expires.destroy();
+// Slow browser/session readiness is independent of the cosmetic mask and may
+// become ready at 9/15/25 seconds without replaying an uncertain admission.
+for(long readyAt:new long[]{9000,15000,25000}) {
+ StartupReadinessCoordinator late=create(false);TestingProfiles.mode="aggressive";StartupRootFallback.code="PHASE_TIMEOUT";
+ Ui lateUi=new Ui();late.attachLoader(lateUi);Handler.until(readyAt);
+ int starts=StartupRootFallback.starts;Ts18LauncherApplication.shared.radioReady=true;
+ late.onProcessMediaStateChanged(null,null,true);Handler.until(readyAt+200);
+ check(ledger(late).record(Source.RADIO).state==State.READY,"late read-only source readiness was lost");
+ check(StartupRootFallback.starts==starts&&android.app.ActivityManager.moves==0,"late readiness stole focus or replayed admission");late.destroy();
+}
 // Same-boot process recreation does not repeat the cold-boot loader.
 UiPersonalizationPrefs.enabled=true;
 StartupReadinessCoordinator consumed=create(false,false);check(!consumed.dismissLoader(),"same boot replayed loader");consumed.destroy();

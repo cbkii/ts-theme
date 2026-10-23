@@ -107,6 +107,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 StartupReadinessCoordinator.get(this).reportNavigation(ready, boundary));
         startupHook = new StartupReadinessCoordinator.NavigationHook() {
             @Override public void refreshEvidence() { navigationWindowController.reconcileStartupEvidence(); }
+            @Override public void watchEvidence() { navigationWindowController.watchStartupEvidence(); }
             @Override public boolean ready() { return navigationWindowController.startupNavigationReady(); }
             @Override public int taskId() { return navigationWindowController.startupTaskId(); }
             @Override public boolean busy() { return navigationWindowController.startupNavigationBusy(); }

@@ -13,13 +13,15 @@ class NativePanelMeasurementTest(unittest.TestCase):
         if not shutil.which('javac'):
             self.skipTest('Java compiler unavailable')
         files = {
+            'android/text/TextUtils.java': 'package android.text;public class TextUtils {public enum TruncateAt {END}}',
+            'android/widget/TextView.java': 'package android.widget;public class TextView extends android.view.View{public TextView(android.app.Activity a){}public void setTextSize(int i){}public void setGravity(int i){}public void setMaxLines(int i){}public void setEllipsize(Object o){}public void setText(CharSequence c){}public void setTextColor(int i){}}',
             'android/annotation/SuppressLint.java': 'package android.annotation; public @interface SuppressLint {String[] value();}',
             'android/app/Activity.java': 'package android.app; public class Activity {}',
             'android/content/res/ColorStateList.java': 'package android.content.res; public class ColorStateList {public static ColorStateList valueOf(int c){return new ColorStateList();}}',
             'android/graphics/Color.java': 'package android.graphics; public class Color {public static int BLACK=0,WHITE=-1;}',
             'android/graphics/drawable/GradientDrawable.java': 'package android.graphics.drawable; public class GradientDrawable {public static int OVAL=1;public void setShape(int i){}public void setColor(int i){}}',
             'android/graphics/drawable/RippleDrawable.java': 'package android.graphics.drawable; public class RippleDrawable {public RippleDrawable(Object a,Object b,Object c){}}',
-            'android/view/Gravity.java': 'package android.view; public class Gravity {public static int CENTER=1;}',
+            'android/view/Gravity.java': 'package android.view; public class Gravity {public static int CENTER=1,BOTTOM=2;}',
             'android/view/View.java': '''package android.view;
 public class View {
  public static int GONE=8,VISIBLE=0; public int paddingRequests; int padding,w,h;
@@ -36,7 +38,7 @@ public class View {
 }''',
             'android/widget/FrameLayout.java': '''package android.widget; import android.view.View;
 public class FrameLayout extends View {public FrameLayout(android.app.Activity a){}
- public static class LayoutParams {public int width,height; public LayoutParams(int w,int h,int g){width=w;height=h;}}
+ public static class LayoutParams {public static int MATCH_PARENT=-1,WRAP_CONTENT=-2;public int width,height; public LayoutParams(int w,int h,int g){width=w;height=h;}}
  public void addView(View v,LayoutParams p){v.setLayoutParams(p);}
  protected void onMeasure(int w,int h){measure(w,h);}
  protected void onLayout(boolean c,int l,int t,int r,int b){}
@@ -46,8 +48,8 @@ public class FrameLayout extends View {public FrameLayout(android.app.Activity a
  public ImageButton(android.app.Activity a){}public void setImageResource(int i){}public void setImageTintList(Object c){}
  public void setScaleType(ScaleType s){} }''',
             'com/cbkii/ts18launcher/Support.java': '''package com.cbkii.ts18launcher;
-class R {static class drawable {static int ic_navigation_filled=1;} static class color {static int ui_black=2,ui_text=3;}}
-class AutomotiveUi {static void attachFeedback(Object v){} static int color(Object c,int id){return id;}}
+class R {static class dimen {static int driver_gap=1;}static class drawable {static int ic_navigation_filled=1;} static class color {static int ui_black=2,ui_text=3;}}
+class AutomotiveUi {static int dimen(Object c,int i){return 8;}static void attachFeedback(Object v){} static int color(Object c,int id){return id;}}
 class NavigationWindowBounds {static NavigationWindowBounds fromView(Object v){return new NavigationWindowBounds();}}
 ''',
             'com/cbkii/ts18launcher/MeasureTest.java': '''package com.cbkii.ts18launcher;

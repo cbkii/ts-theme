@@ -6,14 +6,23 @@ final class NavigationRecoveryPolicy {
     private static final long BUDGET_MS = 45000L;
     private long startedAt = -1L;
     private int attempts;
+    private int bootstrapObservations;
 
-    void reset() { startedAt = -1L; attempts = 0; }
+    void reset() { startedAt = -1L; attempts = 0; bootstrapObservations = 0; }
     void start(long now) { if (startedAt < 0L) startedAt = now; }
     long deadline(long now) { start(now); return startedAt + BUDGET_MS; }
     boolean expired(long now) { return startedAt >= 0L && now >= startedAt + BUDGET_MS; }
     int observations() { return attempts; }
 
     long nextDelay(String code, long now) {
+        // A verified existing bootstrap task is an acknowledged setup phase, not
+        // another cold launch attempt. Observe it within the same absolute budget.
+        if ("BOOTSTRAP_PENDING".equals(code)) {
+            if (bootstrapObservations >= 8) return -1L;
+            long delay = Math.min(5000L, 1500L * (bootstrapObservations + 1));
+            if (expired(now + delay)) return -1L;
+            start(now); bootstrapObservations++; return delay;
+        }
         if (!recoverable(code) || attempts >= DELAYS_MS.length) return -1L;
         if (startedAt < 0L) startedAt = now;
         long delay = DELAYS_MS[attempts];

@@ -124,6 +124,7 @@ final class CompactStartupClient {
                 // Invalidate late evidence and release the request slot. At most two Binder
                 // workers can remain stuck; saturation fails closed without an unbounded queue.
                 request++; busy = false;
+                MediaEventTrace.record("compact-startup", "query-unavailable", "phase=binder reason=PROBE_TIMEOUT");
                 callback.accept(Snapshot.unknown());
                 workerCancel(signal);
                 scheduleNext(Snapshot.unknown());
@@ -132,6 +133,7 @@ final class CompactStartupClient {
         main.postDelayed(timeout, 2000L);
         try { worker.execute(() -> {
             Snapshot result = Snapshot.unknown();
+            String phase = "package";
             try {
                 int uid = context.getPackageManager().getApplicationInfo(CompactStartupPeer.PACKAGE, 0).uid;
                 int boot = Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
@@ -142,7 +144,15 @@ final class CompactStartupClient {
                     android.os.Bundle observation = new android.os.Bundle();
                     observation.putInt("boot", boot);
                     observation.putBinder("observer", messenger.getBinder());
-                    context.getContentResolver().call(URI, "observe", "1", observation);
+                    phase = "observe";
+                    try {
+                        context.getContentResolver().call(URI, "observe", "1", observation);
+                    } catch (IllegalArgumentException observerUnavailable) {
+                        // Subscription failure is not a consent answer. A separately
+                        // authenticated query can still establish the read-only preference.
+                        traceFailure(phase, observerUnavailable);
+                    }
+                    phase = "query";
                     try (Cursor c = context.getContentResolver().query(uri, null, null, null, null, signal)) {
                         if (c != null && c.moveToFirst() && number(c, "protocol") == 1
                                 && CompactStartupPeer.PACKAGE.equals(c.getString(c.getColumnIndexOrThrow("package")))
@@ -161,11 +171,7 @@ final class CompactStartupClient {
                     }
                 }
             } catch (android.content.pm.PackageManager.NameNotFoundException | RuntimeException unavailable) {
-                String failure = unavailable.getClass().getSimpleName();
-                if (!failure.equals(lastQueryFailure)) {
-                    lastQueryFailure = failure;
-                    MediaEventTrace.record("compact-startup", "query-unavailable", failure);
-                }
+                traceFailure(phase, unavailable);
             }
             if (result.compatible) lastQueryFailure = "";
             final Snapshot snapshot = signal.isCanceled() ? Snapshot.unknown() : result;
@@ -197,6 +203,16 @@ final class CompactStartupClient {
         Thread thread = new Thread(signal::cancel, "compact-query-cancel"); thread.setDaemon(true); thread.start();
     }
     private static int number(Cursor c, String key) { return c.getInt(c.getColumnIndexOrThrow(key)); }
+    private void traceFailure(String phase, Exception error) {
+        String reason = error.getMessage();
+        if (reason == null || !reason.matches("AUTH_MISMATCH|PROTOCOL_MISMATCH|BOOT_UNAVAILABLE|BOOT_MISMATCH|USER_LOCKED|OBSERVER_REQUIRED"))
+            reason = error instanceof SecurityException ? "AUTH_MISMATCH" : "PROVIDER_UNAVAILABLE";
+        String failure = "phase=" + phase + " reason=" + reason + " type=" + error.getClass().getSimpleName();
+        if (!failure.equals(lastQueryFailure)) {
+            lastQueryFailure = failure;
+            MediaEventTrace.record("compact-startup", "query-unavailable", failure);
+        }
+    }
     void close() {
         if (closed) return;
         closed = true; request++; main.removeCallbacksAndMessages(null);

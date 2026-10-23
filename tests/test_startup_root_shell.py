@@ -1,5 +1,6 @@
 """Production root verbs use the existing exact-device task parser and command boundary doubles."""
 import unittest
+import os
 from unittest.mock import patch
 import test_navigation_lifecycle as nav
 
@@ -8,7 +9,7 @@ class StartupRootShellTests(unittest.TestCase):
     def run_root(self, action, package='com.navimods.radio', **changes):
         source = nav.ANDROID.replace("        print('mCurrentFocus=Window{fake u0 ' + focus_component + '}')\n", "").replace("if a[0] == 'window':", '''if a[0] == 'window':
         focused = s.get('startup_focus', (s.get('nav_component','com.navimods.radio/.RadioActivity') if s['focus']==42 else 'com.cbkii.ts18launcher/.HomeAlias'))
-        print('  mCurrentFocus=' + ('null' if s.get('blank_startup_focus') else 'Window{abc u0 '+focused+'}'))''')
+        if a[1] == 'displays': print('  mCurrentFocus=' + ('null' if s.get('blank_startup_focus') else 'Window{abc u0 '+focused+'}'))''')
         source = source.replace("print('      * Hist #0: ActivityRecord{fake u0 %s t%s}' % (component, task))",
             "print('      * Hist #0: ActivityRecord{fake u0 %s t%s}' % (component, task))\n        if task == 7 and s.get('extra_home_activity'): print('      * Hist #1: ActivityRecord{fake u0 com.android.permissioncontroller/.Grant t7}')")
         source = source.replace("s['mode'] = int(a[a.index('--windowingMode')+1]);", "s['mode'] = int(a[a.index('--windowingMode')+1]) if '--windowingMode' in a else 1;")
@@ -20,6 +21,14 @@ class StartupRootShellTests(unittest.TestCase):
         args+=['com.cbkii.ts18launcher','7']
         with patch.object(nav, 'ANDROID', source):
             return nav.NavigationLifecycleTest().run_helper(args, **options)
+
+    def test_oem_display_focus_is_used_even_when_mask_capability_is_present(self):
+        # On TS18 window windows has no mCurrentFocus line. A valid mask capability
+        # may be attached while focus is still HOME; it must not switch dump surfaces.
+        with patch.dict(os.environ, {'TS18_MASK_TITLE': 'TS18Ready_10211_' + 'a' * 32}):
+            r, state = self.run_root('startup-source')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(state['start_dispatches'], 1)
 
     def test_start_dispatches_once_from_exact_home(self):
         r,s=self.run_root('startup-source')

@@ -18,8 +18,14 @@ import java.util.concurrent.TimeUnit;
  * Run: adb shell am instrument -w com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation
  */
 public final class MediaSessionApi29Instrumentation extends Instrumentation {
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private boolean observeLive;
+    @Override public void onCreate(Bundle arguments) {
+        super.onCreate(arguments);
+        observeLive = arguments != null && "1".equals(arguments.getString("observe_live"));
+        start();
+    }
     @Override public void onStart() {
+        if (observeLive) { observeSelectedAuxio(); return; }
         Bundle result = new Bundle();
         MediaSession session = new MediaSession(getTargetContext(), "TS18-media-contract-test");
         MediaController controller = session.getController();
@@ -36,6 +42,19 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
             session.setPlaybackState(state(PlaybackState.STATE_PLAYING, 1L));
             check(metadataCallback.await(5, TimeUnit.SECONDS), "framework metadata callback absent");
             check("Track A".equals(read(controller).title), "initial item");
+            session.setQueue(java.util.Collections.singletonList(new MediaSession.QueueItem(
+                    new MediaDescription.Builder().setMediaId("file:///raw-a").build(), 6L)));
+            session.setMetadata(metadata("file:///raw-a", "Raw A"));
+            session.setPlaybackState(state(PlaybackState.STATE_PLAYING, 6L));
+            check("Raw A".equals(read(controller).title), "raw restored item");
+            session.setQueue(java.util.Collections.singletonList(new MediaSession.QueueItem(
+                    new MediaDescription.Builder().setMediaId("file:///raw-b").build(), 7L)));
+            session.setMetadata(metadata("file:///raw-b", "Raw B"));
+            session.setPlaybackState(state(PlaybackState.STATE_PLAYING, 7L));
+            check("Raw B".equals(read(controller).title), "raw automatic next");
+            session.setQueue(Arrays.asList(
+                    new MediaSession.QueueItem(new MediaDescription.Builder().setMediaId("a").build(), 1L),
+                    new MediaSession.QueueItem(new MediaDescription.Builder().setMediaId("b").build(), 2L)));
             session.setMetadata(null);
             session.setPlaybackState(state(PlaybackState.STATE_PLAYING, 2L));
             check(read(controller).title.isEmpty(), "old A survived blank B");
@@ -59,6 +78,33 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
         } finally {
             controller.unregisterCallback(callback); session.release();
         }
+    }
+    /** Optional read-only physical probe. No synthetic session or transport is created here.
+     * Add -e observe_live 1 to the instrumentation command while the matched Auxio is installed.
+     */
+    private void observeSelectedAuxio() {
+        Bundle result = new Bundle();
+        CountDownLatch selected = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<MediaController> current = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicLong generation = new java.util.concurrent.atomic.AtomicLong();
+        ProcessMediaSessionMonitor.Observer observer = (music, radio, authoritative) -> {
+            if (authoritative && "com.tw.media".equals(music.packageName)) {
+                current.set(ProcessMediaSessionMonitor.selectedController(music.packageName));
+                generation.set(music.observationGeneration); selected.countDown();
+            }
+        };
+        try {
+            check(MediaListenerService.hasNotificationAccess(getTargetContext()), "BLOCKED notification access");
+            ProcessMediaSessionMonitor.addObserver(getTargetContext(), observer);
+            check(selected.await(3, TimeUnit.SECONDS) && current.get() != null, "BLOCKED no selected Auxio authority");
+            MediaListenerService.Snapshot sample = MediaItemObservation.read(current.get(), generation.get(), android.os.SystemClock.uptimeMillis());
+            String evidence = "OBSERVED uid=" + android.os.Process.myUid() + " " + sample.observationEvidence();
+            android.util.Log.i(MediaEventTrace.LOG_TAG, evidence);
+            result.putString("stream", evidence + "\nNo transport or audible qualification performed.\n");
+            finish(Activity.RESULT_OK, result);
+        } catch (Exception | AssertionError unavailable) {
+            result.putString("stream", "BLOCKED " + unavailable + "\n"); finish(Activity.RESULT_CANCELED, result);
+        } finally { ProcessMediaSessionMonitor.removeObserver(observer); }
     }
     private static MediaListenerService.Snapshot read(MediaController controller) {
         return MediaItemObservation.read(controller, 1L, android.os.SystemClock.uptimeMillis());

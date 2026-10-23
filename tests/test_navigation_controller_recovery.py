@@ -287,6 +287,17 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.first="STARTUP_FOCUS_CHANGED";android.app.Activity.focused=false;p=new NativeNavigationPanel();c=start(p);
  android.view.View.drain();check(RawFreeformTaskBackend.presents==1,"focus refusal retried over another owner");
  android.app.Activity.focused=true;c.onHomeFocusAvailable();android.view.View.drain();check(c.startupNavigationReady(),"safe focus did not rearm compact request");c.destroy();
+ // First HOME must survive cosmetic expiry in either provider/media ordering.
+ for(boolean peerFirst:new boolean[]{true,false}) {
+ RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.first="HIDDEN";
+ CompactStartupClient.next=CompactStartupClient.Snapshot.unknown();p=new NativeNavigationPanel();c=start(p);
+ c.deferAutomaticStartupPresentation(true);c.finishLoaderPresentation();
+ if(peerFirst){CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();}
+ check(RawFreeformTaskBackend.presents==0,"media reservation ignored");
+ c.deferAutomaticStartupPresentation(false);
+ if(!peerFirst){CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();}
+ android.view.View.drain();check(RawFreeformTaskBackend.presents==1&&c.startupNavigationReady(),"first HOME needed re-entry after loader expiry / media release");c.destroy();
+ }
  System.out.println("PASS controller acquisition/bootstrap/focus/visibility/budget/lifecycle/fallback");
 }}
 ''')

@@ -46,6 +46,8 @@ public final class MediaListenerService extends NotificationListenerService {
         final long observationGeneration;
         final long observedAtMs;
         final boolean itemVerified;
+        final String itemEvidence;
+        final int observedQueueSize;
 
         Snapshot(String packageName, String title, String artist, boolean playing) {
             this(packageName, title, artist,
@@ -65,6 +67,13 @@ public final class MediaListenerService extends NotificationListenerService {
         Snapshot(String packageName, String title, String artist, int state, long actions,
                  Object sessionIdentity, String mediaId, long queueItemId,
                  long generation, long observedAtMs, boolean itemVerified) {
+            this(packageName, title, artist, state, actions, sessionIdentity, mediaId, queueItemId,
+                    generation, observedAtMs, itemVerified, "NO_ITEM_ID", -1);
+        }
+
+        Snapshot(String packageName, String title, String artist, int state, long actions,
+                 Object sessionIdentity, String mediaId, long queueItemId,
+                 long generation, long observedAtMs, boolean itemVerified, String evidence, int queueSize) {
             this.packageName = packageName == null ? "" : packageName;
             this.title = normalise(title);
             this.artist = normalise(artist);
@@ -78,15 +87,34 @@ public final class MediaListenerService extends NotificationListenerService {
             this.observationGeneration = generation;
             this.observedAtMs = observedAtMs;
             this.itemVerified = itemVerified;
+            this.itemEvidence = evidence;
+            this.observedQueueSize = queueSize;
         }
 
         Snapshot withMetadata(String title, String artist) {
             return new Snapshot(packageName, title, artist, state, actions, sessionIdentity,
-                    mediaId, queueItemId, observationGeneration, observedAtMs, itemVerified);
+                    mediaId, queueItemId, observationGeneration, observedAtMs, itemVerified,
+                    itemEvidence, observedQueueSize);
         }
 
         String trackIdentity() {
             return String.valueOf(sessionIdentity) + ":" + observationGeneration + ":" + mediaId + ":" + queueItemId;
+        }
+
+        String observationEvidence() {
+            String idHash = "none";
+            if (!mediaId.isEmpty()) {
+                try {
+                    byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(mediaId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    StringBuilder hash = new StringBuilder();
+                    for (int i = 0; i < 6; i++) hash.append(String.format(java.util.Locale.ROOT, "%02x", digest[i] & 255));
+                    idHash = hash.toString();
+                } catch (java.security.NoSuchAlgorithmException unavailable) { idHash = "unavailable"; }
+            }
+            return "owner=" + observationGeneration + " item=" + idHash + " active=" + queueItemId
+                    + " queue=" + observedQueueSize + " evidence=" + itemEvidence
+                    + " state=" + state + " actions=" + actions;
         }
 
         public boolean isEmpty() {

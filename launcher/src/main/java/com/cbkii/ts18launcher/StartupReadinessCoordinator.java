@@ -25,8 +25,9 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         default void deferAutomaticPresentation(boolean defer) { }
         default int taskId() { return -1; }
         default void refreshEvidence() { }
+        default void watchEvidence() { refreshEvidence(); }
         default void cancelAutomaticColdStart() { }
-        default void finishLoaderPresentation() { cancelAutomaticColdStart(); }
+        default void finishLoaderPresentation() { }
         default void yieldForMediaPreparation() { cancelAutomaticColdStart(); }
     }
     interface LoaderUi {
@@ -42,6 +43,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     private int loaderEpoch;
     private boolean loaderProbePending, expectingHomeReturn, stagedByLoader, suppressLoaderStaging;
     private long lastLoaderProbeAt = -1000L;
+    private long loaderPreparationUntil;
     private final Runnable loaderTick = this::updateLoader;
 
     private static StartupReadinessCoordinator instance;
@@ -127,6 +129,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     void onTrigger(Trigger trigger) {
         if (Looper.myLooper() != Looper.getMainLooper()) { handler.post(() -> onTrigger(trigger)); return; }
         if (destroyed) return;
+        if (navigation != null && trigger == Trigger.USER_UNLOCKED) navigation.watchEvidence();
         if (navigation != null && (trigger == Trigger.HOME_RESUME || trigger == Trigger.SCREEN_ON
                 || trigger == Trigger.ACC_ON)) navigation.refreshEvidence();
         long now = SystemClock.uptimeMillis(), boot = bootCount();
@@ -250,7 +253,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         }
         for (Source source : new Source[] {Source.RADIO, Source.MUSIC}) {
             if (!sourceForegroundAllowed(source)) continue;
-            if (source == Source.RADIO && !loader.active() && navigation != null && !navigation.ready()) continue;
+            if (source == Source.RADIO && !loaderPreparationAllowed() && navigation != null && !navigation.ready()) continue;
             String pkg = packageFor(source);
             if (policy.record(source).state != State.STARTING || policy.record(source).activityLaunchAccepted
                     || ready(source, pkg)) continue;
@@ -383,10 +386,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         return sourceForegroundAllowed(Source.MUSIC) || sourceForegroundAllowed(Source.RADIO);
     }
     private boolean sourceForegroundAllowed(Source source) {
-        // Dismissal/expiry revokes automatic focus changes, including admitted late results.
+        // Explicit dismissal revokes focus authority. Cosmetic expiry does not own a source lease.
         if (suppressLoaderStaging && stagedByLoader && !explicitMusicPreparation()) return false;
         return !yielded && (source == Source.MUSIC && explicitMusicPreparation()
-                || !suppressLoaderStaging && (loader.active() || StartupReadinessPolicy.foregroundAllowed(mode()))
+                || !suppressLoaderStaging && (loaderPreparationAllowed() || StartupReadinessPolicy.foregroundAllowed(mode()))
                     && automaticMediaPreparation());
     }
     private void runForegroundSoon() {
@@ -409,7 +412,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             policy.block(source, policy.record(source).generation, "source-preparation-disabled", SystemClock.uptimeMillis());
             updateNavigationAdmission(); runForegroundSoon(); return;
         }
-        if (source == Source.RADIO && !loader.active() && navigation != null && !navigation.ready()) {
+        if (source == Source.RADIO && !loaderPreparationAllowed() && navigation != null && !navigation.ready()) {
             foregroundQueue.addLast(source); updateNavigationAdmission(); return;
         }
         StartupReadinessPolicy.Record r = policy.record(source);
@@ -457,9 +460,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         stagedForExplicitPlay = source == Source.MUSIC && explicitMusicPreparation()
                 && pkg.equals(media().userCommandPackage());
         long nowElapsed = SystemClock.elapsedRealtime();
-        foregroundDeadline = Math.min(nowElapsed + 12000L, Math.min(
-                loader.active() ? nowElapsed + loader.remaining(nowElapsed) : Long.MAX_VALUE,
-                stagedForExplicitPlay ? explicitMusicPreparationUntil : Long.MAX_VALUE));
+        foregroundDeadline = Math.min(nowElapsed + 12000L,
+                stagedForExplicitPlay ? explicitMusicPreparationUntil : Long.MAX_VALUE);
         claimMediaAdmission(source, pkg, token, () -> observe(token, top -> {
             if (!homeResumed || !foregroundAllowed() || !safeScreen() || top == null
                     || !(top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.LauncherActivity")
@@ -779,7 +781,11 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         }
     }
     private boolean automaticMediaPreparation() {
-        return UiPersonalizationPrefs.mediaStartupWarmup(context) || loader.active();
+        return UiPersonalizationPrefs.mediaStartupWarmup(context) || loaderPreparationAllowed();
+    }
+
+    private boolean loaderPreparationAllowed() {
+        return !suppressLoaderStaging && SystemClock.elapsedRealtime() < loaderPreparationUntil;
     }
 
     void attachLoader(LoaderUi ui) { loaderUi = ui; if (loader.active()) updateLoader(); }
@@ -822,13 +828,26 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 boot, consumed, wake) || loader.active()) return;
         prefs.edit().putString("loader_boot_v1", Long.toString(boot)).apply();
         loader.begin(SystemClock.elapsedRealtime()); loaderEpoch++; suppressLoaderStaging = false;
+        // Independent, finite readiness lease; the eight-second mask is presentation only.
+        loaderPreparationUntil = SystemClock.elapsedRealtime() + 30000L;
+        final long preparation = loaderPreparationUntil;
+        handler.postDelayed(() -> {
+            if (destroyed || loaderPreparationUntil != preparation) return;
+            loaderPreparationUntil = 0L;
+            if (!UiPersonalizationPrefs.mediaStartupWarmup(context)) cancelForeground("preparation-deadline");
+        }, 30000L);
         MediaEventTrace.record("startup-loader", "begin", boot != consumed ? "android-boot" : "observed-wake-acc-unverified");
         handler.post(loaderTick);
     }
 
     private void finishLoader(String reason) {
         if (!loader.active()) return;
-        loader.finish(); loaderEpoch++; suppressLoaderStaging = true;
+        loader.finish(); loaderEpoch++;
+        boolean cosmetic = "deadline-incomplete".equals(reason) || "ready".equals(reason) || "incomplete".equals(reason);
+        if (!cosmetic) {
+            loaderPreparationUntil = 0L; suppressLoaderStaging = true;
+            if (navigation != null) navigation.cancelAutomaticColdStart();
+        }
         if (navigation != null) navigation.finishLoaderPresentation();
         handler.removeCallbacks(loaderTick);
         if (loaderUi != null) {
@@ -843,9 +862,8 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (!loader.active() || destroyed) return;
         if (!safeScreen() || !HomeMode.isDefaultHome(context)) { finishLoader("unsafe-screen-or-home"); return; }
         if (loader.expired(SystemClock.elapsedRealtime())) {
-            finishLoader("deadline-incomplete"); suppressLoaderStaging = true;
-            // Preserve accepted claims; revoke all later automatic focus changes.
-            cancelForeground("loader-deadline"); return;
+            finishLoader("deadline-incomplete");
+            updateNavigationAdmission(); runForegroundSoon(); return;
         }
         boolean complete = true, settled = !foregroundBusy && (navigation == null || !navigation.busy());
         StringBuilder text = new StringBuilder();

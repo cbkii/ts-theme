@@ -65,7 +65,7 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
 }}
 """
         source = SOURCE.read_text().replace(
-            'new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",\n                "/system/bin/dumpsys", "window", request.maskTitle.isEmpty() ? "displays" : "windows")',
+            'new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",\n                "/system/bin/dumpsys", "window", scope)',
             'new ProcessBuilder("/bin/cat", System.getenv("FOCUS_FILE"))',
         )
         assert 'new ProcessBuilder("/bin/cat"' in source

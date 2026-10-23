@@ -29,4 +29,19 @@ final class StartupMaskFocus {
         return block.find() && java.util.regex.Pattern.compile("mOwnerUid=" + uid + "(?:\\s|$)").matcher(block.group(1)).find()
                 && java.util.regex.Pattern.compile("ty=(?:2038|APPLICATION_OVERLAY)(?:\\s|[}])").matcher(block.group(1)).find();
     }
+
+    static String focusedWindow(String displays) {
+        if (displays == null || displays.length() > 524288) return "";
+        java.util.regex.Matcher focus = java.util.regex.Pattern.compile("mCurrentFocus=([^\\r\\n]+)").matcher(displays);
+        if (!focus.find()) return "";
+        String window = focus.group(1).trim();
+        return !focus.find() && window.startsWith("Window{") && window.endsWith("}") ? window : "";
+    }
+
+    static boolean ownsFocusedWindow(String displays, String windows, String title, int user) {
+        if (windows == null) return false;
+        // Only displays selects focus. Some Android builds repeat focus in the window dump.
+        String owners = windows.replaceAll("(?m)^.*mCurrentFocus=.*$", "");
+        return ownsFocusedWindow(displays + "\n" + owners, title, user);
+    }
 }

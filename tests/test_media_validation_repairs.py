@@ -24,7 +24,7 @@ class MediaValidationRepairsTest(unittest.TestCase):
 public class Context { public static String MEDIA_SESSION_SERVICE="media";
 public Context getApplicationContext(){return this;} public Object getSystemService(String s){return new android.media.session.MediaSessionManager();}
 public ComponentName startService(Intent i){return null;} public ComponentName startForegroundService(Intent i){return null;} }''',
-            "android/content/ComponentName.java": "package android.content; public class ComponentName {public ComponentName(Context c,Class<?> t){}}",
+            "android/content/ComponentName.java": 'package android.content; public class ComponentName {public ComponentName(Context c,Class<?> t){}public String flattenToString(){return "service";}}',
             "android/content/Intent.java": "package android.content; public class Intent {}",
             "android/os/Bundle.java": "package android.os; public class Bundle {public java.util.Map<String,Long> values=new java.util.HashMap<>();public void putInt(String k,int v){values.put(k,(long)v);}public void putLong(String k,long v){values.put(k,v);}public long get(String k){return values.getOrDefault(k,-1L);}}",
             "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long now=1000,elapsedOffset;public static long uptimeMillis(){return now;}public static long elapsedRealtime(){return now+elapsedOffset;}}",
@@ -68,9 +68,10 @@ public static class ConnectionCallback {public void onConnected(){}public void o
             "com/cbkii/ts18launcher/Doubles.java": '''package com.cbkii.ts18launcher;
 class ProcessMediaSessionMonitor {static java.util.Map<String,android.media.session.MediaController> bound=new java.util.HashMap<>();
 static android.media.session.MediaController selectedController(String p){for(var c:android.media.session.MediaSessionManager.sessions)if(p.equals(c.getPackageName()))return c;return bound.get(p);}
+static MediaListenerService.Snapshot selectedSnapshot(String p){return new MediaListenerService.Snapshot();}
 static void observeExternal(android.content.Context c,android.media.session.MediaController controller){bound.put(controller.getPackageName(),controller);}
 static void forgetExternal(android.media.session.MediaController controller){bound.remove(controller.getPackageName(),controller);}interface Observer {void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
-class MediaListenerService {static class Snapshot {}enum Command {PLAY_PAUSE,PREVIOUS,NEXT}
+class MediaListenerService {static class Snapshot {Object sessionIdentity;long observationGeneration,queueItemId;String mediaId="";boolean itemVerified;String observationEvidence(){return "";}}enum Command {PLAY_PAUSE,PREVIOUS,NEXT}
 static boolean hasNotificationAccess(android.content.Context c){return true;} static void refreshActiveSessions(){}
 static void observeExternalController(android.media.session.MediaController c){} static void forgetExternalController(android.media.session.MediaController c){} }
 class MediaSourceAdapter {enum Kind{SESSION_ONLY,MEDIA_BROWSER,EXPLICIT_SERVICE} Kind kind=Kind.SESSION_ONLY;

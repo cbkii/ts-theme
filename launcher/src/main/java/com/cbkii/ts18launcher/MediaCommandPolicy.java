@@ -43,7 +43,8 @@ final class MediaCommandPolicy {
         }
         // Previous/Next are edge-triggered commands, not persistent playback states. Treating
         // them as pre-acknowledged causes reconnect paths to complete without ever dispatching the
-        // transport command. They are considered complete only after skipToPrevious/Next is sent.
+        // transport command. The command owner observes item acknowledgement separately;
+        // successful dispatch alone is never a confirmed track transition.
         return false;
     }
 

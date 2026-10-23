@@ -46,12 +46,14 @@ final class ProcessMediaSessionMonitor {
     private long revision, ownerGeneration;
     private MediaListenerService.Snapshot lastGeneric = empty(), lastRadio = empty();
     private MediaSession.Token musicToken, radioToken;
+    private String tracedSelection = "";
 
     private final class Owner {
         final MediaController controller;
         final MediaSession.Token token;
         final long generation = ++ownerGeneration;
         MediaListenerService.Snapshot snapshot = empty();
+        String tracedEvidence = "";
         final MediaController.Callback callback = new MediaController.Callback() {
             @Override public void onMetadataChanged(MediaMetadata ignored) { changed(); }
             @Override public void onPlaybackStateChanged(PlaybackState ignored) { changed(); }
@@ -145,6 +147,13 @@ final class ProcessMediaSessionMonitor {
         Owner entry = owner == null ? null : owner.watched.get(owner.musicToken);
         return entry != null && entry.current() && owner.selected.get(packageOf(entry.controller)) == entry
                 ? packageOf(entry.controller) : "";
+    }
+    static MediaListenerService.Snapshot selectedSnapshot(String pkg) {
+        ProcessMediaSessionMonitor owner = instance;
+        Owner entry = owner == null || !owner.authoritative ? null : owner.selected.get(pkg);
+        return entry != null && entry.current()
+                && SystemClock.uptimeMillis() - entry.snapshot.observedAtMs <= READ_TIMEOUT_MS
+                ? entry.snapshot : empty();
     }
     static void addObserver(Context context, Observer observer) {
         if (observer == null) return;
@@ -268,6 +277,15 @@ final class ProcessMediaSessionMonitor {
         }
     }
     private void publish(boolean available) {
+        for (Owner owner : watched.values()) {
+            String evidence = owner.snapshot.observationEvidence();
+            if (!evidence.equals(owner.tracedEvidence)) {
+                owner.tracedEvidence = evidence;
+                // This is the actual launcher-UID MediaController read, not a root dumpsys
+                // inference. No title, URI, path or raw token is written to the local trace.
+                MediaEventTrace.record("process-session", "observation", evidence);
+            }
+        }
         selected.clear();
         for (Owner owner : watched.values()) {
             String pkg = packageOf(owner.controller);
@@ -301,6 +319,12 @@ final class ProcessMediaSessionMonitor {
         lastGeneric = music == null ? empty() : music.snapshot;
         lastRadio = radio == null ? empty() : radio.snapshot;
         musicToken = music == null ? null : music.token; radioToken = radio == null ? null : radio.token;
+        String selection = "music=" + (music == null ? "none" : music.generation)
+                + " radio=" + (radio == null ? "none" : radio.generation);
+        if (!selection.equals(tracedSelection)) {
+            tracedSelection = selection;
+            MediaEventTrace.record("process-session", "selected", selection);
+        }
         authoritative = available;
         if (!available) { selected.clear(); lastGeneric = empty(); lastRadio = empty(); }
         notifyObservers();

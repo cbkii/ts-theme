@@ -12,6 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavTaskBridge.java"
 STUBS = {
+    "android/util/Log.java": "package android.util; public class Log {public static int i(String t,String s){return 0;}}",
     "android/annotation/SuppressLint.java": "package android.annotation; public @interface SuppressLint { String[] value(); }",
     "android/os/Build.java": "package android.os; public class Build { public static class VERSION { public static int SDK_INT=29; }}",
     "android/os/SystemClock.java": "package android.os; public class SystemClock {public static long elapsedRealtime(){return 1000;}}",

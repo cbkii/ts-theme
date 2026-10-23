@@ -48,6 +48,10 @@ public final class Ts18LauncherApplication extends Application
     private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
+            if (Intent.ACTION_USER_UNLOCKED.equals(intent.getAction())) {
+                StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
+                        .onTrigger(StartupReadinessPolicy.Trigger.USER_UNLOCKED); return;
+            }
             if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
                 ProcessMediaSessionMonitor.setVisible(Ts18LauncherApplication.this, false);
                 StartupReadinessCoordinator.get(Ts18LauncherApplication.this).onScreenOff(); return;
@@ -95,6 +99,7 @@ public final class Ts18LauncherApplication extends Application
         IntentFilter wake = new IntentFilter(Intent.ACTION_SCREEN_ON);
         wake.addAction(Intent.ACTION_SCREEN_OFF);
         wake.addAction(Intent.ACTION_USER_PRESENT);
+        wake.addAction(Intent.ACTION_USER_UNLOCKED);
         registerReceiver(wakeReceiver, wake);
         MediaEventTrace.record("process", "created");
         MediaEventTrace.record("startup", "profile", TestingProfiles.summary(this));

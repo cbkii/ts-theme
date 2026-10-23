@@ -113,6 +113,18 @@ view=new MediaMetadataView(context);
 ProcessMediaSessionMonitor.Observer observer=(m,r,available)->{effective=mergeSessionSnapshot(m,new MediaListenerService.Snapshot("A","STALE","",3,2,"old"),available);view.setSnapshot(effective,"music");activity.updatePlaybackButton(button,effective,"Music");publications++;};
 MediaController a=new MediaController("A",1);a.track("a","Track A",1,3);Context.manager.active=List.of(a);
 ProcessMediaSessionMonitor.addObserver(context,observer);pump();check(title().equals("Track A"),"initial process -> effective UI");check(ProcessMediaSessionMonitor.selectedController("A")==a,"wrong callback/transport owner");long generation=effective.observationGeneration;
+// Raw current-item publication uses a URI identity before rich Song hydration.
+a.track("file:///raw-a","Raw A",6,3);a.queue=List.of(new MediaSession.QueueItem(6,"file:///raw-a"));refresh();
+check(title().equals("Raw A")&&effective.itemEvidence.equals("QUEUE_MATCH"),"paired raw current item was hidden");
+a.track("file:///raw-b","Raw B",7,3);a.queue=List.of(new MediaSession.QueueItem(7,"file:///raw-b"));a.callback.onMetadataChanged(a.metadata);pump();
+check(title().equals("Raw B"),"raw automatic next did not reach effective UI");
+a.metadata=new MediaMetadata("file:///raw-a","LATE RAW ART");a.callback.onMetadataChanged(a.metadata);pump();
+check(title().isEmpty()&&effective.itemEvidence.equals("PUBLISHED_QUEUE_MISMATCH"),"raw old artwork resurrected");
+// External metadata-only sessions must explicitly publish UNKNOWN_ID, never a phantom index.
+a.track("external","Metadata only",-1,3);a.queue=List.of();refresh();
+check(title().equals("Metadata only")&&effective.itemEvidence.equals("NO_QUEUE_WITH_VALID_SESSION_METADATA"),"valid metadata-only session hidden");
+a.track("phantom","Bad queue",6,3);a.queue=List.of();refresh();check(title().isEmpty(),"inconsistent empty queue accepted");
+a.track("a","Track A",1,3);refresh();
 // Same session automatically advances; B's metadata has not arrived. A must disappear.
 a.track(null,"",2,3);a.callback.onPlaybackStateChanged(a.state);pump();check(title().isEmpty(),"A masquerades as B during blank metadata");
 a.track("b","Track B",2,3);a.callback.onMetadataChanged(a.metadata);pump();check(title().equals("Track B")&&effective.mediaId.equals("b")&&effective.queueItemId==2,"B not published through UI");check(effective.observationGeneration==generation,"item change mistaken for session change");

@@ -266,27 +266,27 @@ public final class NavTaskBridge {
         if (activity.equals(request.windowComponent) && android.os.SystemClock.elapsedRealtime() - request.windowAt < 150L) {
             request.current(); return;
         }
-        // Stack focus alone cannot authorise a mutation through a permission/call/dialog window.
-        java.lang.Process probe = new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",
-                "/system/bin/dumpsys", "window", request.maskTitle.isEmpty() ? "displays" : "windows").redirectErrorStream(true).start();
-        StringBuilder text = new StringBuilder();
-        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(probe.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (text.length() + line.length() > 524288) throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
-                if (!request.maskTitle.isEmpty() || line.contains("mCurrentFocus=")) text.append(line).append('\n');
-            }
-        }
-        if (!probe.waitFor(100L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-            probe.destroy();
-            throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
-        }
-        if (probe.exitValue() != 0) throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
-        if (StartupMaskFocus.ownsFocusedWindow(text.toString(), request.maskTitle, user)) {
+        // Display focus and window ownership are distinct OEM dump surfaces.
+        // Correlate the exact focused token before/after the bounded owner read.
+        long focusAt = android.os.SystemClock.elapsedRealtime();
+        String displays = windowDump("displays", request);
+        String focusedWindow = StartupMaskFocus.focusedWindow(displays);
+        if (focusedWindow.isEmpty()) throw focusUnknown("FOCUS_MISSING");
+        String owners = !request.maskTitle.isEmpty() && focusedWindow.endsWith(" " + request.maskTitle + "}")
+                ? windowDump("windows", request) : "";
+        String latest = windowDump("displays", request);
+        if (!focusedWindow.equals(StartupMaskFocus.focusedWindow(latest)))
+            throw focusUnknown("WINDOW_TOKEN_MISMATCH");
+        if (android.os.SystemClock.elapsedRealtime() - focusAt > 2000L)
+            throw focusUnknown("FOCUS_STALE");
+        request.current();
+        if (StartupMaskFocus.ownsFocusedWindow(displays, owners, request.maskTitle, user)) {
             request.windowComponent = activity;
             request.windowAt = android.os.SystemClock.elapsedRealtime();
-            request.current(); return;
+            return;
         }
+        if (!owners.isEmpty()) throw focusUnknown("MASK_OWNER_MISMATCH");
+        StringBuilder text = new StringBuilder(displays);
         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("mCurrentFocus=Window\\{[^\\n]*? u(\\d+) ([A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+)").matcher(text);
         if (!matcher.find() || Integer.parseInt(matcher.group(1)) != user)
             throw new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
@@ -297,6 +297,32 @@ public final class NavTaskBridge {
         request.windowComponent = activity;
         request.windowAt = android.os.SystemClock.elapsedRealtime();
         request.current();
+    }
+
+    private static IllegalStateException focusUnknown(String reason) {
+        android.util.Log.i("TS18Nav", "focus unavailable reason=" + reason);
+        return new IllegalStateException("STARTUP_FOCUS_UNKNOWN");
+    }
+
+    private static String windowDump(String scope, Request request) throws Exception {
+        request.current();
+        java.lang.Process probe = new ProcessBuilder("/system/bin/toybox", "timeout", "-k", "1", "2",
+                "/system/bin/dumpsys", "window", scope).redirectErrorStream(true).start();
+        StringBuilder text = new StringBuilder();
+        try {
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(
+                    probe.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (text.length() + line.length() > 524288) throw focusUnknown("PROBE_CAPPED");
+                    if (!"displays".equals(scope) || line.contains("mCurrentFocus=")) text.append(line).append('\n');
+                }
+            }
+            if (!probe.waitFor(100L, java.util.concurrent.TimeUnit.MILLISECONDS) || probe.exitValue() != 0)
+                throw focusUnknown("PROBE_TIMEOUT");
+            request.current();
+            return text.toString();
+        } finally { probe.destroy(); }
     }
 
     private static Task resolve(Object raw, String pkg, int user, int hint) throws Exception {

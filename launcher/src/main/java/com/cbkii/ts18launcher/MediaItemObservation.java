@@ -30,7 +30,8 @@ final class MediaItemObservation {
             PlaybackState after = controller.getPlaybackState();
             long queueId = queueId(after);
             String id = text(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID);
-            boolean coherent = queueId(before) == queueId
+            boolean sameToken = Objects.equals(token, controller.getSessionToken());
+            boolean coherent = sameToken && queueId(before) == queueId
                     && state(before) == state(after)
                     && Objects.equals(id, text(afterMetadata, MediaMetadata.METADATA_KEY_MEDIA_ID))
                     && Objects.equals(text(metadata, MediaMetadata.METADATA_KEY_TITLE),
@@ -38,12 +39,20 @@ final class MediaItemObservation {
                     && Objects.equals(text(metadata, MediaMetadata.METADATA_KEY_ARTIST),
                             text(afterMetadata, MediaMetadata.METADATA_KEY_ARTIST));
             boolean verified = coherent && !id.isEmpty();
+            String evidence = !sameToken ? "TOKEN_CHANGED" : !coherent ? "TORN_READ"
+                    : id.isEmpty() ? "NO_ITEM_ID" : "NO_QUEUE_WITH_VALID_SESSION_METADATA";
             if (verified && queueId != MediaSession.QueueItem.UNKNOWN_ID) {
                 MediaDescription current = null;
                 if (queue != null) for (MediaSession.QueueItem item : queue) {
                     if (item != null && item.getQueueId() == queueId) { current = item.getDescription(); break; }
                 }
                 verified = current != null && matches(pkg, id, metadata, current);
+                evidence = verified ? "QUEUE_MATCH" : "PUBLISHED_QUEUE_MISMATCH";
+            } else if (verified && queue != null && !queue.isEmpty()) {
+                // A publisher has not identified a current queue entry. Metadata-only
+                // evidence is allowed only when no contradictory queue context exists.
+                verified = false;
+                evidence = "PUBLISHED_QUEUE_MISMATCH";
             }
             // Radio's station contract is separate from individual music items. Never retain text.
             boolean station = radio || RadioFrequency.NAVRADIO.equals(pkg);
@@ -56,10 +65,11 @@ final class MediaItemObservation {
             return new MediaListenerService.Snapshot(pkg, title, artist,
                     coherent ? state(after) : PlaybackState.STATE_NONE,
                     coherent && after != null ? after.getActions() : 0L, token,
-                    coherent ? id : "", queueId, generation, now, verified);
+                    coherent ? id : "", queueId, generation, now, verified, evidence,
+                    queue == null ? -1 : queue.size());
         } catch (RuntimeException unavailable) {
             return new MediaListenerService.Snapshot(pkg, "", "", PlaybackState.STATE_NONE, 0L,
-                    token, "", -1L, generation, now, false);
+                    token, "", -1L, generation, now, false, "SESSION_ACCESS_UNKNOWN", -1);
         }
     }
 
