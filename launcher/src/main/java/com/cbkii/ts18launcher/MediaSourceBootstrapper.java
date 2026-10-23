@@ -391,18 +391,13 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
     }
 
     private MediaController controllerForPackage(String packageName) {
-        MediaController exact = exactController(packageName);
-        if (exact != null) return exact;
-        Connection connection = connections.get(packageName);
-        return connection == null ? null : connection.controller;
+        return exactController(packageName);
     }
 
     private MediaController exactController(String packageName) {
-        if (sessionManager == null || packageName == null || packageName.isEmpty()
-                || !MediaListenerService.hasNotificationAccess(context)) return null;
-        // Membership/queue discovery crosses Binder only on the bounded readiness worker.
-        MediaController displayed = ProcessMediaSessionMonitor.selectedController(packageName);
-        return displayed != null ? displayed : observedControllers.get(packageName);
+        // Discovery/readiness caches may prepare controllers; only the registered selected
+        // authority can dispatch or supply effective playback state.
+        return ProcessMediaSessionMonitor.selectedController(packageName);
     }
 
     private void queueBrowser(MediaSourceAdapter adapter, Pending pending) {
@@ -414,6 +409,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         Pending actual = pending == null ? null : addPending(connection.pending, pending);
         if (connection.controller != null) {
             MediaListenerService.observeExternalController(connection.controller);
+            ProcessMediaSessionMonitor.observeExternal(context, connection.controller);
             maybePrepareAuxio(connection.controller);
             if (actual != null) issueConnected(connection.controller, actual);
             return;
@@ -468,6 +464,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
                     refreshStartupObservation();
                     connection.preparing = false;
                     MediaListenerService.observeExternalController(connection.controller);
+                    ProcessMediaSessionMonitor.observeExternal(context, connection.controller);
                     MediaEventTrace.record("browser", "connected", packageName);
                     maybePrepareAuxio(connection.controller);
                     markController(packageName, connection.controller);
@@ -625,6 +622,7 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
                 connection.controllerCallback = null;
             }
             MediaListenerService.forgetExternalController(connection.controller);
+            ProcessMediaSessionMonitor.forgetExternal(connection.controller);
             connection.controller = null;
         } else {
             connection.controllerCallback = null;
@@ -655,6 +653,8 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
 
     private void issueConnected(MediaController controller, Pending pending) {
         if (pending.settled) return;
+        controller = controllerForPackage(pending.packageName);
+        if (controller == null) { retryExact(pending); return; }
         if (MediaCommandPolicy.acknowledged(pending.desired, stateOf(controller))) {
             completeAcknowledged(controller, pending);
             return;
@@ -846,6 +846,9 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
 
     private void dispatchToController(MediaController controller, Pending pending) {
         if (destroyed || pending.settled) return;
+        if (controller != controllerForPackage(pending.packageName)) {
+            retryExact(pending); return;
+        }
         if (expiredHomePlay(pending)) {
             finish(pending, false, "Music Play request expired"); return;
         }
@@ -919,6 +922,10 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
 
     private void awaitAcknowledgement(MediaController controller, Pending pending) {
         if (destroyed || pending.settled) return;
+        if (controller != controllerForPackage(pending.packageName)) {
+            finish(pending, false, pending.sourceLabel + " session changed before acknowledgement");
+            return; // A dispatched command is never replayed onto a replacement token.
+        }
         if (expiredHomePlay(pending)) {
             finish(pending, false, "Music Play request expired before acknowledgement"); return;
         }

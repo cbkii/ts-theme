@@ -38,7 +38,7 @@ class R{static class dimen{static int ui_metadata_padding_horizontal,driver_gap,
 class AutomotiveUi{static int dimen(android.content.Context c,int n){return 1;}static int color(android.content.Context c,int n){return 1;}}
 class MediaSelection{static String MUSIC="music",RADIO="radio";}
 class MediaListenerService {interface Observer {void onMediaStateChanged(Snapshot m,Snapshot r);}static void addObserver(Observer o){}static void removeObserver(Observer o){}
-static class Snapshot {String packageName,title,artist;Snapshot(String p,String t,String a){packageName=p;title=t;artist=a;}Snapshot(String p,String t,String a,boolean playing){this(p,t,a);}}}
+static class Snapshot {String trackIdentity(){return packageName+":"+title;}String packageName,title,artist;Snapshot(String p,String t,String a){packageName=p;title=t;artist=a;}Snapshot(String p,String t,String a,boolean playing){this(p,t,a);}}}
 class AppResolver{static String labelFor(android.content.Context c,String p,String f){return p.equals("com.tw.media")?"Auxio":"NavRadio+";}}
 class RadioProvider{static String resolvePackage(android.content.Context c){return "com.navimods.radio";}}
 class LauncherPrefs {static String lastSource(android.content.Context c){return "music";}static String KEY_MUSIC="music";static String lastMusicPackage(android.content.Context c){return "com.tw.media";}

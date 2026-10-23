@@ -43,6 +43,7 @@ class LauncherPrefs {static String KEY_MUSIC="music",KEY_MEDIA_MODE="mode",MEDIA
 static String configured="",storedMode;static String packageFor(Context c,String k){return configured;}
 static LauncherPrefs prefs(Context c){return new LauncherPrefs();}String getString(String k,String d){return storedMode==null?d:storedMode;}
 """ + mode + """}
+class ProcessMediaSessionMonitor {static String selected="";static String selectedMusicPackage(){return selected;}}
 class Snapshot {String packageName="other.player";}
 public class Harness extends Context {
 Snapshot genericSnapshot=new Snapshot();
@@ -58,6 +59,8 @@ check("chosen.player".equals(h.musicControlPackage()),"unavailable explicit sour
 LauncherPrefs.configured="";PackageManager.installed.clear();check(TopwayAdapter.defaultMusicPackage(h).isEmpty(),"invented unavailable default");
 PackageManager.installed.add("com.tw.media");check("com.tw.media".equals(h.musicControlPackage()),"late Auxio install ignored");
 LauncherPrefs.storedMode="auto";check("other.player".equals(h.musicControlPackage()),"explicit generic mode lost");
+ProcessMediaSessionMonitor.selected="verified.player";h.genericSnapshot.packageName="";
+check("verified.player".equals(h.musicControlPackage()),"temporary UI unknown redirected transport to configured app");
 LauncherPrefs.storedMode="prefer_music";check("com.tw.media".equals(h.musicControlPackage()),"configured mode leaked generic recipient");
 PackageManager.unavailable=true;check(TopwayAdapter.defaultMusicPackage(h).isEmpty(),"failed package observation invented source");
 System.out.println("PASS actual Auxio/stock/default/explicit/unavailable/generic Music identity");}}

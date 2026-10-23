@@ -219,6 +219,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         reconcileMediaConfiguration();
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
+        processSnapshotAuthoritative = false;
+        genericSnapshot = emptyMediaSnapshot(); radioSnapshot = emptyMediaSnapshot();
         ProcessMediaSessionMonitor.addObserver(this, this);
         ProcessMediaSessionMonitor.setVisible(this, true);
         MediaNotificationAccessBootstrapper.ensureConnected(this);
@@ -451,8 +453,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private String musicControlPackage() {
-        if (LauncherPrefs.MEDIA_MODE_AUTO.equals(LauncherPrefs.mediaMode(this))
-                && !genericSnapshot.packageName.isEmpty()) return genericSnapshot.packageName;
+        if (LauncherPrefs.MEDIA_MODE_AUTO.equals(LauncherPrefs.mediaMode(this))) {
+            String selected = ProcessMediaSessionMonitor.selectedMusicPackage();
+            if (!selected.isEmpty()) return selected;
+            if (!genericSnapshot.packageName.isEmpty()) return genericSnapshot.packageName;
+        }
         return configuredMusicPackage();
     }
 
@@ -655,8 +660,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaText.setSnapshot(tickerRadio ? radioSnapshot : genericSnapshot, mediaSelection.displayed());
         String radioPackage = RadioProvider.resolvePackage(this);
         String radioLabel = AppResolver.labelFor(this, radioPackage, radioPackage.isEmpty() ? "Set radio" : "Radio");
-        AutomotiveUi.setIconWithCrossfade(this, radioPlayPause,
-                radioSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
+        updatePlaybackButton(radioPlayPause, radioSnapshot, getString(R.string.media_source_radio));
         setMediaButtonsReady(radioPrevious, radioPlayPause, radioNext);
         if (!MediaListenerService.hasNotificationAccess(this)) {
             if (!mediaStatusActive) {
@@ -664,7 +668,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     mediaText.setMetadata("Media access required", "Use Settings gear · Notification access");
                 else mediaText.setMetadata(radioLabel, "Radio");
             }
-            AutomotiveUi.setIconWithCrossfade(this, playPause, R.drawable.ic_play);
+            updatePlaybackButton(playPause, emptyMediaSnapshot(), getString(R.string.media_source_music));
             setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
             updateMediaPresentation();
             return;
@@ -679,10 +683,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (!mediaStatusActive) {
             mediaText.setMetadata(primaryMetadata(displayed, label), secondaryMetadata(displayed, label));
         }
-        AutomotiveUi.setIconWithCrossfade(this, playPause,
-                genericSnapshot.playing ? R.drawable.ic_pause : R.drawable.ic_play);
+        updatePlaybackButton(playPause, genericSnapshot, getString(R.string.media_source_music));
         setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
         updateMediaPresentation();
+    }
+
+    private void updatePlaybackButton(ImageButton button, MediaListenerService.Snapshot snapshot, String source) {
+        AutomotiveUi.setIconWithCrossfade(this, button, MediaPlaybackPresentation.icon(snapshot.state));
+        button.setContentDescription(getString(MediaPlaybackPresentation.description(snapshot.state), source));
     }
 
     private void updateMediaPresentation() {
@@ -774,7 +782,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     processGenericSnapshot, listenerGenericSnapshot, processSnapshotAuthoritative);
             radioSnapshot = mergeSessionSnapshot(
                     processRadioSnapshot, listenerRadioSnapshot, processSnapshotAuthoritative);
-            mediaSelection.reconcile(radioSnapshot.playing, genericSnapshot.playing);
+            if (processSnapshotAuthoritative)
+                mediaSelection.reconcileObservedPlayback(radioSnapshot.playing, genericSnapshot.playing,
+                        MediaCommandPolicy.usesPauseAction(radioSnapshot.state)
+                                || MediaCommandPolicy.usesPauseAction(genericSnapshot.state));
             updateLabels();
         });
     }
@@ -787,14 +798,16 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             MediaListenerService.Snapshot core, MediaListenerService.Snapshot enriched,
             boolean coreAuthoritative) {
         MediaListenerService.Snapshot secondary = normaliseSnapshot(enriched);
-        if (!coreAuthoritative) return secondary;
+        if (!coreAuthoritative) return emptyMediaSnapshot();
         MediaListenerService.Snapshot primary = normaliseSnapshot(core);
         if (primary.packageName.isEmpty()) return primary;
+        // Generic music has exactly one publisher; title equality cannot prove an item match.
+        if (!RadioFrequency.NAVRADIO.equals(primary.packageName)) return primary;
         if (secondary.packageName.isEmpty() || !primary.packageName.equals(secondary.packageName)) {
             return primary;
         }
-        if (primary.sessionIdentity != null && secondary.sessionIdentity != null
-                && !primary.sessionIdentity.equals(secondary.sessionIdentity)) {
+        if (primary.sessionIdentity == null || secondary.sessionIdentity == null
+                || !primary.sessionIdentity.equals(secondary.sessionIdentity)) {
             return primary;
         }
         String primaryStation = MediaListenerService.meaningfulRadioTitle(primary);
@@ -816,8 +829,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 && primary.radioFrequency == null && secondary.radioFrequency != null) {
             artist = primary.artist + (primary.artist.isEmpty() ? "" : " ") + secondary.radioFrequency.display();
         }
-        return new MediaListenerService.Snapshot(primary.packageName, title, artist,
-                primary.state, primary.actions, primary.sessionIdentity);
+        return primary.withMetadata(title, artist);
     }
 
     private static MediaListenerService.Snapshot emptyMediaSnapshot() {

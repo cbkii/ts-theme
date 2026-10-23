@@ -53,7 +53,7 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("MediaSessionManager.OnActiveSessionsChangedListener", monitor)
         self.assertIn("getActiveSessions(listenerComponent)", monitor)
         self.assertIn("boolean authoritative", monitor)
-        self.assertIn("main.post(() -> reconcile", monitor)
+        self.assertIn("reconcile(active, bound)", monitor)
 
     def test_geometry_does_not_reapply_identical_layout_params(self):
         launcher = self.read(
@@ -74,15 +74,14 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
             "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         self.assertIn('"com.android.server.telecom"', monitor)
         self.assertIn('"com.android.dialer"', monitor)
-        self.assertIn("MediaSelection.pick(candidates, preferred, preferConfigured, remembered)", monitor)
-        self.assertIn("PlaybackState.STATE_BUFFERING", monitor)
-        self.assertIn("PlaybackState.STATE_CONNECTING", monitor)
-        self.assertIn("MediaListenerService.stabiliseSnapshot", monitor)
-        self.assertIn("left.sessionIdentity", monitor)
+        self.assertIn("MediaSelection.pick(values, preferred, dedicated, remembered)", monitor)
+        self.assertIn("MediaCommandPolicy.usesPauseAction", monitor)
+        self.assertIn("MediaItemObservation.read", monitor)
+        self.assertIn("ticket == revision", monitor)
         merge = launcher.split("private static MediaListenerService.Snapshot mergeSessionSnapshot", 1)[1].split(
             "private static MediaListenerService.Snapshot emptyMediaSnapshot", 1
         )[0]
-        self.assertIn("if (!coreAuthoritative) return secondary;", merge)
+        self.assertIn("if (!coreAuthoritative) return emptyMediaSnapshot();", merge)
         self.assertIn("if (primary.packageName.isEmpty()) return primary;", merge)
         self.assertIn("primary.sessionIdentity", merge)
         self.assertIn("secondary.sessionIdentity", merge)

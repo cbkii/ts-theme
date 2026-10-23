@@ -37,6 +37,16 @@ There is no runtime icon-library dependency. Only the glyphs used by the launche
 - `ic_video.xml` <- `movie`
 - `ic_weather.xml` <- `partly_cloudy_day`
 
+## Playback-state mappings
+
+These state indicators use the same pinned Material Symbols Rounded revision above.
+They are static state glyphs, not inferred playback animations.
+
+- `ic_media_buffering.xml` <- `hourglass_top`
+- `ic_media_connecting.xml` <- `sync`
+- `ic_media_unknown.xml` <- `help`
+- `ic_media_unavailable.xml` <- `error`
+
 ## Curated quick-slot appearance mappings
 
 The `ICON` half of each HOME/drawer quick-slot editor additionally exposes a bounded automotive/general-purpose appearance set. These selections are **visual only**; they never change the package or semantic role launched by the slot.

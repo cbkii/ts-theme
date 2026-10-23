@@ -19,4 +19,12 @@
     <string name="startup_loader_overlay_granted">Allowed. The splash hides app preparation while leaving system controls visible.</string>
     <string name="startup_loader_overlay_missing">Allow display over other apps to hide preparation. Without access, the splash appears on HOME only.</string>
     <string name="startup_loader_incomplete">Startup preparation incomplete. Check Music, Radio and Maps on HOME.</string>
+    <string name="media_source_music">Music</string>
+    <string name="media_source_radio">Radio</string>
+    <string name="media_playing_pause">%1$s playing. Pause</string>
+    <string name="media_paused_play">%1$s paused or stopped. Play</string>
+    <string name="media_buffering_pause">%1$s buffering. Pause loading playback</string>
+    <string name="media_connecting_pause">%1$s connecting. Pause loading playback</string>
+    <string name="media_unavailable">%1$s unavailable. Retry playback</string>
+    <string name="media_state_unknown">%1$s playback unknown. Play or pause</string>
 </resources>

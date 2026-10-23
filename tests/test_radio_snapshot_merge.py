@@ -43,7 +43,7 @@ class RadioSnapshotMergeTest(unittest.TestCase):
             (pkg / 'Harness.java').write_text('''package com.cbkii.ts18launcher;
 class MediaListenerService {
 static class Snapshot {
-String packageName,title,artist;int state;long actions;Object sessionIdentity;RadioFrequency radioFrequency;
+Snapshot withMetadata(String t,String a){return new Snapshot(packageName,t,a,state,actions,sessionIdentity);}String packageName,title,artist;int state;long actions;Object sessionIdentity;RadioFrequency radioFrequency;
 Snapshot(String p,String t,String a,boolean b){this(p,t,a,0,0,null);}
 Snapshot(String p,String t,String a,int s,long n,Object token){packageName=p;title=t;artist=a;state=s;actions=n;sessionIdentity=token;radioFrequency=RadioFrequency.observed(p,t,a);}}
 ''' + station + '''}
@@ -79,7 +79,7 @@ check(mergeSessionSnapshot(snap(radio,"Station","Pop Music"),snap(radio,"Station
 current=snap(radio,"Station","106.3 FM");
 check(mergeSessionSnapshot(current,snap(radio,"Station","105.9 FM"),true)==current,"authoritative frequency wins");
 check(mergeSessionSnapshot(snap(radio,"NavRadio+",""),snap(radio,"2CA","1053 AM"),true).title.equals("2CA"),"placeholder can enrich");
-check(mergeSessionSnapshot(snap("music","Track",""),snap("music","Track","Artist"),true).artist.equals("Artist"),"music unchanged");
+check(mergeSessionSnapshot(snap("music","Track",""),snap("music","Track","Artist"),true).artist.isEmpty(),"music has one publisher; title equality is not track identity");
 check(mergeSessionSnapshot(snap(radio,"Station",""),snap("music","Track","Artist"),true).packageName.equals(radio),"source switch isolation");
 System.out.println("PASS actual source merge / stale frequency / placeholders / music");}}
 ''')

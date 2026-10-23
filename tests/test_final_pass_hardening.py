@@ -26,8 +26,8 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertIn("onProcessMediaStateChanged", LAUNCHER)
         self.assertIn("addOnActiveSessionsChangedListener", PROCESS_MONITOR)
         self.assertIn("getActiveSessions(listenerComponent)", PROCESS_MONITOR)
-        self.assertIn("scheduleRefresh()", PROCESS_MONITOR)
-        self.assertIn("MediaSelection.pick(candidates, preferred, preferConfigured, remembered)", PROCESS_MONITOR)
+        self.assertIn("requestRefresh()", PROCESS_MONITOR)
+        self.assertIn("MediaSelection.pick(values, preferred, dedicated, remembered)", PROCESS_MONITOR)
 
     def test_geometry_application_is_idempotent(self):
         place = LAUNCHER.split("private void place(View view", 1)[1].split(

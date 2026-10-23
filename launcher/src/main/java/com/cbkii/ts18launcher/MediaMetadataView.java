@@ -139,6 +139,6 @@ final class MediaMetadataView extends LinearLayout {
                 }
             }
         }
-        return selected + ":" + packageName;
+        return selected + ":" + packageName + ":" + (snapshot == null ? "" : snapshot.trackIdentity());
     }
 }

@@ -66,7 +66,10 @@ public android.media.session.MediaSession.Token getSessionToken(){return null;}
 public static class ConnectionCallback {public void onConnected(){}public void onConnectionSuspended(){}public void onConnectionFailed(){}}}''',
             "com/cbkii/ts18launcher/platform/TopwayAdapter.java": "package com.cbkii.ts18launcher.platform;public class TopwayAdapter {public static String defaultMusicPackage(android.content.Context c){return \"com.tw.media\";}}",
             "com/cbkii/ts18launcher/Doubles.java": '''package com.cbkii.ts18launcher;
-class ProcessMediaSessionMonitor {static android.media.session.MediaController selectedController(String p){return null;}interface Observer {void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
+class ProcessMediaSessionMonitor {static java.util.Map<String,android.media.session.MediaController> bound=new java.util.HashMap<>();
+static android.media.session.MediaController selectedController(String p){for(var c:android.media.session.MediaSessionManager.sessions)if(p.equals(c.getPackageName()))return c;return bound.get(p);}
+static void observeExternal(android.content.Context c,android.media.session.MediaController controller){bound.put(controller.getPackageName(),controller);}
+static void forgetExternal(android.media.session.MediaController controller){bound.remove(controller.getPackageName(),controller);}interface Observer {void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
 class MediaListenerService {static class Snapshot {}enum Command {PLAY_PAUSE,PREVIOUS,NEXT}
 static boolean hasNotificationAccess(android.content.Context c){return true;} static void refreshActiveSessions(){}
 static void observeExternalController(android.media.session.MediaController c){} static void forgetExternalController(android.media.session.MediaController c){} }

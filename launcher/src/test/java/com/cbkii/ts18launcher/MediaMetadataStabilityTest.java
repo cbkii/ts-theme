@@ -9,15 +9,15 @@ import android.media.session.PlaybackState;
 import org.junit.Test;
 
 public final class MediaMetadataStabilityTest {
-    @Test public void transientEmptyMetadataKeepsLastValidTextForSameSession() {
+    @Test public void unverifiedEmptyMetadataClearsTextEvenForSameSession() {
         Object token = new Object();
         MediaListenerService.Snapshot previous = new MediaListenerService.Snapshot(
                 "com.tw.media", "Track", "Artist", PlaybackState.STATE_PLAYING, 0L, token);
         MediaListenerService.Snapshot next = new MediaListenerService.Snapshot(
                 "com.tw.media", "", "", PlaybackState.STATE_PLAYING, 0L, token);
         MediaListenerService.Snapshot stable = MediaListenerService.stabiliseSnapshot(previous, next);
-        assertEquals("Track", stable.title);
-        assertEquals("Artist", stable.artist);
+        assertEquals("", stable.title);
+        assertEquals("", stable.artist);
     }
 
     @Test public void replacementSessionInSamePackageDoesNotInheritStaleMetadata() {

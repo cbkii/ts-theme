@@ -87,7 +87,7 @@ jobs:
           set -euo pipefail
           if ! gradle --no-daemon --stacktrace \
               :theme:lintDebug :theme:assembleDebug \
-              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug; then
+              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug :launcher:assembleDebugAndroidTest; then
             theme_report="theme/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
             launcher_report="launcher/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
             for report in "$theme_report" "$launcher_report"; do
