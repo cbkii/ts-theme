@@ -31,7 +31,10 @@ apps physically finalised, and does not replace the single source/task owners.
   suppress Maps. Source-local completion now releases only its own stage. Proven
   pre-dispatch failures release the durable claim with a three-attempt bound;
   accepted/uncertain starts retain their claims and are never replayed. Late definite
-  refusal after cancellation can clean its own still-current claim.
+  refusal after cancellation can clean its own still-current claim. A regression also
+  reproduced a retry-order race: releasing the lane before re-arming a proven-safe
+  Music retry let Maps take focus and strand Music. Re-arm occurs before lane release;
+  after three definite refusals Music settles unavailable and Maps proceeds once.
 - Registered Maps provider acquisition may fail before provider code runs. The
   signed InCar APK explicitly advertises a v1 fallback for its existing private
   OrganicMapsPrefs/InCarCompactStartup contract, unset=true, saved OFF authoritative.

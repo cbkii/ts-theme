@@ -203,6 +203,10 @@ check(StartupRootFallback.starts==1&&AppResolver.launches==0,"cold Music did not
 check(StartupRootFallback.returns==1&&navigationStarts==1,"Music held Maps for library readiness");
 Ts18LauncherApplication.shared.musicReady=true;immediate.onProcessMediaStateChanged(null,null,true);Handler.until(1000);
 check(ledger(immediate).record(Source.MUSIC).state==State.READY&&StartupRootFallback.starts==1,"late readiness replayed Music Activity");immediate.destroy();
+// A proven no-dispatch Music refusal must finish its bounded re-admission before
+// Maps acquires focus; otherwise the first failed attempt strands Music behind Maps.
+StartupReadinessCoordinator noDispatchRecovery=create(false);StartupRootFallback.code="STARTUP_SOURCE_REJECTED";
+Handler.until(15000);check(StartupRootFallback.starts==3&&navigationStarts==1,"Maps stranded bounded Music no-dispatch recovery");noDispatchRecovery.destroy();
 // Cold Activity admission may return before its asynchronous Main handoff is resumed.
 StartupReadinessCoordinator delayed=create(false);
 StartupRootFallback.launched=()->{delayed.onHomePaused();RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);Handler h=new Handler(Looper.getMainLooper());h.postDelayed(()->RootShell.top=RootShell.forComponent("com.tw.media/com.tw.media.Main",20),900);};

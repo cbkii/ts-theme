@@ -788,10 +788,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                         if (preDispatchRearms[source.ordinal()] >= StartupReadinessPolicy.MAX_ATTEMPTS_PER_BOOT)
                             policy.observedUnavailable(source, "pre-dispatch-retry-exhausted", SystemClock.uptimeMillis());
                     }
+                    // Re-arm before releasing the shared foreground lane. Letting Maps
+                    // take focus in this gap strands Music's proven-safe bounded retry.
+                    if (homeResumed && !yielded) onTrigger(Trigger.READINESS_CHANGED);
                     updateNavigationAdmission(); runForegroundSoon();
-                    if (homeResumed && !yielded) handler.postDelayed(() -> {
-                        if (!destroyed && homeResumed && !yielded) onTrigger(Trigger.READINESS_CHANGED);
-                    }, 500L);
                 });
             });
         } catch (java.util.concurrent.RejectedExecutionException unavailable) {
