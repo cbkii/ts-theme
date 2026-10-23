@@ -19,6 +19,7 @@ final class NativeNavigationPanel extends FrameLayout {
     interface BoundsListener { void onBoundsChanged(NavigationWindowBounds bounds); }
     private final ImageButton openNavigation;
     private final TextView status;
+    private final Activity activity;
     private final GradientDrawable actionCircle = new GradientDrawable();
     private BoundsListener boundsListener;
     private NavigationWindowBounds lastBounds;
@@ -27,6 +28,7 @@ final class NativeNavigationPanel extends FrameLayout {
 
     NativeNavigationPanel(Activity activity) {
         super(activity);
+        this.activity = activity;
         setBackgroundColor(Color.BLACK);
         setFocusable(false);
         setClickable(false);
@@ -71,7 +73,7 @@ final class NativeNavigationPanel extends FrameLayout {
     }
     void showStarting(String label, String backend) { status.setText(backend); showAction("Restore map here", compactAction); }
     void showConfigured(String detail, Runnable openFullscreen) { status.setText(""); showAction("Restore map here", compactAction); }
-    void showFailure(String detail, Runnable retry, Runnable openFullscreen) { status.setText(detail + " · Tap to retry"); showAction("Restore map here", retry); }
+    void showFailure(String detail, Runnable retry, Runnable openFullscreen) { status.setText(activity.getString(R.string.navigation_retry_status, detail)); showAction("Restore map here", retry); }
     void showUnavailable(String detail, Runnable openFullscreen) { status.setText(detail); showAction(detail, openFullscreen); }
     void showFullscreenOnly(String label, Runnable openFullscreen) { status.setText(label); showAction(label, openFullscreen); }
     void applyAppearance(Activity activity) {

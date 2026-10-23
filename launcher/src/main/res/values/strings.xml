@@ -27,4 +27,5 @@
     <string name="media_connecting_pause">%1$s connecting. Pause loading playback</string>
     <string name="media_unavailable">%1$s unavailable. Retry playback</string>
     <string name="media_state_unknown">%1$s playback unknown. Play or pause</string>
+    <string name="navigation_retry_status">%1$s · Tap to retry</string>
 </resources>

@@ -16,7 +16,7 @@ class NativePanelMeasurementTest(unittest.TestCase):
             'android/text/TextUtils.java': 'package android.text;public class TextUtils {public enum TruncateAt {END}}',
             'android/widget/TextView.java': 'package android.widget;public class TextView extends android.view.View{public TextView(android.app.Activity a){}public void setTextSize(int i){}public void setGravity(int i){}public void setMaxLines(int i){}public void setEllipsize(Object o){}public void setText(CharSequence c){}public void setTextColor(int i){}}',
             'android/annotation/SuppressLint.java': 'package android.annotation; public @interface SuppressLint {String[] value();}',
-            'android/app/Activity.java': 'package android.app; public class Activity {}',
+            'android/app/Activity.java': 'package android.app; public class Activity {public String getString(int id,Object... args){return String.format("%s · Tap to retry",args);}}',
             'android/content/res/ColorStateList.java': 'package android.content.res; public class ColorStateList {public static ColorStateList valueOf(int c){return new ColorStateList();}}',
             'android/graphics/Color.java': 'package android.graphics; public class Color {public static int BLACK=0,WHITE=-1;}',
             'android/graphics/drawable/GradientDrawable.java': 'package android.graphics.drawable; public class GradientDrawable {public static int OVAL=1;public void setShape(int i){}public void setColor(int i){}}',
@@ -48,7 +48,7 @@ public class FrameLayout extends View {public FrameLayout(android.app.Activity a
  public ImageButton(android.app.Activity a){}public void setImageResource(int i){}public void setImageTintList(Object c){}
  public void setScaleType(ScaleType s){} }''',
             'com/cbkii/ts18launcher/Support.java': '''package com.cbkii.ts18launcher;
-class R {static class dimen {static int driver_gap=1;}static class drawable {static int ic_navigation_filled=1;} static class color {static int ui_black=2,ui_text=3;}}
+class R {static class string {static int navigation_retry_status=1;}static class dimen {static int driver_gap=1;}static class drawable {static int ic_navigation_filled=1;} static class color {static int ui_black=2,ui_text=3;}}
 class AutomotiveUi {static int dimen(Object c,int i){return 8;}static void attachFeedback(Object v){} static int color(Object c,int id){return id;}}
 class NavigationWindowBounds {static NavigationWindowBounds fromView(Object v){return new NavigationWindowBounds();}}
 ''',

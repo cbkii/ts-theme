@@ -45,14 +45,14 @@ public int state=STATE_PAUSED;public int getState(){return state;}public long ge
             "android/media/session/MediaSession.java": "package android.media.session; public class MediaSession {public static class Token{}public static class QueueItem{}}",
             "android/media/MediaMetadata.java": "package android.media;public class MediaMetadata {public static String METADATA_KEY_MEDIA_ID=\"id\",METADATA_KEY_TITLE=\"title\",METADATA_KEY_DISPLAY_TITLE=\"display\";public String text;public String getString(String s){return text;}}",
             "android/media/session/MediaController.java": '''package android.media.session;
-public class MediaController {public String pkg;public PlaybackState state=new PlaybackState();public int plays,pauses,customPlays,ordinaryPlays;public long lastDeadline;public boolean buffer,ignorePause;public long playDelay,pauseDelay;
+public class MediaController {public String pkg;public PlaybackState state=new PlaybackState();public int plays,pauses,customPlays,ordinaryPlays,skips;public long lastDeadline;public boolean buffer,ignorePause;public long playDelay,pauseDelay;
 public MediaController(android.content.Context c,MediaSession.Token t){}public MediaController(String p){pkg=p;}
 public String getPackageName(){return pkg;}public PlaybackState getPlaybackState(){return state;}
 public android.media.MediaMetadata metadata;public java.util.List<MediaSession.QueueItem> queue;public java.util.List<MediaSession.QueueItem> getQueue(){return queue;}public android.media.MediaMetadata getMetadata(){return metadata;}public MediaSession.Token getSessionToken(){return token;}private final MediaSession.Token token=new MediaSession.Token();
 public void registerCallback(Callback c){}public void registerCallback(Callback c,android.os.Handler h){} public void unregisterCallback(Callback c){}
 public Controls getTransportControls(){return new Controls();}public class Controls {public void sendCustomAction(String a,android.os.Bundle b){customPlays++;lastDeadline=b.get("deadline_elapsed_ms");long remaining=lastDeadline-android.os.SystemClock.elapsedRealtime();if(b.get("protocol")!=1||remaining<=0||remaining>5000)return;plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=3;}
 public void play(){ordinaryPlays++;plays++;if(playDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=3,playDelay);else state.state=buffer?6:3;}public void pause(){pauses++;if(!ignorePause){if(pauseDelay>0)new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(()->state.state=2,pauseDelay);else state.state=2;}}
-public void prepare(){}public void skipToPrevious(){}public void skipToNext(){}}
+public void prepare(){}public void skipToPrevious(){}public void skipToNext(){skips++;}}
 public static class Callback {public void onPlaybackStateChanged(PlaybackState p){}public void onMetadataChanged(android.media.MediaMetadata m){}public void onQueueChanged(java.util.List<MediaSession.QueueItem> q){}public void onSessionDestroyed(){}} }
 ''',
             "android/media/session/MediaSessionManager.java": '''package android.media.session;import java.util.*;
@@ -68,7 +68,7 @@ public static class ConnectionCallback {public void onConnected(){}public void o
             "com/cbkii/ts18launcher/Doubles.java": '''package com.cbkii.ts18launcher;
 class ProcessMediaSessionMonitor {static java.util.Map<String,android.media.session.MediaController> bound=new java.util.HashMap<>();
 static android.media.session.MediaController selectedController(String p){for(var c:android.media.session.MediaSessionManager.sessions)if(p.equals(c.getPackageName()))return c;return bound.get(p);}
-static MediaListenerService.Snapshot selectedSnapshot(String p){return new MediaListenerService.Snapshot();}
+static MediaListenerService.Snapshot sample=new MediaListenerService.Snapshot();static MediaListenerService.Snapshot selectedSnapshot(String p){return sample;}
 static void observeExternal(android.content.Context c,android.media.session.MediaController controller){bound.put(controller.getPackageName(),controller);}
 static void forgetExternal(android.media.session.MediaController controller){bound.remove(controller.getPackageName(),controller);}interface Observer {void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
 class MediaListenerService {static class Snapshot {Object sessionIdentity;long observationGeneration,queueItemId;String mediaId="";boolean itemVerified;String observationEvidence(){return "";}}enum Command {PLAY_PAUSE,PREVIOUS,NEXT}
@@ -148,6 +148,18 @@ public static void main(String[] args)throws Exception {
  int before=radio.pauses;long commands=b.userCommandGeneration();
  b.command("Radio",radio.pkg,MediaListenerService.Command.NEXT,(ok,m)->{});
  check(!b.pauseUnrequestedPlayback(radio.pkg,commands)&&radio.pauses==before,"startup overwrote newer user command");b.destroy();
+ // NEXT is not successful merely because it dispatched; one observed item change acknowledges it.
+ b=create();radio.skips=0;MediaSessionManager.sessions=List.of(radio);
+ var itemA=new MediaListenerService.Snapshot();itemA.sessionIdentity=new Object();itemA.observationGeneration=1;itemA.itemVerified=true;itemA.mediaId="a";itemA.queueItemId=1;
+ ProcessMediaSessionMonitor.sample=itemA;int[] outcomes={0,0};
+ b.command("Radio",radio.pkg,MediaListenerService.Command.NEXT,(ok,m)->{outcomes[0]++;if(ok)outcomes[1]++;});
+ check(radio.skips==1&&outcomes[0]==0,"NEXT dispatch counted as observed success");
+ var itemB=new MediaListenerService.Snapshot();itemB.sessionIdentity=itemA.sessionIdentity;itemB.observationGeneration=1;itemB.itemVerified=true;itemB.mediaId="b";itemB.queueItemId=2;
+ ProcessMediaSessionMonitor.sample=itemB;Handler.until(SystemClock.now+200);
+ check(outcomes[0]==1&&outcomes[1]==1&&radio.skips==1,"item transition did not acknowledge one NEXT");
+ b.command("Radio",radio.pkg,MediaListenerService.Command.NEXT,(ok,m)->{outcomes[0]++;if(ok)outcomes[1]++;});
+ Handler.until(SystemClock.now+2000);check(outcomes[0]==2&&outcomes[1]==1&&radio.skips==2,"unchanged item falsely succeeded or command replayed");b.destroy();
+ ProcessMediaSessionMonitor.sample=new MediaListenerService.Snapshot();MediaSessionManager.sessions=List.of(radio,music);
  // A pre-suspend Play cannot acquire a fresh deadline after waking.
  b=create();AuxioPreparationContract.paired=true;music.metadata=new android.media.MediaMetadata();music.metadata.text="Saved track";Object expired=ctor.newInstance("Music",music.pkg,MediaCommandPolicy.Desired.PLAY,done,5500L);
  Method send=MediaSourceBootstrapper.class.getDeclaredMethod("sendPending",MediaController.class,pc);send.setAccessible(true);
