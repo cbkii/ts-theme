@@ -1,5 +1,10 @@
 # TS18 diagnostics 1.3
 
+For the manual multi-trial video/performance campaign, use
+[campaign/START-HERE.md](campaign/START-HERE.md). It runs independently, adds no boot
+entry, and supports the existing local caller or an explicitly selected ADB device.
+Do not run it alongside the observer-heavy collector below.
+
 This directory contains the bounded TS18 diagnostics collector, offline analyser,
 transactional installer, deterministic bundle builder and physical qualification
 ledger. Collection is read-only: it does not launch apps, send media transport,
