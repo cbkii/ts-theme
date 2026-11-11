@@ -331,6 +331,20 @@ public final class SettingsActivity extends Activity {
                         : n3Result,
                 v -> runN3Probe());
 
+        addSection("Experimental · Topway services (read-only)");
+        addActionRow(R.drawable.ic_car, "Check Topway services",
+                topwayRunning ? "Checking…" : "Identifies the Topway command service and verifies its interface. Changes nothing.",
+                v -> runTopwayCheck(false));
+        addActionRow(R.drawable.ic_radio, "Observe Topway source once",
+                "Briefly registers a status listener, asks which source is active, then removes it. "
+                        + "Only on the verified service version.",
+                v -> runTopwayCheck(true));
+        if (topwayCapabilities != null) {
+            for (com.cbkii.ts18launcher.oem.Capability capability : topwayCapabilities) {
+                addInfoRow(R.drawable.ic_utility, capability.id, capability.status + " · " + capability.detail);
+            }
+        }
+
         addSection("Backup & reset");
         addActionRow(R.drawable.ic_download, "Export settings", "Save a settings file.",
                 v -> chooseConfigurationDocument(true));
@@ -571,6 +585,26 @@ public final class SettingsActivity extends Activity {
         addTrailingIcon(row, R.drawable.ic_settings, R.color.ui_accent);
         makeInteractive(row, listener);
         addRow(row);
+    }
+
+    private java.util.List<com.cbkii.ts18launcher.oem.Capability> topwayCapabilities;
+    private boolean topwayRunning;
+
+    /** Operator-initiated; never automatic, never a write. Results stay in this screen and the trace. */
+    private void runTopwayCheck(boolean observe) {
+        if (topwayRunning) return;
+        boolean started = com.cbkii.ts18launcher.oem.TopwayCapabilityCheck.run(this, observe, capabilities -> {
+            topwayRunning = false;
+            topwayCapabilities = capabilities;
+            for (com.cbkii.ts18launcher.oem.Capability capability : capabilities) {
+                MediaEventTrace.record("oem", capability.id, capability.toString());
+            }
+            if (!isFinishing() && !isDestroyed()) render();
+        });
+        if (started) {
+            topwayRunning = true;
+            render();
+        }
     }
 
     private String n3Result;
