@@ -6,6 +6,8 @@
 
 - Add read-only Topway capability reporting (`oem/`): `DeviceCapabilities` identifies `com.tw.service.xt` (version, signer, APK SHA-256 against the verified binary, exported endpoint) and reports caller identity, NavRadio+/stock-radio session strategies, a permanently BLOCKED native-radio boundary and UNKNOWN illumination. Two manual Settings actions check the service interface and, on the verified binary only, observe the active Topway source once through a temporary status callback that is always removed. Nothing is written to Topway, tuner, light, volume or MCU state; the music callback is never registered. See `docs/OEM_CAPABILITIES.md`. TS18 behaviour is NOT_RUN.
 
+- Add a process-local startup phase timeline (`StartupTimeline`, log tag `TS18Startup`): process start with boot_id, Application create, startup kind, HOME create/content/first draw (`reportFullyDrawn`)/focus, first M1 music/radio queue readiness and navigation readiness, plus timed spans for each synchronous `Application.onCreate` step. Measurement only; behaviour unchanged. See `docs/STARTUP_TIMELINE.md`.
+
 - When neither Music nor Radio uses the Legacy engine, stop the legacy session monitor entirely (subscription, callbacks and its one-second visible tick) instead of computing state that is then discarded.
 
 - Add the experimental, independent N3 package (`navigation/n3`): a generation-tagged session state machine, a feasibility classifier and a read-only probe (Settings → Experimental · N3 display host) that asks Android whether the selected navigation Activity may start on a private launcher-owned display. N3 is not a selectable surface; N0–N2 are unchanged. See `docs/NAVIGATION.md`.

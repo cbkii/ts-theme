@@ -141,6 +141,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
             MediaEventTrace.record("startup", "durable-boot-reconcile", "pending=" + pendingBoot + " current=" + boot);
         }
         Kind kind = StartupReadinessPolicy.classify(trigger, boot, seen);
+        StartupTimeline.mark("startup.kind", "trigger=" + trigger + " kind=" + kind);
         considerLoader(trigger, boot, prefs);
         // BOOT_COMPLETED can arrive after process/HOME startup: never reset active admissions twice.
         if (boot >= 0 && boot != seen) {
@@ -324,7 +325,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
     }
     private void recordResultNavigation(boolean success, String boundary) {
         StartupReadinessPolicy.Record r = policy.record(Source.NAVIGATION);
-        if (success) policy.observedReady(Source.NAVIGATION, SystemClock.uptimeMillis());
+        if (success) {
+            policy.observedReady(Source.NAVIGATION, SystemClock.uptimeMillis());
+            StartupTimeline.mark("navigation.ready", boundary);
+        }
         else {
             if (r.state == State.READY || r.state == State.ACTIVE)
                 policy.observedUnavailable(Source.NAVIGATION, boundary, SystemClock.uptimeMillis());
@@ -367,6 +371,7 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
                 if (ready(source, pkg)) {
                     policy.ready(source, g, now);
                     if (source != Source.NAVIGATION) noteMediaReady(source, pkg);
+                    StartupTimeline.mark(source.name().toLowerCase(java.util.Locale.ROOT) + ".ready", pkg);
                     MediaEventTrace.record("startup", "ready", summary()); updateNavigationAdmission(); return;
                 }
                 if (now < deadline) { handler.postDelayed(this, 500L); return; }
