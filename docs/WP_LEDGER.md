@@ -13,6 +13,17 @@ This ledger is the source of truth for the integration candidate `integration/ts
 
 **No TS18 physical qualification has been run for any item.**
 
+The owner authorised consolidation into PR #44 against `main`, closure of the included
+subsidiary PRs, and a fresh signed TESTING snapshot for physical validation on 12 November
+2026. The physical gates below do not block this nonproduction handoff. They still block
+claims of exact-device success or promotion of the experimental engines to defaults.
+
+Integration review repaired N3 phase-timer interference, late host binding after release,
+invalid replacement starts abandoning an owned display, missing target identity in snapshots,
+and frame reports made before accepted target launch (or without an acquired image).
+An acquired display frame is rendering evidence; identifying usable map content and testing
+touch still require the device capture. The API 29 input and embedding limitations remain.
+
 | WP | Requirement | Status | Code / tests | Remaining gate |
 |---|---|---|---|---|
 | WP0 | Live reconciliation, stack ancestry | IMPLEMENTED | PR #31→#39→#40→#44 by ancestry; feature PRs #41–#43, #45–#50 merge into #44 with `--no-ff` | — |

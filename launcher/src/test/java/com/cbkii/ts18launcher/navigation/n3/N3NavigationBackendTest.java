@@ -123,6 +123,41 @@ public class N3NavigationBackendTest {
         assertTrue(path().createdGen != first);
     }
 
+    @Test public void eachPhaseGetsItsOwnDeadlineRatherThanTheDisplayDeadline() {
+        backend.surfaceAvailable(surface, 1024, 600);
+        backend.start(MAPS);
+        ShadowLooper.idleMainLooper(2, java.util.concurrent.TimeUnit.SECONDS);
+        path().callback.created(path().createdGen, 7);
+        ShadowLooper.idleMainLooper(2, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals("display timer must not expire the launch phase", N3State.APP_LAUNCHING, state());
+        path().callback.launched(path().launchedGen);
+        ShadowLooper.idleMainLooper(5, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals("launch timer must not expire the render phase", N3State.RENDER_AWAITING, state());
+        ShadowLooper.idleMainLooper(4, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(N3State.FAILED, state());
+        assertTrue(backend.snapshot().detail.contains("No map appeared"));
+    }
+
+    @Test public void detachedSurfaceCannotBeFailedByAnOldRenderTimer() {
+        backend.surfaceAvailable(surface, 1024, 600);
+        backend.start(MAPS);
+        path().callback.created(path().createdGen, 7);
+        path().callback.launched(path().launchedGen);
+        backend.surfaceGone();
+        ShadowLooper.idleMainLooper(20, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(N3State.SURFACE_DETACHED, state());
+        assertFalse(path().log.contains("release"));
+    }
+
+    @Test public void diagnosticSnapshotsKeepTheExactTargetThroughRetry() {
+        backend.surfaceAvailable(surface, 1024, 600);
+        backend.start(MAPS);
+        assertEquals(MAPS, backend.snapshot().component);
+        path().callback.failed(path().createdGen, "refused");
+        backend.retry();
+        assertEquals(MAPS, backend.snapshot().component);
+    }
+
     @Test public void surfaceLossKeepsTheDisplayAndReattachesWithoutRelaunch() {
         interactive();
         backend.surfaceGone();

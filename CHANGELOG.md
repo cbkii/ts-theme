@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Integration hardening: give each N3 phase its own deadline, retain the exact target in diagnostic snapshots, ignore invalid replacement starts while a display is owned, invalidate late optional-host bindings on release, and require a non-null display frame after target-launch acceptance before reporting rendering. M1 and N0–N2 remain the defaults; TS18 physical checks are deferred.
+
 - Docs: `docs/REFERENCE_ADOPTION.md` (pinned reference study with adopt/reject decisions) and `docs/WP_LEDGER.md` (work-package status, physical matrices and rollback).
 
 - Campaign kit: capture the launcher's `TS18Startup` phases (live and history) and the framework's `Displayed`/`Fully drawn` lines for the launcher and Organic Maps only; `compare` now reports instrumented phases per launcher process (boot_id, phase offsets, spans, missing expected phases, framework launch timing) without inventing statistics.

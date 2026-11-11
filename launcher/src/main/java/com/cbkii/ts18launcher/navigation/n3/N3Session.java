@@ -35,6 +35,7 @@ public final class N3Session {
     public N3State state() { return state; }
     public long generation() { return generation; }
     public String detail() { return detail; }
+    public String component() { return component; }
 
     /** Opt-in and capability gate. N3 starts only from enable(); never implicitly. */
     public void enable(boolean available) {
@@ -47,12 +48,12 @@ public final class N3Session {
 
     /** Begin presenting component (an exact package/Activity) on a new launcher-owned display. */
     public void start(String targetComponent) {
+        if (state.holdsDisplay()) return; // Even an invalid new target cannot abandon a live owner.
         if (!hostAvailable || targetComponent == null || targetComponent.isEmpty()) {
             move(N3State.HOST_UNAVAILABLE, targetComponent == null || targetComponent.isEmpty()
                     ? "No navigation app selected" : "No display host with authority for external apps");
             return;
         }
-        if (state.holdsDisplay()) return; // One owner: an active session is never doubled.
         component = targetComponent;
         generation++;
         move(N3State.DISPLAY_CREATING, "");

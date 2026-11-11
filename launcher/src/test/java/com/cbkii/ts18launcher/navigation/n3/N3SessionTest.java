@@ -70,6 +70,14 @@ public class N3SessionTest {
         assertEquals(N3State.INTERACTIVE, session.state());
     }
 
+    @Test public void invalidSecondStartCannotAbandonAnOwnedDisplay() {
+        reachInteractive();
+        session.start("");
+        assertEquals(N3State.INTERACTIVE, session.state());
+        assertEquals(MAPS, session.component());
+        assertEquals(2, calls.size());
+    }
+
     @Test public void deadlineFailsReleasesAndNeverRetriesByItself() {
         session.enable(true);
         session.start(MAPS);

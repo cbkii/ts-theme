@@ -65,7 +65,7 @@ final class HostDisplayPath implements N3DisplayPath {
         if (component == null) { cb.failed(gen, "HOST_UNAVAILABLE: display host not installed"); return; }
         connection = new ServiceConnection() {
             @Override public void onServiceConnected(ComponentName name, IBinder service) {
-                if (gen != generation) return;
+                if (gen != generation || connection != this) return;
                 host = IN3DisplayHost.Stub.asInterface(service);
                 try {
                     if (host.protocolVersion() != PROTOCOL) { cb.failed(gen, "HOST_UNAVAILABLE: protocol mismatch"); return; }
@@ -112,6 +112,7 @@ final class HostDisplayPath implements N3DisplayPath {
     }
 
     @Override public void release() {
+        generation = -1L; // Invalidate a queued onServiceConnected before unbinding.
         if (host != null && displayId > 0) call(() -> host.close(displayId, lease));
         if (connection != null) {
             try { app.unbindService(connection); } catch (RuntimeException ignored) { }

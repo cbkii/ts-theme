@@ -31,6 +31,8 @@ final class PublicDisplayPath implements N3DisplayPath {
     private ImageReader reader;
     private Surface presenter;
     private boolean framed;
+    private boolean launchAccepted;
+    private long activeGeneration = -1L;
     private N3InputTransport input = N3InputTransport.NONE;
 
     PublicDisplayPath(Context context, Handler main) {
@@ -44,14 +46,17 @@ final class PublicDisplayPath implements N3DisplayPath {
     @Override public void create(long generation, Surface surface, int width, int height, int dpi,
                                  Callback callback) {
         release();
+        activeGeneration = generation;
         presenter = surface;
         DisplayManager manager = (DisplayManager) app.getSystemService(Context.DISPLAY_SERVICE);
         try {
             reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
             reader.setOnImageAvailableListener(r -> {
+                if (r != reader) return; // A released/replaced reader cannot report this session.
                 Image image = r.acquireLatestImage();
-                if (image != null) image.close();
-                if (framed || display == null) return;
+                if (image == null) return;
+                image.close();
+                if (framed || display == null || !launchAccepted) return;
                 framed = true;
                 // Real pixels from the display's content arrived; now present them.
                 display.setSurface(presenter);
@@ -86,7 +91,13 @@ final class PublicDisplayPath implements N3DisplayPath {
         int id = display.getDisplay().getDisplayId();
         cancelRelay();
         relayToken = N3LaunchRelay.register(new N3LaunchRelay.Result() {
-            @Override public void launched() { main.post(() -> callback.launched(generation)); }
+            @Override public void launched() {
+                main.post(() -> {
+                    if (display == null || activeGeneration != generation) return;
+                    launchAccepted = true;
+                    callback.launched(generation);
+                });
+            }
             @Override public void refused(String reason) { main.post(() -> callback.failed(generation, reason)); }
         });
         // The launcher's own trampoline goes first: this app owns the display, so it may always
@@ -129,12 +140,14 @@ final class PublicDisplayPath implements N3DisplayPath {
     @Override public N3InputTransport input() { return input; }
 
     @Override public void release() {
+        activeGeneration = -1L;
         cancelRelay();
         input.close();
         input = N3InputTransport.NONE;
         if (display != null) { display.release(); display = null; }
         if (reader != null) { reader.close(); reader = null; }
         framed = false;
+        launchAccepted = false;
         presenter = null;
     }
 }

@@ -31,6 +31,7 @@ public final class N3NavigationBackend implements N3Session.Host {
     private boolean expanded;
     private N3MotionConverter converter;
     private N3Snapshot last;
+    private Runnable deadline;
 
     /** Creates the display path for the chosen authority; replaceable in tests. */
     interface PathFactory { N3DisplayPath create(boolean optionalHost); }
@@ -152,13 +153,22 @@ public final class N3NavigationBackend implements N3Session.Host {
     }
 
     @Override public void releaseDisplay(long generation) {
+        if (deadline != null) main.removeCallbacks(deadline);
+        deadline = null;
         if (path != null) path.release();
         displayId = 0;
         pixels = false;
     }
 
     @Override public void schedule(long generation, long deadlineMs) {
-        main.postDelayed(() -> session.onDeadline(generation), deadlineMs);
+        if (deadline != null) main.removeCallbacks(deadline);
+        N3State phase = session.state();
+        deadline = () -> {
+            // A generation spans several phases; an earlier phase's timer must never expire
+            // a later one, including a surface detach/reattach in the same session.
+            if (session.state() == phase) session.onDeadline(generation);
+        };
+        main.postDelayed(deadline, deadlineMs);
     }
 
     @Override public void onState(N3State state, String detail) {
@@ -170,7 +180,7 @@ public final class N3NavigationBackend implements N3Session.Host {
 
     private N3Snapshot snapshot(N3State state, String detail) {
         String inputReason = path == null ? "No session" : path.input().unavailableReason();
-        return new N3Snapshot(state, detail, session.generation(), "",
+        return new N3Snapshot(state, detail, session.generation(), session.component(),
                 path == null ? "" : path.authority().name(), displayId, width, height, pixels,
                 inputReason, expanded);
     }
