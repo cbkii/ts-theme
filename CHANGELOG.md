@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Docs: `docs/REFERENCE_ADOPTION.md` (pinned reference study with adopt/reject decisions) and `docs/WP_LEDGER.md` (work-package status, physical matrices and rollback).
+
 - Campaign kit: capture the launcher's `TS18Startup` phases (live and history) and the framework's `Displayed`/`Fully drawn` lines for the launcher and Organic Maps only; `compare` now reports instrumented phases per launcher process (boot_id, phase offsets, spans, missing expected phases, framework launch timing) without inventing statistics.
 
 - Topway: the one-off source observation now also requires a separate default-OFF acknowledgement that names the unresolved shared-callback risk; the descriptor-only check is unaffected.
