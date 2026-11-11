@@ -31,7 +31,7 @@ class NotificationAccessBootstrapTest(unittest.TestCase):
 
     def test_application_starts_process_session_monitor_early(self):
         self.assertIn("MediaNotificationAccessBootstrapper.ensureEarly(this);", APP)
-        self.assertIn("ProcessMediaSessionMonitor.start(this);", APP)
+        self.assertIn("mediaFacade(this);", APP)
         self.assertIn("ProcessMediaSessionMonitor.refresh(this);", APP)
 
     def test_grant_refreshes_sessions_without_waiting_for_listener_connection(self):

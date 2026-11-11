@@ -95,7 +95,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         launchedAsHome = getIntent() != null && getIntent().hasCategory(Intent.CATEGORY_HOME);
         mediaSelection = new MediaSelection(LauncherPrefs.lastSource(this));
         appearanceController = new AppearanceController(this, mode -> applyAppearance());
-        mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);
+        if (Ts18LauncherApplication.legacyMediaEngineOwns(this, false)
+                || Ts18LauncherApplication.legacyMediaEngineOwns(this, true))
+            mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);
+        else mediaBootstrapper = null;
         rememberMediaConfiguration();
         root = new FrameLayout(this);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
@@ -314,12 +317,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void scheduleMediaReadiness() {
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        mediaRefreshHandler.postDelayed(mediaReadyReconcile, MEDIA_READY_RECONCILE_DELAY_MS);
+        if (mediaBootstrapper != null)
+            mediaRefreshHandler.postDelayed(mediaReadyReconcile, MEDIA_READY_RECONCILE_DELAY_MS);
     }
 
     private void reconcileMediaConfiguration() {
         String radioPackage = RadioProvider.resolvePackage(this);
         String musicPackage = configuredMusicPackage();
+        if (!Ts18LauncherApplication.legacyMediaEngineOwns(this, false)
+                && !Ts18LauncherApplication.legacyMediaEngineOwns(this, true)) {
+            mediaBootstrapper = null; return;
+        }
         MediaSourceBootstrapper current = Ts18LauncherApplication.mediaSources(this);
         if (current == mediaBootstrapper && radioPackage.equals(mediaRadioPackage)
                 && musicPackage.equals(mediaMusicPackage)) return;
@@ -329,7 +337,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     private void resetMediaBootstrapper() {
-        mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);
+        if (Ts18LauncherApplication.legacyMediaEngineOwns(this, false)
+                || Ts18LauncherApplication.legacyMediaEngineOwns(this, true))
+            mediaBootstrapper = Ts18LauncherApplication.mediaSources(this);
+        else mediaBootstrapper = null;
         rememberMediaConfiguration();
     }
 

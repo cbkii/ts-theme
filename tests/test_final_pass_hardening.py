@@ -17,7 +17,7 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertNotIn("cold-foreground-prime", LAUNCHER)
         self.assertIn("StartupReadinessCoordinator.get(this).onTrigger", LAUNCHER)
         coordinator = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupReadinessCoordinator.java").read_text()
-        self.assertIn("media().warm(pkg)", coordinator)
+        self.assertIn("mediaSources(context).warm(pkg)", coordinator)
         self.assertIn("Ts18LauncherApplication.mediaSources(context)", coordinator)
 
     def test_process_media_session_monitor_is_primary_cold_boot_observer(self):

@@ -55,11 +55,12 @@ public final class Ts18LauncherApplication extends Application
         }
         app.mediaFacade.reconcile();
         // The legacy session monitor runs only while some source is on the legacy engine.
-        ProcessMediaSessionMonitor.setDemand(app,
-                app.mediaFacade.engine(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC)
+        boolean legacy = app.mediaFacade.engine(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC)
                         == com.cbkii.ts18launcher.media.MediaEngine.LEGACY
                 || app.mediaFacade.engine(com.cbkii.ts18launcher.media.MediaSourceKey.RADIO)
-                        == com.cbkii.ts18launcher.media.MediaEngine.LEGACY);
+                        == com.cbkii.ts18launcher.media.MediaEngine.LEGACY;
+        ProcessMediaSessionMonitor.setDemand(app, legacy);
+        MediaListenerService.setDemand(legacy);
         return app.mediaFacade;
     }
 
@@ -128,7 +129,7 @@ public final class Ts18LauncherApplication extends Application
         StartupTimeline.span("app.root-task-warm", () -> { if (HomeMode.isDefaultHome(this)) RootTaskSession.warm(this); });
         StartupTimeline.span("app.nav-permission-early", () -> { NavigationPermissionBootstrapper.ensureEarly(this); });
         StartupTimeline.span("app.media-access-early", () -> { MediaNotificationAccessBootstrapper.ensureEarly(this); });
-        StartupTimeline.span("app.media-monitor-start", () -> { ProcessMediaSessionMonitor.start(this); });
+        StartupTimeline.span("app.media-monitor-start", () -> { mediaFacade(this); });
         registerActivityLifecycleCallbacks(this);
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_MEDIA_MOUNTED);
@@ -150,6 +151,11 @@ public final class Ts18LauncherApplication extends Application
         StartupTimeline.span("app.startup-coordinator", () ->
                 StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.RESTART));
         StartupTimeline.mark("app.created");
+    }
+
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= TRIM_MEMORY_RUNNING_LOW) AppCatalog.get(this).trim();
     }
 
     private void warmConfiguredMusicAfterMount() {

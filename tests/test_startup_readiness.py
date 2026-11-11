@@ -19,17 +19,13 @@ class StartupReadinessTests(unittest.TestCase):
         self.assertNotIn("NAVIGATION_DWELL_MS", coordinator)
         self.assertNotIn("holdNavigation", coordinator)
 
-    def test_staging_root_routes_are_narrow_and_no_direct_shell_launch(self):
+    def test_startup_has_no_foreground_lane_or_competing_media_owner(self):
         coordinator = read("StartupReadinessCoordinator.java")
-        self.assertIn("StartupForegroundPolicy.parse", coordinator)
-        self.assertIn("moveTaskToFront(homeTask, 0)", coordinator)
-        self.assertIn("pauseUnrequestedPlayback", coordinator)
-        self.assertIn("acc=unverified", coordinator)
-        self.assertIn("catch (SecurityException rejected)", coordinator)
-        self.assertIn("AppResolver.LaunchOutcome.REJECTED && allowRoot", coordinator)
-        self.assertIn("StartupRootFallback.definitelyNotStarted(result)", coordinator)
-        for forbidden in ("startservice", "force-stop", "requestAudioFocus", "setenforce"):
+        for forbidden in ("startActivity", "moveTaskToFront", "StartupRootFallback",
+                          "new MediaSourceBootstrapper", "requestAudioFocus", "postDelayed"):
             self.assertNotIn(forbidden, coordinator)
+        self.assertIn("prepareDirectSources(context, ++epoch)", coordinator)
+        self.assertIn("navigation.deferAutomaticPresentation(false)", coordinator)
 
     def test_boot_receiver_signals_only(self):
         receiver = read("StartupBootReceiver.java")
@@ -44,7 +40,7 @@ class StartupReadinessTests(unittest.TestCase):
     def test_startup_profile_is_fixed_without_rejected_comparators(self):
         settings = read("SettingsActivity.java")
         profiles = read("TestingProfiles.java")
-        self.assertIn("N2 / Bridge / fullscreen departure", settings)
+        self.assertIn("N2 task reuse / fullscreen recovery", settings)
         self.assertNotIn('chooseTesting("departure"', settings)
         self.assertNotIn('chooseTesting("navigation"', settings)
         self.assertIn('static String navigation(Context c) { return "N2"; }', profiles)

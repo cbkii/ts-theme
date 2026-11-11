@@ -27,7 +27,7 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
             "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceBootstrapper.java")
         self.assertIn("StartupReadinessCoordinator.get(this).onTrigger", launcher)
         coordinator = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupReadinessCoordinator.java").read_text()
-        self.assertIn("media().warm(pkg)", coordinator)
+        self.assertIn("mediaSources(context).warm(pkg)", coordinator)
         self.assertIn("Ts18LauncherApplication.mediaSources(context)", coordinator)
         self.assertIn("MediaBrowser", bootstrapper)
         self.assertIn("prepareExplicitService", bootstrapper)
