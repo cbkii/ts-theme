@@ -123,7 +123,7 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn('setTitle("Choose icon")', editor)
         self.assertIn('"Sidebar shortcut "', editor)
         self.assertIn('"Drawer shortcut "', editor)
-        self.assertIn("getApplicationIcon(pkg)", editor)
+        self.assertIn("getApplicationIcon(AppResolver.packagePart(pkg))", editor)
         self.assertIn("preview.tint", editor)
         self.assertIn("for (String value : SlotIconCatalog.VALUES)", editor)
         self.assertIn("grid.setColumnCount(5)", editor)

@@ -241,7 +241,7 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertIn('editorCell("Icon"', editor)
         self.assertIn('"Choose app", "Use default", "Change default type"', editor)
         self.assertIn('setTitle("Choose icon")', editor)
-        self.assertIn("getApplicationIcon(pkg)", editor)
+        self.assertIn("getApplicationIcon(AppResolver.packagePart(pkg))", editor)
         self.assertIn("grid.setColumnCount(5)", editor)
         self.assertIn("SlotIconCatalog.label(value)", editor)
         self.assertIn("AccentPalette.baseColor(value)", palette)
