@@ -15,7 +15,7 @@ import java.util.concurrent.Executors;
  *
  * Android 10 has no runtime permission for notification-listener access; the owner enables it on
  * the system "Notification access" screen. Root is used only after the explicit, persisted opt-in
- * described by {@link MediaListenerAccessPolicy}: then the launcher may enable exactly its own
+ * described by MediaListenerAccessPolicy: then the launcher may enable exactly its own
  * declared listener through NotificationManager's shell command, verify the secure state, and ask
  * the framework to rebind. It never rewrites enabled_notification_listeners, never touches another
  * package's access, and never restores access the owner has revoked.

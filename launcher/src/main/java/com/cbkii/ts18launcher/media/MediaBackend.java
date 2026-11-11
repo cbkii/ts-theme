@@ -3,7 +3,7 @@ package com.cbkii.ts18launcher.media;
 /**
  * One control engine. A backend acts only for sources that are currently attached to it.
  *
- * Contract for every implementation: after {@link #detach}, the backend must not command,
+ * Contract for every implementation: after detach, the backend must not command,
  * prepare, or publish state for that source until it is attached again.
  */
 public interface MediaBackend {
@@ -13,10 +13,10 @@ public interface MediaBackend {
 
     MediaEngine engine();
 
-    /** Select this backend for {@code key} with the exact configured package (may be empty). */
+    /** Select this backend for key with the exact configured package (may be empty). */
     void attach(MediaSourceKey key, String packageName);
 
-    /** Deselect this backend for {@code key}; it must go quiet for that source. */
+    /** Deselect this backend for key; it must go quiet for that source. */
     void detach(MediaSourceKey key);
 
     boolean attached(MediaSourceKey key);
@@ -24,13 +24,13 @@ public interface MediaBackend {
     MediaSourceState state(MediaSourceKey key);
 
     /**
-     * True only when {@code packageName}, addressed as the attached source, is observed in the
+     * True only when packageName, addressed as the attached source, is observed in the
      * native PLAYING state. A backend that pins one package returns false for any other.
      */
     boolean playing(MediaSourceKey key, String packageName);
 
     /**
-     * Perform one driver action. {@code packageName} is the package the caller believes it is
+     * Perform one driver action. packageName is the package the caller believes it is
      * addressing; a backend that pins a configured package must refuse a mismatch.
      */
     void command(MediaSourceKey key, String packageName, MediaUserAction action,

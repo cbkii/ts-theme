@@ -23,10 +23,10 @@ final class MediaListenerAccessPolicy {
     private MediaListenerAccessPolicy() {}
 
     /**
-     * @param hasAccess        the listener is currently enabled
-     * @param rootConsent      the owner opted in to the root convenience
-     * @param grantApplied     an earlier root grant by this launcher was verified
-     * @param freshConsent     this call is the owner turning the option on right now
+     * hasAccess: the listener is currently enabled
+     * rootConsent: the owner opted in to the root convenience
+     * grantApplied: an earlier root grant by this launcher was verified
+     * freshConsent: this call is the owner turning the option on right now
      */
     static Action decide(boolean hasAccess, boolean rootConsent, boolean grantApplied,
                          boolean freshConsent) {

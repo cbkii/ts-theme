@@ -7,14 +7,12 @@ import java.util.Map;
  * The single UI-facing entry point for Music and Radio control.
  *
  * It owns exactly two decisions and nothing else:
- * <ol>
- *   <li>which engine acts for each source (the other engine is detached and stays silent);</li>
- *   <li>source handover when the two sources are not both on the legacy engine: the previously
+ *   - which engine acts for each source (the other engine is detached and stays silent);
+ *   - source handover when the two sources are not both on the legacy engine: the previously
  *       playing source is paused once, by its own engine, only after the requested source has
- *       been observed playing. A failed replacement leaves the former source untouched.</li>
- * </ol>
+ *       been observed playing. A failed replacement leaves the former source untouched.
  * When both sources are on the legacy engine, handover remains entirely inside that engine
- * (see {@link #legacyOwnsHandover}), so the default configuration behaves exactly as it did
+ * (see legacyOwnsHandover), so the default configuration behaves exactly as it did
  * before this type existed.
  */
 public final class MediaFeatureFacade {
@@ -31,7 +29,7 @@ public final class MediaFeatureFacade {
     private final Map<MediaSourceKey, String> packages = new EnumMap<>(MediaSourceKey.class);
     private MediaBackend.StateListener listener;
 
-    /** @param direct may be null: a requested direct engine then resolves to legacy. */
+    /** direct: may be null: a requested direct engine then resolves to legacy. */
     public MediaFeatureFacade(Configuration configuration, MediaBackend legacy, MediaBackend direct) {
         if (configuration == null || legacy == null) throw new IllegalArgumentException("legacy engine required");
         this.configuration = configuration;
@@ -60,7 +58,7 @@ public final class MediaFeatureFacade {
         }
     }
 
-    /** The engine actually acting for {@code key}; legacy until {@link #reconcile()} has run. */
+    /** The engine actually acting for key; legacy until reconcile() has run. */
     public MediaEngine engine(MediaSourceKey key) {
         MediaEngine engine = effective.get(key);
         return engine == null ? MediaEngine.LEGACY : engine;
@@ -75,7 +73,7 @@ public final class MediaFeatureFacade {
     }
 
     /**
-     * True when a switch to {@code key} is handled by the legacy engine's own nominate-then-commit
+     * True when a switch to key is handled by the legacy engine's own nominate-then-commit
      * handover, i.e. both sources are legacy. The caller then keeps its original legacy
      * nomination; in every other combination this facade commits the handover itself.
      */

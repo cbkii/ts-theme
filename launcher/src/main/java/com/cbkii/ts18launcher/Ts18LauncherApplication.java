@@ -52,7 +52,7 @@ public final class Ts18LauncherApplication extends Application
         return app.mediaFacade;
     }
 
-    /** True while the legacy engine is the one acting for Radio ({@code radio}) or Music. */
+    /** True while the legacy engine is the one acting for Radio (radio) or Music. */
     static boolean legacyMediaEngineOwns(Context context, boolean radio) {
         return mediaFacade(context).engine(radio
                 ? com.cbkii.ts18launcher.media.MediaSourceKey.RADIO

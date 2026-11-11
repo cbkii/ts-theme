@@ -16,7 +16,7 @@ import java.util.Map;
  * M1: the original media machinery behind the engine contract.
  *
  * This is a thin adapter. Every command still goes through the one shared
- * {@link MediaSourceBootstrapper} with the same arguments as before; no legacy decision is
+ * MediaSourceBootstrapper with the same arguments as before; no legacy decision is
  * re-implemented here. Its only new duty is to stay silent for a source that is not attached.
  */
 final class LegacyMediaBackend implements MediaBackend {

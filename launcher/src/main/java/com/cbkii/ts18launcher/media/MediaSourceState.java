@@ -3,9 +3,9 @@ package com.cbkii.ts18launcher.media;
 /**
  * Immutable, UI-facing state of one configured source as reported by its selected engine.
  *
- * {@link #nativeState} and {@link #actions} carry the framework PlaybackState values unchanged, so
- * BUFFERING/CONNECTING are never presented as PLAYING. {@link #itemId} is separate from
- * {@link #sessionIdentity}: a new track or station under the same session is a new item.
+ * nativeState and actions carry the framework PlaybackState values unchanged, so
+ * BUFFERING/CONNECTING are never presented as PLAYING. itemId is separate from
+ * sessionIdentity: a new track or station under the same session is a new item.
  */
 public final class MediaSourceState {
     public enum Availability {
