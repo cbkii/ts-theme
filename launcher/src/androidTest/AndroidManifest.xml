@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test APK only. A real exported media browser service in a separate package and process,
+     so the launcher's M2 cold-start path is exercised over genuine cross-process Binder IPC. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service
+            android:name="com.cbkii.ts18launcher.media.direct.FixtureBrowserService"
+            android:exported="true"
+            tools:ignore="ExportedService"
+            xmlns:tools="http://schemas.android.com/tools">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

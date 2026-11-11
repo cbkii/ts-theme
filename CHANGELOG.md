@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Qualify the M2 cold-start path over real cross-process IPC on the API 29 emulator: the androidTest APK now carries an exported `MediaBrowserService` fixture in its own package and process, and a new `-e m2_browser 1` instrumentation mode drives the production `BrowserSessionStarter.FrameworkConnector` through discovery, cold bind, package-owned token, one Play confirmed by the same session, teardown and a fresh reconnect. The CI emulator smoke requires its PASS line. This is emulator IPC evidence only, not TS18 or Auxio-TS physical qualification.
+
 - When neither Music nor Radio uses the Legacy engine, stop the legacy session monitor entirely (subscription, callbacks and its one-second visible tick) instead of computing state that is then discarded.
 
 - Add the experimental, independent N3 package (`navigation/n3`): a generation-tagged session state machine, a feasibility classifier and a read-only probe (Settings → Experimental · N3 display host) that asks Android whether the selected navigation Activity may start on a private launcher-owned display. N3 is not a selectable surface; N0–N2 are unchanged. See `docs/NAVIGATION.md`.
