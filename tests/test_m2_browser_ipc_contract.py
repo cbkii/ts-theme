@@ -26,11 +26,16 @@ class M2BrowserIpcContract(unittest.TestCase):
         self.assertIn("session.dispatch(DirectOperation.PLAY)", probe)
         self.assertRegex(probe, r"playing\.await\(\d+, TimeUnit\.SECONDS\)")
         self.assertIn("fresh reconnect", probe)
+        self.assertIn("session.dispatch(DirectOperation.PREPARE)", probe)
+        self.assertIn("PREPARE must not start playback", probe)
+        self.assertIn("retry after death", probe)
 
     def test_smoke_runs_the_mode_and_requires_its_pass_line(self):
         smoke = (ROOT / "scripts/ci/api29-startup-boundary-smoke.sh").read_text()
         self.assertRegex(smoke, r"am instrument -w -e m2_browser 1")
         self.assertIn("grep -Fq 'PASS API29 M2 browser starter'", smoke)
+        self.assertIn("grep -Fq 'PREPARE loads without Play'", smoke)
+        self.assertIn("grep -Fq 'retry after death'", smoke)
         runner = (TEST_SRC / "java/com/cbkii/ts18launcher/MediaSessionApi29Instrumentation.java").read_text()
         self.assertTrue(re.search(r'"m2_browser"', runner))
 

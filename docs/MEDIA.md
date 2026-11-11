@@ -51,7 +51,8 @@ its own. It observes sessions the source apps publish and sends them transport a
 
 ### Starting a source that is not running
 
-- Only a **Play** tap starts a source. Attaching, refreshing, HOME start, Next and Previous never do.
+- A **Play** tap starts a source and plays it. Attaching, refreshing, Next and Previous never do.
+  Passive readiness (below) may bind the source's browser service but never sends Play.
 - The only mechanism is the standard `android.media.browse.MediaBrowserService` the app itself
   exports. Connecting makes the app create its process and hand over its own session token; the
   launcher checks the token belongs to the requested package, pins it, sends **one** `play()` and
@@ -66,9 +67,38 @@ its own. It observes sessions the source apps publish and sends them transport a
 - HOME shows Play for a startable source, a connecting icon while starting, and the unavailable
   icon otherwise.
 
+### Passive readiness (boot, wake, HOME return, storage mount)
+
+Each accepted startup trigger opens one readiness **epoch**. The trigger must be one of `BOOT`,
+`RESTART`, `USER_UNLOCKED`, `SCREEN_ON`, `ACC_ON`, `HOME_RESUME` or `STORAGE_MOUNT`, and the
+"automatic media preparation" preference must be on. For each source the Direct engine serves:
+
+- Before deciding, the launcher waits for membership and notification access to be known. Ambiguous
+  or unanswering sources are skipped.
+- A source that already has an item loaded, or that does not advertise `ACTION_PREPARE`, gets
+  nothing.
+- A live session with nothing loaded receives **one** `prepare()`.
+- A startable source that is not running is bound through its own exported browser service. It is
+  sent `prepare()` only if the session it publishes advertises `ACTION_PREPARE` and has nothing
+  loaded.
+- **Ready** means the source's own session reports a loaded item (media ID or title) and no error.
+  A process, a token or a successful bind is not enough.
+- Time limits: 8 s for the session to appear, then 5 s for an item to load. After that the attempt
+  ends honestly. HOME shows "Getting ready…" while it runs, and Play still works afterwards.
+- It never sends Play, opens an Activity, takes audio focus or uses root.
+- A user tap during preparation supersedes it. A replaced session is never prepared, and nothing is
+  retried within the same epoch.
+
+Auxio-TS (`com.tw.media`) already implements this contract. It advertises `ACTION_PREPARE`, and its
+`onPrepare()` restores the persisted queue paused (`play=false`) without requesting audio focus;
+focus is only requested when playing. No new cooperative contract was needed.
+
+For stock `com.tw.radio`, and NavRadio+ unless its installed build exports a browser service, a
+source that is not running stays "Press Play" / unavailable. Nothing is foregrounded to warm it.
+
 ### Not in M2
 
-- Preparing sources at boot/ACC wake (Legacy only).
+- Native Topway tuner control and illumination input.
 - Native Topway tuner control and illumination input.
 - Whether Auxio-TS actually begins playback from a bare `play()` after a cold bind is a property
   of the installed Auxio-TS build and is **not yet physically verified**.
@@ -84,11 +114,15 @@ its own. It observes sessions the source apps publish and sends them transport a
 ## Qualification status
 
 Both engines are verified by host tests (JVM/Robolectric API 29, source contracts, R8 release
-envelope). The M2 cold-start transport additionally has real cross-process evidence on the stock
+envelope). The M2 cold-start and passive-PREPARE transport additionally has real cross-process evidence on the stock
 API 29 emulator in CI: `MediaSessionApi29Instrumentation -e m2_browser 1` binds the production
 `FrameworkConnector` to an exported fixture `MediaBrowserService` in the test APK's own process,
-checks the token belongs to that package, sends one Play and requires the same session to report
-Playing, then disconnects and reconnects. That fixture is not Auxio-TS or NavRadio+, and the
+checks the token belongs to that package and verifies the following:
+
+- `prepare()` loads an item without Playing.
+- One Play is confirmed by the same session.
+- A fresh connection works after teardown.
+- A killed source process is reported, and a deliberate retry after it works. That fixture is not Auxio-TS or NavRadio+, and the
 emulator is not the TS18. **No TS18 physical trial of M2 has been run.** Before Direct can become a default it
 needs, per source: warm command trials, handover trials, cold boots and ACC wakes with audible
 confirmation, and a same-build comparison against Legacy.

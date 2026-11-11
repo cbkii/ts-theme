@@ -146,6 +146,11 @@ public final class DirectSourceMediaBackend implements MediaBackend {
 
     @Override public void pauseForHandover(MediaSourceKey key) { engines.get(key).pauseForHandover(); }
 
+    @Override public void preparePassive(MediaSourceKey key, String packageName, long epoch) {
+        DirectSourceEngine engine = engines.get(key);
+        if (engine.attached() && engine.packageName().equals(packageName)) engine.preparePassive(epoch);
+    }
+
     @Override public void setStateListener(StateListener listener) { this.listener = listener; }
 
     /** Re-read membership now, for example when HOME returns. No effect while nothing is attached. */

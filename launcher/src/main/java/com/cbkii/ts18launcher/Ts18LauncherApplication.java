@@ -32,6 +32,11 @@ public final class Ts18LauncherApplication extends Application
 
     private com.cbkii.ts18launcher.media.MediaFeatureFacade mediaFacade;
 
+    /** Passive readiness epoch for sources served by the Direct engine; legacy is unaffected. */
+    static void prepareDirectSources(Context context, long epoch) {
+        mediaFacade(context).preparePassive(epoch);
+    }
+
     /** The single UI-facing media entry point; selects the engine acting for each source. */
     static com.cbkii.ts18launcher.media.MediaFeatureFacade mediaFacade(Context context) {
         Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();

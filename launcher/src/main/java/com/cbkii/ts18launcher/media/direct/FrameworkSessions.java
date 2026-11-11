@@ -193,7 +193,8 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
                 case PLAY: controls.play(); break;
                 case PAUSE: controls.pause(); break;
                 case NEXT: controls.skipToNext(); break;
-                default: controls.skipToPrevious(); break;
+                case PREVIOUS: controls.skipToPrevious(); break;
+                default: controls.prepare(); break;
             }
             return true;
         }

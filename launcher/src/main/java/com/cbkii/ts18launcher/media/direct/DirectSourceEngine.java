@@ -60,6 +60,8 @@ public final class DirectSourceEngine {
     public static final long PLAY_ACK_MS = 5000L;
     public static final long PAUSE_ACK_MS = 2500L;
     public static final long SKIP_OBSERVE_MS = 2000L;
+    /** After PREPARE is sent, how long the source has to show a loaded item. */
+    public static final long PREPARE_OBSERVE_MS = 5000L;
 
     private static final class Pending {
         final long opId;
@@ -100,6 +102,11 @@ public final class DirectSourceEngine {
     /** Whether the configured package publishes a startable media service; read on membership. */
     private boolean startCapable;
     private final List<Pending> pendingSkips = new ArrayList<>();
+    /** Passive readiness in progress: token null while binding, the pinned token once sent. */
+    private Pending pendingPrepare;
+    /** Latest epoch asked for, and the latest epoch already decided (attempted or not needed). */
+    private long requestedPrepareEpoch = -1L;
+    private long decidedPrepareEpoch = -1L;
     private long nextOpId;
     private MediaSourceState published;
 
@@ -126,8 +133,11 @@ public final class DirectSourceEngine {
         if (attached && next.equals(packageName)) return;
         failAllPending(MediaCommandResult.Outcome.SOURCE_LOST, "Source changed");
         endStart(MediaCommandResult.Outcome.SOURCE_LOST, "Source changed");
+        cancelPrepare();
         releaseStarter();
         attached = true;
+        requestedPrepareEpoch = -1L;
+        decidedPrepareEpoch = -1L;
         packageName = next;
         generation++;
         clearHandoverPause();
@@ -142,6 +152,7 @@ public final class DirectSourceEngine {
         if (!attached) return;
         failAllPending(MediaCommandResult.Outcome.FAILED, "Media engine changed");
         endStart(MediaCommandResult.Outcome.FAILED, "Media engine changed");
+        cancelPrepare();
         releaseStarter();
         attached = false;
         generation++;
@@ -167,6 +178,7 @@ public final class DirectSourceEngine {
         if (packageName.isEmpty()) { settle(MediaSourceState.Availability.UNCONFIGURED, null); return; }
         if (!accessGranted) {
             endStart(MediaCommandResult.Outcome.FAILED, "Notification access needed");
+            cancelPrepare();
             // Without access the launcher may not hold a source's session at all.
             releaseStarter();
             settle(MediaSourceState.Availability.PERMISSION_NEEDED, null);
@@ -193,6 +205,7 @@ public final class DirectSourceEngine {
                 settle(liveThisEpoch ? MediaSourceState.Availability.SOURCE_LOST
                         : MediaSourceState.Availability.NO_SESSION, null);
         }
+        tryPassivePrepare();
     }
 
     /** A state or metadata event from one session. Ignored unless it is the pinned session. */
@@ -203,6 +216,7 @@ public final class DirectSourceEngine {
         current = observation;
         if (handoverPause != null && observation.nativeState != PlaybackState.STATE_PLAYING) clearHandoverPause();
         resolvePending(observation);
+        observePrepare(observation);
         publish();
     }
 
@@ -213,11 +227,12 @@ public final class DirectSourceEngine {
         }
         if (availability != MediaSourceState.Availability.LIVE || current == null) {
             return MediaSourceState.unavailable(key, MediaEngine.DIRECT, packageName, availability, generation)
-                    .withStart(startable(), pendingStart != null);
+                    .withStart(startable(), pendingStart != null, pendingPrepare != null);
         }
-        return new MediaSourceState(key, MediaEngine.DIRECT, packageName, availability,
+        MediaSourceState live = new MediaSourceState(key, MediaEngine.DIRECT, packageName, availability,
                 current.nativeState, current.actions,
                 current.token, current.itemId, current.title, current.subtitle, generation);
+        return pendingPrepare == null ? live : live.withStart(false, false, true);
     }
 
     public boolean playing(String expectedPackage) {
@@ -232,6 +247,8 @@ public final class DirectSourceEngine {
             deliver(callback, failed(labels.sourceLabel() + " source changed"));
             return;
         }
+        // A deliberate tap supersedes passive readiness; nothing further is sent for it.
+        cancelPrepare();
         MediaCommandResult unavailable = unavailableResult();
         if (unavailable != null) {
             if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback); return; }
@@ -312,6 +329,7 @@ public final class DirectSourceEngine {
             clearHandoverPause();
             failAllPending(MediaCommandResult.Outcome.SOURCE_LOST,
                     labels.appLabel(packageName) + " session ended");
+            if (pendingPrepare != null && pendingPrepare.token != null) cancelPrepare();
         }
         pinnedToken = nextToken;
         current = session;
@@ -320,6 +338,7 @@ public final class DirectSourceEngine {
             liveThisEpoch = true;
             resolvePending(session);
             continueStart();
+            continuePrepare();
         }
         publish();
     }
@@ -388,6 +407,98 @@ public final class DirectSourceEngine {
         }
         pendingToggle = play;
         play.timer = clock.schedule(PLAY_ACK_MS, () -> onDeadline(play));
+    }
+
+    /**
+     * Passive readiness for one epoch. Uses only the source's own contract: bind its exported
+     * media browser if it is not running, then send PREPARE once if it advertises it and has no
+     * loaded item. Never Play, never an Activity, never audio focus. One attempt per epoch.
+     */
+    public void preparePassive(long epoch) {
+        if (!attached || epoch <= decidedPrepareEpoch) return;
+        requestedPrepareEpoch = Math.max(requestedPrepareEpoch, epoch);
+        tryPassivePrepare();
+    }
+
+    private void tryPassivePrepare() {
+        long epoch = requestedPrepareEpoch;
+        if (!attached || epoch <= decidedPrepareEpoch || packageName.isEmpty()) return;
+        // Membership and access must be known before anything is decided for this epoch.
+        if (!access) return;
+        if (pendingStart != null || pendingPrepare != null || pendingToggle != null) return;
+        if (availability == MediaSourceState.Availability.AMBIGUOUS_SOURCE
+                || availability == MediaSourceState.Availability.SERVICE_UNAVAILABLE) return;
+        decidedPrepareEpoch = epoch;
+        if (live()) {
+            if (loaded(current) || !advertisesPrepare(current)) return;
+            pendingPrepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");
+            continuePrepare();
+            publish();
+            return;
+        }
+        if (!startable()) return;
+        Pending prepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");
+        pendingPrepare = prepare;
+        prepare.timer = clock.schedule(COLD_START_MS, () -> {
+            if (pendingPrepare != prepare) return;
+            prepare.timer = null;
+            if (pendingStart == null && starter != null) starter.abandon(key, packageName);
+            endPrepare();
+        });
+        publish();
+        starter.start(key, packageName);
+    }
+
+    /** The session is pinned: finish if it is already loaded, else send PREPARE once. */
+    private void continuePrepare() {
+        Pending prepare = pendingPrepare;
+        if (prepare == null || !live() || prepare.token != null) return;
+        if (prepare.timer != null) { clock.cancel(prepare.timer); prepare.timer = null; }
+        if (loaded(current) || !advertisesPrepare(current)) { endPrepare(); return; }
+        Pending sent = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PREPARE, "");
+        pendingPrepare = sent;
+        if (!transport.dispatch(pinnedToken, DirectOperation.PREPARE)) { endPrepare(); return; }
+        sent.timer = clock.schedule(PREPARE_OBSERVE_MS, () -> {
+            if (pendingPrepare != sent) return;
+            sent.timer = null;
+            endPrepare();
+        });
+    }
+
+    private void observePrepare(SessionObservation observation) {
+        Pending prepare = pendingPrepare;
+        if (prepare == null || prepare.token == null || prepare.generation != generation
+                || !prepare.token.equals(observation.token)) return;
+        if (loaded(observation) || observation.nativeState == PlaybackState.STATE_ERROR) endPrepare();
+    }
+
+    private void endPrepare() {
+        Pending prepare = pendingPrepare;
+        if (prepare == null) return;
+        pendingPrepare = null;
+        if (prepare.timer != null) { clock.cancel(prepare.timer); prepare.timer = null; }
+        if (attached) publish();
+    }
+
+    /** Stop waiting without sending anything further. The browser link stays with its owners. */
+    private void cancelPrepare() {
+        Pending prepare = pendingPrepare;
+        if (prepare == null) return;
+        pendingPrepare = null;
+        if (prepare.timer != null) { clock.cancel(prepare.timer); prepare.timer = null; }
+    }
+
+    /** True while passive readiness is in progress. */
+    public boolean preparing() { return pendingPrepare != null; }
+
+    /** A playable item is loaded: the source's own current item, not just a process or token. */
+    static boolean loaded(SessionObservation observation) {
+        return observation != null && observation.nativeState != PlaybackState.STATE_ERROR
+                && (!observation.itemId.isEmpty() || !observation.title.isEmpty());
+    }
+
+    private static boolean advertisesPrepare(SessionObservation observation) {
+        return observation != null && (observation.actions & PlaybackState.ACTION_PREPARE) != 0L;
     }
 
     private void endStart(MediaCommandResult.Outcome outcome, String message) {
@@ -485,7 +596,8 @@ public final class DirectSourceEngine {
             case PLAY: return "Play";
             case PAUSE: return "Pause";
             case NEXT: return "Next";
-            default: return "Previous";
+            case PREVIOUS: return "Previous";
+            default: return "Prepare";
         }
     }
 

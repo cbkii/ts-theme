@@ -156,6 +156,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         }
         MediaEventTrace.record("startup", "trigger", trigger + " kind=" + kind + " mode=" + mode()
                 + (trigger == Trigger.SCREEN_ON ? " acc=unverified" : ""));
+        if (automaticMediaPreparation() && directPrepareTrigger(trigger)) {
+            // One passive epoch per accepted boot/wake/HOME trigger, for Direct sources only.
+            Ts18LauncherApplication.prepareDirectSources(context, ++directPrepareEpoch);
+        }
         if (!automaticMediaPreparation() && !explicitMusicPreparation() && !(foregroundBusy && stagedByLoader))
             cancelForeground("media-disabled-by-preference");
         for (Source source : Source.values()) {
@@ -979,6 +983,14 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         try { return Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1); }
         catch (RuntimeException ignored) { return -1L; }
     }
+    private long directPrepareEpoch;
+
+    static boolean directPrepareTrigger(Trigger trigger) {
+        return trigger == Trigger.BOOT || trigger == Trigger.RESTART || trigger == Trigger.USER_UNLOCKED
+                || trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON || trigger == Trigger.HOME_RESUME
+                || trigger == Trigger.STORAGE_MOUNT;
+    }
+
     private boolean legacyEngineOwns(Source source) {
         return Ts18LauncherApplication.legacyMediaEngineOwns(context, source == Source.RADIO);
     }

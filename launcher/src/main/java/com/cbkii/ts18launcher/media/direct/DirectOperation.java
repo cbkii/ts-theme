@@ -2,9 +2,12 @@ package com.cbkii.ts18launcher.media.direct;
 
 import android.media.session.PlaybackState;
 
-/** One directional transport operation. There is deliberately no toggle. */
+/**
+ * One directional transport operation. There is deliberately no toggle. PREPARE asks the source
+ * to load its current queue without playing; it is only sent passively and never as a user tap.
+ */
 public enum DirectOperation {
-    PLAY, PAUSE, NEXT, PREVIOUS;
+    PLAY, PAUSE, NEXT, PREVIOUS, PREPARE;
 
     /** Any one of these advertised action bits makes the operation supported. */
     long supportingActions() {
@@ -12,7 +15,8 @@ public enum DirectOperation {
             case PLAY: return PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PLAY_PAUSE;
             case PAUSE: return PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE;
             case NEXT: return PlaybackState.ACTION_SKIP_TO_NEXT;
-            default: return PlaybackState.ACTION_SKIP_TO_PREVIOUS;
+            case PREVIOUS: return PlaybackState.ACTION_SKIP_TO_PREVIOUS;
+            default: return PlaybackState.ACTION_PREPARE;
         }
     }
 

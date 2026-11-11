@@ -39,6 +39,13 @@ public interface MediaBackend {
     /** Pause this backend's attached source once, only if it is observed playing. */
     void pauseForHandover(MediaSourceKey key);
 
+    /**
+     * Passive readiness for one epoch (boot, wake or HOME return): bring the source to a loaded,
+     * paused queue through its own contract without playing, focusing or opening it. At most one
+     * attempt per source per epoch. Engines without such a path ignore it.
+     */
+    default void preparePassive(MediaSourceKey key, String packageName, long epoch) { }
+
     void setStateListener(StateListener listener);
 
     /** Re-read live state now (for example when HOME returns). Engines without a pull path ignore it. */
