@@ -33,12 +33,10 @@ public final class DirectSourceEngine {
         void cancel(Object handle);
     }
 
-    /** Driver-facing names and exact-device capability additions for a package. */
+    /** Driver-facing names. Capabilities come only from what the session advertises. */
     public interface Labels {
         String sourceLabel();
         String appLabel(String packageName);
-        /** Action bits a qualified source accepts although it does not advertise them. */
-        long qualifiedExtraActions(String packageName);
     }
 
     /**
@@ -47,9 +45,15 @@ public final class DirectSourceEngine {
      */
     public interface Starter {
         boolean canStart(String packageName);
-        /** Begin, or keep, one start attempt for the package. Repeated calls must not stack. */
-        void start(String packageName);
-        void release(String packageName);
+        /**
+         * Begin, or join, one start attempt for the package on behalf of owner. A joined attempt
+         * that is still connecting is shared; one that already produced a session is replaced.
+         */
+        void start(Object owner, String packageName);
+        /** The owner's attempt timed out: drop its claim on a connection that never completed. */
+        void abandon(Object owner, String packageName);
+        /** The owner no longer needs the package: drop its claim, including a live connection. */
+        void release(Object owner, String packageName);
     }
 
     public static final long COLD_START_MS = 8000L;
@@ -89,6 +93,10 @@ public final class DirectSourceEngine {
     private Pending pendingToggle;
     /** A Play tap waiting for the source's own service to publish a session. Not yet dispatched. */
     private Pending pendingStart;
+    /** Deadline of an unconfirmed handover pause, and the exact session it was sent to. */
+    private Object handoverPause;
+    private Object handoverPauseToken;
+    private long handoverPauseGeneration;
     /** Whether the configured package publishes a startable media service; read on membership. */
     private boolean startCapable;
     private final List<Pending> pendingSkips = new ArrayList<>();
@@ -122,6 +130,7 @@ public final class DirectSourceEngine {
         attached = true;
         packageName = next;
         generation++;
+        clearHandoverPause();
         pinnedToken = null; current = null; liveThisEpoch = false; published = null;
         startCapable = false;
         availability = next.isEmpty() ? MediaSourceState.Availability.UNCONFIGURED
@@ -136,8 +145,19 @@ public final class DirectSourceEngine {
         releaseStarter();
         attached = false;
         generation++;
+        clearHandoverPause();
         pinnedToken = null; current = null; liveThisEpoch = false; published = null;
         availability = MediaSourceState.Availability.UNCONFIGURED;
+    }
+
+    /**
+     * The session service failed to answer. That proves nothing about this source: a pinned
+     * session keeps working through its own callbacks; otherwise the source is reported unknown.
+     */
+    public void onMembershipUnknown() {
+        if (!attached || packageName.isEmpty() || live()) return;
+        settle(MediaSourceState.Availability.SERVICE_UNAVAILABLE, null);
+        publish();
     }
 
     /** Full membership reading: every live session the listener authority can see right now. */
@@ -147,6 +167,8 @@ public final class DirectSourceEngine {
         if (packageName.isEmpty()) { settle(MediaSourceState.Availability.UNCONFIGURED, null); return; }
         if (!accessGranted) {
             endStart(MediaCommandResult.Outcome.FAILED, "Notification access needed");
+            // Without access the launcher may not hold a source's session at all.
+            releaseStarter();
             settle(MediaSourceState.Availability.PERMISSION_NEEDED, null);
             return;
         }
@@ -179,6 +201,7 @@ public final class DirectSourceEngine {
                 || !pinnedToken.equals(observation.token)
                 || !packageName.equals(observation.packageName)) return;
         current = observation;
+        if (handoverPause != null && observation.nativeState != PlaybackState.STATE_PLAYING) clearHandoverPause();
         resolvePending(observation);
         publish();
     }
@@ -193,7 +216,7 @@ public final class DirectSourceEngine {
                     .withStart(startable(), pendingStart != null);
         }
         return new MediaSourceState(key, MediaEngine.DIRECT, packageName, availability,
-                current.nativeState, current.actions | labels.qualifiedExtraActions(packageName),
+                current.nativeState, current.actions,
                 current.token, current.itemId, current.title, current.subtitle, generation);
     }
 
@@ -224,7 +247,7 @@ public final class DirectSourceEngine {
             if (callback != null) pendingToggle.callbacks.add(callback);
             return;
         }
-        long effectiveActions = current.actions | labels.qualifiedExtraActions(packageName);
+        long effectiveActions = current.actions;
         if ((effectiveActions & operation.supportingActions()) == 0L) {
             deliver(callback, new MediaCommandResult(MediaCommandResult.Outcome.UNSUPPORTED,
                     labels.appLabel(packageName) + " does not offer " + describe(operation) + " right now",
@@ -250,13 +273,30 @@ public final class DirectSourceEngine {
     /** Source switch: pause once, only when this source is observed playing. */
     public void pauseForHandover() {
         if (!attached || !live() || current.nativeState != PlaybackState.STATE_PLAYING) return;
-        long effectiveActions = current.actions | labels.qualifiedExtraActions(packageName);
+        if (handoverPause != null && handoverPauseToken == pinnedToken && handoverPauseGeneration == generation) {
+            // A handover pause to this exact session is already in flight; never send another.
+            return;
+        }
+        long effectiveActions = current.actions;
         if ((effectiveActions & DirectOperation.PAUSE.supportingActions()) == 0L) return;
         if (pendingToggle != null) {
             finish(pendingToggle, new MediaCommandResult(MediaCommandResult.Outcome.SENT_UNCONFIRMED,
                     "Superseded by a source switch", false, true));
         }
-        transport.dispatch(pinnedToken, DirectOperation.PAUSE);
+        if (!transport.dispatch(pinnedToken, DirectOperation.PAUSE)) return;
+        handoverPauseToken = pinnedToken;
+        handoverPauseGeneration = generation;
+        Object[] holder = new Object[1];
+        holder[0] = clock.schedule(PAUSE_ACK_MS, () -> {
+            if (handoverPause == holder[0]) clearHandoverPause();
+        });
+        handoverPause = holder[0];
+    }
+
+    private void clearHandoverPause() {
+        if (handoverPause != null) clock.cancel(handoverPause);
+        handoverPause = null;
+        handoverPauseToken = null;
     }
 
     private boolean live() {
@@ -269,6 +309,7 @@ public final class DirectSourceEngine {
         if (tokenChanged) {
             // A different (or no) session: nothing in flight may be confirmed by it.
             generation++;
+            clearHandoverPause();
             failAllPending(MediaCommandResult.Outcome.SOURCE_LOST,
                     labels.appLabel(packageName) + " session ended");
         }
@@ -310,11 +351,14 @@ public final class DirectSourceEngine {
         start.timer = clock.schedule(COLD_START_MS, () -> {
             if (pendingStart != start) return;
             start.timer = null;
+            // Tear down this owner's claim on the stalled connection so a later tap is a fresh,
+            // bounded attempt rather than a wait on the same one.
+            if (starter != null) starter.abandon(key, packageName);
             endStart(MediaCommandResult.Outcome.FAILED,
                     labels.appLabel(packageName) + " did not start · open it once");
         });
         publish();
-        starter.start(packageName);
+        starter.start(key, packageName);
     }
 
     /** The awaited session is now pinned: send the one Play the driver asked for. */
@@ -328,7 +372,7 @@ public final class DirectSourceEngine {
             deliverAll(start, new MediaCommandResult(MediaCommandResult.Outcome.ACKNOWLEDGED, "", true, false));
             return;
         }
-        long effectiveActions = current.actions | labels.qualifiedExtraActions(packageName);
+        long effectiveActions = current.actions;
         if ((effectiveActions & DirectOperation.PLAY.supportingActions()) == 0L) {
             deliverAll(start, new MediaCommandResult(MediaCommandResult.Outcome.UNSUPPORTED,
                     labels.appLabel(packageName) + " started but does not offer Play yet", false, false));
@@ -356,7 +400,7 @@ public final class DirectSourceEngine {
     }
 
     private void releaseStarter() {
-        if (starter != null && attached && !packageName.isEmpty()) starter.release(packageName);
+        if (starter != null && attached && !packageName.isEmpty()) starter.release(key, packageName);
     }
 
     private void resolvePending(SessionObservation observation) {
@@ -417,6 +461,8 @@ public final class DirectSourceEngine {
             case SOURCE_LOST:
                 return new MediaCommandResult(MediaCommandResult.Outcome.SOURCE_LOST,
                         app + " stopped · open it again", false, false);
+            case SERVICE_UNAVAILABLE:
+                return failed("Media service not answering · try again");
             default:
                 return failed(app + " is not running · open it first");
         }

@@ -76,6 +76,10 @@ public final class DirectSourceMediaBackend implements MediaBackend {
             @Override public void onMembership(boolean accessGranted, List<SessionObservation> sessions) {
                 for (DirectSourceEngine engine : engines.values()) engine.onSessions(accessGranted, sessions);
             }
+            @Override public void onMembershipUnknown() {
+                host.trace("membership-unknown", "");
+                for (DirectSourceEngine engine : engines.values()) engine.onMembershipUnknown();
+            }
             @Override public void onSessionChanged(SessionObservation observation) {
                 for (DirectSourceEngine engine : engines.values()) engine.onSessionChanged(observation);
             }
@@ -103,9 +107,6 @@ public final class DirectSourceMediaBackend implements MediaBackend {
                 @Override public String appLabel(String packageName) {
                     String label = host.appLabel(packageName);
                     return label == null || label.isEmpty() ? sourceLabel : label;
-                }
-                @Override public long qualifiedExtraActions(String packageName) {
-                    return DirectSourceQuirks.extraActions(packageName);
                 }
         };
     }

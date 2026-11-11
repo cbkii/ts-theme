@@ -19,6 +19,8 @@ public final class MediaSourceState {
         AMBIGUOUS_SOURCE,
         /** The session that was being controlled has gone. */
         SOURCE_LOST,
+        /** The session service could not be read; nothing is known about this source right now. */
+        SERVICE_UNAVAILABLE,
         /** Exactly one live session of the configured package is pinned. */
         LIVE
     }

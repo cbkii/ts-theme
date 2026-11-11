@@ -33,6 +33,7 @@ final class DirectMediaPresentation {
             case NO_SESSION: return "Not running · open it once";
             case AMBIGUOUS_SOURCE: return "Several sessions · open the app";
             case SOURCE_LOST: return "Stopped · open it again";
+            case SERVICE_UNAVAILABLE: return "Media service not answering";
             default: return "";
         }
     }

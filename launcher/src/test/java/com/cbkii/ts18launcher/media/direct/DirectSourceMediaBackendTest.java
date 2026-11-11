@@ -250,13 +250,26 @@ public class DirectSourceMediaBackendTest {
         assertEquals(Arrays.asList(DirectOperation.PAUSE), player.dispatched);
     }
 
-    @Test public void qualifiedSourcesAcceptSkipsTheyDoNotAdvertise() {
-        FakeSession music = session("t1", AUXIO).state(PlaybackState.STATE_PLAYING)
-                .actions(DirectTestKit.PLAYABLE);
-        backend.attach(MediaSourceKey.MUSIC, AUXIO);
-        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.NEXT);
-        assertEquals(Arrays.asList(DirectOperation.NEXT), music.dispatched);
-        assertTrue((backend.state(MediaSourceKey.MUSIC).actions & PlaybackState.ACTION_SKIP_TO_NEXT) != 0L);
+    @Test public void noPackageIsGrantedSkipsItDoesNotAdvertise() {
+        // Applies equally to the expected source packages: a same-named replacement build that
+        // does not advertise Next is told so, not sent a command it may ignore.
+        for (String pkg : new String[] {AUXIO, NAVRADIO}) {
+            FakeSource fresh = new FakeSource();
+            FakeSession session = new FakeSession("t", pkg).state(PlaybackState.STATE_PLAYING)
+                    .actions(DirectTestKit.PLAYABLE);
+            fresh.sessions.add(session);
+            DirectSourceMediaBackend other = new DirectSourceMediaBackend(fresh, new ManualClock(),
+                    new DirectSourceMediaBackend.Host() {
+                        @Override public String appLabel(String packageName) { return packageName; }
+                        @Override public void trace(String event, String detail) { }
+                    });
+            other.attach(MediaSourceKey.MUSIC, pkg);
+            List<MediaCommandResult> got = new ArrayList<>();
+            other.command(MediaSourceKey.MUSIC, pkg, MediaUserAction.NEXT, got::add);
+            assertEquals(pkg, Outcome.UNSUPPORTED, got.get(0).outcome);
+            assertEquals(0, session.dispatched.size());
+            assertEquals(0L, other.state(MediaSourceKey.MUSIC).actions & PlaybackState.ACTION_SKIP_TO_NEXT);
+        }
     }
 
     // ---- skips --------------------------------------------------------------------------
@@ -463,14 +476,30 @@ public class DirectSourceMediaBackendTest {
         assertEquals(Availability.LIVE, backend.state(MediaSourceKey.MUSIC).availability);
     }
 
-    @Test public void sessionServiceFailureReadsAsNoSessionNotAsStaleState() {
+    @Test public void sessionServiceFailureIsNotProofOfNoSession() {
         FakeSession music = session("t1", AUXIO).state(PlaybackState.STATE_PLAYING);
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
         source.throwRuntime = true;
         source.changed();
-        assertEquals(Availability.SOURCE_LOST, backend.state(MediaSourceKey.MUSIC).availability);
+        // The pinned session keeps working through its own callbacks.
+        assertEquals(Availability.LIVE, backend.state(MediaSourceKey.MUSIC).availability);
+        assertTrue(music.watched());
+        music.state(PlaybackState.STATE_PAUSED).emit();
         assertFalse(backend.playing(MediaSourceKey.MUSIC, AUXIO));
-        assertFalse(music.watched());
+    }
+
+    @Test public void sessionServiceFailureWithNothingPinnedIsUnknownNotNoSession() {
+        source.throwRuntime = true;
+        backend.attach(MediaSourceKey.RADIO, NAVRADIO);
+        MediaSourceState state = backend.state(MediaSourceKey.RADIO);
+        assertEquals(Availability.SERVICE_UNAVAILABLE, state.availability);
+        assertFalse("an unknown source is not offered a cold start", state.startable);
+        tap(MediaSourceKey.RADIO, NAVRADIO, MediaUserAction.PLAY_PAUSE);
+        assertEquals(Outcome.FAILED, lastResult().outcome);
+        source.throwRuntime = false;
+        session("r", NAVRADIO).state(PlaybackState.STATE_PAUSED);
+        source.changed();
+        assertEquals(Availability.LIVE, backend.state(MediaSourceKey.RADIO).availability);
     }
 
     @Test public void unconfiguredSourceIsReportedAndInert() {

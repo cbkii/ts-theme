@@ -39,8 +39,9 @@ public class DirectColdStartTest {
         final List<String> log = new ArrayList<>();
         BrowserSessionStarter.Events events;
         @Override public boolean canStart(String packageName) { return startable.contains(packageName); }
-        @Override public void start(String packageName) { log.add("start " + packageName); }
-        @Override public void release(String packageName) { log.add("release " + packageName); }
+        @Override public void start(Object owner, String packageName) { log.add("start " + packageName); }
+        @Override public void abandon(Object owner, String packageName) { log.add("abandon " + packageName); }
+        @Override public void release(Object owner, String packageName) { log.add("release " + packageName); }
     }
 
     private FakeSource source;
@@ -143,7 +144,8 @@ public class DirectColdStartTest {
         clock.expireAll();
         assertEquals(Outcome.FAILED, lastResult().outcome);
         assertFalse(lastResult().dispatched);
-        assertEquals(1, starter.log.size());
+        assertEquals("the stalled attempt is abandoned, never retried by itself",
+                Arrays.asList("start com.tw.media", "abandon com.tw.media"), starter.log);
         assertFalse(backend.state(MediaSourceKey.MUSIC).starting);
         // A session arriving after the deadline becomes controllable but is not auto-played.
         FakeSession late = offer("t1", PlaybackState.STATE_PAUSED);
@@ -212,7 +214,28 @@ public class DirectColdStartTest {
         assertFalse(session.watched());
 
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
-        assertEquals(2, starter.log.size());
+        assertEquals(Arrays.asList("start com.tw.media", "start com.tw.media"), starter.log);
+    }
+
+    @Test public void retryAfterATimeoutIsAFreshAttempt() {
+        backend.attach(MediaSourceKey.MUSIC, AUXIO);
+        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
+        clock.expireAll();
+        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
+        assertEquals(Arrays.asList("start com.tw.media", "abandon com.tw.media", "start com.tw.media"),
+                starter.log);
+        assertTrue(backend.state(MediaSourceKey.MUSIC).starting);
+    }
+
+    @Test public void revokingAccessReleasesTheSourceConnection() {
+        backend.attach(MediaSourceKey.MUSIC, AUXIO);
+        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
+        FakeSession session = offer("t1", PlaybackState.STATE_PLAYING);
+        source.access = false;
+        source.changed();
+        assertTrue(starter.log.contains("release com.tw.media"));
+        assertFalse("the offered session is not held without access", session.watched());
+        assertEquals(Availability.PERMISSION_NEEDED, backend.state(MediaSourceKey.MUSIC).availability);
     }
 
     @Test public void sessionListedByThePlatformAndOfferedByTheSourceIsOneSession() {
@@ -233,6 +256,6 @@ public class DirectColdStartTest {
         assertFalse(backend.state(MediaSourceKey.MUSIC).startable);
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
         assertEquals(Outcome.FAILED, lastResult().outcome);
-        assertTrue(starter.log.isEmpty());
+        assertFalse(starter.log.contains("start com.tw.media"));
     }
 }

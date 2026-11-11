@@ -10,9 +10,13 @@ import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.os.Handler;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Cold start through the source's own exported media browser service, the standard Android
@@ -20,8 +24,11 @@ import java.util.Map;
  *
  * Connecting makes the source create its process and hand over its real session token. This class
  * then only reports that session; it sends no transport command, opens no Activity, uses no root
- * and invents no session. A package without an enabled, exported browser service cannot be
- * started here and is reported as such.
+ * and invents no session.
+ *
+ * Every connection attempt has its own identity. A callback from an attempt that was abandoned,
+ * released or replaced is ignored. One attempt per package may be shared by both sources (Music
+ * and Radio configured to the same app); it is torn down when its last owner lets go.
  */
 final class BrowserSessionStarter implements DirectSourceEngine.Starter {
     /** Receives the outcome of a start attempt on the engine thread. */
@@ -31,105 +38,197 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
         void onStartFailed(String packageName, String reason);
     }
 
-    private static final String BROWSER_SERVICE = "android.media.browse.MediaBrowserService";
-
-    private static final class Link {
-        MediaBrowser browser;
-        Object token;
+    /** The Android-facing edge, replaceable in tests. */
+    interface Connector {
+        /** One exported, enabled browser service of the package, or null with no guess made. */
+        ComponentName resolve(String packageName);
+        Connection connect(ComponentName service, ConnectionCallbacks callbacks);
     }
 
-    private final Context app;
-    private final Handler handler;
+    interface Connection { void disconnect(); }
+
+    interface ConnectionCallbacks {
+        /** sessionPackage is the package that owns the offered session, as the platform reports it. */
+        void onConnected(String sessionPackage, DirectSessionRegistry.Session session);
+        void onSuspended();
+        void onFailed();
+    }
+
+    private static final class Attempt {
+        final long id;
+        final Set<Object> owners = new LinkedHashSet<>();
+        Connection connection;
+        Object token;
+        Attempt(long id) { this.id = id; }
+    }
+
+    private final Connector connector;
     private final Events events;
-    private final Map<String, Link> links = new HashMap<>();
+    private final Map<String, Attempt> attempts = new HashMap<>();
+    private long nextAttemptId;
 
     BrowserSessionStarter(Context context, Handler handler, Events events) {
-        this.app = context.getApplicationContext();
-        this.handler = handler;
+        this(new FrameworkConnector(context, handler), events);
+    }
+
+    BrowserSessionStarter(Connector connector, Events events) {
+        this.connector = connector;
         this.events = events;
     }
 
-    @Override public boolean canStart(String packageName) { return service(packageName) != null; }
+    @Override public boolean canStart(String packageName) {
+        return packageName != null && !packageName.isEmpty() && connector.resolve(packageName) != null;
+    }
 
-    @Override public void start(String packageName) {
-        Link existing = links.get(packageName);
+    @Override public void start(Object owner, String packageName) {
+        Attempt existing = attempts.get(packageName);
         if (existing != null) {
-            // Still connecting: this request joins it. Already connected but asked again means the
-            // offered session has gone, so start over with a fresh connection.
-            if (existing.token == null) return;
-            release(packageName);
-        }
-        ComponentName service = service(packageName);
-        if (service == null) { events.onStartFailed(packageName, "has no background media service"); return; }
-        Link link = new Link();
-        links.put(packageName, link);
-        try {
-            link.browser = new MediaBrowser(app, service, new MediaBrowser.ConnectionCallback() {
-                @Override public void onConnected() { connected(packageName, link); }
-                @Override public void onConnectionSuspended() { ended(packageName, link, "stopped"); }
-                @Override public void onConnectionFailed() { ended(packageName, link, "refused the connection"); }
-            }, null);
-            link.browser.connect();
-        } catch (RuntimeException refused) {
-            ended(packageName, link, "could not be reached");
-        }
-    }
-
-    @Override public void release(String packageName) {
-        Link link = links.remove(packageName);
-        if (link == null) return;
-        disconnect(link);
-        if (link.token != null) events.onSessionWithdrawn(packageName, link.token);
-    }
-
-    private void connected(String packageName, Link link) {
-        if (links.get(packageName) != link) return;
-        try {
-            MediaSession.Token token = link.browser.getSessionToken();
-            MediaController controller = new MediaController(app, token);
-            if (!packageName.equals(controller.getPackageName())) {
-                // The token must belong to the package that was asked; never adopt another owner.
-                ended(packageName, link, "offered a session it does not own");
+            if (existing.token == null) {
+                // Still connecting: join it rather than open a second connection.
+                existing.owners.add(owner);
                 return;
             }
-            link.token = token;
-            events.onSessionOffered(packageName, new FrameworkSessions.ControllerSession(controller, handler));
-        } catch (RuntimeException gone) {
-            ended(packageName, link, "stopped while starting");
+            // A connection that already produced a session is being asked again, so that session
+            // has gone. Replace it with a fresh attempt for every owner that still holds it.
+            Set<Object> owners = new LinkedHashSet<>(existing.owners);
+            end(packageName, existing, null);
+            owners.add(owner);
+            begin(packageName, owners);
+            return;
         }
+        begin(packageName, Collections.singleton(owner));
     }
 
-    private void ended(String packageName, Link link, String reason) {
-        if (links.get(packageName) != link) return;
-        links.remove(packageName);
-        disconnect(link);
-        if (link.token != null) events.onSessionWithdrawn(packageName, link.token);
-        else events.onStartFailed(packageName, reason);
+    @Override public void abandon(Object owner, String packageName) {
+        Attempt attempt = attempts.get(packageName);
+        if (attempt == null || attempt.token != null) return;
+        attempt.owners.remove(owner);
+        if (attempt.owners.isEmpty()) end(packageName, attempt, null);
     }
 
-    private static void disconnect(Link link) {
+    @Override public void release(Object owner, String packageName) {
+        Attempt attempt = attempts.get(packageName);
+        if (attempt == null) return;
+        attempt.owners.remove(owner);
+        if (attempt.owners.isEmpty()) end(packageName, attempt, null);
+    }
+
+    /** Live attempts, for tests and diagnostics. */
+    int attemptCount() { return attempts.size(); }
+
+    private void begin(String packageName, Set<Object> owners) {
+        ComponentName service = connector.resolve(packageName);
+        if (service == null) { events.onStartFailed(packageName, "has no single background media service"); return; }
+        Attempt attempt = new Attempt(++nextAttemptId);
+        attempt.owners.addAll(owners);
+        attempts.put(packageName, attempt);
         try {
-            if (link.browser != null) link.browser.disconnect();
-        } catch (RuntimeException gone) {
-            // Already disconnected by the platform.
-        }
-    }
-
-    private ComponentName service(String packageName) {
-        if (packageName == null || packageName.isEmpty()) return null;
-        try {
-            List<ResolveInfo> services = app.getPackageManager()
-                    .queryIntentServices(new Intent(BROWSER_SERVICE).setPackage(packageName), 0);
-            if (services != null) for (ResolveInfo info : services) {
-                ServiceInfo service = info == null ? null : info.serviceInfo;
-                if (service != null && service.enabled && service.exported
-                        && packageName.equals(service.packageName)) {
-                    return new ComponentName(service.packageName, service.name);
+            attempt.connection = connector.connect(service, new ConnectionCallbacks() {
+                @Override public void onConnected(String sessionPackage, DirectSessionRegistry.Session session) {
+                    connected(packageName, attempt, sessionPackage, session);
                 }
-            }
-        } catch (RuntimeException unavailable) {
-            // Package manager refused; treat as not startable.
+                @Override public void onSuspended() {
+                    if (current(packageName, attempt)) end(packageName, attempt, "stopped");
+                }
+                @Override public void onFailed() {
+                    if (current(packageName, attempt)) end(packageName, attempt, "refused the connection");
+                }
+            });
+        } catch (RuntimeException refused) {
+            if (current(packageName, attempt)) end(packageName, attempt, "could not be reached");
         }
-        return null;
+    }
+
+    private void connected(String packageName, Attempt attempt, String sessionPackage,
+                           DirectSessionRegistry.Session session) {
+        if (!current(packageName, attempt) || attempt.token != null) return;
+        if (session == null || session.token() == null) { end(packageName, attempt, "stopped while starting"); return; }
+        if (!packageName.equals(sessionPackage)) {
+            // The token must belong to the package that was asked; never adopt another owner.
+            end(packageName, attempt, "offered a session it does not own");
+            return;
+        }
+        attempt.token = session.token();
+        events.onSessionOffered(packageName, session);
+    }
+
+    private boolean current(String packageName, Attempt attempt) {
+        return attempts.get(packageName) == attempt;
+    }
+
+    /** Tear down one attempt. reason non-null reports a failure when no session was offered. */
+    private void end(String packageName, Attempt attempt, String reason) {
+        if (attempts.get(packageName) == attempt) attempts.remove(packageName);
+        Connection connection = attempt.connection;
+        attempt.connection = null;
+        if (connection != null) {
+            try {
+                connection.disconnect();
+            } catch (RuntimeException gone) {
+                // Already disconnected by the platform.
+            }
+        }
+        if (attempt.token != null) events.onSessionWithdrawn(packageName, attempt.token);
+        else if (reason != null) events.onStartFailed(packageName, reason);
+    }
+
+    /** Real platform edge: package-manager discovery and android.media.browse.MediaBrowser. */
+    static final class FrameworkConnector implements Connector {
+        private static final String BROWSER_SERVICE = "android.media.browse.MediaBrowserService";
+        private final Context app;
+        private final Handler handler;
+
+        FrameworkConnector(Context context, Handler handler) {
+            this.app = context.getApplicationContext();
+            this.handler = handler;
+        }
+
+        @Override public ComponentName resolve(String packageName) {
+            List<ComponentName> candidates = new ArrayList<>();
+            try {
+                List<ResolveInfo> services = app.getPackageManager()
+                        .queryIntentServices(new Intent(BROWSER_SERVICE).setPackage(packageName), 0);
+                if (services != null) for (ResolveInfo info : services) {
+                    ServiceInfo service = info == null ? null : info.serviceInfo;
+                    if (service != null && service.enabled && service.exported
+                            && packageName.equals(service.packageName)) {
+                        candidates.add(new ComponentName(service.packageName, service.name));
+                    }
+                }
+            } catch (RuntimeException unavailable) {
+                return null;
+            }
+            return choose(candidates);
+        }
+
+        @Override public Connection connect(ComponentName service, ConnectionCallbacks callbacks) {
+            MediaBrowser[] browser = new MediaBrowser[1];
+            browser[0] = new MediaBrowser(app, service, new MediaBrowser.ConnectionCallback() {
+                @Override public void onConnected() {
+                    MediaController controller;
+                    try {
+                        MediaSession.Token token = browser[0].getSessionToken();
+                        controller = new MediaController(app, token);
+                    } catch (RuntimeException gone) {
+                        callbacks.onConnected("", null);
+                        return;
+                    }
+                    callbacks.onConnected(controller.getPackageName(),
+                            new FrameworkSessions.ControllerSession(controller, handler));
+                }
+                @Override public void onConnectionSuspended() { callbacks.onSuspended(); }
+                @Override public void onConnectionFailed() { callbacks.onFailed(); }
+            }, null);
+            browser[0].connect();
+            return () -> browser[0].disconnect();
+        }
+    }
+
+    /**
+     * Exactly one exported browser service is unambiguous. Several would require knowing which one
+     * the app treats as its player, so none is chosen and the source is reported not startable.
+     */
+    static ComponentName choose(List<ComponentName> candidates) {
+        return candidates != null && candidates.size() == 1 ? candidates.get(0) : null;
     }
 }

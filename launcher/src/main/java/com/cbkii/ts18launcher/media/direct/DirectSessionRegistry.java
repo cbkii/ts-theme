@@ -37,6 +37,8 @@ final class DirectSessionRegistry {
 
     interface Sink {
         void onMembership(boolean accessGranted, List<SessionObservation> sessions);
+        /** The platform could not be read; watched sessions keep reporting through callbacks. */
+        void onMembershipUnknown();
         void onSessionChanged(SessionObservation observation);
     }
 
@@ -95,11 +97,14 @@ final class DirectSessionRegistry {
                 // Listed as enabled but not yet effective: report it as missing, never guess.
                 granted = false;
             } catch (RuntimeException unavailable) {
-                // The session service failed; an empty reading is the only truthful one.
-                active = Collections.emptyList();
+                // A failed read is not an empty one. Keep what is watched and say it is unknown.
+                sink.onMembershipUnknown();
+                return;
             }
         }
         access = granted;
+        // Sessions handed over by a source are held only under the listener authority.
+        if (!granted) offered.clear();
         Map<Object, Session> next = new LinkedHashMap<>();
         List<Session> candidates = new ArrayList<>(active);
         candidates.addAll(offered.values());

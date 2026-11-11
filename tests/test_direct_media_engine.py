@@ -54,12 +54,17 @@ class DirectMediaEngineContractTests(unittest.TestCase):
         engine = strip_comments((DIRECT / "DirectSourceEngine.java").read_text())
         self.assertIn('"android.media.browse.MediaBrowserService"', starter)
         self.assertIn("service.enabled && service.exported", starter)
-        self.assertIn("!packageName.equals(controller.getPackageName())", starter)
+        self.assertIn("if (!packageName.equals(sessionPackage))", starter)
+        self.assertIn("callbacks.onConnected(controller.getPackageName(),", starter)
+        # Discovery never guesses between several exported services.
+        self.assertIn("candidates.size() == 1 ? candidates.get(0) : null", starter)
         for marker in ("getTransportControls", ".play()", "Intent.ACTION_MAIN", "FLAG_ACTIVITY", "su "):
             self.assertNotIn(marker, starter)
         # A start is requested only for a Play tap, and repeated taps join the one attempt.
         self.assertIn("if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback); return; }", engine)
-        self.assertEqual(1, engine.count("starter.start(packageName)"))
+        self.assertEqual(1, engine.count("starter.start(key, packageName)"))
+        # A timed-out attempt is abandoned so the next tap opens a fresh connection.
+        self.assertIn("if (starter != null) starter.abandon(key, packageName);", engine)
         # Play after a start is the engine's normal single dispatch; nothing else sends.
         self.assertEqual(3, engine.count("transport.dispatch("))
 

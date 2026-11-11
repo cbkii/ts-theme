@@ -28,6 +28,41 @@ public final class MediaFeatureFacade {
     private final Map<MediaSourceKey, MediaEngine> effective = new EnumMap<>(MediaSourceKey.class);
     private final Map<MediaSourceKey, String> packages = new EnumMap<>(MediaSourceKey.class);
     private MediaBackend.StateListener listener;
+    /** Monotonic count of user commands, across both sources. */
+    private long intentEpoch;
+    /** Epoch of the newest user command per source. */
+    private final Map<MediaSourceKey, Long> lastIntent = new EnumMap<>(MediaSourceKey.class);
+    /**
+     * The one handover each source's newest Play may commit. A newer Play on the same source
+     * replaces it, so coalesced taps that all receive the same acknowledgement commit once.
+     */
+    private final Map<MediaSourceKey, Handover> pendingHandover = new EnumMap<>(MediaSourceKey.class);
+
+    /** The exact previous owner captured at tap time; a pause is allowed only to this owner. */
+    private static final class Handover {
+        final MediaSourceKey target;
+        final MediaBackend backend;
+        final String packageName;
+        final Object sessionIdentity;
+        final long generation;
+        final boolean compareGeneration;
+        final long epoch;
+
+        Handover(MediaSourceKey target, MediaBackend backend, String packageName,
+                 MediaSourceState owner, long epoch) {
+            this.target = target;
+            this.backend = backend;
+            this.packageName = packageName;
+            // Session identity is compared when the engine exposed one at tap time.
+            boolean live = owner != null && owner.live() && packageName.equals(owner.packageName);
+            this.sessionIdentity = live ? owner.sessionIdentity : null;
+            this.generation = live ? owner.generation : 0L;
+            // The direct engine's generation identifies one pinned session; the legacy engine's
+            // counts observations, so for legacy only package and session identity are compared.
+            this.compareGeneration = live && owner.engine == MediaEngine.DIRECT;
+            this.epoch = epoch;
+        }
+    }
 
     /** direct: may be null: a requested direct engine then resolves to legacy. */
     public MediaFeatureFacade(Configuration configuration, MediaBackend legacy, MediaBackend direct) {
@@ -52,6 +87,9 @@ public final class MediaFeatureFacade {
             MediaBackend other = engine == MediaEngine.DIRECT ? legacy : direct;
             // Silence the deselected engine before the selected one may act.
             if (other != null && other.attached(key)) other.detach(key);
+            // A pending handover from or to this source refers to an owner that no longer exists.
+            pendingHandover.remove(key);
+            pendingHandover.remove(key.opposite());
             effective.put(key, engine);
             packages.put(key, packageName);
             selected.attach(key, packageName);
@@ -97,20 +135,54 @@ public final class MediaFeatureFacade {
     public void command(MediaSourceKey key, String packageName, MediaUserAction action,
                         MediaBackend.ResultCallback callback) {
         reconcile();
+        long epoch = ++intentEpoch;
+        lastIntent.put(key, epoch);
         MediaBackend requested = backend(key);
         MediaSourceKey oppositeKey = key.opposite();
         MediaBackend opposite = backend(oppositeKey);
         boolean wantsPlay = action == MediaUserAction.PLAY_PAUSE && !requested.playing(key, packageName);
         boolean legacyOwnsHandover = requested == legacy && opposite == legacy;
-        requested.command(key, packageName, action, result -> {
-            // Commit the handover only on observed playback of the replacement, and only if the
-            // opposite source is still served by the engine that was selected at tap time.
-            if (wantsPlay && !legacyOwnsHandover && result != null && result.playingObserved
-                    && backend(oppositeKey) == opposite && opposite.attached(oppositeKey)) {
-                opposite.pauseForHandover(oppositeKey);
+        Handover handover = null;
+        if (wantsPlay && !legacyOwnsHandover && opposite.attached(oppositeKey)) {
+            String oppositePackage = packages.get(oppositeKey);
+            if (oppositePackage != null && opposite.playing(oppositeKey, oppositePackage)) {
+                handover = new Handover(oppositeKey, opposite, oppositePackage,
+                        opposite.state(oppositeKey), epoch);
             }
+        }
+        if (wantsPlay) {
+            // The newest Play on this source owns the handover; anything older is void.
+            if (handover == null) pendingHandover.remove(key); else pendingHandover.put(key, handover);
+        }
+        final Handover captured = handover;
+        requested.command(key, packageName, action, result -> {
+            if (captured != null) commitHandover(key, captured, result);
             if (callback != null) callback.onResult(result);
         });
+    }
+
+    /**
+     * Pause the captured previous owner once, only after the replacement was observed playing,
+     * and only if that exact owner is still the one playing and nobody has acted on it since.
+     */
+    private void commitHandover(MediaSourceKey key, Handover handover, MediaCommandResult result) {
+        if (pendingHandover.get(key) != handover) return;
+        pendingHandover.remove(key);
+        if (result == null || !result.playingObserved) return;
+        MediaSourceKey target = handover.target;
+        Long touched = lastIntent.get(target);
+        if (touched != null && touched > handover.epoch) return;
+        MediaBackend now = backend(target);
+        if (now != handover.backend || !now.attached(target)) return;
+        if (!handover.packageName.equals(packages.get(target))
+                || !now.playing(target, handover.packageName)) return;
+        if (handover.sessionIdentity != null) {
+            MediaSourceState owner = now.state(target);
+            if (!owner.live() || !handover.packageName.equals(owner.packageName)
+                    || !handover.sessionIdentity.equals(owner.sessionIdentity)
+                    || (handover.compareGeneration && handover.generation != owner.generation)) return;
+        }
+        now.pauseForHandover(target);
     }
 
     private MediaBackend backend(MediaSourceKey key) {
