@@ -58,7 +58,11 @@ action and action index, down and event time, and history. A gesture belongs to 
 if its first pointer lands on the image. A finger dragged off the image is clamped. Malformed
 input cancels the gesture once. Delivery uses Android 10's display-owner input forwarder (the path
 ActivityView uses), and the platform checks display ownership. It is reached reflectively and
-fails closed: a refusal leaves N3 view-only and the status line says so. Back is a display-scoped
+fails closed: a refusal leaves N3 view-only and the status line says so. **Observed on the stock
+Android 10 emulator in CI:** the forwarder method does not exist (`NoSuchMethodException`), so N3
+is view-only there. Android 10's own ActivityView reparents the display's content into the
+host window instead (`IWindowSession.reparentDisplayContent`, owner-checked). That transport is
+the next implementation step. Back is a display-scoped
 key pair.
 
 **IME.** Private displays have no IME on Android 10, so the keyboard appears on the main screen.
