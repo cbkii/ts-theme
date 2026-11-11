@@ -64,6 +64,15 @@
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false" />
 
+        <!-- N3 trampoline: not exported, started only onto the launcher's own private display. -->
+        <activity
+            android:name=".navigation.n3.N3TrampolineActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Experimental N3 screen: not exported, reachable only after explicit opt-in in Settings. -->
         <activity
             android:name=".N3Activity"

@@ -84,24 +84,41 @@ final class PublicDisplayPath implements N3DisplayPath {
         ComponentName target = ComponentName.unflattenFromString(component == null ? "" : component);
         if (display == null || target == null) { callback.failed(generation, "No display or target"); return; }
         int id = display.getDisplay().getDisplayId();
-        Intent intent = new Intent(Intent.ACTION_MAIN).setComponent(target)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+        cancelRelay();
+        relayToken = N3LaunchRelay.register(new N3LaunchRelay.Result() {
+            @Override public void launched() { main.post(() -> callback.launched(generation)); }
+            @Override public void refused(String reason) { main.post(() -> callback.failed(generation, reason)); }
+        });
+        // The launcher's own trampoline goes first: this app owns the display, so it may always
+        // start its own Activity there. Only then is the launcher present on the display, which
+        // Android 10 requires before another app's (embeddable) Activity may be started on it.
+        Intent trampoline = new Intent(app, N3TrampolineActivity.class)
+                .putExtra(N3TrampolineActivity.EXTRA_TARGET, target.flattenToString())
+                .putExtra(N3TrampolineActivity.EXTRA_TOKEN, relayToken)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                        | Intent.FLAG_ACTIVITY_NO_ANIMATION);
         ActivityManager am = (ActivityManager) app.getSystemService(Context.ACTIVITY_SERVICE);
         try {
-            if (am == null || !am.isActivityStartAllowedOnDisplay(app, id, intent)) {
-                callback.failed(generation, BLOCKED + ": " + target.getPackageName()
-                        + " does not allow an ordinary app to host it on a private display");
+            if (am == null || !am.isActivityStartAllowedOnDisplay(app, id, trampoline)) {
+                cancelRelay();
+                callback.failed(generation, BLOCKED + ": this launcher may not start on its own N3 display");
                 return;
             }
-            app.startActivity(intent, ActivityOptions.makeBasic().setLaunchDisplayId(id).toBundle());
+            app.startActivity(trampoline, ActivityOptions.makeBasic().setLaunchDisplayId(id).toBundle());
         } catch (SecurityException refused) {
+            cancelRelay();
             callback.failed(generation, BLOCKED + ": start refused on the N3 display");
-            return;
         } catch (RuntimeException failed) {
+            cancelRelay();
             callback.failed(generation, "Start failed: " + failed.getClass().getSimpleName());
-            return;
         }
-        callback.launched(generation);
+    }
+
+    private long relayToken;
+
+    private void cancelRelay() {
+        if (relayToken != 0L) N3LaunchRelay.cancel(relayToken);
+        relayToken = 0L;
     }
 
     @Override public void setSurface(Surface surface) {
@@ -112,6 +129,7 @@ final class PublicDisplayPath implements N3DisplayPath {
     @Override public N3InputTransport input() { return input; }
 
     @Override public void release() {
+        cancelRelay();
         input.close();
         input = N3InputTransport.NONE;
         if (display != null) { display.release(); display = null; }
