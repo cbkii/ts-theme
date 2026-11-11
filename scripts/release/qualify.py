@@ -53,9 +53,13 @@ def one_certificate_digest(output: str, *, marker: str, source: str) -> str:
     digests = certificate_digests(output, marker=marker)
     if len(digests) != 1: raise ReleaseError(f"Expected one unambiguous SHA-256 certificate in {source}; found {len(digests)}")
     return next(iter(digests))
-def require_signing_schemes(output: str) -> None:
-    required = (r"(?im)^Verified using v1 scheme \(JAR signing\): true\s*$", r"(?im)^Verified using v2 scheme \(APK Signature Scheme v2\): true\s*$")
-    if any(re.search(pattern, output) is None for pattern in required): raise ReleaseError("APK must verify with both v1 and v2 signing schemes")
+def require_signing_schemes(output: str, min_sdk: int = 1) -> None:
+    # v2 is always required. v1 (JAR) signing is required only where a device below API 24 could
+    # install the APK; Android build tools omit it for minSdk >= 24, which is correct.
+    required = [r"(?im)^Verified using v2 scheme \(APK Signature Scheme v2\): true\s*$"]
+    if min_sdk < 24: required.append(r"(?im)^Verified using v1 scheme \(JAR signing\): true\s*$")
+    if any(re.search(pattern, output) is None for pattern in required):
+        raise ReleaseError("APK must verify with the v2 signing scheme" + (" and v1 (minSdk below 24)" if min_sdk < 24 else ""))
 
 def changelog_notes(source_root: Path, version_name: str, product_name: str) -> str:
     try: text = (source_root / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -118,7 +122,7 @@ def create_bundle(*, orchestration_root: Path, source_root: Path, apk: Path, pla
             names = set(archive.namelist())
     except zipfile.BadZipFile as exc: raise ReleaseError("Release output is not a valid APK ZIP") from exc
     missing_entries = sorted(set(config["required_apk_entries"]) - names)
-    if missing_entries: raise ReleaseError(f"APK is missing required theme entries: {', '.join(missing_entries)}")
+    if missing_entries: raise ReleaseError(f"APK is missing required entries: {', '.join(missing_entries)}")
     native_abis = sorted({name.split("/",2)[1] for name in names if re.fullmatch(r"lib/[^/]+/[^/]+\.so", name)})
     if native_abis != sorted(config["native_abis"]): raise ReleaseError(f"APK native ABI set mismatch: expected {config['native_abis']}, got {native_abis}")
     aapt, apksigner, zipalign = build_tools / "aapt", build_tools / "apksigner", build_tools / "zipalign"
@@ -127,7 +131,7 @@ def create_bundle(*, orchestration_root: Path, source_root: Path, apk: Path, pla
     badging = parse_aapt_badging(run_checked([str(aapt), "dump", "badging", str(apk)]))
     expected_badging = {"package":config["application_id"],"version_code":plan["version_code"],"version_name":plan["version_name"],"min_sdk":config["sdk"]["min"],"target_sdk":config["sdk"]["target"],"compile_sdk":config["sdk"]["compile"]}
     if badging != expected_badging: raise ReleaseError(f"APK package/version/SDK mismatch: expected {expected_badging}, got {badging}")
-    signer_output = run_checked([str(apksigner), "verify", "--verbose", "--print-certs", str(apk)]); require_signing_schemes(signer_output)
+    signer_output = run_checked([str(apksigner), "verify", "--verbose", "--print-certs", str(apk)]); require_signing_schemes(signer_output, config["sdk"]["min"])
     apk_signer = one_certificate_digest(signer_output, marker="certificate SHA-256 digest", source="apksigner output")
     keytool_env = os.environ.copy(); keytool_env["LC_ALL"] = "C"
     keystore_output = run_checked(["keytool","-list","-v","-keystore",str(keystore),"-alias",key_alias,"-storepass:env","KEYSTORE_PASSWORD"], env=keytool_env)
@@ -135,22 +139,23 @@ def create_bundle(*, orchestration_root: Path, source_root: Path, apk: Path, pla
     if apk_signer != expected_signer: raise ReleaseError("APK signer does not match the selected keystore alias")
     run_checked([str(zipalign), "-c", "-p", "4", str(apk)])
     audit = audit_apk(apk); metadata = {item["name"]: item["value"] for item in audit["manifest"]["metadata"]}
-    if metadata.get("launcher.variety.theme.plugin") != config["plugin_id"]: raise ReleaseError("APK DoFun plug-in metadata does not match release configuration")
+    # The standalone launcher is not a DoFun plug-in: plug-in metadata must be absent.
+    if "launcher.variety.theme.plugin" in metadata: raise ReleaseError("APK carries retired DoFun plug-in metadata")
     missing_classes = sorted(set(config["required_dex_classes"]) - set(audit["dex_classes"]))
-    if missing_classes: raise ReleaseError(f"APK is missing required RePlugin classes: {', '.join(missing_classes)}")
+    if missing_classes: raise ReleaseError(f"APK is missing required launcher classes: {', '.join(missing_classes)}")
     public_name = f"{config['asset_stem']}-{plan['tag']}.apk"; public_apk = output_dir / public_name; shutil.copyfile(apk, public_apk); digest = sha256_file(public_apk); size = public_apk.stat().st_size
     checksum_name = f"{public_name}.sha256"; metadata_name = f"{public_name}.metadata.txt"
     (output_dir / checksum_name).write_text(f"{digest}  {public_name}\n", encoding="utf-8")
-    (output_dir / metadata_name).write_text("\n".join((f"product={config['product_name']}",f"tag={plan['tag']}",f"version_name={plan['version_name']}",f"version_code={plan['version_code']}",f"package_id={config['application_id']}",f"plugin_id={config['plugin_id']}",f"source_sha={plan['source_sha']}",f"signer_sha256={apk_signer}",f"size_bytes={size}",f"sha256={digest}","")), encoding="utf-8")
+    (output_dir / metadata_name).write_text("\n".join((f"product={config['product_name']}",f"tag={plan['tag']}",f"version_name={plan['version_name']}",f"version_code={plan['version_code']}",f"package_id={config['application_id']}",f"source_sha={plan['source_sha']}",f"signer_sha256={apk_signer}",f"size_bytes={size}",f"sha256={digest}","")), encoding="utf-8")
     (output_dir / "release-notes.md").write_text(changelog_notes(source_root, plan["version_name"], config["product_name"]), encoding="utf-8"); shutil.copyfile(plan_path, output_dir / "release-plan.json")
-    install_manifest = {"schema_version":1,"tag":plan["tag"],"version_name":plan["version_name"],"source_sha":plan["source_sha"],"application_id":config["application_id"],"plugin_id":config["plugin_id"],"apk_name":public_name,"apk_sha256":digest,"safe_area": load_json_file(source_root / config["layout_profile"]) if config.get("layout_profile") else None}
+    install_manifest = {"schema_version":1,"tag":plan["tag"],"version_name":plan["version_name"],"source_sha":plan["source_sha"],"application_id":config["application_id"],"apk_name":public_name,"apk_sha256":digest,"safe_area": load_json_file(source_root / config["layout_profile"]) if config.get("layout_profile") else None}
     installer_zip = deterministic_install_zip(source_root, output_dir, config, install_manifest, plan["tag"])
     roles = [(public_name,"installable_apk"),(checksum_name,"sha256_sidecar"),(metadata_name,"metadata_sidecar")]
     if installer_zip is not None: roles.append((installer_zip.name,"installer_tools"))
     assets = []
     for name, role in roles:
         path = output_dir / name; assets.append({"name":name,"role":role,"destination":"release","size":path.stat().st_size,"sha256":sha256_file(path)})
-    manifest = {"schema_version":1,"product_name":config["product_name"],"tag":plan["tag"],"version_name":plan["version_name"],"version_code":plan["version_code"],"source_sha":plan["source_sha"],"package_id":config["application_id"],"plugin_id":config["plugin_id"],"signer_sha256":apk_signer,"release_mode":plan["mode"],"release_state":plan["release_state"],"replace_existing_assets":plan["replace_existing_assets"],"assets":assets}
+    manifest = {"schema_version":1,"product_name":config["product_name"],"tag":plan["tag"],"version_name":plan["version_name"],"version_code":plan["version_code"],"source_sha":plan["source_sha"],"package_id":config["application_id"],"signer_sha256":apk_signer,"release_mode":plan["mode"],"release_state":plan["release_state"],"replace_existing_assets":plan["replace_existing_assets"],"assets":assets}
     manifest_path = output_dir / "release-manifest.json"; write_json(manifest_path, manifest); load_publication_manifest(manifest_path); return manifest
 
 def load_json_file(path: Path) -> object:

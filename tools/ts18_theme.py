@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit APK interoperability evidence and validate the clean TS18 theme source."""
+"""Validate the standalone TS18 launcher repository and audit APK interoperability evidence."""
 from __future__ import annotations
 
 import argparse
@@ -16,9 +16,10 @@ from typing import Any, Iterable
 from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
-THEME_ROOT = ROOT / "theme" / "src" / "main"
-CUSTOM_PACKAGE = "launcher.variety.theme.plugin.sfp_cbk_black"
-CUSTOM_PLUGIN_ID = "sfp_cbk_black"
+LAUNCHER_ROOT = ROOT / "launcher"
+LAUNCHER_PACKAGE = "com.cbkii.ts18launcher"
+# Identity of the retired DoFun/RePlugin theme. It must never be built from this repository again.
+RETIRED_THEME_PACKAGE = "launcher.variety.theme.plugin.sfp_cbk_black"
 MAX_APK_SIZE = 64 * 1024 * 1024
 MAX_ENTRY_SIZE = 32 * 1024 * 1024
 MAX_EXPANDED_SIZE = 128 * 1024 * 1024
@@ -180,91 +181,41 @@ def png_dimensions(path: Path) -> tuple[int, int]:
     return struct.unpack(">II", header[16:24])
 def require(condition: bool, message: str, errors: list[str]) -> None:
     if not condition: errors.append(message)
-def attributes_by_id(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {item["id_name"]: item for item in config.get("attributes", []) if isinstance(item, dict) and isinstance(item.get("id_name"), str)}
-def contains_empty_key(value: Any) -> bool:
-    if isinstance(value, dict): return "" in value or any(contains_empty_key(v) for v in value.values())
-    if isinstance(value, list): return any(contains_empty_key(v) for v in value)
-    return False
-def _gravity_xy(value: str) -> tuple[int, int]:
-    mx = re.search(r"(?:^|\|)l_([0-9]+)(?:\||$)", value); my = re.search(r"(?:^|\|)t_([0-9]+)(?:\||$)", value)
-    if not mx or not my: raise ValidationError(f"Unsupported absolute gravity: {value}")
-    return int(mx.group(1)), int(my.group(1))
-
 def validate_project() -> list[str]:
     errors: list[str] = []
-    json_paths = sorted((THEME_ROOT / "assets").rglob("*.json")); documents: dict[Path, Any] = {}
-    require(bool(json_paths), "No theme JSON files found", errors)
-    for path in json_paths:
-        try:
-            value = load_json(path); documents[path.relative_to(THEME_ROOT / "assets")] = value
-            require(not contains_empty_key(value), f"Host JSON contains an empty/comment key: {path.relative_to(ROOT)}", errors)
-        except ValidationError as exc: errors.append(str(exc))
-    try: profile = load_json(ROOT / "config" / "ts18-layout.json")
-    except ValidationError as exc: errors.append(str(exc)); profile = {}
-    require(profile.get("physical_width") == 1280 and profile.get("physical_height") == 720, "Unexpected physical layout profile", errors)
-    require(profile.get("top_system_inset") == 55 and profile.get("right_system_inset") == 55, "Exact TS18 system insets changed", errors)
-    require(profile.get("safe_right") == 1225 and profile.get("safe_bottom") == 702, "Exact TS18 safe bounds changed", errors)
-    require(profile.get("content_left") == 81 and profile.get("strip_height") == 64, "Content/hotseat contract changed", errors)
-    surfaces = profile.get("surfaces", {}) if isinstance(profile, dict) else {}
-    expected = {
-        "radio": (81, 55, 286, 64), "music": (367, 55, 680, 64), "date": (1047, 55, 178, 64), "map": (81, 119, 1144, 583)
-    }
-    for name, spec in expected.items():
-        s = surfaces.get(name, {})
-        actual = (s.get("x"), s.get("y"), s.get("width"), s.get("height"))
-        require(actual == spec, f"Unexpected {name} profile geometry: {actual}", errors)
-        if all(isinstance(v, int) for v in actual):
-            require(actual[0] + actual[2] <= 1225, f"{name} enters right SystemUI region", errors)
-            require(actual[1] + actual[3] <= 702, f"{name} exceeds safe bottom", errors)
-    if all(name in surfaces for name in ("radio", "music", "date")):
-        require(surfaces["radio"]["x"] + surfaces["radio"]["width"] == surfaces["music"]["x"], "Radio/music strip gap or overlap", errors)
-        require(surfaces["music"]["x"] + surfaces["music"]["width"] == surfaces["date"]["x"], "Music/date strip gap or overlap", errors)
-        require(surfaces["date"]["x"] + surfaces["date"]["width"] == 1225, "Strip does not end at safe-right", errors)
-    theme = documents.get(Path("theme_config.json"), {}); pages = theme.get("config", [{}])[0].get("page_config", []) if isinstance(theme, dict) else []
-    types = [item.get("soft_type") for item in pages if isinstance(item, dict)]
-    require(types == ["desktop_window", "local_radio", "local_music|bt_music", "time"], f"Unexpected page surface order/types: {types}", errors)
-    mapping = {"desktop_window":"map", "local_radio":"radio", "local_music|bt_music":"music", "time":"date"}
-    for item in pages:
-        if not isinstance(item, dict) or item.get("soft_type") not in mapping: continue
-        try: x, y = _gravity_xy(str(item.get("gravity", "")))
-        except ValidationError as exc: errors.append(str(exc)); continue
-        s = surfaces.get(mapping[item["soft_type"]], {})
-        require((x, y, item.get("width"), item.get("height")) == (s.get("x"), s.get("y"), s.get("width"), s.get("height")), f"theme_config does not match profile for {item.get('soft_type')}", errors)
-    media = attributes_by_id(documents.get(Path("media/media_view_config.json"), {}))
-    require(media.get("tv_media_name", {}).get("width", 0) >= 430, "Media title field is too narrow", errors)
-    for vid in ("iv_media_pre", "iv_media_pp", "iv_media_next"):
-        require(media.get(vid, {}).get("width", 0) >= 56 and media.get(vid, {}).get("height", 0) >= 56, f"{vid} touch target is below 56 px", errors)
-    for vid in ("iv_radio_pre", "iv_radio_next"):
-        require(media.get(vid, {}).get("width", 0) >= 54 and media.get(vid, {}).get("height", 0) >= 54, f"{vid} touch target is below 54 px", errors)
-    time_config = documents.get(Path("time/time2_config.json"), {}); require(time_config.get("format") == "dd MMM", "Date format must be dd MMM", errors)
-    identity = documents.get(Path("import_theme_info_config.json"), {}); require(identity.get("themeId") == "202608220001" and identity.get("oemId") == "1132", "Theme/OEM identity changed", errors)
-    try: release = load_json(ROOT / "release-config.json")
-    except ValidationError as exc: errors.append(str(exc)); release = {}
-    require(release.get("application_id") == CUSTOM_PACKAGE and release.get("plugin_id") == CUSTOM_PLUGIN_ID, "Release identity does not match hardened window/PIP identity", errors)
-    require(release.get("sdk") == {"min":16,"target":26,"compile":29} and release.get("native_abis") == [], "Release SDK/native contract changed", errors)
-    require(release.get("layout_profile") == "config/ts18-layout.json", "Release layout profile authority missing", errors)
-    install_tools = release.get("install_tools", [])
-    for relative in install_tools: require(isinstance(relative, str) and (ROOT / relative).is_file(), f"Missing install-tool input: {relative}", errors)
-    build_text = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
-    require(f'applicationId = "{CUSTOM_PACKAGE}"' in build_text, "Gradle applicationId is not hardened identity", errors)
+    # The launcher is the only product. The retired DoFun theme module and its tooling stay gone.
+    settings = (ROOT / "settings.gradle.kts").read_text(encoding="utf-8")
+    included = re.findall(r'include\("(:[^"]+)"\)', settings)
+    require(included == [":launcher"], f"Gradle must build only :launcher, found {included}", errors)
+    for retired in ("theme", "tools/fetch_replugin.py", "tools/fetch_leaflet.py", "launcher/src/main/assets/map"):
+        require(not (ROOT / retired).exists(), f"Retired product path is present: {retired}", errors)
     try:
-        root = ElementTree.parse(THEME_ROOT / "AndroidManifest.xml").getroot(); android = "{http://schemas.android.com/apk/res/android}"
-        metadata = {item.get(f"{android}name"): item.get(f"{android}value") for item in root.findall("./application/meta-data")}
-        require(metadata.get("launcher.variety.theme.plugin") == CUSTOM_PLUGIN_ID, "Manifest plug-in metadata mismatch", errors)
-        require(metadata.get("support_systemui") == "false", "Theme must not claim SystemUI ownership", errors)
-        permissions = {item.get(f"{android}name") for item in root.findall("uses-permission")}
-        require(permissions == {"android.permission.WRITE_EXTERNAL_STORAGE","android.permission.READ_PHONE_STATE","android.permission.READ_EXTERNAL_STORAGE"}, "Manifest compatibility permission set changed", errors)
-        components = [item.tag for item in root.findall("./application/*") if item.tag != "meta-data"]
-        require(not components, f"Declarative theme must not add Android components: {components}", errors)
-    except (OSError, ElementTree.ParseError) as exc: errors.append(f"Invalid Android manifest: {exc}")
-    expected_png = {"radio_bg.png":(286,64), "media_bg.png":(680,64), "time_bg.png":(178,64)}
-    for name, dims in expected_png.items():
-        try: require(png_dimensions(THEME_ROOT / "res" / "mipmap-mdpi-v4" / name) == dims, f"Unexpected {name} dimensions", errors)
-        except ValidationError as exc: errors.append(str(exc))
-    for path in sorted((THEME_ROOT / "res").rglob("*.xml")):
-        try: ElementTree.parse(path)
-        except (OSError, ElementTree.ParseError) as exc: errors.append(f"Invalid Android resource XML {path.relative_to(ROOT)}: {exc}")
+        config = load_json(ROOT / "release-config.json")
+        build = (LAUNCHER_ROOT / "build.gradle.kts").read_text(encoding="utf-8")
+        require(config.get("application_id") == LAUNCHER_PACKAGE, "Release identity must be the launcher package", errors)
+        require(config.get("module") == "launcher" and config.get("gradle_task") == ":launcher:assembleRelease",
+                "Release build must be :launcher:assembleRelease", errors)
+        require(config.get("apk_path") == "launcher/build/outputs/apk/release/launcher-release.apk",
+                "Release APK path must be the launcher release output", errors)
+        require("plugin_id" not in config, "Release configuration must not carry a DoFun plug-in id", errors)
+        require(f'applicationId = "{LAUNCHER_PACKAGE}"' in build, "Launcher applicationId changed", errors)
+        sdk = config.get("sdk", {})
+        for key, gradle in (("min", "minSdk"), ("target", "targetSdk"), ("compile", "compileSdk")):
+            match = re.search(rf"\b{gradle} = (\d+)", build)
+            require(match is not None and int(match.group(1)) == sdk.get(key),
+                    f"release-config sdk.{key} disagrees with launcher {gradle}", errors)
+        for relative in config.get("install_tools", []):
+            require((ROOT / relative).is_file(), f"Release install tool is missing: {relative}", errors)
+    except (OSError, ValidationError) as exc:
+        errors.append(f"Invalid release configuration: {exc}")
+    try:
+        root = ElementTree.parse(LAUNCHER_ROOT / "src" / "main" / "AndroidManifest.xml").getroot()
+        android = "{http://schemas.android.com/apk/res/android}"
+        require(root.get("package") in (None, LAUNCHER_PACKAGE), "Launcher manifest package changed", errors)
+        names = {item.get(f"{android}name") for item in root.iter("meta-data")}
+        require("launcher.variety.theme.plugin" not in names, "Launcher must not declare DoFun plug-in metadata", errors)
+    except (OSError, ElementTree.ParseError) as exc:
+        errors.append(f"Invalid launcher manifest: {exc}")
     forbidden_suffixes = {".apk", ".aab", ".aar", ".jks", ".keystore", ".p12", ".pem"}; ignored = {".git", ".local", "build", "dist", "__pycache__"}
     for path in ROOT.rglob("*"):
         rel = path.relative_to(ROOT)

@@ -5,7 +5,7 @@ Android dashboard development for CB's Topway TS18 (Android 10/API 29, 1280 x 72
 The repository has two deliberately separate runtime lanes:
 
 - **`launcher/` - standalone TS18 HOME candidate (primary direction).** An ordinary independently signed Android launcher that owns the dashboard directly and removes DoFun/RePlugin from the normal runtime path.
-- **`theme/` - legacy DoFun/RePlugin theme lane.** Retained as rollback/reference while standalone HOME is physically qualified.
+- The former `theme/` DoFun/RePlugin plug-in is **retired** and no longer built or released from this repository. The OEM DoFun host on the head unit is not affected and remains the HOME fallback.
 
 DoFun remains installed and enabled during launcher qualification.
 
@@ -134,7 +134,6 @@ Reverse-camera hand-off/return remains roadmapped physical validation only. Ther
 python3 tools/ts18_theme.py validate
 python3 -m unittest discover -s tests -v
 
-gradle :theme:lintDebug :theme:assembleDebug
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 ```
 

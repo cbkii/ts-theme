@@ -6,7 +6,7 @@ The supported release path is `.github/workflows/manual-release.yml`. It is manu
 
 - The Manual Release form is the release version authority. An explicit `version_tag` accepts strict `X.Y.Z` or `vX.Y.Z`; the workflow normalises it to tag `vX.Y.Z` and builds the APK with `versionName=X.Y.Z`.
 - Android `versionCode` is derived as `major × 1,000,000 + minor × 1,000 + patch` within Android's supported range.
-- `release-config.json` owns the application ID `launcher.variety.theme.plugin.sfp_cbk_black`, plug-in ID `sfp_cbk_black`, SDK contract, expected APK path, release asset stem and install-tools bundle contract.
+- `release-config.json` owns the launcher release identity: application ID `com.cbkii.ts18launcher`, module `launcher`, task `:launcher:assembleRelease`, SDK 29/29/29, no native ABIs, required APK entries and launcher classes, and the install-tools ZIP inputs.
 - A new release must be dispatched from the latest default-branch HEAD and use a version newer than every SemVer tag/Release.
 - Existing signing secrets are `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`; no vendor signer is used or accepted into the repository.
 
@@ -14,14 +14,14 @@ The workflow has a repository-wide release lock and does not cancel an in-progre
 
 ## Qualification contract
 
-The qualify job checks out the immutable source SHA, fetches only the checksum-pinned RePlugin AAR, validates sources, decodes the ephemeral keystore, builds `:theme:assembleRelease` exactly once and qualifies those exact APK bytes.
+The qualify job checks out the immutable source SHA, validates sources, runs that source's `tools/launcher_apk_check.py` envelope, decodes the ephemeral keystore, builds `:theme:assembleRelease` exactly once and qualifies those exact APK bytes.
 
 Qualification fails unless all of the following agree:
 
-- application ID `launcher.variety.theme.plugin.sfp_cbk_black` and plug-in ID `sfp_cbk_black`;
+- application ID `com.cbkii.ts18launcher` and **no** DoFun plug-in metadata;
 - requested `versionName`, `versionCode`, min/target/compile SDK;
 - v1/v2 APK signature validity and expected release certificate;
-- ZIP integrity/alignment, empty native ABI set, required theme assets and RePlugin entry class;
+- ZIP integrity/alignment, empty native ABI set, required launcher entries and classes, v2 signing (v1 is required only below minSdk 24);
 - compatibility/geometry validators, including safe-right x=1225 for the exact release profile;
 - install manifest identity/version/source SHA/APK SHA-256.
 
@@ -78,3 +78,8 @@ No APK, keystore, vendor asset, device log or donor bytes are packaged into the 
 CI validates source, geometry, Termux scripts/tests and debug/release configuration. The manual workflow validates the exact production-signed release bytes and all public assets. The theme has no launcher Activity and depends on the protected DoFun host, so emulator launch success would not prove the product.
 
 Installation, catalogue discovery, U-disk import acceptance, donor substitution, map interaction, right-SystemUI behaviour, media/radio behaviour and lifecycle persistence must be tested on the exact TS18 using [TS18 physical validation](TS18_VALIDATION.md).
+
+
+## Retired theme releases
+
+Releases created before the theme retirement (package `launcher.variety.theme.plugin.sfp_cbk_black`) stay published and their manifests remain valid input to `verify_manifest.py`, including the `plugin_id` they carry. Rebuilding one is no longer possible from current workflows; `repair_existing_release` applies to launcher releases only.

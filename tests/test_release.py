@@ -492,16 +492,20 @@ class QualificationParserTests(unittest.TestCase):
                 output, marker="certificate SHA-256 digest", source="fixture"
             )
 
-    def test_release_requires_v1_and_v2_signing(self):
-        QUALIFY.require_signing_schemes(
-            "Verified using v1 scheme (JAR signing): true\n"
-            "Verified using v2 scheme (APK Signature Scheme v2): true\n"
-        )
-        with self.assertRaisesRegex(ReleaseError, "both v1 and v2"):
-            QUALIFY.require_signing_schemes(
-                "Verified using v1 scheme (JAR signing): false\n"
-                "Verified using v2 scheme (APK Signature Scheme v2): true\n"
-            )
+    def test_release_signing_schemes_follow_min_sdk(self):
+        both = ("Verified using v1 scheme (JAR signing): true\n"
+                "Verified using v2 scheme (APK Signature Scheme v2): true\n")
+        v2_only = ("Verified using v1 scheme (JAR signing): false\n"
+                   "Verified using v2 scheme (APK Signature Scheme v2): true\n")
+        no_v2 = ("Verified using v1 scheme (JAR signing): true\n"
+                 "Verified using v2 scheme (APK Signature Scheme v2): false\n")
+        QUALIFY.require_signing_schemes(both, 16)
+        with self.assertRaisesRegex(ReleaseError, "v1"):
+            QUALIFY.require_signing_schemes(v2_only, 16)
+        # The launcher is minSdk 29: build tools rightly omit v1, v2 remains mandatory.
+        QUALIFY.require_signing_schemes(v2_only, 29)
+        with self.assertRaisesRegex(ReleaseError, "v2"):
+            QUALIFY.require_signing_schemes(no_v2, 29)
 
     def test_source_version_authority(self):
         config = json.loads((ROOT / "release-config.json").read_text(encoding="utf-8"))

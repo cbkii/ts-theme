@@ -26,6 +26,15 @@ class PublicationManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td: load_publication_manifest(self.fixture(Path(td),True))
     def test_legacy_three_asset_manifest_remains_repairable(self):
         with tempfile.TemporaryDirectory() as td: load_publication_manifest(self.fixture(Path(td),False))
+    def test_launcher_manifest_needs_no_plugin_id(self):
+        with tempfile.TemporaryDirectory() as td:
+            path=self.fixture(Path(td),True); data=json.loads(path.read_text())
+            data["package_id"]="com.cbkii.ts18launcher"; data["product_name"]="TS18 Launcher"; del data["plugin_id"]
+            path.write_text(json.dumps(data)); load_publication_manifest(path)
+    def test_historical_theme_manifest_still_requires_its_plugin_id(self):
+        with tempfile.TemporaryDirectory() as td:
+            path=self.fixture(Path(td),True); data=json.loads(path.read_text()); del data["plugin_id"]; path.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ReleaseError,"plugin_id"): load_publication_manifest(path)
     def test_hardened_identity_cannot_drop_installer_tools(self):
         with tempfile.TemporaryDirectory() as td:
             path=self.fixture(Path(td),False); data=json.loads(path.read_text()); data["package_id"]="launcher.variety.theme.plugin.sfp_cbk_black"; path.write_text(json.dumps(data))

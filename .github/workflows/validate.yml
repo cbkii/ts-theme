@@ -67,9 +67,6 @@ jobs:
           shellcheck -s sh -e SC2016 launcher/src/main/assets/nav/nav-window.sh
           git diff --check
 
-      - name: Fetch pinned RePlugin compatibility library
-        run: python3 tools/fetch_replugin.py
-
       - name: Verify launcher release runtime dependency graph
         shell: bash
         run: |
@@ -87,14 +84,10 @@ jobs:
         run: |
           set -euo pipefail
           if ! gradle --no-daemon --stacktrace \
-              :theme:lintDebug :theme:assembleDebug \
               :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug :launcher:assembleDebugAndroidTest; then
-            theme_report="theme/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
             launcher_report="launcher/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
-            for report in "$theme_report" "$launcher_report"; do
-              if [[ -f "$report" ]]; then cat "$report"; fi
-            done
-            find theme/build launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
+            if [[ -f "$launcher_report" ]]; then cat "$launcher_report"; fi
+            find launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true
             exit 1
           fi
 
@@ -160,10 +153,7 @@ jobs:
 
           gradle --no-daemon --stacktrace \
             -PVERSION_NAME=9.9.9 -PVERSION_CODE=9009009 \
-            :theme:assembleRelease :launcher:assembleRelease
-          python3 scripts/release/runtime_envelope.py \
-            --apk theme/build/outputs/apk/release/theme-release.apk \
-            --config release-config.json
+            :launcher:assembleRelease
           python3 tools/launcher_apk_check.py \
             launcher/build/outputs/apk/release/launcher-release.apk
           "${ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner" verify --verbose \
