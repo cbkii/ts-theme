@@ -88,6 +88,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private MediaListenerService.Snapshot radioSnapshot = emptyMediaSnapshot();
 
     @Override protected void onCreate(Bundle state) {
+        StartupTimeline.mark("home.create");
         setTheme(AutomotiveUi.activityTheme(this));
         super.onCreate(state);
         if (redirectToCanonicalHome()) return;
@@ -155,6 +156,22 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         });
         root.requestApplyInsets();
         scheduleGeometry();
+        StartupTimeline.mark("home.content");
+        watchFirstDraw();
+    }
+
+    /** First drawn HOME frame: the earliest moment the dashboard is visible to the driver. */
+    private void watchFirstDraw() {
+        android.view.ViewTreeObserver.OnDrawListener[] holder = new android.view.ViewTreeObserver.OnDrawListener[1];
+        holder[0] = () -> root.post(() -> {
+            if (holder[0] == null) return;
+            root.getViewTreeObserver().removeOnDrawListener(holder[0]);
+            holder[0] = null;
+            if (StartupTimeline.mark("home.first_draw")) {
+                try { reportFullyDrawn(); } catch (RuntimeException ignored) { }
+            }
+        });
+        root.getViewTreeObserver().addOnDrawListener(holder[0]);
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -185,6 +202,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) StartupTimeline.mark("home.focus");
         StartupReadinessCoordinator.get(this).onHomeFocusChanged();
         if (hasFocus && navigationWindowController != null) navigationWindowController.onHomeFocusAvailable();
         if (!hasFocus && navigationWindowController != null

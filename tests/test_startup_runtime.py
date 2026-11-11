@@ -65,6 +65,7 @@ class MediaSourceAdapter {static String AUXIO_PACKAGE="com.tw.media",NAVRADIO_PA
 class HomeMode {static boolean isDefaultHome(android.content.Context c){return true;}}
 class AndroidUserId {static int current(){return 0;}}
 class MediaEventTrace {static void record(String a,String b,String... c){}}
+class StartupTimeline {static boolean mark(String a,String... b){return true;}}
 class AppResolver {enum LaunchOutcome {ACCEPTED,REJECTED,UNCERTAIN}static LaunchOutcome outcome=LaunchOutcome.ACCEPTED;static int launches;static Runnable launched=()->{};
 static LaunchOutcome launchForStartup(android.content.Context c,String p){launches++;
 if(outcome==LaunchOutcome.ACCEPTED){RootShell.top=RootShell.forComponent(p+"/"+p+".Main",20);launched.run();}return outcome;}}

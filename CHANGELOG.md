@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a process-local startup phase timeline (`StartupTimeline`, log tag `TS18Startup`): process start with boot_id, Application create, startup kind, HOME create/content/first draw (`reportFullyDrawn`)/focus, first M1 music/radio queue readiness and navigation readiness, plus timed spans for each synchronous `Application.onCreate` step. Measurement only; behaviour unchanged. See `docs/STARTUP_TIMELINE.md`.
+
 - When neither Music nor Radio uses the Legacy engine, stop the legacy session monitor entirely (subscription, callbacks and its one-second visible tick) instead of computing state that is then discarded.
 
 - Add the experimental, independent N3 package (`navigation/n3`): a generation-tagged session state machine, a feasibility classifier and a read-only probe (Settings → Experimental · N3 display host) that asks Android whether the selected navigation Activity may start on a private launcher-owned display. N3 is not a selectable surface; N0–N2 are unchanged. See `docs/NAVIGATION.md`.

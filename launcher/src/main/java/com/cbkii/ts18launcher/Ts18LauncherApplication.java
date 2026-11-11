@@ -118,11 +118,12 @@ public final class Ts18LauncherApplication extends Application
 
     @Override public void onCreate() {
         super.onCreate();
-        HomeNavigationSurfacePolicy.migrateRetiredSurfaces(this);
-        if (HomeMode.isDefaultHome(this)) RootTaskSession.warm(this);
-        NavigationPermissionBootstrapper.ensureEarly(this);
-        MediaNotificationAccessBootstrapper.ensureEarly(this);
-        ProcessMediaSessionMonitor.start(this);
+        StartupTimeline.mark("app.create");
+        StartupTimeline.span("app.migrate-surfaces", () -> { HomeNavigationSurfacePolicy.migrateRetiredSurfaces(this); });
+        StartupTimeline.span("app.root-task-warm", () -> { if (HomeMode.isDefaultHome(this)) RootTaskSession.warm(this); });
+        StartupTimeline.span("app.nav-permission-early", () -> { NavigationPermissionBootstrapper.ensureEarly(this); });
+        StartupTimeline.span("app.media-access-early", () -> { MediaNotificationAccessBootstrapper.ensureEarly(this); });
+        StartupTimeline.span("app.media-monitor-start", () -> { ProcessMediaSessionMonitor.start(this); });
         registerActivityLifecycleCallbacks(this);
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_MEDIA_MOUNTED);
@@ -141,7 +142,9 @@ public final class Ts18LauncherApplication extends Application
         MediaEventTrace.record("process", "created");
         MediaEventTrace.record("startup", "profile", TestingProfiles.summary(this));
         // Process (re)creation: classify against the persisted boot counter and reconcile.
-        StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.RESTART);
+        StartupTimeline.span("app.startup-coordinator", () ->
+                StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.RESTART));
+        StartupTimeline.mark("app.created");
     }
 
     private void warmConfiguredMusicAfterMount() {
