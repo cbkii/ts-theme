@@ -30,4 +30,12 @@
     <string name="navigation_retry_status">%1$s · Tap to retry</string>
     <string name="navigation_startup_unavailable">Maps startup unavailable. Tap to retry.</string>
     <string name="navigation_retry_action">Retry Maps</string>
+    <string name="n3_start">Start N3</string>
+    <string name="n3_retry">Retry N3</string>
+    <string name="n3_back">Back in map</string>
+    <string name="n3_expand">Expand</string>
+    <string name="n3_compact">Compact</string>
+    <string name="n3_open_normally">Open navigation normally</string>
+    <string name="n3_use_legacy">Use legacy navigation</string>
+    <string name="n3_open_failed">Navigation app could not be opened</string>
 </resources>

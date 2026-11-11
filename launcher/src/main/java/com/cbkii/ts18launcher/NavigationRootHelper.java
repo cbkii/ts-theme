@@ -49,6 +49,12 @@ final class NavigationRootHelper {
 
     String dispatchColdPolicy() {
         String policy = coldPolicy;
+        if ("automatic".equals(policy)
+                && !com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.legacyMayAutoLaunch(context)) {
+            // N3 owns a display for navigation: legacy must not launch a competing task.
+            MediaEventTrace.record("compact-startup", "dispatch-denied-n3-owner", "");
+            return "deny";
+        }
         if ("automatic".equals(policy) && !admission.test(context)) {
             MediaEventTrace.record("compact-startup", "dispatch-readmission-denied", "");
             return "deny";

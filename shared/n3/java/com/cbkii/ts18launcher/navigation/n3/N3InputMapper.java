@@ -58,6 +58,15 @@ public final class N3InputMapper {
 
     public boolean valid() { return scale > 0f; }
 
+    public float scale() { return scale; }
+    public float originX() { return originX; }
+    public float originY() { return originY; }
+    public int displayWidth() { return displayWidth; }
+    public int displayHeight() { return displayHeight; }
+
+    /** True when a gesture that went down at (x, y) belongs to the display. */
+    public boolean owns(float x, float y) { return valid() && inside(x, y); }
+
     /** Display rectangle inside the view, as left, top, right, bottom. */
     public float[] fittedBounds() {
         return new float[] {originX, originY, originX + displayWidth * scale, originY + displayHeight * scale};

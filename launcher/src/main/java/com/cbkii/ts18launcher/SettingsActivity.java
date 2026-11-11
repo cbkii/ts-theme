@@ -330,6 +330,22 @@ public final class SettingsActivity extends Activity {
                 n3Result == null ? "Not tested. Creates and releases a private display; launches nothing."
                         : n3Result,
                 v -> runN3Probe());
+        com.cbkii.ts18launcher.navigation.NavigationFeatureFacade navFacade =
+                com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.get(this);
+        addSwitchRow(R.drawable.ic_map, "Enable experimental N3 navigation",
+                "Off by default. Legacy navigation stays in charge unless you open the N3 screen.",
+                navFacade.n3Enabled(), checked -> { navFacade.setN3Enabled(checked); render(); });
+        if (navFacade.n3Enabled()) {
+            boolean hostInstalled = com.cbkii.ts18launcher.navigation.n3.N3NavigationBackend.hostInstalled(this);
+            addSwitchRow(R.drawable.ic_map, "Use optional display host",
+                    hostInstalled ? "Separately installed host; it decides every request itself."
+                            : "Not installed. N3 uses the launcher's own private display.",
+                    navFacade.useOptionalHost() && hostInstalled,
+                    checked -> { navFacade.setUseOptionalHost(checked && hostInstalled); render(); });
+            addActionRow(R.drawable.ic_map, "Open N3 navigation screen",
+                    "Shows the navigator on the N3 display with Retry, Open normally and Use legacy.",
+                    v -> startActivity(new android.content.Intent(this, N3Activity.class)));
+        }
 
         addSection("Experimental · Topway services (read-only)");
         addActionRow(R.drawable.ic_car, "Check Topway services",

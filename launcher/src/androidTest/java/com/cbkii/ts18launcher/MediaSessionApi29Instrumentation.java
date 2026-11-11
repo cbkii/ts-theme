@@ -18,17 +18,19 @@ import java.util.concurrent.TimeUnit;
  * Run: adb shell am instrument -w com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation
  */
 public final class MediaSessionApi29Instrumentation extends Instrumentation {
-    private boolean observeLive, coldConsent, m2Browser;
+    private boolean observeLive, coldConsent, m2Browser, n3Path;
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         coldConsent = arguments != null && "1".equals(arguments.getString("cold_consent"));
         observeLive = arguments != null && "1".equals(arguments.getString("observe_live"));
         m2Browser = arguments != null && "1".equals(arguments.getString("m2_browser"));
+        n3Path = arguments != null && "1".equals(arguments.getString("n3_path"));
         start();
     }
     @Override public void onStart() {
         if (coldConsent) { rejectUntrustedColdConsent(); return; }
         if (m2Browser) { exerciseM2BrowserStarter(); return; }
+        if (n3Path) { exerciseN3Path(); return; }
         if (observeLive) { observeSelectedAuxio(); return; }
         Bundle result = new Bundle();
         MediaSession session = new MediaSession(getTargetContext(), "TS18-media-contract-test");
@@ -83,6 +85,18 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
             controller.unregisterCallback(callback); session.release();
         }
     }
+    /** Real API 29 private-display N3 path against the test APK's embeddable fixture Activity. */
+    private void exerciseN3Path() {
+        Bundle result = new Bundle();
+        try {
+            String evidence = com.cbkii.ts18launcher.navigation.n3.N3PathIpcProbe.run(this, getContext().getPackageName());
+            result.putString("stream", evidence + "\n");
+            finish(Activity.RESULT_OK, result);
+        } catch (Exception | AssertionError error) {
+            result.putString("stream", "FAIL " + error + "\n"); finish(Activity.RESULT_CANCELED, result);
+        }
+    }
+
     /** Real cross-process IPC for the M2 cold-start path against the test APK's fixture service. */
     private void exerciseM2BrowserStarter() {
         Bundle result = new Bundle();

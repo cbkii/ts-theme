@@ -64,6 +64,12 @@
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false" />
 
+        <!-- Experimental N3 screen: not exported, reachable only after explicit opt-in in Settings. -->
+        <activity
+            android:name=".N3Activity"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout"
+            android:exported="false" />
+
         <!--
           Exact com.tw.video TW_THEME.20241022 evidence shows the current HOME is
           package-scoped queried for this service action as a capability marker.

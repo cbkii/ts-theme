@@ -32,6 +32,10 @@ android {
         resValue("string", "build_source_ref", sourceRef)
     }
 
+    // N3 admission contract and input mapping, shared verbatim with the optional n3host module.
+    sourceSets.getByName("main").java.srcDir("../shared/n3/java")
+    sourceSets.getByName("main").aidl.srcDir("../shared/n3/aidl")
+
     signingConfigs {
         if (releaseSigningReady) {
             create("release") {
@@ -64,6 +68,7 @@ android {
     }
 
     buildFeatures {
+        aidl = true
         buildConfig = false
         resValues = true
     }

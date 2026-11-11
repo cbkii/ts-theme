@@ -73,6 +73,7 @@ final class LauncherPrefs {
 
     static SharedPreferences prefs(Context context) { return context.getSharedPreferences(FILE, Context.MODE_PRIVATE); }
     static String packageFor(Context context, String key) { return prefs(context).getString(key, ""); }
+
     static void setPackage(Context context, String key, String packageName) {
         SharedPreferences.Editor editor = prefs(context).edit();
         if (packageName == null || packageName.isEmpty()) editor.remove(key);
