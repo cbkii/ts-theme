@@ -43,6 +43,23 @@ class N3ContractTests(unittest.TestCase):
         policy = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/HomeNavigationSurfacePolicy.java").read_text()
         self.assertNotIn("n3", policy.lower(), "N3 is not a selectable surface until device feasibility passes")
 
+    def test_host_contract_is_policy_only_and_never_deployed(self):
+        policy = code(N3 / "N3HostPolicy.java")
+        self.assertIn("Config DISABLED = new Config(false", policy)
+        for banned in ("Runtime.getRuntime", "ProcessBuilder", "injectInputEvent", "Intent(", "su "):
+            self.assertNotIn(banned, policy)
+        manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text()
+        for banned in ("INJECT_EVENTS", "CAPTURE_SECURE_VIDEO_OUTPUT", "ADD_TRUSTED_DISPLAY", "N3Host"):
+            self.assertNotIn(banned, manifest)
+        main = ROOT / "launcher/src/main/java"
+        users = [p.name for p in main.rglob("*.java") if "N3HostPolicy" in p.read_text() and p.name != "N3HostPolicy.java"]
+        self.assertEqual([], users, "no runtime path may construct or consult a host yet")
+
+    def test_input_mapper_never_routes_through_root_or_freeform(self):
+        mapper = code(N3 / "N3InputMapper.java")
+        for banned in ("RootShell", "RootTaskSession", "NavTaskBridge", "windowingMode", "am start"):
+            self.assertNotIn(banned, mapper)
+
 
 if __name__ == "__main__":
     unittest.main()

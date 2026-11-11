@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- N3: add `N3InputMapper` (aspect-fit, inset-aware, multi-pointer mapping from presenter view to display pixels, whole-gesture ownership, cancel on malformed input) and `N3HostPolicy`, the admission contract for a future disabled-by-default privileged display host (exact caller package/certificate/user, exact allowlisted component, owned display, bounded geometry/pointers/coordinates/rate, release on caller death). Neither is reachable at runtime; no host, permission or manifest entry is added. See `docs/NAVIGATION.md`.
+
 - When neither Music nor Radio uses the Legacy engine, stop the legacy session monitor entirely (subscription, callbacks and its one-second visible tick) instead of computing state that is then discarded.
 
 - Add the experimental, independent N3 package (`navigation/n3`): a generation-tagged session state machine, a feasibility classifier and a read-only probe (Settings → Experimental · N3 display host) that asks Android whether the selected navigation Activity may start on a private launcher-owned display. N3 is not a selectable surface; N0–N2 are unchanged. See `docs/NAVIGATION.md`.
