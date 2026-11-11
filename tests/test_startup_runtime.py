@@ -12,6 +12,7 @@ class StartupRuntimeTests(unittest.TestCase):
     def test_independent_background_readiness_boot_dedup_and_focus_yield(self):
         if not shutil.which('java'): self.skipTest('JDK unavailable')
         stubs = {
+          'android/annotation/SuppressLint.java': 'package android.annotation;public @interface SuppressLint {String[] value();}',
           'android/app/Activity.java': 'package android.app;public class Activity {}',
           'android/os/Looper.java': 'package android.os;public class Looper {static Looper main=new Looper();public static Looper getMainLooper(){return main;}public static Looper myLooper(){return main;}}',
           'android/os/Handler.java': 'package android.os;public class Handler {public Handler(Looper l){}public void post(Runnable r){r.run();}public void removeCallbacksAndMessages(Object o){}}',

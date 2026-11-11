@@ -6,6 +6,9 @@
 - Primary integration remains PR #44. Consolidation work is a reviewable child; do not merge or publish production without a separate instruction. Preserve integration ancestry and previous signed TESTING recovery artefacts.
 - The owner approved M2 defaults, source-owned browser sessions without notification access, removal of inert n3host, and a bounded N3 investigation. Physical TS18 testing is final acceptance, not an implementation prerequisite. Isolate uncertain contracts and continue independent work.
 
+- Local/offline/private by default. No analytics, tracking, remote configuration or automatic uploads. Diagnostics are explicit, bounded and local.
+- Source adapters must not retry the rejected Auxio root `startservice` route; use its evidenced browser/deadline contract.
+
 ## Product and UI
 
 - `launcher/`, package `com.cbkii.ts18launcher`, is the only product. Android 10/API29, framework Java/Views, one DEX and no native runtime. No AndroidX runtime, playback framework, networking stack, analytics or cloud dependency.
