@@ -1,128 +1,33 @@
-# Media control engines
+# Media control and readiness
 
-HOME has two independent audio sources, **Music** and **Radio**. Each is controlled by exactly one
-engine, chosen per source in *Settings → Media → Control engine* and stored as `music.engine` /
-`radio.engine` (`legacy` or `m2`). Missing, malformed or future values are `legacy`.
+Music and Radio each have one selected engine through `MediaFeatureFacade`. M2 Direct is the TESTING default when no preference exists. Explicit `legacy` remains a compatibility rollback; malformed/future values refuse to Legacy. An unselected engine cannot command, prepare or publish for that source.
 
-The launcher never owns playback: no player, queue, MediaSession, audio focus or tuner command of
-its own. It observes sessions the source apps publish and sends them transport actions.
+The playback application owns its service, queue, MediaSession, notification and audio focus. The launcher never creates another player/session or writes the tuner.
 
-| | **M1 Legacy** (default, rollback) | **M2 Direct** (TESTING, opt-in) |
-|---|---|---|
-| Classes | `MediaSourceBootstrapper`, `ProcessMediaSessionMonitor`, `MediaListenerService`, `StartupReadinessCoordinator` behind `LegacyMediaBackend` | `media/direct/*` behind `DirectSourceMediaBackend` |
-| Which app | Configured app; Music may follow the globally active player ("Follow active media") | The exact configured package only |
-| Which session | Ranked selection with listener/process merge | One pinned token; several sessions resolve by activity, previous pin, then capability, otherwise `AMBIGUOUS_SOURCE` |
-| App not running | Source-specific background/foreground preparation, optionally at startup | Started **only on a Play tap**, only through the app's own exported media browser service; otherwise reported as "Not running" |
-| Command | Bounded preparation, fallbacks and retries | One directional dispatch per tap, then observe |
-| Result | success / failure | `ACKNOWLEDGED`, `SENT_UNCONFIRMED`, `UNSUPPORTED`, `SOURCE_LOST`, `FAILED` |
-| Startup preparation | Yes (when enabled) | None: nothing starts without a tap |
+## Authority and lifecycle
 
-## Rules both engines obey
+M2 controls exactly the configured package and one pinned session token. Its registry deduplicates tokens across notification-listener discovery and source-owned MediaBrowser connections. Notification access is required for listener discovery, but an authenticated browser-owned token carries its own authority. Revoking listener access removes unrelated listener-only sessions while retaining a still-connected source-owned session. Disconnect, source death, reconfiguration and stale attempt callbacks cannot transfer ownership to a different source.
 
-- `MediaFeatureFacade` is the only UI entry point. The engine that is not selected for a source is
-  detached first and then cannot command, prepare or publish state for it.
-- HOME renders each source only from its selected engine; the other engine's view of that source
-  is discarded, never merged.
-- Play and Pause are resolved to one direction at tap time. `BUFFERING` and `CONNECTING` are never
-  shown or treated as playing.
-- Switching source never silences the current one early. With both sources on Legacy, Legacy keeps
-  its own nominate-then-commit handover. In every other combination the facade pauses the former
-  source once, through its own engine, only after the replacement is **observed playing**.
+The browser connector resolves one enabled, exported source service, verifies the returned controller package and shares a binding only between owners of that same package. It never opens an Activity or dispatches Play itself. Unsupported or ambiguous service discovery is a truthful limitation.
 
-## M2 Direct in detail
+## Commands and bounded cold Play
 
-- **Authority:** `MediaSessionManager.getActiveSessions` through the launcher's one
-  notification-listener component. Without notification access the source shows
-  "Notification access needed". Access changes are picked up from the system setting itself.
-- **Idle cost:** with no source on Direct it holds no subscription, callback or timer.
-- **One tap:** resolve the pinned token and its advertised actions → one `play()`, `pause()`,
-  `skipToNext()` or `skipToPrevious()` → wait for that same token to confirm (Play 5 s, Pause 2.5 s,
-  skip 2 s). No confirmation in time is `SENT_UNCONFIRMED`; it is never sent again. A second
-  Play/Pause tap while one is in flight joins it.
-- **Skips** are confirmed only by a change of item on the same session.
-- **Capabilities** are the session's advertised actions. Auxio-TS (`com.tw.media`) and NavRadio+
-  (`com.navimods.radio`) additionally accept Next/Previous they do not always advertise.
-- **Any player** the user selects as Music is supported as far as its own session allows.
-- **Metadata** is exactly one reading of the pinned session; a new item never inherits old text.
-  Radio text is the session's own title/subtitle (Legacy's notification-based station enrichment
-  is not used).
-- **Stock Topway radio** (`com.tw.radio`) is controlled only if it publishes a normal session. No
-  private Topway command is sent by either engine.
+Resolve Play/Pause direction once at tap time. One operation dispatches to one token; pending duplicate taps join it. Confirm directional playback from the owning session and skips from changed item identity. No acknowledgement before the deadline means SENT_UNCONFIRMED, not rejection or an automatic retry. Handover pauses the former source only after replacement playback is observed.
 
-### Starting a source that is not running
+A confirmed loaded session may receive ordinary Play. An uncertain cold source must advertise `org.oxycblt.auxio.action.HOME_PLAY_V1`. M2 then sends `protocol=1` and the original monotonic `deadline_elapsed_ms`; service binding consumes that same operation budget. Without the capability, cold Play is unsupported rather than silently becoming unbounded ordinary PLAY.
 
-- A **Play** tap starts a source and plays it. Attaching, refreshing, Next and Previous never do.
-  Passive readiness (below) may bind the source's browser service but never sends Play.
-- The only mechanism is the standard `android.media.browse.MediaBrowserService` the app itself
-  exports. Connecting makes the app create its process and hand over its own session token; the
-  launcher checks the token belongs to the requested package, pins it, sends **one** `play()` and
-  waits for that session to confirm. No Activity is opened, no root is used, no queue or session is
-  invented, and Legacy's Auxio-specific preparation extras are not used.
-- Bounded: 8 s for the session to appear, then the normal 5 s Play confirmation. Taps during the
-  attempt join it. A source that resumes by itself is acknowledged without sending anything. A
-  session arriving after the deadline becomes controllable but is not auto-played.
-- A package with no enabled, exported browser service (stock `com.tw.radio`; NavRadio+ unless its
-  installed build declares one) is **not startable** here: HOME shows it as unavailable and the
-  source icon opens the app.
-- HOME shows Play for a startable source, a connecting icon while starting, and the unavailable
-  icon otherwise.
+Auxio's companion implementation enforces the deadline through queue/raw restoration and decoder readiness, excludes launch-autoplay upgrades of passive/expired restoration and prevents detached deadline-free fallbacks. It requests focus/Play only when decoder readiness can commit inside that window. Timely software commit is separate from the first audible hardware sample.
 
-### Passive readiness (boot, wake, HOME return, storage mount)
+## Startup and compatibility
 
-Each accepted startup trigger opens one readiness **epoch**. The trigger must be one of `BOOT`,
-`RESTART`, `USER_UNLOCKED`, `SCREEN_ON`, `ACC_ON`, `HOME_RESUME` or `STORAGE_MOUNT`, and the
-"automatic media preparation" preference must be on. For each source the Direct engine serves:
+`StartupReadinessCoordinator` classifies boot/wake/HOME events and initiates independent background readiness epochs. M2 may bind its source's browser and send advertised PREPARE once when no item is loaded. Preparation never intentionally Plays, launches an Activity or reserves navigation focus. Music/Radio failure does not hold up Maps. There is no automatic source-Activity staging lane.
 
-- Before deciding, the launcher waits for membership and notification access to be known. Ambiguous
-  or unanswering sources are skipped.
-- A source that already has an item loaded, or that does not advertise `ACTION_PREPARE`, gets
-  nothing.
-- A live session with nothing loaded receives **one** `prepare()`.
-- A startable source that is not running is bound through its own exported browser service. It is
-  sent `prepare()` only if the session it publishes advertises `ACTION_PREPARE` and has nothing
-  loaded.
-- **Ready** means the source's own session reports a loaded item (media ID or title) and no error.
-  A process, a token or a successful bind is not enough.
-- Time limits: 8 s for the session to appear, then 5 s for an item to load. After that the attempt
-  ends honestly. HOME shows "Getting ready…" while it runs, and Play still works afterwards.
-- It never sends Play, opens an Activity, takes audio focus or uses root.
-- A user tap during preparation supersedes it. A replaced session is never prepared, and nothing is
-  retried within the same epoch.
+With both sources on M2, legacy process/listener observers and the visible legacy readiness tick are idle. Explicit Legacy retains its background compatibility paths. The installed notification-listener component stays present for discovery; idle legacy machinery does not acquire extra observation just because that component is enabled.
 
-Auxio-TS (`com.tw.media`) already implements this contract. It advertises `ACTION_PREPARE`, and its
-`onPrepare()` restores the persisted queue paused (`play=false`) without requesting audio focus;
-focus is only requested when playing. No new cooperative contract was needed.
+The available NavRadio reference is minSdk32 and does not establish the installed API29 protocol. A plain bind to Media3 is not a controller connection. Existing source-owned sessions remain supported; when no substantiated cold path exists the source icon is the explicit app-opening fallback. No guessed tuner operation, root service launch or hidden foreground start is added.
 
-For stock `com.tw.radio`, and NavRadio+ unless its installed build exports a browser service, a
-source that is not running stays "Press Play" / unavailable. Nothing is foregrounded to warm it.
+## Evidence and acceptance
 
-### Not in M2
+Behavioural JVM/Robolectric tests cover token ownership, listener revocation, unsupported cold sources, original-budget accounting, cancellation, handover and no duplicate transport. The API29 IPC fixture checks a real framework browser/controller connection, silent PREPARE, deadline-action advertisement/delivery, expired refusal, reconnect and process death. It is a fixture, not Auxio or NavRadio.
 
-- Native Topway tuner control and illumination input.
-- Native Topway tuner control and illumination input.
-- Whether Auxio-TS actually begins playback from a bare `play()` after a cold bind is a property
-  of the installed Auxio-TS build and is **not yet physically verified**.
-
-## Idle cost per engine
-
-- No source on Direct: the direct engine holds no subscription, callback or timer.
-- No source on Legacy: the legacy `ProcessMediaSessionMonitor` is torn down (no session
-  subscription, per-session callbacks or one-second visible verification tick) and HOME,
-  listener and settings refreshes do not recreate it. Switching a source back to Legacy
-  restores it. The shared notification-listener component itself stays enabled for both.
-
-## Qualification status
-
-Both engines are verified by host tests (JVM/Robolectric API 29, source contracts, R8 release
-envelope). The M2 cold-start and passive-PREPARE transport additionally has real cross-process evidence on the stock
-API 29 emulator in CI: `MediaSessionApi29Instrumentation -e m2_browser 1` binds the production
-`FrameworkConnector` to an exported fixture `MediaBrowserService` in the test APK's own process,
-checks the token belongs to that package and verifies the following:
-
-- `prepare()` loads an item without Playing.
-- One Play is confirmed by the same session.
-- A fresh connection works after teardown.
-- A killed source process is reported, and a deliberate retry after it works. That fixture is not Auxio-TS or NavRadio+, and the
-emulator is not the TS18. **No TS18 physical trial of M2 has been run.** Before Direct can become a default it
-needs, per source: warm command trials, handover trials, cold boots and ACC wakes with audible
-confirmation, and a same-build comparison against Legacy.
+Canonical CI, exact signed artefact identity, installation, audible output, USB, cold boot and ACC remain separate qualification levels. The owner deferred physical TS18 acceptance to the consolidated TESTING campaign; it does not block implementation. See [architecture](ARCHITECTURE.md), [private-contract review](PRIVATE_CONTRACT_REVIEW_2026-11-12.md) and [physical playbook](CONSOLIDATED_TESTING_PLAYBOOK.md).

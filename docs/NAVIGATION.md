@@ -90,39 +90,12 @@ key pair.
 None of these is `DEVICE_FEASIBILITY_PASS`, which needs observed map pixels, touch, Back and a
 security review on the unit.
 
-### Optional display host (`n3host`, separate APK, inert by default)
+### Privileged host retired
 
-`n3host` builds an independent APK, `com.cbkii.ts18launcher.n3host`. It is never part of the
-launcher release and is not installed by any script here. It admits nothing unless it is built
-with an explicit identity:
+The inert `n3host` APK module, client, Binder protocol and admission skeleton are removed. Existing optional-host preferences have no runtime authority. They cannot supply platform signing, embedding or input privileges.
 
-```
--Pn3host.enabled=true -Pn3host.callerCertSha256=<launcher signer> -Pn3host.components=<pkg/cls,...>
-```
-
-Admission is `N3HostPolicy`, shared verbatim with the launcher from `shared/n3`:
-
-- The caller is derived from `Binder.getCallingUid()` and PackageManager: one package for the UID,
-  one exact signing certificate and the exact user.
-- The navigator component must be on the exact allowlist.
-- Display reservation is atomic, with one display per caller and a fresh lease per display.
-  Replayed or stale leases are rejected.
-- Geometry and coordinates are checked against what the host recorded, never caller-supplied
-  sizes. Pointers (at most 10) and actions are validated, and input is limited to 240 events/s.
-- Every display a caller owns is released when its client Binder dies.
-
-Protocol `IN3DisplayHost` v1 and `IN3DisplayHostClient` are AIDL in `shared/n3/aidl`. The host
-requests `ACTIVITY_EMBEDDING`, which only takes effect if the owner deliberately installs the APK as
-a privileged app with a matching allowlist entry. It requests no input-injection, overlay, network
-or settings permission and has no shell, intent or global-input API.
-
-Building the host grants nothing and does not authorise deploying it. The launcher only uses it
-when **Use optional display host** is switched on and the host is installed.
+N3 remains an isolated default-off public-display experiment. API29 reference evidence is view-only when the input forwarder is unavailable; Organic Maps embedding authority is not established. It does not replace N2. See [the bounded assessment](PRIVATE_CONTRACT_REVIEW_2026-11-12.md).
 
 ## Gates before N3 can be offered as a surface
 
-1. Probe on the TS18 reports `LAUNCH_ADMITTED_UNVERIFIED` (or a reviewed host makes it so).
-2. Real Organic Maps pixels, multi-touch, Back and IME on the display, with density/inset mapping.
-3. HOME stop/start, drawer, permission Activities, process death and display removal recovered.
-4. Measured CPU/GPU/PSS against N1/N2.
-5. Owner approval. N0 stays available throughout.
+An exact-device candidate must demonstrate map pixels, usable touch/Back, safe focus/HOME hand-back, navigation intent/NAVI-key compatibility and a credible advantage over N2 without protected-system changes. Until then N3 stays default-off and cannot become the HOME surface.

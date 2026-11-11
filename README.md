@@ -9,6 +9,8 @@ The repository has two deliberately separate runtime lanes:
 
 DoFun remains installed and enabled during launcher qualification.
 
+M2 is the intended TESTING default for Music and Radio, with explicit Legacy compatibility rollback. Cold Music Play uses the source-owned deadline contract; source-owned MediaBrowser sessions do not require notification access. Startup preparation is background-only and independent of N2 navigation. See [media](docs/MEDIA.md), [architecture](docs/ARCHITECTURE.md) and the [consolidated acceptance playbook](docs/CONSOLIDATED_TESTING_PLAYBOOK.md).
+
 ## Project posture: local, offline and private by default
 
 **Local, offline and private by default** is the repository-wide position for `ts-theme`.
@@ -71,7 +73,7 @@ Launcher chrome uses Auto / Day / Night appearance (older High contrast / Dim se
 
 Accent hue is deliberately simple and independent of appearance mode. Settings presents a **single strip of coloured circles** for Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. Hue affects only the semantic accent role: primary/selected/focus elements, subtle source accents, section accents, fixed Navigation and experimental-map location accent. Neutral black/charcoal/white hierarchy remains unchanged.
 
-Do not add a first-run wizard unless later physical/user testing establishes a concrete discoverability problem; sensible defaults plus the default Settings quick slot are the current onboarding model.
+Setup is a short, skippable checklist offered after HOME is usable on a genuinely new install; it can be repeated from Settings. It never silently takes HOME or grants access.
 
 ### Apps drawer
 
