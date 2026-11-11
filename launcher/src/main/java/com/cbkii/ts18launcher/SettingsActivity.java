@@ -351,10 +351,22 @@ public final class SettingsActivity extends Activity {
         addActionRow(R.drawable.ic_car, "Check Topway services",
                 topwayRunning ? "Checking…" : "Identifies the Topway command service and verifies its interface. Changes nothing.",
                 v -> runTopwayCheck(false));
-        addActionRow(R.drawable.ic_radio, "Observe Topway source once",
-                "Briefly registers a status listener, asks which source is active, then removes it. "
-                        + "Only on the verified service version.",
-                v -> runTopwayCheck(true));
+        boolean observeAllowed = getSharedPreferences("oem_probe", MODE_PRIVATE)
+                .getBoolean("observe_acknowledged", false);
+        addSwitchRow(R.drawable.ic_radio, "Allow one-off Topway source observation",
+                "Off by default. Whether the Topway service keeps one shared status listener or one per "
+                        + "app is not established; observing could briefly displace another app's listener.",
+                observeAllowed, checked -> {
+                    getSharedPreferences("oem_probe", MODE_PRIVATE).edit()
+                            .putBoolean("observe_acknowledged", checked).apply();
+                    render();
+                });
+        if (observeAllowed) {
+            addActionRow(R.drawable.ic_radio, "Observe Topway source once",
+                    "Briefly registers a status listener, asks which source is active, then removes it. "
+                            + "Only on the verified service version.",
+                    v -> runTopwayCheck(true));
+        }
         if (topwayCapabilities != null) {
             for (com.cbkii.ts18launcher.oem.Capability capability : topwayCapabilities) {
                 addInfoRow(R.drawable.ic_utility, capability.id, capability.status + " · " + capability.detail);
@@ -609,6 +621,8 @@ public final class SettingsActivity extends Activity {
     /** Operator-initiated; never automatic, never a write. Results stay in this screen and the trace. */
     private void runTopwayCheck(boolean observe) {
         if (topwayRunning) return;
+        // Observation registers a vendor callback: only after the explicit acknowledgement above.
+        if (observe && !getSharedPreferences("oem_probe", MODE_PRIVATE).getBoolean("observe_acknowledged", false)) return;
         boolean started = com.cbkii.ts18launcher.oem.TopwayCapabilityCheck.run(this, observe, capabilities -> {
             topwayRunning = false;
             topwayCapabilities = capabilities;
