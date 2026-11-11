@@ -52,10 +52,10 @@ The tool first records identities and bounded snapshots, then prints **Capturing
 That is the beginning of the timed phase. Keep this terminal running and exercise
 HOME, Music, Radio and navigation normally. ADB capture does not require root.
 For a quieter comparison, choose `--workload idle` and `--no-video`. The snapshot
-phases are outside the timed phase and each has a 30-second budget; identity reads
-have a separate 30-second producer budget. All reads share the phase deadline;
-bounded process cleanup can add a few seconds. Recording/logging uses one shared
-30–300 second phase deadline, followed by flush/termination checks.
+phases are outside the timed phase; each snapshot has its own 30-second deadline.
+Each before/after identity read has a separate 30-second producer budget. Recording,
+logging and in-phase clock reads share the 30–300 second capture deadline. Bounded
+flush/termination checks can add a few seconds after a producer budget ends.
 
 Use trial numbers 1–5. Repeat the command after **each actual lifecycle event**, with
 the matching `--lifecycle cold_boot`, `reboot`, `acc_wake`, `process_restart` or

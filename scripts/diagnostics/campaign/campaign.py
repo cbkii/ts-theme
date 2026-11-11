@@ -58,7 +58,10 @@ def private_directory(path):
         info = current.lstat()
         if not stat.S_ISDIR(info.st_mode) or info.st_uid not in trusted:
             raise ValueError('Untrusted owner or symlink in private state path')
-        if info.st_mode & 0o022 and not (info.st_mode & stat.S_ISVTX and info.st_uid == 0):
+        android_data = (Path('/system/bin').exists() and current == Path('/data')
+                        and info.st_uid == 1000 and info.st_gid == 1000 and not info.st_mode & 0o002)
+        if (info.st_mode & 0o022 and not (info.st_mode & stat.S_ISVTX and info.st_uid == 0)
+                and not android_data):
             raise ValueError('Writable ancestor in private state path')
         if index == len(path.parts) - 2 and (info.st_uid != os.getuid() or info.st_mode & 0o077):
             raise ValueError('Private state directory must be caller-owned with mode 0700')
@@ -550,19 +553,23 @@ def record_segments(device, root, duration, cancel, enabled, segment_seconds=150
         remaining = deadline - time.monotonic()
         if remaining < 1:
             break
-        seconds = max(1, min(segment_seconds, int(remaining)))
         name = f'segment-{len(records) + 1:02d}.mp4'
         local = root / name
         local.touch(mode=0o600)
         # ADB writes only its unique file in its caller-owned temporary directory.
         remote = f'/data/local/tmp/ts18-campaign-{uuid.uuid4().hex}.mp4'
         destination = remote if device.transport == 'adb' else str(local)
-        start = device.clock()
+        start = device.clock(deadline=deadline)
+        remaining = deadline - time.monotonic()
+        if remaining < 1 or cancel.is_set():
+            local.unlink()
+            break
+        seconds = max(1, min(segment_seconds, int(remaining)))
         segment_start = time.monotonic()
         result, cleanup = device.worker(['/system/bin/screenrecord', '--size', '1280x720',
                                          '--bit-rate', '2000000', '--time-limit', str(seconds),
                                          destination], seconds + 2, cancel)
-        end = device.clock()
+        end = device.clock(deadline=deadline)
         info = dict(file=name, **result.metadata(), cleanup=cleanup, start=start, end=end,
                     requested_seconds=seconds, requested_size='1280x720', requested_bitrate=2000000,
                     requested_fps=None, observed_fps=None, audio='NOT_CAPTURED',

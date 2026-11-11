@@ -214,6 +214,29 @@ class NativeWorkerTest(unittest.TestCase):
 
 
 class RecorderTest(unittest.TestCase):
+    def test_slow_clock_cannot_leave_a_stale_recording_duration(self):
+        device = mock.Mock(transport='local')
+        now = [0.0]
+        stop = threading.Event()
+
+        def clock(deadline=None):
+            self.assertEqual(10, deadline)
+            now[0] += 4
+            return dict(device_uptime_ms=round(now[0] * 1000), uncertainty_ms=1)
+
+        def worker(args, _seconds, cancel):
+            self.assertEqual('6', args[args.index('--time-limit') + 1])
+            Path(args[-1]).write_bytes(b'fixture')
+            cancel.set()
+            return campaign.Result('PASS', 0), 'PASS'
+
+        device.clock.side_effect = clock
+        device.worker.side_effect = worker
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch.object(campaign.time, 'monotonic', side_effect=lambda: now[0]):
+            records = campaign.record_segments(device, Path(temp), 10, stop, True, deadline=10)
+        self.assertEqual(6, records[0]['requested_seconds'])
+
     def test_failed_remote_removal_blocks_sealing_and_preserves_recovery_path(self):
         device = mock.Mock(transport='adb')
         device.clock.return_value = dict(device_uptime_ms=123, uncertainty_ms=1)
@@ -423,6 +446,23 @@ class IntegrityTest(unittest.TestCase):
 
 
 class CaptureTest(unittest.TestCase):
+    def test_android_system_data_ancestor_is_allowed_but_other_writers_are_not(self):
+        def check(mode, gid):
+            def info(path):
+                if str(path) == '/data':
+                    return os.stat_result((0o040000 | mode, 1, 1, 1, 1000, gid, 0, 0, 0, 0))
+                return os.stat_result((0o040700, 2, 1, 1, 0, 0, 0, 0, 0, 0))
+
+            with mock.patch.object(campaign.os, 'getuid', return_value=0), \
+                    mock.patch.object(Path, 'exists', return_value=True), \
+                    mock.patch.object(Path, 'mkdir'), mock.patch.object(Path, 'lstat', new=info):
+                campaign.private_directory(Path('/data/ts18-campaign'))
+
+        check(0o771, 1000)
+        for mode, gid in ((0o777, 1000), (0o771, 2000)):
+            with self.assertRaisesRegex(ValueError, 'Writable ancestor'):
+                check(mode, gid)
+
     def test_private_state_rejects_symlink_queue_without_truncating_target(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
