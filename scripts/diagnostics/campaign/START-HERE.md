@@ -9,8 +9,11 @@ Use one collector at a time, with the car parked. Physical qualification remains
 ## What you need
 
 Keep `campaign.py` in private Termux storage, or on your ADB computer. It needs an
-existing Python 3.9+ installation (standard library only). ADB mode also needs an
-existing authorised ADB connection and the exact device serial. Nothing is downloaded
+existing Python 3.9+ installation (standard library only). Capture and marker commands
+require a POSIX host: Termux, Linux, macOS, or a Linux environment in WSL with working
+ADB access. Native Windows Python is not supported: the collector uses `fcntl` file
+locks and POSIX process groups. ADB mode also needs an existing authorised ADB
+connection and the exact device serial. Nothing is downloaded
 or installed automatically. No Magisk module or boot entry is added.
 
 Local mode uses the **current caller**. Ordinary Termux normally cannot read system

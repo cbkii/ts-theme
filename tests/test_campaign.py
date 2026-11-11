@@ -136,9 +136,16 @@ class DeviceTest(unittest.TestCase):
         self.assertNotIn('/data/app', json.dumps(identities))
 
 
-@unittest.skipUnless(shutil.which('setsid') and shutil.which('timeout') and
-                     int(Path('/proc/self/stat').read_text().split()[0]) == os.getpid(),
-                     'Native worker fixture requires a matching Linux /proc namespace')
+def native_fixture_available():
+    try:
+        return (all(shutil.which(name) for name in ('setsid', 'timeout', 'sh', 'sed', 'sleep', 'kill'))
+                and int(Path('/proc/self/stat').read_text().split()[0]) == os.getpid())
+    except (OSError, ValueError, IndexError):
+        return False
+
+
+@unittest.skipUnless(native_fixture_available(),
+                     'Native worker fixture requires Linux tools and a matching /proc namespace')
 class NativeWorkerTest(unittest.TestCase):
     def device(self):
         device = campaign.Device('local')
@@ -148,7 +155,8 @@ class NativeWorkerTest(unittest.TestCase):
             # tools. This exercises the lease indices, shell quoting, timeout and real cleanup.
             command = command.replace('/system/bin/toybox timeout', shutil.which('timeout'))
             command = command.replace('/system/bin/toybox setsid', shutil.which('setsid'))
-            command = command.replace('/system/bin/', '/usr/bin/')
+            for tool in ('sh', 'sed', 'sleep', 'kill'):
+                command = command.replace('/system/bin/' + tool, shutil.which(tool))
             command = command.replace(campaign.ANDROID_PATH, '/usr/bin:/bin')
             return ['/bin/sh', '-c', command]
 

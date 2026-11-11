@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded TS18 capture, manual observation markers, integrity and offline comparison.
 
-Standard library only. No installation, launch, playback, settings or device reboot.
+Standard library only; POSIX host required. No installation, launch, playback or device reboot.
 Local mode uses the existing caller (Termux, shell or root), never a su wrapper.
 """
 import argparse
