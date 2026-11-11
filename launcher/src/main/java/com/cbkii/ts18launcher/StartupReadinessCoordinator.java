@@ -34,6 +34,7 @@ final class StartupReadinessCoordinator {
         default void incomplete() { }
     }
 
+    @android.annotation.SuppressLint("StaticFieldLeak") // Application context only.
     private static StartupReadinessCoordinator instance;
     static synchronized StartupReadinessCoordinator get(Context context) {
         if (instance == null) instance = new StartupReadinessCoordinator(context.getApplicationContext());

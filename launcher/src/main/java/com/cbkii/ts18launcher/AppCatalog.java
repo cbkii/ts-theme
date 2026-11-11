@@ -40,6 +40,7 @@ final class AppCatalog {
         String target() { return new ComponentName(packageName, activityName).flattenToString(); }
     }
 
+    @android.annotation.SuppressLint("StaticFieldLeak") // Application context only.
     private static AppCatalog instance;
     static synchronized AppCatalog get(Context context) {
         if (instance == null) instance = new AppCatalog(context.getApplicationContext());
