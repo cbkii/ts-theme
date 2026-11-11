@@ -612,5 +612,47 @@ class ArgumentsTest(unittest.TestCase):
             self.assertEqual(2, result.returncode)
 
 
+class StartupEvidenceTest(unittest.TestCase):
+    LOG = '\n'.join([
+        '  123.000  4321  4321 I TS18Startup: phase=process.start elapsed=19400 process=0 boot_id=0123abcd-0123-4567-89ab-0123456789ab',
+        '  123.100  4321  4321 I TS18Startup: phase=app.create elapsed=19500 process=100',
+        '  123.150  4321  4321 I TS18Startup: span=app.root-task-warm ms=72 process=110',
+        '  123.600  4321  4321 I TS18Startup: phase=home.create elapsed=20000 process=600',
+        '  123.900  4321  4321 I TS18Startup: phase=home.first_draw elapsed=20350 process=950',
+        '  124.000   900   950 I ActivityTaskManager: Displayed com.cbkii.ts18launcher/.HomeAlias: +1s210ms',
+        '  124.100   900   950 I ActivityTaskManager: START u0 {act=android.intent.action.MAIN cmp=com.other/.Secret}',
+        '  130.000  5555  5555 I TS18Startup: phase=process.start elapsed=26000 process=0',
+        '  130.200  5555  5555 I TS18Startup: phase=home.create elapsed=26200 process=200',
+        '  130.300  5555  5555 I TS18Startup: phase=music.ready elapsed=26300 process=300 com.tw.media',
+    ]) + '\n'
+
+    def test_capture_includes_startup_tag_and_narrow_framework_timing(self):
+        self.assertIn('TS18Startup:I', campaign.LOG_TAGS)
+        self.assertEqual('*:S', campaign.LOG_TAGS[-1])
+        narrowed = campaign.narrow_framework(self.LOG)
+        self.assertIn('Displayed com.cbkii.ts18launcher/.HomeAlias', narrowed)
+        self.assertNotIn('com.other/.Secret', narrowed)
+        self.assertIn('phase=home.first_draw', narrowed)
+
+    def test_phases_are_grouped_per_process_and_missing_phases_are_explicit(self):
+        parsed = campaign.parse_startup(campaign.narrow_framework(self.LOG))
+        epochs = parsed['process_epochs']
+        self.assertEqual(2, len(epochs))
+        self.assertEqual('0123abcd-0123-4567-89ab-0123456789ab', epochs[0]['boot_id'])
+        self.assertEqual([('app.create', 100), ('home.create', 600), ('home.first_draw', 950)],
+                         [(p['name'], p['process_ms']) for p in epochs[0]['phases']])
+        self.assertEqual([dict(name='app.root-task-warm', ms=72, process_ms=110)], epochs[0]['spans'])
+        self.assertEqual(['home.focus'], epochs[0]['missing'])
+        self.assertIsNone(epochs[1]['boot_id'])
+        self.assertIn('home.first_draw', epochs[1]['missing'])
+        self.assertEqual('com.tw.media', epochs[1]['phases'][-1]['detail'])
+        self.assertEqual([dict(kind='Displayed', package='com.cbkii.ts18launcher', ms=1210)], parsed['framework_launch'])
+
+    def test_no_statistics_are_invented(self):
+        parsed = campaign.parse_startup('')
+        self.assertEqual([], parsed['process_epochs'])
+        self.assertIn('not audio', parsed['note'])
+
+
 if __name__ == '__main__':
     unittest.main()

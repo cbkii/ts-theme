@@ -44,6 +44,12 @@ same launch. Keep these points in mind when reading a capture:
 - `music.ready` and `radio.ready` measure queue readiness, not audible output.
 - `navigation.ready` is the launcher's own judgement, not Organic Maps' GNSS time to first fix.
 
+## Campaign integration
+
+The WP11 campaign kit (`scripts/diagnostics/campaign/`) captures `TS18Startup` live and in history,
+together with narrowed framework `Displayed` / `Fully drawn` lines. Its `compare` command reports
+the phases for each process. See that kit's START-HERE.
+
 ## Status
 
 Host tests cover recording once per phase, offsets, the phase limit and span propagation. **No
