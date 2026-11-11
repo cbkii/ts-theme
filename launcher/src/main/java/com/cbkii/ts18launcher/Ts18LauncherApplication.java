@@ -125,6 +125,8 @@ public final class Ts18LauncherApplication extends Application
     @Override public void onCreate() {
         super.onCreate();
         StartupTimeline.mark("app.create");
+        // Registers package invalidation only; discovery/icons stay lazy and off-thread.
+        AppCatalog.get(this);
         StartupTimeline.span("app.migrate-surfaces", () -> { HomeNavigationSurfacePolicy.migrateRetiredSurfaces(this); });
         StartupTimeline.span("app.root-task-warm", () -> { if (HomeMode.isDefaultHome(this)) RootTaskSession.warm(this); });
         StartupTimeline.span("app.nav-permission-early", () -> { NavigationPermissionBootstrapper.ensureEarly(this); });
