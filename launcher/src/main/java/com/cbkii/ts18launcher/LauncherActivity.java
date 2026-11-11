@@ -170,6 +170,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             if (StartupTimeline.mark("home.first_draw")) {
                 try { reportFullyDrawn(); } catch (RuntimeException ignored) { }
             }
+            // A genuinely new install (no apps chosen yet) is offered setup once, after Home is
+            // already usable. Configured or upgraded launchers are never interrupted.
+            if (LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC).isEmpty()
+                    && LauncherPrefs.packageFor(this, LauncherPrefs.KEY_RADIO).isEmpty()
+                    && LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV).isEmpty()) {
+                root.postDelayed(() -> { if (!isFinishing()) SetupActivity.offerOnce(this); }, 1500L);
+            }
         });
         root.getViewTreeObserver().addOnDrawListener(holder[0]);
     }

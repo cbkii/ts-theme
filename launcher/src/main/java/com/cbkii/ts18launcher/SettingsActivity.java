@@ -373,6 +373,9 @@ public final class SettingsActivity extends Activity {
             }
         }
 
+        addActionRow(R.drawable.ic_settings, getString(R.string.setup_run_again),
+                getString(R.string.setup_run_again_hint), v -> startActivity(new Intent(this, SetupActivity.class)));
+
         addSection("Backup & reset");
         addActionRow(R.drawable.ic_download, "Export settings", "Save a settings file.",
                 v -> chooseConfigurationDocument(true));
