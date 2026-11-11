@@ -14,6 +14,8 @@ final class DirectTestKit {
     private DirectTestKit() {}
 
     static final class ManualClock implements DirectSourceEngine.Clock {
+        long now = 1000L;
+        @Override public long nowMs() { return now; }
         final List<Runnable> scheduled = new ArrayList<>();
         @Override public Object schedule(long delayMs, Runnable task) { scheduled.add(task); return task; }
         @Override public void cancel(Object handle) { scheduled.remove(handle); }
@@ -34,6 +36,8 @@ final class DirectTestKit {
         String itemId = "";
         String title = "";
         String subtitle = "";
+        boolean deadlinePlay = true;
+        long dispatchedDeadline;
         boolean acceptDispatch = true;
         boolean throwOnDispatch;
         int watches;
@@ -55,7 +59,7 @@ final class DirectTestKit {
 
         @Override public Object token() { return token; }
         @Override public SessionObservation read() {
-            return new SessionObservation(token, packageName, state, actions, itemId, title, subtitle);
+            return new SessionObservation(token, packageName, state, actions, itemId, title, subtitle, deadlinePlay, false);
         }
         @Override public void watch(Runnable changed, Runnable ended) {
             watches++; onChanged = changed; onEnded = ended;
@@ -66,6 +70,10 @@ final class DirectTestKit {
             if (!acceptDispatch) return false;
             dispatched.add(operation);
             return true;
+        }
+        @Override public boolean dispatchDeadline(long deadlineElapsedMs) {
+            dispatchedDeadline = deadlineElapsedMs;
+            return dispatch(DirectOperation.PLAY);
         }
         boolean watched() { return onChanged != null; }
         void emit() { if (onChanged != null) onChanged.run(); }

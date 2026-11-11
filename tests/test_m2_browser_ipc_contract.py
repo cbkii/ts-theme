@@ -23,7 +23,7 @@ class M2BrowserIpcContract(unittest.TestCase):
     def test_probe_uses_the_production_connector_and_requires_confirmation(self):
         probe = (TEST_SRC / "java/com/cbkii/ts18launcher/media/direct/BrowserStarterIpcProbe.java").read_text()
         self.assertIn("new BrowserSessionStarter.FrameworkConnector(", probe)
-        self.assertIn("session.dispatch(DirectOperation.PLAY)", probe)
+        self.assertIn("session.dispatchDeadline(android.os.SystemClock.elapsedRealtime() + 5000L)", probe)
         self.assertRegex(probe, r"playing\.await\(\d+, TimeUnit\.SECONDS\)")
         self.assertIn("fresh reconnect", probe)
         self.assertIn("session.dispatch(DirectOperation.PREPARE)", probe)

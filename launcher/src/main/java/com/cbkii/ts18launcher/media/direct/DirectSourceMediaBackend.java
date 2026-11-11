@@ -86,11 +86,17 @@ public final class DirectSourceMediaBackend implements MediaBackend {
         });
         for (MediaSourceKey key : MediaSourceKey.values()) {
             String sourceLabel = key == MediaSourceKey.RADIO ? "Radio" : "Music";
-            DirectSourceEngine engine = new DirectSourceEngine(key, (token, operation) -> {
+            DirectSourceEngine engine = new DirectSourceEngine(key, new DirectSourceEngine.Transport() {
+                @Override public boolean dispatchDeadline(Object token, long deadlineElapsedMs) {
+                    boolean sent = registry.dispatchDeadline(token, deadlineElapsedMs);
+                    host.trace(sent ? "deadline-dispatch" : "deadline-refused", key.toString());
+                    return sent;
+                }
+                @Override public boolean dispatch(Object token, DirectOperation operation) {
                 boolean sent = registry.dispatch(token, operation);
                 host.trace(sent ? "dispatch" : "dispatch-refused", key + " " + operation);
                 return sent;
-            }, clock, labelsFor(sourceLabel), starter);
+            }}, clock, labelsFor(sourceLabel), starter);
             engine.setListener(state -> {
                 StateListener current = listener;
                 if (current != null) current.onMediaSourceStateChanged(state);

@@ -227,15 +227,15 @@ public class DirectColdStartTest {
         assertTrue(backend.state(MediaSourceKey.MUSIC).starting);
     }
 
-    @Test public void revokingAccessReleasesTheSourceConnection() {
+    @Test public void revokingListenerAccessPreservesTheSourceOwnedConnection() {
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
         FakeSession session = offer("t1", PlaybackState.STATE_PLAYING);
         source.access = false;
         source.changed();
-        assertTrue(starter.log.contains("release com.tw.media"));
-        assertFalse("the offered session is not held without access", session.watched());
-        assertEquals(Availability.PERMISSION_NEEDED, backend.state(MediaSourceKey.MUSIC).availability);
+        assertFalse(starter.log.contains("release com.tw.media"));
+        assertTrue(session.watched());
+        assertEquals(Availability.LIVE, backend.state(MediaSourceKey.MUSIC).availability);
     }
 
     @Test public void sessionListedByThePlatformAndOfferedByTheSourceIsOneSession() {
@@ -250,12 +250,39 @@ public class DirectColdStartTest {
         assertEquals("the pending Play was sent once, to the one session", 1, offered.dispatched.size());
     }
 
-    @Test public void missingNotificationAccessBlocksStartingToo() {
+    @Test public void browserSourceCanStartWithoutNotificationAccess() {
         source.access = false;
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
-        assertFalse(backend.state(MediaSourceKey.MUSIC).startable);
+        assertTrue(backend.state(MediaSourceKey.MUSIC).startable);
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
-        assertEquals(Outcome.FAILED, lastResult().outcome);
-        assertFalse(starter.log.contains("start com.tw.media"));
+        assertTrue(starter.log.contains("start com.tw.media"));
+        FakeSession session = offer("owned", PlaybackState.STATE_PAUSED);
+        assertEquals(1, session.dispatched.size());
+        assertEquals(Availability.LIVE, backend.state(MediaSourceKey.MUSIC).availability);
+    }
+
+    @Test public void uncertainColdSourceWithoutDeadlineCapabilityNeverReceivesOrdinaryPlay() {
+        backend.attach(MediaSourceKey.MUSIC, AUXIO);
+        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
+        FakeSession session = new FakeSession("unsupported", AUXIO);
+        session.deadlinePlay = false;
+        starter.events.onSessionOffered(AUXIO, session);
+        assertTrue(session.dispatched.isEmpty());
+        assertEquals(Outcome.UNSUPPORTED, lastResult().outcome);
+        assertFalse(lastResult().dispatched);
+    }
+
+    @Test public void bindingConsumesTheOriginalDeadlineAndDoesNotResetPlayBudget() {
+        backend.attach(MediaSourceKey.MUSIC, AUXIO);
+        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
+        clock.now += DirectSourceEngine.COLD_START_MS - 100L;
+        FakeSession session = offer("bounded", PlaybackState.STATE_PAUSED);
+        assertEquals(1000L + DirectSourceEngine.COLD_START_MS, session.dispatchedDeadline);
+        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
+        assertEquals(1, session.dispatched.size());
+        clock.expireAll();
+        assertEquals(Outcome.SENT_UNCONFIRMED, lastResult().outcome);
+        assertTrue(lastResult().dispatched);
+        assertEquals(1, session.dispatched.size());
     }
 }

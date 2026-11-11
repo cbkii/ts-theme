@@ -49,6 +49,25 @@ public final class BrowserStarterIpcProbe {
         check(!DirectSourceEngine.loaded(cold), "fixture should start with nothing loaded");
         check((cold.actions & PlaybackState.ACTION_PREPARE) != 0L, "PREPARE not advertised over IPC");
 
+        check(cold.deadlinePlay, "bounded HOME Play not advertised over IPC");
+        CountDownLatch rejected = new CountDownLatch(1);
+        AtomicReference<Integer> afterExpired = new AtomicReference<>(-1);
+        instrumentation.runOnMainSync(() -> {
+            android.media.session.MediaController controller = new android.media.session.MediaController(app,
+                    (android.media.session.MediaSession.Token) session.token());
+            android.os.Bundle expired = new android.os.Bundle();
+            expired.putInt("protocol", 1);
+            expired.putLong("deadline_elapsed_ms", android.os.SystemClock.elapsedRealtime() - 1L);
+            controller.getTransportControls().sendCustomAction(SessionObservation.HOME_PLAY_V1, expired);
+            controller.sendCommand("inspect-after-expired", null, new android.os.ResultReceiver(main) {
+                @Override protected void onReceiveResult(int code, android.os.Bundle data) {
+                    afterExpired.set(data.getInt("state", -1)); rejected.countDown();
+                }
+            });
+        });
+        check(rejected.await(5, TimeUnit.SECONDS) && afterExpired.get() != PlaybackState.STATE_PLAYING,
+                "expired HOME Play started playback");
+
         // Passive readiness over IPC: PREPARE loads the item and never starts playback.
         AtomicReference<Boolean> prepared = new AtomicReference<>(false);
         instrumentation.runOnMainSync(() -> prepared.set(session.dispatch(DirectOperation.PREPARE)));
@@ -57,7 +76,7 @@ public final class BrowserStarterIpcProbe {
         check(!playedEarly.get() && session.read().nativeState != PlaybackState.STATE_PLAYING,
                 "PREPARE must not start playback");
         AtomicReference<Boolean> sent = new AtomicReference<>(false);
-        instrumentation.runOnMainSync(() -> sent.set(session.dispatch(DirectOperation.PLAY)));
+        instrumentation.runOnMainSync(() -> sent.set(session.dispatchDeadline(android.os.SystemClock.elapsedRealtime() + 5000L)));
         check(sent.get(), "Play not dispatched");
         check(playing.await(5, TimeUnit.SECONDS), "Play not confirmed by the same session over IPC");
         instrumentation.runOnMainSync(() -> { session.unwatch(); first.connection.disconnect(); });
@@ -83,7 +102,7 @@ public final class BrowserStarterIpcProbe {
         check(!third.session.token().equals(second.session.token()), "stale token reused after death");
         instrumentation.runOnMainSync(third.connection::disconnect);
         return "PASS API29 M2 browser starter: resolve, cold bind, owned token, PREPARE loads without Play,"
-                + " Play confirmed over IPC, fresh reconnect, source death reported, retry after death";
+                + " deadline Play confirmed over IPC, expired Play ignored, fresh reconnect, source death reported, retry after death";
     }
 
     private static final class AttemptResult {

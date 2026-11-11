@@ -72,7 +72,7 @@ class DirectMediaEngineContractTests(unittest.TestCase):
         # A timed-out attempt is abandoned so the next tap opens a fresh connection.
         self.assertIn("if (starter != null) starter.abandon(key, packageName);", engine)
         # Play after a start is the engine's normal single dispatch; PREPARE is the passive one.
-        self.assertEqual(4, engine.count("transport.dispatch("))
+        self.assertIn("transport.dispatchDeadline(token, deadline)", engine)
 
     def test_transport_is_directional_and_single_dispatch(self):
         operation = (DIRECT / "DirectOperation.java").read_text()
@@ -84,7 +84,7 @@ class DirectMediaEngineContractTests(unittest.TestCase):
                      "controls.prepare()"):
             self.assertEqual(1, framework.count(call), call)
         # Driver action, the one Play after a requested start, the handover pause and passive PREPARE.
-        self.assertEqual(4, engine.count("transport.dispatch("))
+        self.assertIn("transport.dispatchDeadline(token, deadline)", engine)
         self.assertEqual(1, engine.count("transport.dispatch(pinnedToken, DirectOperation.PREPARE)"))
         command = engine.split("public void command(", 1)[1].split("\n    }\n", 1)[0]
         self.assertNotIn("PREPARE", command, "a user tap never sends PREPARE")
@@ -105,14 +105,14 @@ class DirectMediaEngineContractTests(unittest.TestCase):
             for imported in re.findall(r"^import (com\.cbkii\.[\w.]+);", source, flags=re.M):
                 self.fail(f"{name} imports {imported}")
 
-    def test_default_engine_is_legacy_and_direct_is_an_explicit_choice(self):
+    def test_direct_defaults_keep_explicit_legacy_rollback(self):
         selector = (MAIN / "MediaEngineSelector.java").read_text()
         engine = (CONTRACT / "MediaEngine.java").read_text()
         settings = (MAIN / "SettingsActivity.java").read_text()
         self.assertIn("return DIRECT.stored.equals(value) ? DIRECT : LEGACY;", engine)
-        self.assertIn("else editor.remove(prefKey(key));", selector)
-        self.assertIn('"Legacy · default"', settings)
-        self.assertIn("Direct · TESTING", settings)
+        self.assertIn('getString(prefKey(key), "m2")', selector)
+        self.assertIn('"Legacy · compatibility"', settings)
+        self.assertIn("Direct · TESTING default", settings)
 
     def test_home_renders_each_source_from_its_selected_engine_only(self):
         launcher = (MAIN / "LauncherActivity.java").read_text()

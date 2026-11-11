@@ -20,7 +20,7 @@ final class MediaEngineSelector {
     /** Stored choice. Missing, malformed or future values are the legacy engine. */
     static MediaEngine requested(Context context, MediaSourceKey key) {
         try {
-            return MediaEngine.fromStored(LauncherPrefs.prefs(context).getString(prefKey(key), ""));
+            return MediaEngine.fromStored(LauncherPrefs.prefs(context).getString(prefKey(key), "m2"));
         } catch (ClassCastException malformed) {
             return MediaEngine.LEGACY;
         }
@@ -28,9 +28,7 @@ final class MediaEngineSelector {
 
     static void setRequested(Context context, MediaSourceKey key, MediaEngine engine) {
         android.content.SharedPreferences.Editor editor = LauncherPrefs.prefs(context).edit();
-        // Legacy is the absence of a choice: upgrades, resets and downgrades all read as legacy.
-        if (engine == MediaEngine.DIRECT) editor.putString(prefKey(key), engine.storedValue());
-        else editor.remove(prefKey(key));
+        editor.putString(prefKey(key), engine.storedValue());
         editor.apply();
     }
 

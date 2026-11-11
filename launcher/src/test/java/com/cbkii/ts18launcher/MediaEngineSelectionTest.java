@@ -38,18 +38,18 @@ public class MediaEngineSelectionTest {
         prefs.edit().clear().commit();
     }
 
-    @Test public void cleanInstallAndUpgradeDefaultBothSourcesToLegacy() {
-        assertEquals(MediaEngine.LEGACY, MediaEngineSelector.requested(context, MediaSourceKey.MUSIC));
-        assertEquals(MediaEngine.LEGACY, MediaEngineSelector.requested(context, MediaSourceKey.RADIO));
+    @Test public void cleanInstallAndUpgradeDefaultBothSourcesToDirect() {
+        assertEquals(MediaEngine.DIRECT, MediaEngineSelector.requested(context, MediaSourceKey.MUSIC));
+        assertEquals(MediaEngine.DIRECT, MediaEngineSelector.requested(context, MediaSourceKey.RADIO));
     }
 
-    @Test public void sourcesAreSelectedIndependentlyAndLegacyIsStoredAsAbsence() {
+    @Test public void sourcesAreSelectedIndependentlyAndLegacyIsExplicit() {
         MediaEngineSelector.setRequested(context, MediaSourceKey.RADIO, MediaEngine.DIRECT);
-        assertEquals(MediaEngine.LEGACY, MediaEngineSelector.requested(context, MediaSourceKey.MUSIC));
+        assertEquals(MediaEngine.DIRECT, MediaEngineSelector.requested(context, MediaSourceKey.MUSIC));
         assertEquals(MediaEngine.DIRECT, MediaEngineSelector.requested(context, MediaSourceKey.RADIO));
         assertEquals("m2", prefs.getString("radio.engine", ""));
         MediaEngineSelector.setRequested(context, MediaSourceKey.RADIO, MediaEngine.LEGACY);
-        assertFalse(prefs.contains("radio.engine"));
+        assertEquals("legacy", prefs.getString("radio.engine", ""));
     }
 
     @Test public void malformedOrFutureStoredValuesReadAsLegacy() {
@@ -58,12 +58,12 @@ public class MediaEngineSelectionTest {
         assertEquals(MediaEngine.LEGACY, MediaEngineSelector.requested(context, MediaSourceKey.RADIO));
     }
 
-    @Test public void engineChoiceRoundTripsThroughExportAndResetRestoresLegacy() throws Exception {
+    @Test public void engineChoiceRoundTripsThroughExportAndResetRestoresDirect() throws Exception {
         MediaEngineSelector.setRequested(context, MediaSourceKey.MUSIC, MediaEngine.DIRECT);
         String json = ConfigurationCodec.encode(ConfigurationStore.read(context));
         assertTrue(json.contains("\"music.engine\": \"m2\""));
         assertTrue(ConfigurationStore.replace(context, new LinkedHashMap<>()));
-        assertEquals(MediaEngine.LEGACY, MediaEngineSelector.requested(context, MediaSourceKey.MUSIC));
+        assertEquals(MediaEngine.DIRECT, MediaEngineSelector.requested(context, MediaSourceKey.MUSIC));
         assertTrue(ConfigurationStore.replace(context, ConfigurationCodec.decode(json, name -> true).values));
         assertEquals(MediaEngine.DIRECT, MediaEngineSelector.requested(context, MediaSourceKey.MUSIC));
     }

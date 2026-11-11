@@ -31,8 +31,17 @@ public final class FixtureBrowserService extends MediaBrowserService {
                         .putString(MediaMetadata.METADATA_KEY_TITLE, "Fixture track").build());
                 state(PlaybackState.STATE_PAUSED);
             }
+            @Override public void onCommand(String command, Bundle args, android.os.ResultReceiver receiver) {
+                Bundle result = new Bundle();
+                result.putInt("state", session.getController().getPlaybackState().getState());
+                receiver.send(0, result);
+            }
             // Test-only: simulate the source process dying.
             @Override public void onCustomAction(String action, Bundle extras) {
+                if (SessionObservation.HOME_PLAY_V1.equals(action) && extras != null
+                        && extras.getInt("protocol", 0) == 1
+                        && extras.getLong("deadline_elapsed_ms", -1L) > android.os.SystemClock.elapsedRealtime())
+                    state(PlaybackState.STATE_PLAYING);
                 if (ACTION_DIE.equals(action)) android.os.Process.killProcess(android.os.Process.myPid());
             }
         });
@@ -43,6 +52,8 @@ public final class FixtureBrowserService extends MediaBrowserService {
 
     private void state(int value) {
         session.setPlaybackState(new PlaybackState.Builder().setState(value, 0L, 1f)
+                .addCustomAction(new PlaybackState.CustomAction.Builder(SessionObservation.HOME_PLAY_V1,
+                        "Bounded Play", android.R.drawable.ic_media_play).build())
                 .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
                         | PlaybackState.ACTION_PREPARE).build());
     }

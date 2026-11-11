@@ -105,6 +105,7 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
         String packageName = "";
         int state = PlaybackState.STATE_NONE;
         long actions = 0L;
+        boolean deadlinePlay = false;
         String itemId = "";
         String title = "";
         String subtitle = "";
@@ -115,6 +116,9 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
             if (playback != null) {
                 state = playback.getState();
                 actions = playback.getActions();
+                for (PlaybackState.CustomAction action : playback.getCustomActions()) {
+                    if (SessionObservation.HOME_PLAY_V1.equals(action.getAction())) deadlinePlay = true;
+                }
             }
             if (metadata != null) {
                 itemId = text(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID);
@@ -136,7 +140,7 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
             title = "";
             subtitle = "";
         }
-        return new SessionObservation(token, packageName, state, actions, itemId, title, subtitle);
+        return new SessionObservation(token, packageName, state, actions, itemId, title, subtitle, deadlinePlay, false);
     }
 
     private static String text(MediaMetadata metadata, String... keys) {
@@ -196,6 +200,17 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
                 case PREVIOUS: controls.skipToPrevious(); break;
                 default: controls.prepare(); break;
             }
+            return true;
+        }
+
+        @Override public boolean dispatchDeadline(long deadlineElapsedMs) {
+            if (deadlineElapsedMs <= android.os.SystemClock.elapsedRealtime()) return false;
+            MediaController.TransportControls controls = controller.getTransportControls();
+            if (controls == null || !read().deadlinePlay) return false;
+            android.os.Bundle extras = new android.os.Bundle();
+            extras.putInt("protocol", 1);
+            extras.putLong("deadline_elapsed_ms", deadlineElapsedMs);
+            controls.sendCustomAction(SessionObservation.HOME_PLAY_V1, extras);
             return true;
         }
 

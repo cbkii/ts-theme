@@ -212,6 +212,7 @@ public final class MediaListenerService extends NotificationListenerService {
             publishEmpty();
             return;
         }
+        if (!legacyDemand) return;
         try {
             sessionManager.addOnActiveSessionsChangedListener(
                     sessionsChangedListener, listenerComponent, main);
@@ -220,8 +221,7 @@ public final class MediaListenerService extends NotificationListenerService {
             publishEmpty();
             return;
         }
-        attachRegisteredExternalControllers();
-        refresh();
+        if (legacyDemand) { attachRegisteredExternalControllers(); refresh(); }
     }
 
     @Override public void onListenerDisconnected() {
@@ -246,7 +246,7 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     @Override public void onNotificationPosted(StatusBarNotification sbn) {
-        if (sbn == null || !RadioProvider.resolvePackage(this).equals(sbn.getPackageName())) return;
+        if (!legacyDemand || sbn == null || !RadioProvider.resolvePackage(this).equals(sbn.getPackageName())) return;
         Notification notification = sbn.getNotification();
         if (notification == null || (notification.flags & Notification.FLAG_ONGOING_EVENT) == 0) return;
         Bundle extras = notification.extras;
@@ -292,9 +292,31 @@ public final class MediaListenerService extends NotificationListenerService {
         }
     }
 
+    private static boolean legacyDemand;
+
+    static void setDemand(boolean demanded) {
+        if (legacyDemand == demanded) return;
+        legacyDemand = demanded;
+        MediaListenerService service = instance;
+        if (service == null) return;
+        service.main.post(() -> {
+            if (instance != service || !service.connected) return;
+            service.detachSessionListener();
+            service.releaseAll();
+            if (!legacyDemand) { publishEmpty(); return; }
+            if (service.sessionManager != null && service.sessionsChangedListener != null) {
+                try { service.sessionManager.addOnActiveSessionsChangedListener(
+                        service.sessionsChangedListener, service.listenerComponent, service.main); }
+                catch (RuntimeException unavailable) { return; }
+            }
+            service.attachRegisteredExternalControllers();
+            service.refresh();
+        });
+    }
+
     private void refresh() {
         if (Looper.myLooper() != Looper.getMainLooper()) { main.post(this::refresh); return; }
-        if (!connected || instance != this) return;
+        if (!legacyDemand || !connected || instance != this) return;
         if (sessionManager == null) {
             publishEmpty();
             return;
@@ -311,7 +333,7 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     private void reconcile(List<MediaController> activeControllers) {
-        if (!connected || instance != this) return;
+        if (!legacyDemand || !connected || instance != this) return;
         List<MediaController> active = activeControllers == null
                 ? new ArrayList<>() : activeControllers;
         active = SessionControllerRegistry.reconcile(watched, active, callback, main);

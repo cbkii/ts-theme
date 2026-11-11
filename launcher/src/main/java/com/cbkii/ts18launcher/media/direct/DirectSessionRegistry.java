@@ -24,6 +24,7 @@ final class DirectSessionRegistry {
         void watch(Runnable onChanged, Runnable onEnded);
         void unwatch();
         boolean dispatch(DirectOperation operation);
+        default boolean dispatchDeadline(long deadlineElapsedMs) { return false; }
     }
 
     /** Where sessions come from: the notification-listener authority on device. */
@@ -103,8 +104,7 @@ final class DirectSessionRegistry {
             }
         }
         access = granted;
-        // Sessions handed over by a source are held only under the listener authority.
-        if (!granted) offered.clear();
+        // Browser tokens carry their own source-owned authority, independent of listener access.
         Map<Object, Session> next = new LinkedHashMap<>();
         List<Session> candidates = new ArrayList<>(active);
         candidates.addAll(offered.values());
@@ -141,12 +141,24 @@ final class DirectSessionRegistry {
         }
     }
 
+    boolean dispatchDeadline(Object token, long deadlineElapsedMs) {
+        Session session = watched.get(token);
+        if (session == null) return false;
+        try { return session.dispatchDeadline(deadlineElapsedMs); }
+        catch (RuntimeException gone) { return false; }
+    }
+
+    private SessionObservation readOwned(Session session) {
+        SessionObservation observation = readSafely(session);
+        return observation == null ? null : observation.withSourceOwned(offered.containsKey(session.token()));
+    }
+
     int watchedCount() { return watched.size(); }
 
     private void changed(Object token) {
         Session session = watched.get(token);
         if (!started || session == null) return;
-        SessionObservation observation = readSafely(session);
+        SessionObservation observation = readOwned(session);
         if (observation != null) sink.onSessionChanged(observation);
     }
 
@@ -161,7 +173,7 @@ final class DirectSessionRegistry {
     private void publish() {
         List<SessionObservation> readings = new ArrayList<>();
         for (Session session : watched.values()) {
-            SessionObservation observation = readSafely(session);
+            SessionObservation observation = readOwned(session);
             if (observation != null) readings.add(observation);
         }
         sink.onMembership(access, readings);

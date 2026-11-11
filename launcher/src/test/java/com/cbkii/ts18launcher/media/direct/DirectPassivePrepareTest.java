@@ -173,12 +173,12 @@ public class DirectPassivePrepareTest {
         assertEquals(1, session.dispatched.size());
     }
 
-    @Test public void deniedAccessDefersAndDetachOrEngineChangeCancels() {
+    @Test public void browserReadinessDoesNotRequireListenerAccessAndDetachCancels() {
         source.access = false;
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
         source.changed();
         backend.preparePassive(MediaSourceKey.MUSIC, AUXIO, 1L);
-        assertFalse(starter.log.contains("start com.tw.media"));
+        assertTrue(starter.log.contains("start com.tw.media"));
         source.access = true;
         source.changed();
         assertEquals("deferred epoch runs once access is known", 1,

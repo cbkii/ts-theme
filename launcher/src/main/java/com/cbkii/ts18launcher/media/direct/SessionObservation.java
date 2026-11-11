@@ -9,6 +9,9 @@ package com.cbkii.ts18launcher.media.direct;
  */
 public final class SessionObservation {
     /** Stable identity of the framework session (the session token on device). */
+    public static final String HOME_PLAY_V1 = "org.oxycblt.auxio.action.HOME_PLAY_V1";
+    public final boolean deadlinePlay;
+    public final boolean sourceOwned;
     public final Object token;
     public final String packageName;
     public final int nativeState;
@@ -19,6 +22,14 @@ public final class SessionObservation {
 
     public SessionObservation(Object token, String packageName, int nativeState, long actions,
                               String itemId, String title, String subtitle) {
+        this(token, packageName, nativeState, actions, itemId, title, subtitle, false, false);
+    }
+
+    public SessionObservation(Object token, String packageName, int nativeState, long actions,
+                              String itemId, String title, String subtitle,
+                              boolean deadlinePlay, boolean sourceOwned) {
+        this.deadlinePlay = deadlinePlay;
+        this.sourceOwned = sourceOwned;
         this.token = token;
         this.packageName = packageName == null ? "" : packageName;
         this.nativeState = nativeState;
@@ -26,5 +37,9 @@ public final class SessionObservation {
         this.itemId = itemId == null ? "" : itemId;
         this.title = title == null ? "" : title.trim();
         this.subtitle = subtitle == null ? "" : subtitle.trim();
+    }
+    SessionObservation withSourceOwned(boolean owned) {
+        return new SessionObservation(token, packageName, nativeState, actions, itemId, title,
+                subtitle, deadlinePlay, owned);
     }
 }
