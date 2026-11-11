@@ -38,6 +38,23 @@ final class NavigationRootHelper {
     void setColdLaunchPolicy(String policy) {
         coldPolicy = "automatic".equals(policy) || "manual".equals(policy) ? policy : "deny";
     }
+    /**
+     * The policy as of the moment the helper is spawned, not as of when it was last set. An
+     * automatic start is re-admitted here: HOME must still be the default, the screen on and
+     * unlocked, the user unlocked and no call or ringtone audio mode active. Consent itself is
+     * pushed here on every preference/provider change, so a revocation already reads "deny".
+     */
+    /** The live automatic-start admission check; replaceable only by tests. */
+    java.util.function.Predicate<Context> admission = CompactStartupClient::automaticAllowed;
+
+    String dispatchColdPolicy() {
+        String policy = coldPolicy;
+        if ("automatic".equals(policy) && !admission.test(context)) {
+            MediaEventTrace.record("compact-startup", "dispatch-readmission-denied", "");
+            return "deny";
+        }
+        return policy;
+    }
     void setDeadline(long elapsedDeadlineMs) { deadline = elapsedDeadlineMs; }
     private long remaining() {
         return deadline <= 0L ? COMMAND_TIMEOUT_MS
@@ -85,7 +102,7 @@ final class NavigationRootHelper {
                 .append(" TS18_STATE_DIR=").append(singleQuote(rootDir))
                 .append(" TS18_STAGE_UNTIL=").append(deadline)
                 .append(" TS18_MASK_TITLE=").append(singleQuote(StartupMaskFocus.activeTitle))
-                .append(" TS18_COLD_POLICY=").append(coldPolicy)
+                .append(" TS18_COLD_POLICY=").append(dispatchColdPolicy())
                 .append(" TS18_METHOD=").append(TestingProfiles.navigation(context))
                 .append(" TS18_TRANSITION=").append(TestingProfiles.transition(context))
                 .append(" /system/bin/sh ").append(singleQuote(rootHelper)).append(' ').append(action)

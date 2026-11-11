@@ -30,42 +30,154 @@ final class NavCompactConsent {
         requireCold(uid);
         String path = (String) app.getClass().getField("dataDir").get(app);
         File data = new File(path).getCanonicalFile();
-        requireOwner(data, uid);
-        File prefs = new File(data, "shared_prefs/OrganicMapsPrefs.xml");
-        if (!prefs.getCanonicalPath().equals(data + "/shared_prefs/OrganicMapsPrefs.xml")
-                || new File(prefs + ".bak").exists())
-            throw new IllegalStateException("CONSENT_FILE_UNSTABLE");
-        long size = prefs.length(), modified = prefs.lastModified();
-        boolean exists = prefs.exists();
-        boolean enabled = true; // Explicit v1 InCar contract: unset preference defaults ON.
-        if (exists) {
-            requireOwner(prefs, uid);
-            if (!prefs.isFile() || size <= 0 || size > 262144L)
-                throw new IllegalStateException("CONSENT_FILE_INVALID");
-            byte[] bytes;
-            try (java.io.InputStream input = new java.io.FileInputStream(prefs)) {
-                java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
-                byte[] buffer = new byte[4096]; int n;
-                while ((n = input.read(buffer)) >= 0) {
-                    if (output.size() + n > 262144) throw new IllegalStateException("CONSENT_FILE_INVALID");
-                    output.write(buffer, 0, n);
-                }
-                bytes = output.toByteArray();
-            }
-            enabled = parse(new String(bytes, StandardCharsets.UTF_8));
-        }
-        requireCold(uid); // Do not read behind a live SharedPreferences writer/cache.
-        if (exists != prefs.exists() || size != prefs.length() || modified != prefs.lastModified()
-                || new File(prefs + ".bak").exists()) throw new IllegalStateException("CONSENT_FILE_UNSTABLE");
+        boolean enabled = readConsent(FRAMEWORK_FS, data.getPath(), uid);
+        requireCold(uid); // Do not trust a read made behind a live SharedPreferences writer.
         return enabled;
     }
 
-    private static void requireOwner(File file, int uid) throws Exception {
-        Object stat = Class.forName("android.system.Os").getMethod("stat", String.class)
-                .invoke(null, file.getPath());
-        if (stat.getClass().getField("st_uid").getInt(stat) != uid)
-            throw new IllegalStateException("CONSENT_OWNER_MISMATCH");
+    /** One lstat result; only the fields the contract needs. */
+    static final class Entry {
+        final int uid; final int mode; final long size; final long modified;
+        Entry(int uid, int mode, long size, long modified) {
+            this.uid = uid; this.mode = mode; this.size = size; this.modified = modified;
+        }
+        boolean directory() { return (mode & S_IFMT) == S_IFDIR; }
+        boolean regular() { return (mode & S_IFMT) == S_IFREG; }
+        boolean sameAs(Entry other) {
+            return other != null && uid == other.uid && mode == other.mode
+                    && size == other.size && modified == other.modified;
+        }
     }
+
+    /** Proven absence: lstat failed with ENOENT, and only ENOENT. */
+    static final class Absent extends Exception {
+        Absent() { super("ENOENT"); }
+    }
+
+    /** The filesystem as root sees it. Any failure other than ENOENT must throw an unreadable code. */
+    interface Fs {
+        Entry lstat(String path) throws Absent, IllegalStateException;
+        byte[] read(String path, int limit) throws Exception;
+    }
+
+    private static final int S_IFMT = 0170000, S_IFDIR = 0040000, S_IFREG = 0100000;
+    private static final int LIMIT = 262144;
+    private static final String PREFS = "shared_prefs/OrganicMapsPrefs.xml";
+
+    /**
+     * Read the consent preference with evidence for every branch.
+     *
+     * The documented v1 default (unset means ON) applies only when absence is proven: the data
+     * directory is readable and owned by the peer, and the preferences directory or file is
+     * reported missing with ENOENT. Permission, namespace, locked-storage or I/O failures, a wrong
+     * owner, a link, a backup file or a file that changes while being read are never treated as
+     * unset; they throw, and a thrown read never authorises an automatic start.
+     */
+    static boolean readConsent(Fs fs, String dataDir, int uid) throws Exception {
+        Entry data = present(fs, dataDir, "CONSENT_DATA_ABSENT");
+        if (!data.directory() || data.uid != uid) throw new IllegalStateException("CONSENT_OWNER_MISMATCH");
+        String prefsDir = dataDir + "/shared_prefs";
+        String file = dataDir + "/" + PREFS;
+        Entry dir;
+        try {
+            dir = fs.lstat(prefsDir);
+        } catch (Absent absent) {
+            return true; // The app has never written any preference: genuine unset.
+        }
+        if (!dir.directory() || dir.uid != uid) throw new IllegalStateException("CONSENT_OWNER_MISMATCH");
+        requireAbsent(fs, file + ".bak");
+        Entry before;
+        try {
+            before = fs.lstat(file);
+        } catch (Absent absent) {
+            requireAbsent(fs, file + ".bak");
+            return true; // Directory present and readable, file proven missing: genuine unset.
+        }
+        if (!before.regular()) throw new IllegalStateException("CONSENT_FILE_INVALID");
+        if (before.uid != uid) throw new IllegalStateException("CONSENT_OWNER_MISMATCH");
+        if (before.size <= 0 || before.size > LIMIT) throw new IllegalStateException("CONSENT_FILE_INVALID");
+        byte[] bytes = fs.read(file, LIMIT);
+        Entry after = present(fs, file, "CONSENT_FILE_UNSTABLE");
+        requireAbsent(fs, file + ".bak");
+        if (!before.sameAs(after) || bytes.length != before.size)
+            throw new IllegalStateException("CONSENT_FILE_UNSTABLE");
+        return parse(new String(bytes, StandardCharsets.UTF_8));
+    }
+
+    private static Entry present(Fs fs, String path, String absentCode) {
+        try {
+            return fs.lstat(path);
+        } catch (Absent absent) {
+            throw new IllegalStateException(absentCode);
+        }
+    }
+
+    private static void requireAbsent(Fs fs, String path) {
+        try {
+            fs.lstat(path);
+        } catch (Absent absent) {
+            return;
+        }
+        // A pending SharedPreferences backup means the main file may be mid-replace.
+        throw new IllegalStateException("CONSENT_FILE_UNSTABLE");
+    }
+
+    /** android.system.Os, reached reflectively from the root helper process. */
+    static final Fs FRAMEWORK_FS = new Fs() {
+        @Override public Entry lstat(String path) throws Absent {
+            Object stat;
+            try {
+                stat = Class.forName("android.system.Os").getMethod("lstat", String.class).invoke(null, path);
+            } catch (java.lang.reflect.InvocationTargetException failed) {
+                Throwable cause = failed.getTargetException();
+                if (errno(cause) == enoent()) throw new Absent();
+                throw new IllegalStateException("CONSENT_FILE_UNREADABLE");
+            } catch (ReflectiveOperationException | RuntimeException unavailable) {
+                throw new IllegalStateException("CONSENT_FILE_UNREADABLE");
+            }
+            try {
+                Class<?> type = stat.getClass();
+                return new Entry(type.getField("st_uid").getInt(stat), type.getField("st_mode").getInt(stat),
+                        type.getField("st_size").getLong(stat), type.getField("st_mtime").getLong(stat));
+            } catch (ReflectiveOperationException unavailable) {
+                throw new IllegalStateException("CONSENT_FILE_UNREADABLE");
+            }
+        }
+
+        @Override public byte[] read(String path, int limit) throws Exception {
+            try (java.io.InputStream input = new java.io.FileInputStream(path)) {
+                java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[4096];
+                int n;
+                while ((n = input.read(buffer)) >= 0) {
+                    if (output.size() + n > limit) throw new IllegalStateException("CONSENT_FILE_INVALID");
+                    output.write(buffer, 0, n);
+                }
+                return output.toByteArray();
+            } catch (java.io.IOException unreadable) {
+                throw new IllegalStateException("CONSENT_FILE_UNREADABLE");
+            }
+        }
+    };
+
+    private static int errno(Throwable error) {
+        try {
+            if (error != null && "android.system.ErrnoException".equals(error.getClass().getName()))
+                return error.getClass().getField("errno").getInt(error);
+        } catch (ReflectiveOperationException unavailable) {
+            // Not an ErrnoException we can read.
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    private static int enoent() {
+        try {
+            return Class.forName("android.system.OsConstants").getField("ENOENT").getInt(null);
+        } catch (ReflectiveOperationException unavailable) {
+            return Integer.MAX_VALUE; // Unknown constant: nothing can be proven absent.
+        }
+    }
+
     @android.annotation.SuppressLint({"BlockedPrivateApi", "PrivateApi"})
     private static void requireCold(int uid) throws Exception {
         Object service = Class.forName("android.app.ActivityManager").getMethod("getService").invoke(null);

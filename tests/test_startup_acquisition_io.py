@@ -31,8 +31,18 @@ public class ActivityManager {public static boolean live;public static class Ent
 public static class Service implements IActivityManager {public java.util.List<Entry> getRunningAppProcesses(){return live?java.util.List.of(new Entry()):java.util.List.of();}}
 public static IActivityManager getService(){return new Service();}}
 ''',
-            'android/system/Os.java': '''package android.system;public class Os {public static int owner=10209;
-public static class Stat {public int st_uid=owner;}public static Stat stat(String path){return new Stat();}}
+            'android/system/ErrnoException.java': '''package android.system;public class ErrnoException extends Exception {public final int errno;public ErrnoException(String f,int e){super(f);errno=e;}}''',
+            'android/system/OsConstants.java': '''package android.system;public class OsConstants {public static final int ENOENT=2,EACCES=13;}''',
+            'android/system/Os.java': '''package android.system;public class Os {public static int owner=10209;public static String deny="";
+public static class Stat {public int st_uid=owner;public int st_mode;public long st_size;public long st_mtime;}
+public static Stat stat(String path){return new Stat();}
+public static Stat lstat(String path)throws ErrnoException{
+ if(!deny.isEmpty()&&path.equals(deny))throw new ErrnoException("lstat",OsConstants.EACCES);
+ java.nio.file.Path p=java.nio.file.Path.of(path);
+ if(!java.nio.file.Files.exists(p,java.nio.file.LinkOption.NOFOLLOW_LINKS))throw new ErrnoException("lstat",OsConstants.ENOENT);
+ try{java.util.Map<String,Object> a=java.nio.file.Files.readAttributes(p,"unix:mode,size,lastModifiedTime",java.nio.file.LinkOption.NOFOLLOW_LINKS);
+  Stat s=new Stat();s.st_mode=(Integer)a.get("mode");s.st_size=(Long)a.get("size");s.st_mtime=((java.nio.file.attribute.FileTime)a.get("lastModifiedTime")).toMillis();return s;}
+ catch(java.io.IOException e){throw new ErrnoException("lstat",5);}}}
 ''',
             'Harness.java': r'''package com.cbkii.ts18launcher;
 import java.nio.file.*;import java.util.concurrent.TimeUnit;
@@ -73,8 +83,13 @@ public class Harness {
   android.system.Os.owner=999;rejects(()->NavCompactConsent.read(0));android.system.Os.owner=10209;
   android.app.AppGlobals.app.metaData.protocol=0;rejects(()->NavCompactConsent.read(0));android.app.AppGlobals.app.metaData.protocol=1;
   rejects(()->NavCompactConsent.read(1));Files.writeString(Path.of(prefs+".bak"),"backup");rejects(()->NavCompactConsent.read(0));Files.delete(Path.of(prefs+".bak"));
+  // EACCES on the preferences directory or file is not absence: it must never read as the default ON.
+  android.system.Os.deny=root.resolve("shared_prefs").toString();rejects(()->NavCompactConsent.read(0));
+  android.system.Os.deny=prefs.toString();rejects(()->NavCompactConsent.read(0));android.system.Os.deny="";
+  Files.delete(prefs);android.system.Os.deny=prefs.toString();rejects(()->NavCompactConsent.read(0));android.system.Os.deny="";
+  Files.writeString(prefs,"<map><boolean name='InCarCompactStartup' value='false'/></map>");
   Files.delete(prefs);Files.createSymbolicLink(prefs,Files.writeString(root.resolve("outside.xml"),"<map/>"));rejects(()->NavCompactConsent.read(0));
-  System.out.println("PASS production probe real I/O + cold consent default/OFF/live-UID/owner/protocol/user/XML/backup/symlink gates");
+  System.out.println("PASS production probe real I/O + cold consent default/OFF/live-UID/owner/protocol/user/XML/backup/symlink/EACCES gates");
  }
 }
 ''',
