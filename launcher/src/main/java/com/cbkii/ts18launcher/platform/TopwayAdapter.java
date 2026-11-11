@@ -13,6 +13,8 @@ public final class TopwayAdapter {
     public static final String AUXIO_PACKAGE = "com.tw.media";
     public static final String STOCK_MUSIC_PACKAGE = "com.tw.music";
 
+    private static final java.util.Map<String, Boolean> INSTALLED = new java.util.concurrent.ConcurrentHashMap<>();
+    public static void invalidatePackages() { INSTALLED.clear(); }
     private TopwayAdapter() {}
 
     public static boolean isTopwayEnvironment(Context context) {
@@ -27,10 +29,16 @@ public final class TopwayAdapter {
     }
 
     private static boolean isInstalled(Context context, String packageName) {
+        Boolean cached = INSTALLED.get(packageName);
+        if (cached != null) return cached;
         try {
             context.getPackageManager().getApplicationInfo(packageName, 0);
+            INSTALLED.put(packageName, true);
             return true;
-        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
+        } catch (PackageManager.NameNotFoundException missing) {
+            INSTALLED.put(packageName, false);
+            return false;
+        } catch (RuntimeException unavailable) {
             return false;
         }
     }

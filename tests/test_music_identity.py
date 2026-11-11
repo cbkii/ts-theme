@@ -53,20 +53,20 @@ Facade mediaFacade(){return new Facade();}
 """ + methods + """
 static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
 public static void main(String[] args){Harness h=new Harness();
-PackageManager.installed.add("com.tw.music");PackageManager.installed.add("com.tw.media");
+PackageManager.installed.add("com.tw.music");TopwayAdapter.invalidatePackages();PackageManager.installed.add("com.tw.media");TopwayAdapter.invalidatePackages();
 check("com.tw.media".equals(TopwayAdapter.defaultMusicPackage(h)),"unset Music selected protected stock over installed Auxio");
 check("com.tw.media".equals(h.musicControlPackage()),"dedicated Music followed unrelated active player");
 LauncherPrefs.configured="chosen.player";check("chosen.player".equals(h.musicControlPackage()),"explicit Music choice overridden");
-PackageManager.installed.remove("com.tw.media");check("com.tw.music".equals(TopwayAdapter.defaultMusicPackage(h)),"stock-only fallback lost");
+PackageManager.installed.remove("com.tw.media");TopwayAdapter.invalidatePackages();check("com.tw.music".equals(TopwayAdapter.defaultMusicPackage(h)),"stock-only fallback lost");
 check("chosen.player".equals(h.musicControlPackage()),"unavailable explicit source silently replaced");
-LauncherPrefs.configured="";PackageManager.installed.clear();check(TopwayAdapter.defaultMusicPackage(h).isEmpty(),"invented unavailable default");
-PackageManager.installed.add("com.tw.media");check("com.tw.media".equals(h.musicControlPackage()),"late Auxio install ignored");
+LauncherPrefs.configured="";PackageManager.installed.clear();TopwayAdapter.invalidatePackages();check(TopwayAdapter.defaultMusicPackage(h).isEmpty(),"invented unavailable default");
+PackageManager.installed.add("com.tw.media");TopwayAdapter.invalidatePackages();check("com.tw.media".equals(h.musicControlPackage()),"late Auxio install ignored");
 LauncherPrefs.storedMode="auto";check("other.player".equals(h.musicControlPackage()),"explicit generic mode lost");
 ProcessMediaSessionMonitor.selected="verified.player";h.genericSnapshot.packageName="";
 check("verified.player".equals(h.musicControlPackage()),"temporary UI unknown redirected transport to configured app");
 Facade.music=MediaEngine.DIRECT;check("com.tw.media".equals(h.musicControlPackage()),"direct engine followed a foreign active player");Facade.music=MediaEngine.LEGACY;
 LauncherPrefs.storedMode="prefer_music";check("com.tw.media".equals(h.musicControlPackage()),"configured mode leaked generic recipient");
-PackageManager.unavailable=true;check(TopwayAdapter.defaultMusicPackage(h).isEmpty(),"failed package observation invented source");
+PackageManager.unavailable=true;TopwayAdapter.invalidatePackages();check(TopwayAdapter.defaultMusicPackage(h).isEmpty(),"failed package observation invented source");
 System.out.println("PASS actual Auxio/stock/default/explicit/unavailable/generic Music identity");}}
 """}
         with tempfile.TemporaryDirectory() as tmp:
