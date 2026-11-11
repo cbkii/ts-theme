@@ -32,6 +32,7 @@ capture radio /system/bin/dumpsys package com.navimods.radio
 capture media /system/bin/dumpsys media_session
 capture timeline /system/bin/logcat -d -t 5000 -v threadtime TS18Startup:I TS18Perf:I TS18Nav:I TS18Media:I '*:S'
 su_bin="${PREFIX:-/data/data/com.termux/files/usr}/bin/su"
+# shellcheck disable=SC2016 # This expression is evaluated by the root shell.
 if [ -x "$su_bin" ] && timeout -k 1 5 "$su_bin" -c 'test "$(id -u)" = 0' >/dev/null 2>&1; then
     capture root-context "$su_bin" -c 'id; cat /proc/self/attr/current; readlink /proc/self/ns/mnt'
     capture tasks "$su_bin" -c 'dumpsys activity activities'
