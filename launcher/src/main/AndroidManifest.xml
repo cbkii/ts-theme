@@ -64,6 +64,12 @@
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:exported="false" />
 
+        <!-- Optional setup checklist: offered once on first Home, repeatable from Settings. -->
+        <activity
+            android:name=".SetupActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout"
+            android:exported="false" />
+
         <!-- Experimental N3 screen: not exported, reachable only after explicit opt-in in Settings. -->
         <activity
             android:name=".N3Activity"
