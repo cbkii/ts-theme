@@ -6,6 +6,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 
 final class AppResolver {
+    private static final android.util.LruCache<String, String> LABELS = new android.util.LruCache<>(64);
+    static void invalidateLabels() { LABELS.evictAll(); }
     private AppResolver() {}
 
     static boolean launchPackage(Context context, String packageName) {
@@ -78,16 +80,22 @@ final class AppResolver {
 
     static String labelFor(Context context, String packageName, String fallback) {
         if (packageName == null || packageName.isEmpty()) return fallback;
+        String cached = LABELS.get(packageName);
+        if (cached != null) return cached;
         PackageManager pm = context.getPackageManager();
         try {
             android.content.ComponentName component = android.content.ComponentName.unflattenFromString(packageName);
             if (component != null) {
                 CharSequence label = pm.getActivityInfo(component, 0).loadLabel(pm);
-                if (label != null && label.length() > 0) return label.toString();
+                if (label != null && label.length() > 0) {
+                    LABELS.put(packageName, label.toString()); return label.toString();
+                }
             }
             ApplicationInfo info = pm.getApplicationInfo(packagePart(packageName), 0);
             CharSequence label = pm.getApplicationLabel(info);
-            return label == null || label.length() == 0 ? fallback : label.toString();
+            if (label == null || label.length() == 0) return fallback;
+            LABELS.put(packageName, label.toString());
+            return label.toString();
         } catch (PackageManager.NameNotFoundException e) {
             return fallback;
         }

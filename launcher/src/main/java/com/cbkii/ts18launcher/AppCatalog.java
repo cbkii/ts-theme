@@ -81,6 +81,9 @@ final class AppCatalog {
     void trim() { icons.evictAll(); }
     private void invalidate() {
         generation++; snapshot = null; icons.evictAll();
+        AppResolver.invalidateLabels();
+        RadioProvider.invalidate();
+        com.cbkii.ts18launcher.platform.TopwayAdapter.invalidatePackages();
         if (!listeners.isEmpty()) load();
     }
     private void load() {
