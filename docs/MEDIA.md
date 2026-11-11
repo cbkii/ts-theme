@@ -83,7 +83,12 @@ its own. It observes sessions the source apps publish and sends them transport a
 
 ## Qualification status
 
-Both engines are verified by host tests only (JVM/Robolectric API 29, source contracts, R8 release
-envelope). **No TS18 physical trial of M2 has been run.** Before Direct can become a default it
+Both engines are verified by host tests (JVM/Robolectric API 29, source contracts, R8 release
+envelope). The M2 cold-start transport additionally has real cross-process evidence on the stock
+API 29 emulator in CI: `MediaSessionApi29Instrumentation -e m2_browser 1` binds the production
+`FrameworkConnector` to an exported fixture `MediaBrowserService` in the test APK's own process,
+checks the token belongs to that package, sends one Play and requires the same session to report
+Playing, then disconnects and reconnects. That fixture is not Auxio-TS or NavRadio+, and the
+emulator is not the TS18. **No TS18 physical trial of M2 has been run.** Before Direct can become a default it
 needs, per source: warm command trials, handover trials, cold boots and ACC wakes with audible
 confirmation, and a same-build comparison against Legacy.
