@@ -43,6 +43,8 @@ final class DirectSessionRegistry {
     private final Source source;
     private final Sink sink;
     private final Map<Object, Session> watched = new LinkedHashMap<>();
+    /** Sessions published to this launcher directly by a source's own service. */
+    private final Map<Object, Session> offered = new LinkedHashMap<>();
     private boolean started;
     private boolean access;
 
@@ -61,7 +63,23 @@ final class DirectSessionRegistry {
         if (!started) return;
         started = false;
         source.setChangeListener(null);
+        offered.clear();
         release();
+    }
+
+    /**
+     * Add a session a source handed to this launcher itself. It joins the same membership as the
+     * listed sessions; the same platform session listed both ways is one entry.
+     */
+    void offer(Session session) {
+        Object token = session == null ? null : session.token();
+        if (!started || token == null) return;
+        offered.put(token, session);
+        refresh();
+    }
+
+    void withdraw(Object token) {
+        if (token != null && offered.remove(token) != null && started) refresh();
     }
 
     /** Re-read membership from the platform and publish it. Safe to call at any time. */
@@ -83,7 +101,9 @@ final class DirectSessionRegistry {
         }
         access = granted;
         Map<Object, Session> next = new LinkedHashMap<>();
-        for (Session candidate : active) {
+        List<Session> candidates = new ArrayList<>(active);
+        candidates.addAll(offered.values());
+        for (Session candidate : candidates) {
             Object token = candidate == null ? null : candidate.token();
             if (token == null || next.containsKey(token)) continue;
             Session owner = watched.get(token);
@@ -126,6 +146,7 @@ final class DirectSessionRegistry {
     }
 
     private void ended(Object token) {
+        offered.remove(token);
         Session session = watched.remove(token);
         if (session == null) return;
         unwatch(session);

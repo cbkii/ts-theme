@@ -12,10 +12,10 @@ its own. It observes sessions the source apps publish and sends them transport a
 | Classes | `MediaSourceBootstrapper`, `ProcessMediaSessionMonitor`, `MediaListenerService`, `StartupReadinessCoordinator` behind `LegacyMediaBackend` | `media/direct/*` behind `DirectSourceMediaBackend` |
 | Which app | Configured app; Music may follow the globally active player ("Follow active media") | The exact configured package only |
 | Which session | Ranked selection with listener/process merge | One pinned token; several sessions resolve by activity, previous pin, then capability, otherwise `AMBIGUOUS_SOURCE` |
-| App not running | Source-specific background/foreground preparation | Reported as "Not running"; nothing is sent or started |
+| App not running | Source-specific background/foreground preparation, optionally at startup | Started **only on a Play tap**, only through the app's own exported media browser service; otherwise reported as "Not running" |
 | Command | Bounded preparation, fallbacks and retries | One directional dispatch per tap, then observe |
 | Result | success / failure | `ACKNOWLEDGED`, `SENT_UNCONFIRMED`, `UNSUPPORTED`, `SOURCE_LOST`, `FAILED` |
-| Startup preparation | Yes (when enabled) | None |
+| Startup preparation | Yes (when enabled) | None: nothing starts without a tap |
 
 ## Rules both engines obey
 
@@ -49,11 +49,29 @@ its own. It observes sessions the source apps publish and sends them transport a
 - **Stock Topway radio** (`com.tw.radio`) is controlled only if it publishes a normal session. No
   private Topway command is sent by either engine.
 
-### Not in M2 yet
+### Starting a source that is not running
 
-- Starting a source that is not running (source-owned MediaBrowser/prepare). Use the source icon
-  to open the app, or keep that source on Legacy.
+- Only a **Play** tap starts a source. Attaching, refreshing, HOME start, Next and Previous never do.
+- The only mechanism is the standard `android.media.browse.MediaBrowserService` the app itself
+  exports. Connecting makes the app create its process and hand over its own session token; the
+  launcher checks the token belongs to the requested package, pins it, sends **one** `play()` and
+  waits for that session to confirm. No Activity is opened, no root is used, no queue or session is
+  invented, and Legacy's Auxio-specific preparation extras are not used.
+- Bounded: 8 s for the session to appear, then the normal 5 s Play confirmation. Taps during the
+  attempt join it. A source that resumes by itself is acknowledged without sending anything. A
+  session arriving after the deadline becomes controllable but is not auto-played.
+- A package with no enabled, exported browser service (stock `com.tw.radio`; NavRadio+ unless its
+  installed build declares one) is **not startable** here: HOME shows it as unavailable and the
+  source icon opens the app.
+- HOME shows Play for a startable source, a connecting icon while starting, and the unavailable
+  icon otherwise.
+
+### Not in M2
+
+- Preparing sources at boot/ACC wake (Legacy only).
 - Native Topway tuner control and illumination input.
+- Whether Auxio-TS actually begins playback from a bare `play()` after a cold bind is a property
+  of the installed Auxio-TS build and is **not yet physically verified**.
 
 ## Qualification status
 

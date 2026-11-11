@@ -673,8 +673,8 @@ public final class SettingsActivity extends Activity {
     }
 
     /**
-     * Legacy stays the default and the rollback. Direct controls only a session the selected app
-     * already publishes; it does not start the app, so it is offered as an explicit trial.
+     * Legacy stays the default and the rollback. Direct controls the selected app's own session
+     * and starts the app only through its own media service; it is offered as an explicit trial.
      */
     private void addEngineRow(com.cbkii.ts18launcher.media.MediaSourceKey key, int icon, String title) {
         com.cbkii.ts18launcher.media.MediaEngine current =
@@ -683,11 +683,11 @@ public final class SettingsActivity extends Activity {
         String direct = com.cbkii.ts18launcher.media.MediaEngine.DIRECT.storedValue();
         addChoiceRow(icon, title,
                 current == com.cbkii.ts18launcher.media.MediaEngine.DIRECT
-                        ? "Direct · TESTING · controls a running app only"
+                        ? "Direct · TESTING · exact app, one action per tap"
                         : "Legacy · default",
                 v -> choose(title,
                         new String[] {"Legacy · default, can start the app",
-                                "Direct · TESTING · exact app, running sessions only"},
+                                "Direct · TESTING · exact app, one action per tap"},
                         new String[] {legacy, direct}, current.storedValue(), value -> {
                             MediaEngineSelector.setRequested(this, key,
                                     com.cbkii.ts18launcher.media.MediaEngine.fromStored(value));

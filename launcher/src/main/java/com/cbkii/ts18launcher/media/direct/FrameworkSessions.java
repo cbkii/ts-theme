@@ -150,7 +150,7 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
         return "";
     }
 
-    private static final class ControllerSession extends MediaController.Callback
+    static final class ControllerSession extends MediaController.Callback
             implements DirectSessionRegistry.Session {
         private final MediaController controller;
         private final Handler handler;

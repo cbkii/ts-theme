@@ -701,9 +701,13 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             String sourceName = getString(key == MediaSourceKey.RADIO
                     ? R.string.media_source_radio : R.string.media_source_music);
             if (!state.live()) {
-                String reason = DirectMediaPresentation.unavailableText(state.availability);
-                button.setTag(R.drawable.ic_media_unavailable);
-                button.setImageResource(R.drawable.ic_media_unavailable);
+                String reason = DirectMediaPresentation.absentText(state);
+                // Startable shows Play, an attempt in progress shows connecting, and only a source
+                // that cannot be started from here shows unavailable.
+                int icon = state.starting ? R.drawable.ic_media_connecting
+                        : state.startable ? R.drawable.ic_play : R.drawable.ic_media_unavailable;
+                button.setTag(icon);
+                button.setImageResource(icon);
                 button.setContentDescription(sourceName + ". " + reason);
                 if (key == displayedKey) {
                     status = state.packageName.isEmpty() ? sourceName

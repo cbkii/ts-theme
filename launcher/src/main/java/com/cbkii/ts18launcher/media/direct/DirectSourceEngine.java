@@ -41,6 +41,18 @@ public final class DirectSourceEngine {
         long qualifiedExtraActions(String packageName);
     }
 
+    /**
+     * Source-owned cold start: asks a package that is not running to publish its session through
+     * its own exported media service. It must never open an Activity or send a transport command.
+     */
+    public interface Starter {
+        boolean canStart(String packageName);
+        /** Begin, or keep, one start attempt for the package. Repeated calls must not stack. */
+        void start(String packageName);
+        void release(String packageName);
+    }
+
+    public static final long COLD_START_MS = 8000L;
     public static final long PLAY_ACK_MS = 5000L;
     public static final long PAUSE_ACK_MS = 2500L;
     public static final long SKIP_OBSERVE_MS = 2000L;
@@ -63,6 +75,7 @@ public final class DirectSourceEngine {
     private final Transport transport;
     private final Clock clock;
     private final Labels labels;
+    private final Starter starter;
     private MediaBackend.StateListener listener;
 
     private boolean attached;
@@ -74,12 +87,23 @@ public final class DirectSourceEngine {
     private boolean liveThisEpoch;
     private MediaSourceState.Availability availability = MediaSourceState.Availability.UNCONFIGURED;
     private Pending pendingToggle;
+    /** A Play tap waiting for the source's own service to publish a session. Not yet dispatched. */
+    private Pending pendingStart;
+    /** Whether the configured package publishes a startable media service; read on membership. */
+    private boolean startCapable;
     private final List<Pending> pendingSkips = new ArrayList<>();
     private long nextOpId;
     private MediaSourceState published;
 
     public DirectSourceEngine(MediaSourceKey key, Transport transport, Clock clock, Labels labels) {
+        this(key, transport, clock, labels, null);
+    }
+
+    /** starter may be null: the engine then controls already-running sources only. */
+    public DirectSourceEngine(MediaSourceKey key, Transport transport, Clock clock, Labels labels,
+                              Starter starter) {
         this.key = key; this.transport = transport; this.clock = clock; this.labels = labels;
+        this.starter = starter;
     }
 
     public void setListener(MediaBackend.StateListener listener) { this.listener = listener; }
@@ -93,10 +117,13 @@ public final class DirectSourceEngine {
         String next = configuredPackage == null ? "" : configuredPackage;
         if (attached && next.equals(packageName)) return;
         failAllPending(MediaCommandResult.Outcome.SOURCE_LOST, "Source changed");
+        endStart(MediaCommandResult.Outcome.SOURCE_LOST, "Source changed");
+        releaseStarter();
         attached = true;
         packageName = next;
         generation++;
         pinnedToken = null; current = null; liveThisEpoch = false; published = null;
+        startCapable = false;
         availability = next.isEmpty() ? MediaSourceState.Availability.UNCONFIGURED
                 : MediaSourceState.Availability.NO_SESSION;
     }
@@ -105,6 +132,8 @@ public final class DirectSourceEngine {
     public void detach() {
         if (!attached) return;
         failAllPending(MediaCommandResult.Outcome.FAILED, "Media engine changed");
+        endStart(MediaCommandResult.Outcome.FAILED, "Media engine changed");
+        releaseStarter();
         attached = false;
         generation++;
         pinnedToken = null; current = null; liveThisEpoch = false; published = null;
@@ -116,7 +145,13 @@ public final class DirectSourceEngine {
         if (!attached) return;
         access = accessGranted;
         if (packageName.isEmpty()) { settle(MediaSourceState.Availability.UNCONFIGURED, null); return; }
-        if (!accessGranted) { settle(MediaSourceState.Availability.PERMISSION_NEEDED, null); return; }
+        if (!accessGranted) {
+            endStart(MediaCommandResult.Outcome.FAILED, "Notification access needed");
+            settle(MediaSourceState.Availability.PERMISSION_NEEDED, null);
+            return;
+        }
+        // One package-manager read per membership change, never per state query or tap.
+        startCapable = starter != null && starter.canStart(packageName);
         List<SessionObservation> samePackage = new ArrayList<>();
         if (sessions != null) for (SessionObservation session : sessions) {
             if (session != null && session.token != null && packageName.equals(session.packageName))
@@ -128,6 +163,8 @@ public final class DirectSourceEngine {
                 settle(MediaSourceState.Availability.LIVE, selection.session);
                 break;
             case AMBIGUOUS:
+                endStart(MediaCommandResult.Outcome.FAILED,
+                        labels.appLabel(packageName) + " has several sessions · open it to choose");
                 settle(MediaSourceState.Availability.AMBIGUOUS_SOURCE, null);
                 break;
             default:
@@ -152,7 +189,8 @@ public final class DirectSourceEngine {
                     MediaSourceState.Availability.UNCONFIGURED, generation);
         }
         if (availability != MediaSourceState.Availability.LIVE || current == null) {
-            return MediaSourceState.unavailable(key, MediaEngine.DIRECT, packageName, availability, generation);
+            return MediaSourceState.unavailable(key, MediaEngine.DIRECT, packageName, availability, generation)
+                    .withStart(startable(), pendingStart != null);
         }
         return new MediaSourceState(key, MediaEngine.DIRECT, packageName, availability,
                 current.nativeState, current.actions | labels.qualifiedExtraActions(packageName),
@@ -172,7 +210,11 @@ public final class DirectSourceEngine {
             return;
         }
         MediaCommandResult unavailable = unavailableResult();
-        if (unavailable != null) { deliver(callback, unavailable); return; }
+        if (unavailable != null) {
+            if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback); return; }
+            deliver(callback, unavailable);
+            return;
+        }
 
         DirectOperation operation = action == MediaUserAction.NEXT ? DirectOperation.NEXT
                 : action == MediaUserAction.PREVIOUS ? DirectOperation.PREVIOUS
@@ -236,8 +278,85 @@ public final class DirectSourceEngine {
         if (session != null) {
             liveThisEpoch = true;
             resolvePending(session);
+            continueStart();
         }
         publish();
+    }
+
+    /** The source's own service could not publish a session. Ends the waiting Play truthfully. */
+    public void onStartFailed(String failedPackage, String reason) {
+        if (!attached || !packageName.equals(failedPackage)) return;
+        endStart(MediaCommandResult.Outcome.FAILED, labels.appLabel(packageName) + " " + reason);
+    }
+
+    /** True while a Play tap is waiting for the source to publish a session. */
+    public boolean starting() { return pendingStart != null; }
+
+    private boolean startable() {
+        return startCapable
+                && (availability == MediaSourceState.Availability.NO_SESSION
+                        || availability == MediaSourceState.Availability.SOURCE_LOST);
+    }
+
+    private void requestStart(MediaBackend.ResultCallback callback) {
+        if (pendingStart != null) {
+            // Further taps join the one attempt; the source is asked once.
+            if (callback != null) pendingStart.callbacks.add(callback);
+            return;
+        }
+        Pending start = new Pending(++nextOpId, null, generation, DirectOperation.PLAY, "");
+        if (callback != null) start.callbacks.add(callback);
+        pendingStart = start;
+        start.timer = clock.schedule(COLD_START_MS, () -> {
+            if (pendingStart != start) return;
+            start.timer = null;
+            endStart(MediaCommandResult.Outcome.FAILED,
+                    labels.appLabel(packageName) + " did not start · open it once");
+        });
+        publish();
+        starter.start(packageName);
+    }
+
+    /** The awaited session is now pinned: send the one Play the driver asked for. */
+    private void continueStart() {
+        Pending start = pendingStart;
+        if (start == null || !live()) return;
+        pendingStart = null;
+        if (start.timer != null) { clock.cancel(start.timer); start.timer = null; }
+        if (DirectOperation.PLAY.acknowledgedBy(current.nativeState)) {
+            // The source resumed by itself; there is nothing left to send.
+            deliverAll(start, new MediaCommandResult(MediaCommandResult.Outcome.ACKNOWLEDGED, "", true, false));
+            return;
+        }
+        long effectiveActions = current.actions | labels.qualifiedExtraActions(packageName);
+        if ((effectiveActions & DirectOperation.PLAY.supportingActions()) == 0L) {
+            deliverAll(start, new MediaCommandResult(MediaCommandResult.Outcome.UNSUPPORTED,
+                    labels.appLabel(packageName) + " started but does not offer Play yet", false, false));
+            return;
+        }
+        Pending play = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PLAY,
+                itemIdentity(current));
+        play.callbacks.addAll(start.callbacks);
+        if (!transport.dispatch(pinnedToken, DirectOperation.PLAY)) {
+            deliverAll(play, new MediaCommandResult(MediaCommandResult.Outcome.SOURCE_LOST,
+                    labels.appLabel(packageName) + " stopped responding", false, false));
+            return;
+        }
+        pendingToggle = play;
+        play.timer = clock.schedule(PLAY_ACK_MS, () -> onDeadline(play));
+    }
+
+    private void endStart(MediaCommandResult.Outcome outcome, String message) {
+        Pending start = pendingStart;
+        if (start == null) return;
+        pendingStart = null;
+        if (start.timer != null) { clock.cancel(start.timer); start.timer = null; }
+        deliverAll(start, new MediaCommandResult(outcome, message, false, false));
+        if (attached) publish();
+    }
+
+    private void releaseStarter() {
+        if (starter != null && attached && !packageName.isEmpty()) starter.release(packageName);
     }
 
     private void resolvePending(SessionObservation observation) {

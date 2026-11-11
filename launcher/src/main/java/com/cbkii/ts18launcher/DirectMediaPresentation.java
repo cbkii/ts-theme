@@ -16,6 +16,14 @@ final class DirectMediaPresentation {
                 state.generation, SystemClock.elapsedRealtime(), true, "DIRECT_SESSION", -1);
     }
 
+    /** One short line for a direct source that has no session: starting, startable or why not. */
+    static String absentText(MediaSourceState state) {
+        if (state == null) return "";
+        if (state.starting) return "Starting…";
+        if (state.startable) return "Press Play to start";
+        return unavailableText(state.availability);
+    }
+
     /** One short line explaining why a direct source cannot be controlled; empty when it can. */
     static String unavailableText(MediaSourceState.Availability availability) {
         if (availability == null) return "";

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- M2 Direct can now start a source that is not running, on a Play tap only, through that app's own exported `MediaBrowserService`: the offered token is verified against the requested package, pinned, sent one `play()` and confirmed by that session. No Activity launch, root, startup preparation or retry. Sources without such a service stay "Not running"; HOME distinguishes startable, starting and unavailable.
+
 - Add the opt-in **M2 Direct** media engine (`media/direct`): exact configured package, one pinned session token, one directional dispatch per tap confirmed only by that session, truthful `ACKNOWLEDGED` / `SENT_UNCONFIRMED` / `UNSUPPORTED` / `SOURCE_LOST` / `FAILED` results, and no launching, binding or preparation of any app. Selectable per source under Settings → Media → Control engine; Legacy remains the default. HOME shows a non-live Direct source as unavailable with a one-line reason instead of a ready Play button. See `docs/MEDIA.md`.
 
 - Add per-source media engine selection behind one `MediaFeatureFacade`: `music.engine` and `radio.engine` (`legacy` | `m2`, default and fallback `legacy`) are persisted, exported/imported and reset independently. The existing machinery is kept unchanged as the M1 legacy engine behind `LegacyMediaBackend`; a deselected engine is detached before the selected one may act, cannot command, and cannot publish state. Legacy startup preparation skips any source not served by the legacy engine. This build contains no second engine, so a stored `m2` resolves to legacy.

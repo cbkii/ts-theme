@@ -99,7 +99,8 @@ The current child selects N2 + guarded bridge + fullscreen departure, with immed
 Music and Radio each use exactly one engine through `MediaFeatureFacade`: **M1 Legacy** (default
 and rollback; the original bootstrapper/monitor/listener machinery, left behaviourally unchanged)
 or **M2 Direct** (`media/direct`, opt-in TESTING). Keep them independent: `media/direct` must not
-reference legacy classes, start/bind/prepare any app, create a session or request audio focus, and
+reference legacy classes, open an Activity, use root, create a session or request audio focus (its
+only way to start a source is that app's own exported MediaBrowserService, on a Play tap), and
 `media/` (the contract) must stay free of Android and launcher types. A deselected engine must not
 command, prepare or publish for that source. Do not change a default engine without physical
 qualification and owner approval. The root grant of the launcher's own notification listener is

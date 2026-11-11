@@ -38,13 +38,30 @@ class DirectMediaEngineContractTests(unittest.TestCase):
         forbidden = (
             "new MediaSession(", "requestAudioFocus", "AudioManager", "MediaPlayer",
             "startActivity", "startService", "startForegroundService", "bindService",
-            "MediaBrowser", "dispatchMediaButtonEvent", "sendBroadcast", "Runtime.getRuntime",
+            "dispatchMediaButtonEvent", "sendBroadcast", "Runtime.getRuntime",
             "RootShell", "playFromMediaId", "playFromSearch", "prepare(", "Thread.sleep",
         )
         for name, source in self.sources(DIRECT).items():
             code = strip_comments(source)
             for marker in forbidden:
                 self.assertNotIn(marker, code, f"{name} must not contain {marker}")
+            # Only the cold-start adapter may talk to a source's media browser service.
+            if name != "BrowserSessionStarter.java":
+                self.assertNotIn("MediaBrowser", code, name)
+
+    def test_cold_start_is_source_owned_and_sends_no_transport_command(self):
+        starter = strip_comments((DIRECT / "BrowserSessionStarter.java").read_text())
+        engine = strip_comments((DIRECT / "DirectSourceEngine.java").read_text())
+        self.assertIn('"android.media.browse.MediaBrowserService"', starter)
+        self.assertIn("service.enabled && service.exported", starter)
+        self.assertIn("!packageName.equals(controller.getPackageName())", starter)
+        for marker in ("getTransportControls", ".play()", "Intent.ACTION_MAIN", "FLAG_ACTIVITY", "su "):
+            self.assertNotIn(marker, starter)
+        # A start is requested only for a Play tap, and repeated taps join the one attempt.
+        self.assertIn("if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback); return; }", engine)
+        self.assertEqual(1, engine.count("starter.start(packageName)"))
+        # Play after a start is the engine's normal single dispatch; nothing else sends.
+        self.assertEqual(3, engine.count("transport.dispatch("))
 
     def test_transport_is_directional_and_single_dispatch(self):
         operation = (DIRECT / "DirectOperation.java").read_text()
@@ -54,8 +71,8 @@ class DirectMediaEngineContractTests(unittest.TestCase):
         self.assertNotIn("TOGGLE", operation)
         for call in ("controls.play()", "controls.pause()", "controls.skipToNext()", "controls.skipToPrevious()"):
             self.assertEqual(1, framework.count(call), call)
-        # Exactly one call site sends a driver action; the only other one is the handover pause.
-        self.assertEqual(2, engine.count("transport.dispatch("))
+        # Driver action, the one Play after a requested start, and the handover pause.
+        self.assertEqual(3, engine.count("transport.dispatch("))
         self.assertIn("transport.dispatch(pinnedToken, DirectOperation.PAUSE)", engine)
 
     def test_sessions_come_only_from_the_existing_listener_component(self):

@@ -23,8 +23,9 @@ import java.util.Map;
  * one small state machine per source. While no source is attached it holds no subscription,
  * callback or timer.
  *
- * This engine controls warm sessions only. With no live session of the configured package it
- * says so and sends nothing; it never launches, binds or prepares an app.
+ * A running source is controlled through its live session. A source that is not running is
+ * started only on a Play tap and only through its own exported media browser service; a package
+ * without one is reported as not running. No Activity is opened and no root is used.
  */
 public final class DirectSourceMediaBackend implements MediaBackend {
     /** Launcher-side services the engine needs but does not own. */
@@ -38,14 +39,39 @@ public final class DirectSourceMediaBackend implements MediaBackend {
     private final Map<MediaSourceKey, DirectSourceEngine> engines = new EnumMap<>(MediaSourceKey.class);
     private StateListener listener;
 
+    /** Builds the optional cold-start path once the backend can receive its events. */
+    interface StarterFactory { DirectSourceEngine.Starter create(BrowserSessionStarter.Events events); }
+
     public DirectSourceMediaBackend(Context context, ComponentName listenerComponent, Host host) {
         this(new FrameworkSessions(context, listenerComponent, new Handler(Looper.getMainLooper())),
-                new HandlerClock(new Handler(Looper.getMainLooper())), host);
+                new HandlerClock(new Handler(Looper.getMainLooper())), host,
+                events -> new BrowserSessionStarter(context, new Handler(Looper.getMainLooper()), events));
     }
 
     DirectSourceMediaBackend(DirectSessionRegistry.Source source, DirectSourceEngine.Clock clock,
                              Host host) {
+        this(source, clock, host, null);
+    }
+
+    DirectSourceMediaBackend(DirectSessionRegistry.Source source, DirectSourceEngine.Clock clock,
+                             Host host, StarterFactory starterFactory) {
         this.host = host;
+        DirectSourceEngine.Starter starter = starterFactory == null ? null
+                : starterFactory.create(new BrowserSessionStarter.Events() {
+                    @Override public void onSessionOffered(String packageName,
+                                                           DirectSessionRegistry.Session session) {
+                        host.trace("start-offered", packageName);
+                        registry().offer(session);
+                    }
+                    @Override public void onSessionWithdrawn(String packageName, Object token) {
+                        host.trace("start-withdrawn", packageName);
+                        registry().withdraw(token);
+                    }
+                    @Override public void onStartFailed(String packageName, String reason) {
+                        host.trace("start-failed", packageName + " " + reason);
+                        for (DirectSourceEngine engine : engines.values()) engine.onStartFailed(packageName, reason);
+                    }
+                });
         this.registry = new DirectSessionRegistry(source, new DirectSessionRegistry.Sink() {
             @Override public void onMembership(boolean accessGranted, List<SessionObservation> sessions) {
                 for (DirectSourceEngine engine : engines.values()) engine.onSessions(accessGranted, sessions);
@@ -60,7 +86,19 @@ public final class DirectSourceMediaBackend implements MediaBackend {
                 boolean sent = registry.dispatch(token, operation);
                 host.trace(sent ? "dispatch" : "dispatch-refused", key + " " + operation);
                 return sent;
-            }, clock, new DirectSourceEngine.Labels() {
+            }, clock, labelsFor(sourceLabel), starter);
+            engine.setListener(state -> {
+                StateListener current = listener;
+                if (current != null) current.onMediaSourceStateChanged(state);
+            });
+            engines.put(key, engine);
+        }
+    }
+
+    private DirectSessionRegistry registry() { return registry; }
+
+    private DirectSourceEngine.Labels labelsFor(String sourceLabel) {
+        return new DirectSourceEngine.Labels() {
                 @Override public String sourceLabel() { return sourceLabel; }
                 @Override public String appLabel(String packageName) {
                     String label = host.appLabel(packageName);
@@ -69,13 +107,7 @@ public final class DirectSourceMediaBackend implements MediaBackend {
                 @Override public long qualifiedExtraActions(String packageName) {
                     return DirectSourceQuirks.extraActions(packageName);
                 }
-            });
-            engine.setListener(state -> {
-                StateListener current = listener;
-                if (current != null) current.onMediaSourceStateChanged(state);
-            });
-            engines.put(key, engine);
-        }
+        };
     }
 
     @Override public MediaEngine engine() { return MediaEngine.DIRECT; }
@@ -104,7 +136,8 @@ public final class DirectSourceMediaBackend implements MediaBackend {
 
     @Override public void command(MediaSourceKey key, String packageName, MediaUserAction action,
                                   ResultCallback callback) {
-        engines.get(key).command(packageName, action, result -> {
+        DirectSourceEngine engine = engines.get(key);
+        engine.command(packageName, action, result -> {
             host.trace("result", key + " " + action + " " + result);
             if (callback != null) callback.onResult(result);
         });

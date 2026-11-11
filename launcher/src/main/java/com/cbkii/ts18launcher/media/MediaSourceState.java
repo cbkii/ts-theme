@@ -39,11 +39,23 @@ public final class MediaSourceState {
     public final String title;
     public final String subtitle;
     public final long generation;
+    /** Not running, but a Play tap can ask the source's own media service to start it. */
+    public final boolean startable;
+    /** A Play tap is waiting for the source to publish its session. */
+    public final boolean starting;
 
     public MediaSourceState(MediaSourceKey key, MediaEngine engine, String packageName,
                             Availability availability, int nativeState, long actions,
                             Object sessionIdentity, String itemId, String title, String subtitle,
                             long generation) {
+        this(key, engine, packageName, availability, nativeState, actions, sessionIdentity, itemId,
+                title, subtitle, generation, false, false);
+    }
+
+    private MediaSourceState(MediaSourceKey key, MediaEngine engine, String packageName,
+                             Availability availability, int nativeState, long actions,
+                             Object sessionIdentity, String itemId, String title, String subtitle,
+                             long generation, boolean startable, boolean starting) {
         this.key = key;
         this.engine = engine;
         this.packageName = packageName == null ? "" : packageName;
@@ -55,6 +67,15 @@ public final class MediaSourceState {
         this.title = clean(availability == Availability.LIVE ? title : "");
         this.subtitle = clean(availability == Availability.LIVE ? subtitle : "");
         this.generation = generation;
+        boolean absent = availability == Availability.NO_SESSION || availability == Availability.SOURCE_LOST;
+        this.startable = absent && startable;
+        this.starting = absent && starting;
+    }
+
+    /** Copy carrying cold-start capability; only meaningful while the source has no session. */
+    public MediaSourceState withStart(boolean canStart, boolean inProgress) {
+        return new MediaSourceState(key, engine, packageName, availability, nativeState, actions,
+                sessionIdentity, itemId, title, subtitle, generation, canStart, inProgress);
     }
 
     public static MediaSourceState unavailable(MediaSourceKey key, MediaEngine engine,
@@ -74,6 +95,7 @@ public final class MediaSourceState {
         return other != null && key == other.key && engine == other.engine
                 && availability == other.availability && nativeState == other.nativeState
                 && actions == other.actions && packageName.equals(other.packageName)
+                && startable == other.startable && starting == other.starting
                 && itemId.equals(other.itemId) && title.equals(other.title)
                 && subtitle.equals(other.subtitle)
                 && (sessionIdentity == null ? other.sessionIdentity == null
