@@ -45,6 +45,13 @@ class OemReadOnlyContract(unittest.TestCase):
                    if "TopwayCapabilityCheck.run(" in p.read_text() and p.parent != OEM]
         self.assertEqual(["SettingsActivity.java"], [p.name for p in callers])
 
+    def test_observation_needs_a_separate_default_off_acknowledgement(self):
+        settings = (MAIN / "com/cbkii/ts18launcher/SettingsActivity.java").read_text()
+        self.assertIn('.getBoolean("observe_acknowledged", false)', settings)
+        self.assertIn("if (observeAllowed) {", settings)
+        guard = settings.split("private void runTopwayCheck(boolean observe) {", 1)[1].split("TopwayCapabilityCheck.run(", 1)[0]
+        self.assertIn('getBoolean("observe_acknowledged", false)) return;', guard)
+
     def test_native_radio_has_no_transport(self):
         text = (OEM / "TopwayNativeRadio.java").read_text()
         self.assertNotIn("IBinder", text)

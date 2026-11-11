@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Topway: the one-off source observation now also requires a separate default-OFF acknowledgement that names the unresolved shared-callback risk; the descriptor-only check is unaffected.
+
 - M2: source-specific passive readiness. One epoch per accepted boot/wake/HOME/storage trigger binds a Direct source's own browser service when not running and sends `prepare()` once only if the source advertises `ACTION_PREPARE` and has no loaded item; ready means the session reports a loaded item. Never Play, Activity, focus or root; user taps supersede it; bounded 8 s + 5 s. HOME shows "Getting ready…". The API 29 emulator IPC run now also proves PREPARE loads without playing, source-death reporting and retry after death. Auxio-TS's existing `onPrepare()` contract is used unchanged.
 
 - N3 navigation backend (experimental, default OFF): `NavigationFeatureFacade` (legacy vs N3 ownership; legacy automatic launch refused while N3 holds a display), `N3NavigationBackend` with immutable `N3Snapshot`s, `N3PresenterView` SurfaceView presenter, a launcher-owned private VirtualDisplay with first-frame pixel observation before presentation, one user-initiated `setLaunchDisplayId` launch, real MotionEvent conversion (pointer IDs, action index, times, history), display-scoped Back through the display-owner input forwarder (fail-closed), surface detach/reattach without relaunch, Retry N3 / Open navigation normally / Use legacy navigation. New separate optional `n3host` APK module (inert unless built with an explicit identity): Binder service + framework-free `DisplayHostCore` enforcing the hardened `N3HostPolicy` (atomic reservation, leases, host-recorded geometry, action validation, death cleanup). See `docs/NAVIGATION.md`.

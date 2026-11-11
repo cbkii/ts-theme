@@ -40,6 +40,12 @@ Neither action runs automatically, at startup or in the background.
 
 The run is single-flight and every wait has a deadline. Late callbacks are ignored by generation. A refused bind, a wrong descriptor, a refused registration or query, a disconnect and a missing reply each map to a distinct stage and status. Results stay on the Settings screen and in the local media event trace.
 
+### Gating
+
+**Observe Topway source once** appears only after a separate, default-OFF switch, **Allow one-off
+Topway source observation**, is turned on. That switch names the risk below. The check runs only
+on that explicit request, never automatically, and is re-checked when it runs.
+
 ### Known open risk
 
 Static evidence does not show whether the service keeps one status callback or a list. If it keeps
