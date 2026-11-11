@@ -106,7 +106,7 @@ final class ShortcutEditorView extends LinearLayout {
     private PreviewIcon targetPreview(String packageKey, String role) {
         String pkg = LauncherPrefs.packageFor(activity, packageKey);
         if (!pkg.isEmpty()) {
-            try { return new PreviewIcon(activity.getPackageManager().getApplicationIcon(pkg), false); }
+            try { return new PreviewIcon(activity.getPackageManager().getApplicationIcon(AppResolver.packagePart(pkg)), false); }
             catch (PackageManager.NameNotFoundException ignored) { /* Use semantic fallback below. */ }
         }
         return resourcePreview(RoleIconCatalog.icon(role));

@@ -213,15 +213,7 @@ public final class MediaListenerService extends NotificationListenerService {
             return;
         }
         if (!legacyDemand) return;
-        try {
-            sessionManager.addOnActiveSessionsChangedListener(
-                    sessionsChangedListener, listenerComponent, main);
-        } catch (SecurityException ignored) {
-            MediaEventTrace.record("listener", "session-access-denied");
-            publishEmpty();
-            return;
-        }
-        if (legacyDemand) { attachRegisteredExternalControllers(); refresh(); }
+        activateLegacy(++activationSerial, 0);
     }
 
     @Override public void onListenerDisconnected() {
@@ -293,24 +285,39 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     private static boolean legacyDemand;
+    private int activationSerial;
+
+    private void activateLegacy(int serial, int attempt) {
+        if (serial != activationSerial || !legacyDemand || !connected || instance != this) return;
+        try {
+            sessionManager.addOnActiveSessionsChangedListener(sessionsChangedListener, listenerComponent, main);
+        } catch (RuntimeException unavailable) {
+            MediaEventTrace.record("listener", "registration-unavailable", "attempt=" + attempt);
+            if (attempt < 3) main.postDelayed(() -> activateLegacy(serial, attempt + 1), 250L << attempt);
+        }
+        attachRegisteredExternalControllers();
+        refresh();
+        try {
+            StatusBarNotification[] active = getActiveNotifications();
+            if (active != null) for (StatusBarNotification notification : active) onNotificationPosted(notification);
+        } catch (RuntimeException unavailable) {
+            MediaEventTrace.record("listener", "notification-replay-unavailable");
+        }
+    }
 
     static void setDemand(boolean demanded) {
         if (legacyDemand == demanded) return;
         legacyDemand = demanded;
         MediaListenerService service = instance;
         if (service == null) return;
+        int serial = ++service.activationSerial;
         service.main.post(() -> {
-            if (instance != service || !service.connected) return;
+            if (instance != service || !service.connected || serial != service.activationSerial) return;
             service.detachSessionListener();
             service.releaseAll();
             if (!legacyDemand) { publishEmpty(); return; }
-            if (service.sessionManager != null && service.sessionsChangedListener != null) {
-                try { service.sessionManager.addOnActiveSessionsChangedListener(
-                        service.sessionsChangedListener, service.listenerComponent, service.main); }
-                catch (RuntimeException unavailable) { return; }
-            }
-            service.attachRegisteredExternalControllers();
-            service.refresh();
+            if (service.sessionManager != null && service.sessionsChangedListener != null)
+                service.activateLegacy(serial, 0);
         });
     }
 

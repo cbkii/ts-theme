@@ -17,7 +17,7 @@ final class MediaEngineSelector {
         return key == MediaSourceKey.RADIO ? KEY_RADIO_ENGINE : KEY_MUSIC_ENGINE;
     }
 
-    /** Stored choice. Missing, malformed or future values are the legacy engine. */
+    /** Stored choice. Missing values select M2; malformed or future stored values select Legacy. */
     static MediaEngine requested(Context context, MediaSourceKey key) {
         try {
             return MediaEngine.fromStored(LauncherPrefs.prefs(context).getString(prefKey(key), "m2"));

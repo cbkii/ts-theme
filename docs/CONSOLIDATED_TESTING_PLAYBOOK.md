@@ -22,10 +22,10 @@ For each row below, record PASS/FAIL/NOT_RUN and a short timestamped observation
 
 Optional: Settings → startup/return diagnostics → Sample 10s, then exercise HOME/drawer/navigation. `TS18Perf` reports frame intervals, slow intervals, CPU time and one off-main-thread PSS snapshot. Input received is not action completion; use visible response and timestamped observations for latency. A screen recording proves visual behaviour only unless audio recording was independently verified.
 
-After each stage run the read-only collector from Termux:
+Extract the delivered `TS18-testing-qualification` folder into `Download`, keeping the collector beside this playbook. From a repository checkout instead, copy `scripts/termux/qualify-consolidated-candidate.sh` from the candidate head to that same folder. After each stage run the read-only collector from Termux:
 
 ```sh
-bash /storage/emulated/0/Download/qualify-consolidated-candidate.sh smoke
+bash /storage/emulated/0/Download/TS18-testing-qualification/qualify-consolidated-candidate.sh smoke
 ```
 
 Replace `smoke` with `restart`, `reboot`, `coldboot` or `acc-wake` as appropriate. It does not launch, stop, tap, Play, grant permissions or change settings. Evidence is exported under `Download/TS18/qualification/`. If root is unavailable, root-only sections are BLOCKED and ordinary captures still seal. Add your audible/visual observations to the accompanying campaign notes; a collector exit code is not a feature PASS.

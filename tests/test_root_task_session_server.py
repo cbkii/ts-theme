@@ -48,6 +48,9 @@ if("source".equals(System.getenv("CASE")))focused=84;
 if("bootstrap".equals(System.getenv("CASE")))focused=42;
 if("foreign".equals(System.getenv("CASE")))focused=99;
 if("shared".equals(System.getenv("CASE"))){map.taskIds=new int[]{42,43};map.taskUserIds=new int[]{0,0};map.taskNames=new String[]{map.taskNames[0],"other.app/.Main"};}
+if(System.getenv("CASE").startsWith("park")){map.configuration.windowConfiguration.mode=5;map.taskBounds=new Rect[]{new Rect(0,141,1131,702)};focused=42;}
+if("park-settings".equals(System.getenv("CASE")))map.topActivity=ComponentName.unflattenFromString("app.organicmaps.incar/app.organicmaps.settings.SettingsActivity");
+if("park-permission".equals(System.getenv("CASE")))map.topActivity=ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
 writeFocus();}
 public List<StackInfo> getAllStackInfos(){return Arrays.asList(map,home,music,foreign);}
 public StackInfo getFocusedStackInfo(){return focused==7?home:focused==84?music:focused==99?foreign:map;}
@@ -56,7 +59,10 @@ String mask="TS18Ready_10211_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 String dump="mCurrentFocus=Window{abc u0 "+component+"}\\n";
 if("mask".equals(System.getenv("CASE")))dump="  Window #0 Window{abc u0 "+mask+"}:\\n    mOwnerUid=10211 showForAllUsers=false\\n    mAttrs={ ty=APPLICATION_OVERLAY fmt=OPAQUE }\\n  mCurrentFocus=Window{abc u0 "+mask+"}\\n";
 Files.writeString(Path.of(System.getenv("FOCUS_FILE")),dump);}catch(Exception e){throw new RuntimeException(e);}}
-public void setFocusedTask(int id){System.out.println("FOCUS "+id);focused=id;writeFocus();}
+public void setFocusedTask(int id){System.out.println("FOCUS "+id);focused=id;
+if(id==7&&"park-geometry".equals(System.getenv("CASE")))map.taskBounds=new Rect[]{new Rect(0,0,200,200)};
+if(id==7&&"park-replaced".equals(System.getenv("CASE")))map.taskIds=new int[]{43};
+writeFocus();}
 public void setTaskWindowingMode(int id,int mode,boolean top){if(top)throw new AssertionError("mode stole focus");System.out.println("MODE "+id+" "+mode);
 map.configuration.windowConfiguration.mode=mode;
 if("cancel".equals(System.getenv("CASE"))){try{Files.writeString(Path.of(System.getenv("SIGNAL")),"mode");long end=System.nanoTime()+2_000_000_000L;while(!Files.exists(Path.of(System.getenv("RELEASE")))&&System.nanoTime()<end)Thread.sleep(5);}catch(Exception e){throw new RuntimeException(e);}}}
@@ -127,8 +133,28 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
         parked = self.request(child, ["park-windowed", 0, "app.organicmaps.incar", 42, "com.cbkii.ts18launcher", 7], 4)
         self.assertIn("FOCUS 7", parked)
         self.assertIn("OK code=SUSPENDED", parked[-1])
+        for field in ("user=0", "package=app.organicmaps.incar", "task=42", "display=0", "windowingMode=5", "bounds=0,141,1131,702"):
+            self.assertIn(field, parked[-1])
         self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in parked))
         self.finish(child)
+
+    def test_parking_allows_same_package_settings_without_bootstrap_relaunch(self):
+        child = self.launch("park-settings")
+        result = self.request(child, ["park-windowed", 0, "app.organicmaps.incar", 42, "com.cbkii.ts18launcher", 7])
+        self.assertIn("OK code=SUSPENDED", result[-1])
+        self.assertIn("FOCUS 7", result)
+        self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in result))
+        self.finish(child)
+
+    def test_parking_refuses_foreign_permissions_and_rechecks_after_home_focus(self):
+        for case in ("park-permission", "park-geometry", "park-replaced"):
+            with self.subTest(case=case):
+                child = self.launch(case)
+                result = self.request(child, ["park-windowed", 0, "app.organicmaps.incar", 42, "com.cbkii.ts18launcher", 7])
+                self.assertIn("FAIL code=", result[-1])
+                self.assertNotIn("OK code=SUSPENDED", result[-1])
+                if case == "park-permission": self.assertFalse(any(x.startswith("FOCUS") for x in result))
+                self.finish(child)
 
     def test_bootstrap_restores_same_task_then_reuses_process_for_return(self):
         child = self.launch("bootstrap")

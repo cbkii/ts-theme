@@ -29,9 +29,11 @@ class NotificationAccessBootstrapTest(unittest.TestCase):
         self.assertIn("if (!rootConsent) return Action.USE_SETTINGS;", policy)
         self.assertIn("if (grantApplied && !freshConsent) return Action.WITHDRAW_CONSENT;", policy)
 
-    def test_application_starts_process_session_monitor_early(self):
+    def test_application_initializes_facade_early_and_gates_legacy_monitor(self):
         self.assertIn("MediaNotificationAccessBootstrapper.ensureEarly(this);", APP)
         self.assertIn("mediaFacade(this);", APP)
+        self.assertIn("ProcessMediaSessionMonitor.setDemand(app, legacy)", APP)
+        self.assertIn("MediaListenerService.setDemand(legacy)", APP)
         self.assertIn("ProcessMediaSessionMonitor.refresh(this);", APP)
 
     def test_grant_refreshes_sessions_without_waiting_for_listener_connection(self):

@@ -71,6 +71,7 @@ public class DirectColdStartTest {
 
     private FakeSession offer(String token, int state) {
         FakeSession session = new FakeSession(token, AUXIO).state(state);
+        session.deadlinePlay = true; // This fixture models the companion's advertised HOME_PLAY_V1.
         starter.events.onSessionOffered(AUXIO, session);
         return session;
     }
@@ -275,12 +276,14 @@ public class DirectColdStartTest {
     @Test public void bindingConsumesTheOriginalDeadlineAndDoesNotResetPlayBudget() {
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
-        clock.now += DirectSourceEngine.COLD_START_MS - 100L;
+        clock.advanceTo(1000L + DirectSourceEngine.COLD_START_MS - 100L);
         FakeSession session = offer("bounded", PlaybackState.STATE_PAUSED);
         assertEquals(1000L + DirectSourceEngine.COLD_START_MS, session.dispatchedDeadline);
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
         assertEquals(1, session.dispatched.size());
-        clock.expireAll();
+        clock.advanceTo(1000L + DirectSourceEngine.COLD_START_MS - 1L);
+        assertTrue(results.isEmpty());
+        clock.advanceTo(1000L + DirectSourceEngine.COLD_START_MS);
         assertEquals(Outcome.SENT_UNCONFIRMED, lastResult().outcome);
         assertTrue(lastResult().dispatched);
         assertEquals(1, session.dispatched.size());

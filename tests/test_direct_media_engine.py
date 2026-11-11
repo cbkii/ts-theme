@@ -84,7 +84,8 @@ class DirectMediaEngineContractTests(unittest.TestCase):
                      "controls.prepare()"):
             self.assertEqual(1, framework.count(call), call)
         # Driver action, the one Play after a requested start, the handover pause and passive PREPARE.
-        self.assertIn("transport.dispatchDeadline(token, deadline)", engine)
+        self.assertEqual(3, engine.count("transport.dispatch("))
+        self.assertEqual(1, engine.count("transport.dispatchDeadline(token, deadline)"))
         self.assertEqual(1, engine.count("transport.dispatch(pinnedToken, DirectOperation.PREPARE)"))
         command = engine.split("public void command(", 1)[1].split("\n    }\n", 1)[0]
         self.assertNotIn("PREPARE", command, "a user tap never sends PREPARE")

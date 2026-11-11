@@ -65,8 +65,9 @@ final class StartupReadinessCoordinator {
             policy.resetForBoot(); journal.edit().putLong("boot_count", boot).apply();
         }
         if (!policy.acceptTrigger(trigger, now)) return;
-        if (trigger == Trigger.HOME_RESUME) {
+        if (trigger == Trigger.HOME_RESUME || trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON)
             yielded = false;
+        if (trigger == Trigger.HOME_RESUME) {
             journal.edit().remove("pending_boot_v1").apply();
         }
         StartupTimeline.mark("startup.kind", "trigger=" + trigger + " kind=" + kind);

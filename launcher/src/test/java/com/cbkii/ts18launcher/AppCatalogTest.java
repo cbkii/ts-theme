@@ -60,4 +60,35 @@ public class AppCatalogTest {
         assertEquals("com.example.player", AppResolver.packagePart("com.example.player/.Alias"));
         assertFalse(AppResolver.validTarget("com.example.player/../../bad"));
     }
+    @Test public void commitAvailabilityUsesThePackageOfAComponentShortcut() {
+        Context app = RuntimeEnvironment.getApplication();
+        String pkg = "com.example.player";
+        ResolveInfo info = new ResolveInfo(); info.activityInfo = new ActivityInfo();
+        info.activityInfo.name = pkg + ".Alias"; info.activityInfo.packageName = pkg;
+        info.activityInfo.exported = true; info.activityInfo.enabled = true;
+        info.activityInfo.applicationInfo = new ApplicationInfo();
+        info.activityInfo.applicationInfo.packageName = pkg; info.activityInfo.applicationInfo.enabled = true;
+        org.robolectric.shadows.ShadowPackageManager pm = org.robolectric.shadow.api.Shadow.extract(app.getPackageManager());
+        pm.addResolveInfoForIntent(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(pkg), info);
+        assertTrue(AppResolver.configurationAvailable(app, pkg + "/.Alias"));
+        assertFalse(AppResolver.configurationAvailable(app, app.getPackageName() + "/.Alias"));
+    }
+
+    @Test public void packageScopedRefreshExcludesOtherPackages() {
+        Context app = RuntimeEnvironment.getApplication();
+        String pkg = "com.example.player";
+        Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(pkg);
+        org.robolectric.shadows.ShadowPackageManager pm = org.robolectric.shadow.api.Shadow.extract(app.getPackageManager());
+        for (String name : new String[] {pkg, "com.example.other"}) {
+            ResolveInfo info = new ResolveInfo(); info.activityInfo = new ActivityInfo();
+            info.activityInfo.name = name + ".Main"; info.activityInfo.packageName = name;
+            info.activityInfo.exported = true; info.activityInfo.enabled = true;
+            info.activityInfo.applicationInfo = new ApplicationInfo();
+            info.activityInfo.applicationInfo.packageName = name; info.activityInfo.applicationInfo.enabled = true;
+            pm.addResolveInfoForIntent(query, info);
+        }
+        java.util.List<AppCatalog.Entry> entries = AppCatalog.discover(app, pkg);
+        assertEquals(1, entries.size()); assertEquals(pkg, entries.get(0).packageName);
+    }
+
 }

@@ -336,12 +336,6 @@ public final class SettingsActivity extends Activity {
                 "Off by default. Legacy navigation stays in charge unless you open the N3 screen.",
                 navFacade.n3Enabled(), checked -> { navFacade.setN3Enabled(checked); render(); });
         if (navFacade.n3Enabled()) {
-            boolean hostInstalled = com.cbkii.ts18launcher.navigation.n3.N3NavigationBackend.hostInstalled(this);
-            addSwitchRow(R.drawable.ic_map, "Use optional display host",
-                    hostInstalled ? "Separately installed host; it decides every request itself."
-                            : "Not installed. N3 uses the launcher's own private display.",
-                    navFacade.useOptionalHost() && hostInstalled,
-                    checked -> { navFacade.setUseOptionalHost(checked && hostInstalled); render(); });
             addActionRow(R.drawable.ic_map, "Open N3 navigation screen",
                     "Shows the navigator on the N3 display with Retry, Open normally and Use legacy.",
                     v -> startActivity(new android.content.Intent(this, N3Activity.class)));
@@ -419,8 +413,9 @@ public final class SettingsActivity extends Activity {
                         + "The guided kit records actual map/audio readiness and return reliability. "
                         + "About three seconds is the speed target; small overruns are not automatic failures.")
                 .setNeutralButton("Sample 10s", (dialog, which) -> {
-                    PerfSampler.start();
-                    Toast.makeText(this, "Local frame/CPU sample started for 10 seconds", Toast.LENGTH_SHORT).show();
+                    boolean started = PerfSampler.start();
+                    Toast.makeText(this, started ? "Local frame/CPU sample started for 10 seconds"
+                            : "A sample is already running", Toast.LENGTH_SHORT).show();
                 }).setPositiveButton("Done", null).show();
     }
 
@@ -443,7 +438,7 @@ public final class SettingsActivity extends Activity {
         Intent intent = new Intent(export ? Intent.ACTION_CREATE_DOCUMENT : Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/json");
-        if (export) intent.putExtra(Intent.EXTRA_TITLE, "TS18-launcher-settings-v1.json");
+        if (export) intent.putExtra(Intent.EXTRA_TITLE, "TS18-launcher-settings-v2.json");
         try { startActivityForResult(intent, export ? EXPORT_CONFIG : IMPORT_CONFIG); }
         catch (RuntimeException ignored) { configurationMessage("Document picker unavailable"); }
     }
@@ -488,7 +483,7 @@ public final class SettingsActivity extends Activity {
     }
 
     private boolean configurationPackageAvailable(String name) {
-        return !getPackageName().equals(name) && getPackageManager().getLaunchIntentForPackage(name) != null;
+        return AppResolver.configurationAvailable(this, name);
     }
 
     private void showConfigurationPreview(ConfigurationCodec.Preview preview) {
@@ -512,6 +507,7 @@ public final class SettingsActivity extends Activity {
                             ? " app selection is not available and will return to its default."
                             : " app selections are not available and will return to their defaults.");
         }
+        if (!preview.warnings.isEmpty()) text.append("\n\n").append(String.join("\n", preview.warnings));
         return text.toString();
     }
 

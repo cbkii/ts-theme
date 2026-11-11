@@ -17,7 +17,6 @@ public final class NavigationFeatureFacade {
 
     static final String PREFS = "navigation_engine";
     static final String KEY_N3_ENABLED = "n3.experimental.enabled";
-    static final String KEY_N3_HOST = "n3.use_optional_host";
 
     private static NavigationFeatureFacade instance;
 
@@ -44,17 +43,9 @@ public final class NavigationFeatureFacade {
         if (!enabled) n3.shutdown();
     }
 
-    public boolean useOptionalHost() { return false; }
-
-    public void setUseOptionalHost(boolean value) {
-        prefs().edit().putBoolean(KEY_N3_HOST, value).apply();
-        n3.selectHost(value);
-    }
-
     /** The N3 backend, only when the driver enabled it; null otherwise. */
     public N3NavigationBackend n3() {
         if (!n3Enabled()) return null;
-        n3.selectHost(useOptionalHost());
         return n3;
     }
 

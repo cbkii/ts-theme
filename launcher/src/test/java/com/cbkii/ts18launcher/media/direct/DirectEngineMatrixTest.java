@@ -73,8 +73,8 @@ public class DirectEngineMatrixTest {
 
     @Before public void setUp() {
         source = new FakeSource();
-        music = new FakeSession("music", AUXIO).state(PlaybackState.STATE_PAUSED);
-        radio = new FakeSession("radio", NAVRADIO).state(PlaybackState.STATE_PAUSED);
+        music = new FakeSession("music", AUXIO).state(PlaybackState.STATE_PAUSED).item("music-item", "Loaded song", "");
+        radio = new FakeSession("radio", NAVRADIO).state(PlaybackState.STATE_PAUSED).item("radio-station", "Loaded station", "");
         source.sessions.add(music);
         source.sessions.add(radio);
         legacy = new RecordingLegacy();

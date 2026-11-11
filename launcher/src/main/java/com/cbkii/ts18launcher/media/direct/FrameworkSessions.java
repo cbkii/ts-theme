@@ -26,12 +26,19 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
     private final ComponentName listenerComponent;
     private final Handler handler;
     private final MediaSessionManager manager;
-    private final MediaSessionManager.OnActiveSessionsChangedListener membership =
-            controllers -> notifyChanged();
+    private final java.util.concurrent.ExecutorService reader = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "ts18-session-membership"); thread.setDaemon(true); return thread;
+    });
+    private final MediaSessionManager.OnActiveSessionsChangedListener membership = controllers -> invalidate();
     private final ContentObserver accessObserver;
-    private Runnable changeListener;
+    private volatile Runnable changeListener;
     private boolean membershipRegistered;
     private boolean accessRegistered;
+    private List<DirectSessionRegistry.Session> snapshot = new ArrayList<>();
+    private RuntimeException readFailure;
+    private boolean dirty = true, reading, ready;
+    private int readGeneration;
+    private long retryAfter;
 
     FrameworkSessions(Context context, ComponentName listenerComponent, Handler handler) {
         this.app = context.getApplicationContext();
@@ -39,7 +46,7 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
         this.handler = handler;
         this.manager = (MediaSessionManager) app.getSystemService(Context.MEDIA_SESSION_SERVICE);
         this.accessObserver = new ContentObserver(handler) {
-            @Override public void onChange(boolean selfChange) { notifyChanged(); }
+            @Override public void onChange(boolean selfChange) { invalidate(); }
         };
     }
 
@@ -54,18 +61,38 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
     }
 
     @Override public List<DirectSessionRegistry.Session> activeSessions() {
-        List<DirectSessionRegistry.Session> sessions = new ArrayList<>();
-        if (manager == null) return sessions;
-        registerMembership();
-        List<MediaController> controllers = manager.getActiveSessions(listenerComponent);
-        if (controllers != null) for (MediaController controller : controllers) {
-            if (controller != null) sessions.add(new ControllerSession(controller, handler));
+        if (manager == null) return new ArrayList<>();
+        if (readFailure != null && android.os.SystemClock.elapsedRealtime() >= retryAfter) dirty = true;
+        if (dirty && !reading) {
+            reading = true;
+            int request = readGeneration;
+            reader.execute(() -> {
+                List<DirectSessionRegistry.Session> sessions = new ArrayList<>();
+                RuntimeException failure = null;
+                try {
+                    if (changeListener != null) registerMembership();
+                    List<MediaController> controllers = manager.getActiveSessions(listenerComponent);
+                    if (controllers != null) for (MediaController controller : controllers)
+                        if (controller != null) sessions.add(new ControllerSession(controller, handler));
+                } catch (RuntimeException unavailable) { failure = unavailable; }
+                RuntimeException result = failure;
+                handler.post(() -> {
+                    reading = false;
+                    if (request != readGeneration || changeListener == null) { notifyChanged(); return; }
+                    snapshot = sessions; readFailure = result; ready = true; dirty = false;
+                    retryAfter = android.os.SystemClock.elapsedRealtime() + 1000L;
+                    notifyChanged();
+                });
+            });
         }
-        return sessions;
+        if (!ready) throw new IllegalStateException("MEMBERSHIP_READ_PENDING");
+        if (readFailure != null) throw readFailure;
+        return new ArrayList<>(snapshot);
     }
 
     @Override public void setChangeListener(Runnable onChanged) {
         changeListener = onChanged;
+        readGeneration++; dirty = true; ready = false; snapshot.clear();
         if (onChanged != null) {
             if (!accessRegistered) {
                 app.getContentResolver().registerContentObserver(
@@ -78,17 +105,16 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
             app.getContentResolver().unregisterContentObserver(accessObserver);
             accessRegistered = false;
         }
-        if (membershipRegistered && manager != null) {
-            try {
-                manager.removeOnActiveSessionsChangedListener(membership);
-            } catch (RuntimeException gone) {
-                // The service already dropped it.
+        reader.execute(() -> {
+            if (membershipRegistered && manager != null) {
+                try { manager.removeOnActiveSessionsChangedListener(membership); }
+                catch (RuntimeException gone) { /* service already dropped it */ }
             }
-        }
-        membershipRegistered = false;
+            membershipRegistered = false;
+        });
     }
 
-    /** Registered lazily, only once access is effective; a refusal is retried on the next read. */
+    /** Runs on the serial reader; failed admission can retry on a later explicit refresh. */
     private void registerMembership() {
         if (membershipRegistered || changeListener == null) return;
         manager.addOnActiveSessionsChangedListener(membership, listenerComponent, handler);
@@ -98,6 +124,11 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
     private void notifyChanged() {
         Runnable listener = changeListener;
         if (listener != null) listener.run();
+    }
+
+    private void invalidate() {
+        readGeneration++; dirty = true;
+        notifyChanged();
     }
 
     /** One reading of one controller. Every field comes from that controller, right now. */
@@ -117,7 +148,7 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
                 state = playback.getState();
                 actions = playback.getActions();
                 for (PlaybackState.CustomAction action : playback.getCustomActions()) {
-                    if (SessionObservation.HOME_PLAY_V1.equals(action.getAction())) deadlinePlay = true;
+                    if (action != null && SessionObservation.HOME_PLAY_V1.equals(action.getAction())) deadlinePlay = true;
                 }
             }
             if (metadata != null) {

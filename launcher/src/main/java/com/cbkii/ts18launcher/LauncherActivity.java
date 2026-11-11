@@ -244,9 +244,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (appDrawerPanel != null) appDrawerPanel.applyAppearance();
     }
 
+    private final java.util.function.Consumer<java.util.List<AppCatalog.Entry>> catalogChanged = entries -> {
+        if (root != null) applyRailConfiguration();
+    };
+
     @Override protected void onStart() {
         super.onStart();
         if (redirectingToHome || redirectToCanonicalHome()) return;
+        AppCatalog.get(this).subscribe(catalogChanged);
         reconcileMediaConfiguration();
         mediaSelection.select(LauncherPrefs.lastSource(this));
         appearanceController.start();
@@ -270,8 +275,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     @Override protected void onStop() {
         if (root == null) { super.onStop(); return; }
-        // The application-owned preparation session retains its mask across staged apps.
-        // Permission/foreign ownership and the eight-second deadline are checked by its owner.
+        AppCatalog.get(this).unsubscribe(catalogChanged);
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
         mediaStatusGeneration++;

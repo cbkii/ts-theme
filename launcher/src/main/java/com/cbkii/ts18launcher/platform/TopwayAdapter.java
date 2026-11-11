@@ -14,7 +14,7 @@ public final class TopwayAdapter {
     public static final String STOCK_MUSIC_PACKAGE = "com.tw.music";
 
     private static final java.util.Map<String, Boolean> INSTALLED = new java.util.concurrent.ConcurrentHashMap<>();
-    public static void invalidatePackages() { INSTALLED.clear(); }
+    public static synchronized void invalidatePackages() { INSTALLED.clear(); }
     private TopwayAdapter() {}
 
     public static boolean isTopwayEnvironment(Context context) {
@@ -28,7 +28,7 @@ public final class TopwayAdapter {
         return isInstalled(context, STOCK_MUSIC_PACKAGE) ? STOCK_MUSIC_PACKAGE : "";
     }
 
-    private static boolean isInstalled(Context context, String packageName) {
+    private static synchronized boolean isInstalled(Context context, String packageName) {
         Boolean cached = INSTALLED.get(packageName);
         if (cached != null) return cached;
         try {

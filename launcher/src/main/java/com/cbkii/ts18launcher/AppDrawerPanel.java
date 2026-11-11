@@ -315,6 +315,8 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private void onCatalogChanged(List<Entry> entries) {
         if (destroyed) return;
         allEntries.clear(); allEntries.addAll(entries); loaded = true; loading = false;
+        quickSignature = "";
+        refreshPreferences();
         filter(search.getText() == null ? "" : search.getText().toString());
     }
 

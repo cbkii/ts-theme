@@ -53,7 +53,7 @@ public class DirectSourceMediaBackendTest {
     }
 
     private FakeSession session(String token, String packageName) {
-        FakeSession session = new FakeSession(token, packageName);
+        FakeSession session = new FakeSession(token, packageName).item("loaded-" + token, "Loaded item", "");
         source.sessions.add(session);
         return session;
     }

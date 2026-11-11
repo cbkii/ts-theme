@@ -85,4 +85,14 @@ public class FrameworkSessionsReadTest {
         assertEquals(0L, observation.actions);
         assertEquals("", observation.title);
     }
+    @Test public void nullCustomActionDoesNotEraseTheOwningSessionsPlaybackState() {
+        boundary.state = playback(PlaybackState.STATE_PLAYING, PlaybackState.ACTION_PAUSE, 1L);
+        org.robolectric.util.ReflectionHelpers.setField(boundary.state, "mCustomActions",
+                java.util.Arrays.asList((PlaybackState.CustomAction) null));
+        SessionObservation observation = FrameworkSessions.read("token", controller);
+        assertEquals(PlaybackState.STATE_PLAYING, observation.nativeState);
+        assertEquals(PlaybackState.ACTION_PAUSE, observation.actions);
+        assertEquals(false, observation.deadlinePlay);
+    }
+
 }

@@ -415,7 +415,9 @@ public final class DirectSourceEngine {
                     labels.appLabel(packageName) + " started but does not offer Play yet", false, false));
             return;
         }
-        long remaining = Math.min(PLAY_ACK_MS, start.deadlineElapsedMs - clock.nowMs());
+        long now = clock.nowMs();
+        long deadline = Math.min(start.deadlineElapsedMs, now + PLAY_ACK_MS);
+        long remaining = deadline - now;
         if (remaining <= 0L) {
             deliverAll(start, failed("Play window expired · tap again"));
             return;
@@ -427,7 +429,7 @@ public final class DirectSourceEngine {
         Pending play = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PLAY,
                 itemIdentity(current));
         play.callbacks.addAll(start.callbacks);
-        if (!dispatch(pinnedToken, DirectOperation.PLAY, clock.nowMs() + remaining)) {
+        if (!dispatch(pinnedToken, DirectOperation.PLAY, deadline)) {
             deliverAll(play, new MediaCommandResult(MediaCommandResult.Outcome.SOURCE_LOST,
                     labels.appLabel(packageName) + " stopped responding", false, false));
             return;
@@ -520,9 +522,8 @@ public final class DirectSourceEngine {
 
     /** A playable item is loaded: the source's own current item, not just a process or token. */
     static boolean loaded(SessionObservation observation) {
-        return observation != null && (observation.nativeState == PlaybackState.STATE_PAUSED
-                    || observation.nativeState == PlaybackState.STATE_PLAYING
-                    || observation.nativeState == PlaybackState.STATE_STOPPED)
+        return observation != null && observation.nativeState != PlaybackState.STATE_NONE
+                && observation.nativeState != PlaybackState.STATE_ERROR
                 && (!observation.itemId.isEmpty() || !observation.title.isEmpty());
     }
 

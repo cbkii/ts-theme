@@ -40,7 +40,9 @@ c.onTrigger(Trigger.BOOT);check(Ts18LauncherApplication.prepares==1);
 android.os.SystemClock.now=20000;c.onTrigger(Trigger.READINESS_CHANGED);check(Ts18LauncherApplication.prepares==1&&reconciles>=2);
 c.noteExternalNavigation();int before=reconciles;c.onTrigger(Trigger.SESSION_LOST);check(reconciles==before);
 c.onHomePaused();c.onScreenOff();android.os.SystemClock.now=40000;c.onTrigger(Trigger.SCREEN_ON);check(Ts18LauncherApplication.prepares==2&&reconciles==before);
-c.onHomeResumed(new android.app.Activity());check(reconciles>before&&!deferred);c.destroy();int count=Ts18LauncherApplication.prepares;c.onTrigger(Trigger.RESTART);check(Ts18LauncherApplication.prepares==count);
+c.onHomeResumed(new android.app.Activity());check(reconciles>before&&!deferred);
+c.onScreenOff();before=reconciles;android.os.SystemClock.now=60000;c.onTrigger(Trigger.SCREEN_ON);check(reconciles>before);
+c.onScreenOff();before=reconciles;android.os.SystemClock.now=80000;c.onTrigger(Trigger.ACC_ON);check(reconciles>before);c.destroy();int count=Ts18LauncherApplication.prepares;c.onTrigger(Trigger.RESTART);check(Ts18LauncherApplication.prepares==count);
 System.out.println("PASS independent background sources / no legacy construction / late boot / task yield / wake / destruction");}}
 '''}
         with tempfile.TemporaryDirectory() as tmp:

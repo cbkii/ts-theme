@@ -23,6 +23,7 @@ public class ConfigurationCodecTest {
         assertEquals(Boolean.TRUE,
                 preview.values.get(UiPersonalizationPrefs.KEY_NAV_ROOT_PERMISSION_GRANT));
         assertEquals(1, preview.unavailable.size());
+        assertTrue(preview.warnings.isEmpty());
         assertTrue(preview.summary().contains("com.example.player"));
     }
 
@@ -89,7 +90,8 @@ public class ConfigurationCodecTest {
     @Test public void unknownSettingIsSkippedWithPreviewWarning() throws Exception {
         ConfigurationCodec.Preview preview = decodeSettings("{\"future.setting\":true,\"ui.quick.count\":4}");
         assertEquals(1, preview.values.size());
-        assertEquals(1, preview.unavailable.size());
+        assertEquals(1, preview.warnings.size());
+        assertTrue(preview.unavailable.isEmpty());
         assertTrue(preview.summary().contains("Unknown setting ignored"));
     }
 }

@@ -34,7 +34,7 @@ public final class FixtureBrowserService extends MediaBrowserService {
             @Override public void onCommand(String command, Bundle args, android.os.ResultReceiver receiver) {
                 Bundle result = new Bundle();
                 result.putInt("state", session.getController().getPlaybackState().getState());
-                receiver.send(0, result);
+                if (receiver != null) receiver.send(0, result);
             }
             // Test-only: simulate the source process dying.
             @Override public void onCustomAction(String action, Bundle extras) {

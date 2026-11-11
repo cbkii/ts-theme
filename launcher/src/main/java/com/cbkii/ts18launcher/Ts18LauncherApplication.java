@@ -61,6 +61,9 @@ public final class Ts18LauncherApplication extends Application
                         == com.cbkii.ts18launcher.media.MediaEngine.LEGACY;
         ProcessMediaSessionMonitor.setDemand(app, legacy);
         MediaListenerService.setDemand(legacy);
+        if (!legacy && app.mediaBootstrapper != null) {
+            app.mediaBootstrapper.destroy(); app.mediaBootstrapper = null; app.mediaConfiguration = "";
+        }
         return app.mediaFacade;
     }
 
@@ -153,6 +156,11 @@ public final class Ts18LauncherApplication extends Application
         StartupTimeline.span("app.startup-coordinator", () ->
                 StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.RESTART));
         StartupTimeline.mark("app.created");
+    }
+
+    @Override public void onConfigurationChanged(android.content.res.Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        AppCatalog.get(this).invalidate();
     }
 
     @Override public void onTrimMemory(int level) {

@@ -60,7 +60,8 @@ class N3ContractTests(unittest.TestCase):
         self.assertIn("if (navFacade.n3Enabled()) {", settings)
         facade = code(ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/navigation/NavigationFeatureFacade.java")
         self.assertIn("getBoolean(KEY_N3_ENABLED, false)", facade)
-        self.assertIn("boolean useOptionalHost() { return false; }", facade)
+        self.assertNotIn("KEY_N3_HOST", facade)
+        self.assertNotIn("Use optional display host", settings)
         manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text()
         self.assertRegex(manifest, r'android:name="\.N3Activity"\s+android:configChanges="[^"]+"\s+android:exported="false"')
         policy = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/HomeNavigationSurfacePolicy.java").read_text()
@@ -68,6 +69,9 @@ class N3ContractTests(unittest.TestCase):
 
     def test_privileged_host_is_retired(self):
         self.assertFalse(HOST.exists())
+        self.assertFalse((SHARED / "N3HostPolicy.java").exists())
+        self.assertFalse((ROOT / "shared/n3/aidl/com/cbkii/ts18launcher/navigation/n3/IN3DisplayHost.aidl").exists())
+        self.assertFalse((ROOT / "shared/n3/aidl/com/cbkii/ts18launcher/navigation/n3/IN3DisplayHostClient.aidl").exists())
         self.assertFalse((N3 / "HostDisplayPath.java").exists())
         self.assertNotIn('include(":n3host")', (ROOT / "settings.gradle.kts").read_text())
 

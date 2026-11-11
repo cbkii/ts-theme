@@ -69,6 +69,12 @@ final class AppResolver {
         return target == null ? "" : slash < 0 ? target : target.substring(0, slash);
     }
 
+    static boolean configurationAvailable(Context context, String target) {
+        String pkg = packagePart(target);
+        return !context.getPackageName().equals(pkg)
+                && context.getPackageManager().getLaunchIntentForPackage(pkg) != null;
+    }
+
     static boolean validTarget(String target) {
         if (target == null) return false;
         String pkg = packagePart(target);
@@ -80,21 +86,23 @@ final class AppResolver {
 
     static String labelFor(Context context, String packageName, String fallback) {
         if (packageName == null || packageName.isEmpty()) return fallback;
-        String cached = LABELS.get(packageName);
+        String cacheKey = context.getResources().getConfiguration().getLocales().toLanguageTags() + ":" + packageName;
+        String cached = LABELS.get(cacheKey);
         if (cached != null) return cached;
         PackageManager pm = context.getPackageManager();
         try {
             android.content.ComponentName component = android.content.ComponentName.unflattenFromString(packageName);
-            if (component != null) {
+            if (component != null) try {
                 CharSequence label = pm.getActivityInfo(component, 0).loadLabel(pm);
                 if (label != null && label.length() > 0) {
-                    LABELS.put(packageName, label.toString()); return label.toString();
+                    LABELS.put(cacheKey, label.toString()); return label.toString();
                 }
             }
+            catch (PackageManager.NameNotFoundException missingComponent) { /* same-package label */ }
             ApplicationInfo info = pm.getApplicationInfo(packagePart(packageName), 0);
             CharSequence label = pm.getApplicationLabel(info);
             if (label == null || label.length() == 0) return fallback;
-            LABELS.put(packageName, label.toString());
+            LABELS.put(cacheKey, label.toString());
             return label.toString();
         } catch (PackageManager.NameNotFoundException e) {
             return fallback;

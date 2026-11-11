@@ -66,9 +66,11 @@ final class ConfigurationCodec {
     static final class Preview {
         final Map<String, Object> values;
         final List<String> unavailable;
-        Preview(Map<String, Object> values, List<String> unavailable) {
+        final List<String> warnings;
+        Preview(Map<String, Object> values, List<String> unavailable, List<String> warnings) {
             this.values = Collections.unmodifiableMap(new LinkedHashMap<>(values));
             this.unavailable = Collections.unmodifiableList(new ArrayList<>(unavailable));
+            this.warnings = Collections.unmodifiableList(new ArrayList<>(warnings));
         }
         String summary() {
             StringBuilder text = new StringBuilder("Replace launcher configuration with ")
@@ -77,6 +79,7 @@ final class ConfigurationCodec {
                 text.append(entry.getKey()).append(" = ").append(entry.getValue()).append('\n');
             if (!unavailable.isEmpty()) text.append("\nUnavailable apps ignored (defaults restored):\n")
                     .append(String.join("\n", unavailable));
+            if (!warnings.isEmpty()) text.append("\nIgnored settings:\n").append(String.join("\n", warnings));
             return text.toString();
         }
     }
@@ -103,6 +106,7 @@ final class ConfigurationCodec {
         JSONObject settings = document.getJSONObject("settings");
         Map<String, Object> values = new LinkedHashMap<>();
         List<String> unavailable = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
         boolean retiredMapEnabled = false;
         Iterator<String> names = settings.keys();
         while (names.hasNext()) {
@@ -117,7 +121,7 @@ final class ConfigurationCodec {
                     retiredMapEnabled = (Boolean) value;
                 continue;
             }
-            if (!KEYS.containsKey(key)) { unavailable.add("Unknown setting ignored: " + key); continue; }
+            if (!KEYS.containsKey(key)) { warnings.add("Unknown setting ignored: " + key); continue; }
             validate(key, value);
             if (KEYS.get(key) == Type.PACKAGE && value instanceof String
                     && ((String) value).contains("/") && !ShortcutSlot.isSlotKey(key))
@@ -139,7 +143,7 @@ final class ConfigurationCodec {
         if (!AppearanceSchedule.valid(day instanceof Integer ? (Integer) day : -1,
                 night instanceof Integer ? (Integer) night : -1))
             throw new JSONException("Day and night anchors must differ");
-        return new Preview(values, unavailable);
+        return new Preview(values, unavailable, warnings);
     }
 
     private static void validate(String key, Object value) throws JSONException {

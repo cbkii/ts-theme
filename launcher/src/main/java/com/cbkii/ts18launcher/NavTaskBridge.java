@@ -228,13 +228,30 @@ public final class NavTaskBridge {
         if (sourceReturn) {
             if (task.display != 0 || task.taskCount != 1 || task.activityType != 1 || task.mode != 1 || task.foreignTop
                     || !a[3].equals(task.component)) throw new IllegalStateException("TASK_AUTHORITY_CHANGED");
-        } else requireMap(task);
+        } else if ("park-windowed".equals(action)) requireParkable(task);
+        else requireMap(task);
         boolean departure = "background-fullscreen".equals(action);
         foreground(request, focused.invoke(service), taskId, homeId, user, departure);
         if ("return-home".equals(action) || "park-windowed".equals(action) || sourceReturn) {
             if ("park-windowed".equals(action) && task.mode != 5)
                 throw new IllegalStateException("SUSPEND_MODE_MISMATCH");
+            Rect parkedBounds = task.bounds == null ? null : new Rect(task.bounds.left, task.bounds.top,
+                    task.bounds.right, task.bounds.bottom);
+            int parkedStack = task.stack;
             request.current(); focus.invoke(service, homeId);
+            if ("park-windowed".equals(action)) {
+                request.current();
+                task = resolve(stacks.invoke(service), pkg, user, taskId);
+                requireParkable(task);
+                requireHome(resolve(stacks.invoke(service), "com.cbkii.ts18launcher", user, homeId));
+                if (task.mode != 5 || task.stack != parkedStack || parkedBounds == null
+                        || !parkedBounds.equals(task.bounds)) throw new IllegalStateException("GEOMETRY_NOT_VERIFIED");
+                foreground(request, focused.invoke(service), homeId, homeId, user, false);
+                return "OK code=SUSPENDED user=" + user + " package=" + pkg + " task=" + task.id
+                        + " stack=" + task.stack + " component=" + task.component + " display=0 windowingMode=5 bounds="
+                        + task.bounds.left + "," + task.bounds.top + "," + task.bounds.right + "," + task.bounds.bottom
+                        + " launched=0 method=N2 phase=park-verified visible=unknown drawn=unknown";
+            }
             return "OK code=" + (sourceReturn ? "STARTUP_HOME_RESTORED" : "park-windowed".equals(action) ? "SUSPENDED" : "HOME_RETURNED");
         }
         if (departure) {
@@ -278,13 +295,16 @@ public final class NavTaskBridge {
     }
 
     private static void requireMap(Task task) {
+        requireParkable(task);
+        if (!"app.organicmaps.incar/app.organicmaps.MwmActivity".equals(task.component))
+            throw new IllegalStateException("BOOTSTRAP_PENDING");
+    }
+    private static void requireParkable(Task task) {
         if (task == null) throw new IllegalStateException("TASK_NOT_FOUND");
         if (task.foreignTop) throw new IllegalStateException("LEGITIMATE_FOREIGN_ACTIVITY");
         if ("unknown".equals(task.component)) throw new IllegalStateException("TASK_OBSERVATION_UNCERTAIN");
         if (task.taskCount != 1 || task.display != 0 || task.activityType != 1
                 || task.mode != 1 && task.mode != 5) throw new IllegalStateException("TASK_AUTHORITY_CHANGED");
-        if (!"app.organicmaps.incar/app.organicmaps.MwmActivity".equals(task.component))
-            throw new IllegalStateException("BOOTSTRAP_PENDING");
     }
     private static void requireHome(Task home) {
         if (home == null || home.display != 0 || home.mode != 1 || home.taskCount != 1

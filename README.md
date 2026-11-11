@@ -73,7 +73,7 @@ Launcher chrome uses Auto / Day / Night appearance (older High contrast / Dim se
 
 Accent hue is deliberately simple and independent of appearance mode. Settings presents a **single strip of coloured circles** for Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. Hue affects only the semantic accent role: primary/selected/focus elements, subtle source accents, section accents, fixed Navigation and experimental-map location accent. Neutral black/charcoal/white hierarchy remains unchanged.
 
-Setup is a short, skippable checklist offered after HOME is usable on a genuinely new install; it can be repeated from Settings. It never silently takes HOME or grants access.
+Setup is a short, skippable checklist offered after HOME is usable when Music, Radio and Navigation assignments are all empty; it can be repeated from Settings. It never silently takes HOME or grants access.
 
 ### Apps drawer
 

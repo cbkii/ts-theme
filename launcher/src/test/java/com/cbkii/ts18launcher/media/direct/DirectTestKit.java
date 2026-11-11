@@ -17,12 +17,23 @@ final class DirectTestKit {
         long now = 1000L;
         @Override public long nowMs() { return now; }
         final List<Runnable> scheduled = new ArrayList<>();
-        @Override public Object schedule(long delayMs, Runnable task) { scheduled.add(task); return task; }
-        @Override public void cancel(Object handle) { scheduled.remove(handle); }
+        final java.util.Map<Runnable, Long> dueTimes = new java.util.LinkedHashMap<>();
+        @Override public Object schedule(long delayMs, Runnable task) { scheduled.add(task); dueTimes.put(task, now + delayMs); return task; }
+        @Override public void cancel(Object handle) { scheduled.remove(handle); dueTimes.remove(handle); }
+        void advanceTo(long target) {
+            if (target < now) throw new IllegalArgumentException("clock cannot run backwards");
+            while (true) {
+                Runnable next = null; long due = Long.MAX_VALUE;
+                for (Runnable task : scheduled) if (dueTimes.get(task) < due) { next = task; due = dueTimes.get(task); }
+                if (next == null || due > target) break;
+                now = due; scheduled.remove(next); dueTimes.remove(next); next.run();
+            }
+            now = target;
+        }
         /** Fire every deadline that is still armed. */
         void expireAll() {
             List<Runnable> due = new ArrayList<>(scheduled);
-            scheduled.clear();
+            scheduled.clear(); dueTimes.clear();
             for (Runnable task : due) task.run();
         }
     }
@@ -36,7 +47,7 @@ final class DirectTestKit {
         String itemId = "";
         String title = "";
         String subtitle = "";
-        boolean deadlinePlay = true;
+        boolean deadlinePlay;
         long dispatchedDeadline;
         boolean acceptDispatch = true;
         boolean throwOnDispatch;

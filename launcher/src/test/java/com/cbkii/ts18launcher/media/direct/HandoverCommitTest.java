@@ -78,7 +78,7 @@ public class HandoverCommitTest {
     @Before public void setUp() {
         source = new FakeSource();
         clock = new ManualClock();
-        music = new FakeSession("music", AUXIO).state(PlaybackState.STATE_PAUSED);
+        music = new FakeSession("music", AUXIO).state(PlaybackState.STATE_PAUSED).item("music-item", "Loaded song", "");
         radio = new FakeSession("radio", NAVRADIO).state(PlaybackState.STATE_PLAYING);
         source.sessions.add(music);
         source.sessions.add(radio);

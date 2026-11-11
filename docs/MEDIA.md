@@ -14,7 +14,7 @@ The browser connector resolves one enabled, exported source service, verifies th
 
 Resolve Play/Pause direction once at tap time. One operation dispatches to one token; pending duplicate taps join it. Confirm directional playback from the owning session and skips from changed item identity. No acknowledgement before the deadline means SENT_UNCONFIRMED, not rejection or an automatic retry. Handover pauses the former source only after replacement playback is observed.
 
-A confirmed loaded session may receive ordinary Play. An uncertain cold source must advertise `org.oxycblt.auxio.action.HOME_PLAY_V1`. M2 then sends `protocol=1` and the original monotonic `deadline_elapsed_ms`; service binding consumes that same operation budget. Without the capability, cold Play is unsupported rather than silently becoming unbounded ordinary PLAY.
+A confirmed loaded session may receive ordinary Play. An uncertain cold source must advertise `org.oxycblt.auxio.action.HOME_PLAY_V1`. M2 then sends `protocol=1` and a monotonic `deadline_elapsed_ms` no later than the original tap cutoff or five seconds after browser acquisition, whichever is earlier; service binding consumes that same operation budget. Without the capability, cold Play is unsupported rather than silently becoming unbounded ordinary PLAY.
 
 Auxio's companion implementation enforces the deadline through queue/raw restoration and decoder readiness, excludes launch-autoplay upgrades of passive/expired restoration and prevents detached deadline-free fallbacks. It requests focus/Play only when decoder readiness can commit inside that window. Timely software commit is separate from the first audible hardware sample.
 

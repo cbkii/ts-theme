@@ -133,6 +133,15 @@ public class DirectPassivePrepareTest {
         assertTrue(starter.log.isEmpty());
     }
 
+    @Test public void loadedBufferingSessionIsNotReprepared() {
+        backend.attach(MediaSourceKey.MUSIC, AUXIO);
+        FakeSession loaded = offer("loading", PlaybackState.STATE_BUFFERING);
+        loaded.item("restored-item", "Track loading", "").emit();
+        backend.preparePassive(MediaSourceKey.MUSIC, AUXIO, 1L);
+        assertTrue(loaded.dispatched.isEmpty());
+        assertTrue(starter.log.isEmpty());
+    }
+
     @Test public void coldSourceWithoutPrepareIsBoundButNeverCommanded() {
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
         backend.preparePassive(MediaSourceKey.MUSIC, AUXIO, 1L);
@@ -147,7 +156,9 @@ public class DirectPassivePrepareTest {
         backend.preparePassive(MediaSourceKey.MUSIC, AUXIO, 1L);
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
         assertTrue(backend.state(MediaSourceKey.MUSIC).starting);
-        FakeSession session = offer("t1", PlaybackState.STATE_PAUSED);
+        FakeSession session = new FakeSession("t1", AUXIO).state(PlaybackState.STATE_PAUSED);
+        session.deadlinePlay = true;
+        starter.events.onSessionOffered(AUXIO, session);
         assertEquals(Arrays.asList(DirectOperation.PLAY), session.dispatched);
         session.state(PlaybackState.STATE_PLAYING).emit();
         assertEquals(Outcome.ACKNOWLEDGED, lastResult().outcome);
