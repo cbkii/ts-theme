@@ -851,7 +851,7 @@ def compare(paths):
         row = dict(archive=path.name, campaign=metadata['campaign'], trial=metadata['trial'],
                    boot_id=metadata['boot_id'], lifecycle=metadata['operator_reported_lifecycle'],
                    workload=metadata['workload'], target_continuity=metadata['target_continuity'],
-                   metrics_ms={}, missing=[], observations=markers)
+                   metrics_ms={}, missing=[], missing_occurrences={}, observations=markers)
         identities = metadata.get('installed_identity', {})
         if not isinstance(identities, dict):
             identities = {}
@@ -875,6 +875,7 @@ def compare(paths):
         for begin, end in PAIRS:
             waiting = []
             intervals = []
+            unusable = 0
             for marker in markers:
                 if marker['event'] == begin:
                     waiting.append(marker)
@@ -887,11 +888,16 @@ def compare(paths):
                             first['uncertainty_ms'] + marker['uncertainty_ms']),
                             manual_submission_delay_ms=(first.get('submission_delay_ms', 0)
                                                         + marker.get('submission_delay_ms', 0))))
+                    else:
+                        unusable += 1
             key = begin + '->' + end
             if intervals:
                 row['metrics_ms'][key] = intervals
-            else:
+            if waiting or unusable or not intervals:
                 row['missing'].append(key)
+            if waiting or unusable:
+                row['missing_occurrences'][key] = dict(unmatched_starts=len(waiting),
+                                                       unusable_intervals=unusable)
         rows.append(row)
         # Never imply comparability between unverified/mixed candidate bytes.
         identity_key = (json.dumps([identities, metadata['target_id'], metadata['android_build']], sort_keys=True)

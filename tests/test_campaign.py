@@ -267,6 +267,17 @@ class RecorderTest(unittest.TestCase):
 
 
 class IntegrityTest(unittest.TestCase):
+    def test_one_valid_interval_does_not_hide_another_unmatched_start(self):
+        markers = [dict(event=event, device_uptime_ms=ms, uncertainty_ms=1)
+                   for event, ms in [('MUSIC_TAP', 10), ('MUSIC_TAP', 20), ('MUSIC_ACK', 30)]]
+        with tempfile.TemporaryDirectory() as temp:
+            archive = self.make_trial(Path(temp) / 'private', markers)
+            row = campaign.compare([archive])['trials'][0]
+        key = 'MUSIC_TAP->MUSIC_ACK'
+        self.assertEqual(1, len(row['metrics_ms'][key]))
+        self.assertIn(key, row['missing'])
+        self.assertEqual(1, row['missing_occurrences'][key]['unmatched_starts'])
+
     def test_truthy_unclosed_flag_and_malformed_markers_are_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, 'unsealed'):
