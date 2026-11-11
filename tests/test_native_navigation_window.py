@@ -319,7 +319,7 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
             "void onHomeStopped()", 1
         )[0]
         overlay_body = self.controller.split("void onLauncherOverlayOpened()", 1)[1].split(
-            "void suspendForExperimentalMap()", 1
+            "boolean openFullscreen(Location location)", 1
         )[0]
         ui_state = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowUiState.java").read_text()
         ui_test = (ROOT / "launcher/src/test/java/com/cbkii/ts18launcher/NavigationWindowUiStateTest.java").read_text()
@@ -377,16 +377,19 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn('require_foreground_task "$home_task" HOME_NOT_FOREGROUND', self.helper)
         self.assertIn('[ "$component" != unknown ] || fail COMPONENT_UNKNOWN', self.helper)
 
-    def test_native_surface_is_primary_and_leaflet_is_explicit_legacy_fallback(self):
+    def test_native_surface_is_primary_and_retired_map_migrates_to_fullscreen(self):
         self.assertIn('static final String NATIVE_WINDOW = "native_window"', self.policy)
         self.assertIn('private static final String LEGACY_RAW_FREEFORM = "raw_freeform"', self.policy)
         self.assertIn("return NATIVE_WINDOW;", self.policy)
         for value in (
             "Native navigation window · TESTING",
             "Fullscreen only · safe fallback",
-            "Legacy online map fallback · Internet required",
         ):
             self.assertIn(value, self.settings)
+        self.assertNotIn("Legacy online map", self.settings)
+        self.assertIn('static final String RETIRED_LEAFLET = "leaflet"', self.policy)
+        self.assertIn("return retiredMapEnabled ? FULLSCREEN : NATIVE_WINDOW;", self.policy)
+        self.assertIn("static void migrateRetiredSurfaces(Context context)", self.policy)
         self.assertNotIn("Android PiP · experimental", self.settings)
 
     def test_navigation_owned_incar_fallback_uses_real_launcher_availability(self):

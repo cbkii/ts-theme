@@ -25,15 +25,11 @@ final class LauncherPrefs {
     static final String KEY_LAST_SOURCE = "media.last.explicit.source";
     static final String KEY_LAST_MUSIC = "media.last.explicit.package";
     static final String KEY_MEDIA_CONTROLS_SIDE = "ui.media.controls.side";
-    static final String KEY_MAP_ENABLED = "map.enabled";
-    static final String KEY_MAP_CONTROLS_ENABLED = "map.controls.enabled";
     static final String KEY_MEDIA_MODE = "media.selection.mode";
     static final String KEY_APPEARANCE_MODE = "ui.appearance.mode";
     static final String KEY_APPEARANCE_AUTO_SOURCE = "ui.appearance.auto.source";
     static final String KEY_APPEARANCE_DAY_START = "ui.appearance.day.start.minutes";
     static final String KEY_APPEARANCE_NIGHT_START = "ui.appearance.night.start.minutes";
-
-    static final String KEY_MAP_APPEARANCE = KEY_APPEARANCE_MODE;
 
     static final String MEDIA_MODE_AUTO = "auto";
     static final String MEDIA_MODE_PREFER_MUSIC = "prefer_music";
@@ -49,9 +45,6 @@ final class LauncherPrefs {
     static final String APPEARANCE_HIGH_CONTRAST = "high_contrast";
     static final String APPEARANCE_DIM = "dim";
     static final String APPEARANCE_NIGHT = "night";
-    static final String MAP_APPEARANCE_AUTO = APPEARANCE_AUTO;
-    static final String MAP_APPEARANCE_NORMAL = APPEARANCE_DAY;
-    static final String MAP_APPEARANCE_DIM = APPEARANCE_DIM;
     static final String AUTO_SOURCE_SENSOR = "sensor";
     static final String AUTO_SOURCE_SCHEDULE = "schedule";
     static final int SCHEDULE_UNSET = -1;
@@ -147,11 +140,6 @@ final class LauncherPrefs {
         if (pkg != null && !pkg.isEmpty() && !pkg.equals(lastMusicPackage(context))) setPackage(context, KEY_LAST_MUSIC, pkg);
     }
 
-    static boolean mapEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_ENABLED, false); }
-    static void setMapEnabled(Context context, boolean enabled) { prefs(context).edit().putBoolean(KEY_MAP_ENABLED, enabled).apply(); }
-    static boolean mapControlsEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_CONTROLS_ENABLED, true); }
-    static void setMapControlsEnabled(Context context, boolean enabled) { prefs(context).edit().putBoolean(KEY_MAP_CONTROLS_ENABLED, enabled).apply(); }
-
     static String appearanceMode(Context context) {
         String value = prefs(context).getString(KEY_APPEARANCE_MODE, APPEARANCE_AUTO);
         return canonicalAppearance(value);
@@ -164,8 +152,6 @@ final class LauncherPrefs {
     static void setAppearanceMode(Context context, String value) {
         prefs(context).edit().putString(KEY_APPEARANCE_MODE, canonicalAppearance(value)).apply();
     }
-    static String mapAppearance(Context context) { return appearanceMode(context); }
-    static void setMapAppearance(Context context, String value) { setAppearanceMode(context, value); }
 
     static String appearanceAutoSource(Context context) {
         // Legacy sensor preferences migrate to the schedule on this sensorless product.

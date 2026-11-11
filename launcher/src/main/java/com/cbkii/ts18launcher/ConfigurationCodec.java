@@ -37,9 +37,7 @@ final class ConfigurationCodec {
         keys.put(LauncherPrefs.KEY_QUICK_COUNT, Type.COUNT);
         keys.put(LauncherPrefs.KEY_RAIL_POSITION, Type.RAIL);
         keys.put(LauncherPrefs.KEY_RADIO_SIDE, Type.SIDE);
-        keys.put(LauncherPrefs.KEY_MAP_ENABLED, Type.BOOLEAN);
         keys.put(HomeNavigationSurfacePolicy.KEY, Type.NAV_SURFACE);
-        keys.put(LauncherPrefs.KEY_MAP_CONTROLS_ENABLED, Type.BOOLEAN);
         keys.put(LauncherPrefs.KEY_MEDIA_MODE, Type.MEDIA);
         keys.put(LauncherPrefs.KEY_APPEARANCE_MODE, Type.APPEARANCE);
         keys.put(LauncherPrefs.KEY_APPEARANCE_AUTO_SOURCE, Type.AUTO_SOURCE);
@@ -47,6 +45,12 @@ final class ConfigurationCodec {
         keys.put(LauncherPrefs.KEY_APPEARANCE_NIGHT_START, Type.MINUTES);
         KEYS = Collections.unmodifiableMap(keys);
     }
+
+    /** Retired online-map keys: accepted from old exports, never exported or stored. */
+    static final java.util.Set<String> RETIRED_BOOLEAN_KEYS = Collections.unmodifiableSet(
+            new java.util.LinkedHashSet<>(java.util.Arrays.asList(
+                    HomeNavigationSurfacePolicy.RETIRED_MAP_ENABLED_KEY,
+                    HomeNavigationSurfacePolicy.RETIRED_MAP_CONTROLS_KEY)));
 
     static final class Preview {
         final Map<String, Object> values;
@@ -88,10 +92,19 @@ final class ConfigurationCodec {
         JSONObject settings = document.getJSONObject("settings");
         Map<String, Object> values = new LinkedHashMap<>();
         List<String> unavailable = new ArrayList<>();
+        boolean retiredMapEnabled = false;
         Iterator<String> names = settings.keys();
         while (names.hasNext()) {
             String key = names.next();
             Object value = settings.get(key);
+            if (RETIRED_BOOLEAN_KEYS.contains(key)) {
+                // Files exported before the online map was retired stay importable. The retired
+                // keys are type-checked, never stored, and only select the safe fullscreen surface.
+                if (!(value instanceof Boolean)) throw new JSONException("Invalid value for " + key);
+                if (HomeNavigationSurfacePolicy.RETIRED_MAP_ENABLED_KEY.equals(key))
+                    retiredMapEnabled = (Boolean) value;
+                continue;
+            }
             validate(key, value);
             if (KEYS.get(key) == Type.PACKAGE) {
                 String name = (String) value;
@@ -100,8 +113,11 @@ final class ConfigurationCodec {
             }
             if (KEYS.get(key) == Type.APPEARANCE) value = LauncherPrefs.canonicalAppearance((String) value);
             if (KEYS.get(key) == Type.AUTO_SOURCE) value = LauncherPrefs.AUTO_SOURCE_SCHEDULE;
+            if (KEYS.get(key) == Type.NAV_SURFACE) value = HomeNavigationSurfacePolicy.canonical((String) value);
             values.put(key, value);
         }
+        if (retiredMapEnabled && !values.containsKey(HomeNavigationSurfacePolicy.KEY))
+            values.put(HomeNavigationSurfacePolicy.KEY, HomeNavigationSurfacePolicy.FULLSCREEN);
         Object day = values.get(LauncherPrefs.KEY_APPEARANCE_DAY_START);
         Object night = values.get(LauncherPrefs.KEY_APPEARANCE_NIGHT_START);
         if (!AppearanceSchedule.valid(day instanceof Integer ? (Integer) day : -1,

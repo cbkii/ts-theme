@@ -373,7 +373,6 @@ final class NavigationWindowController {
         return true;
     }
 
-    void suspendForExperimentalMap() { if (state != State.DESTROYED) { uiState.onLauncherOverlayOpened(); suspendForLauncherSurface("legacy online map fallback active"); } }
 
     boolean openFullscreen(Location location) {
         explicitNavigation.run();
@@ -443,7 +442,6 @@ final class NavigationWindowController {
         if (isFailureLatched()) { showLatchedFailure(); return; }
         if (observationOnly) { observeRecovery(); return; }
         if (fullscreenGoal) { openFullscreenNow(selectedPackage(), pendingFullscreenLocation); return; }
-        if (HomeNavigationSurfacePolicy.LEAFLET.equals(configuredMode)) { state = State.SUSPENDED; return; }
         if (HomeNavigationSurfacePolicy.FULLSCREEN.equals(configuredMode)) { state = State.IDLE; panel.showFullscreenOnly(label(configuredPackage), () -> openFullscreen(null)); return; }
         if (!HomeNavigationSurfacePolicy.NATIVE_WINDOW.equals(configuredMode)) { latchFailure(configuredPackage, configuredMode, "Unsupported navigation surface mode"); return; }
         if (configuredPackage.isEmpty()) { latchFailure("", configuredMode, "Choose a Navigation app in Settings"); return; }

@@ -1,6 +1,5 @@
 package com.cbkii.ts18launcher;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
@@ -193,11 +192,9 @@ public final class SettingsActivity extends Activity {
                 HomeNavigationSurfacePolicy.label(HomeNavigationSurfacePolicy.mode(this)),
                 v -> choose("Navigation display",
                         new String[] {"Native navigation window · TESTING",
-                                "Fullscreen only · safe fallback",
-                                "Legacy online map fallback · Internet required"},
+                                "Fullscreen only · safe fallback"},
                         new String[] {HomeNavigationSurfacePolicy.NATIVE_WINDOW,
-                                HomeNavigationSurfacePolicy.FULLSCREEN,
-                                HomeNavigationSurfacePolicy.LEAFLET},
+                                HomeNavigationSurfacePolicy.FULLSCREEN},
                         HomeNavigationSurfacePolicy.mode(this), value -> {
                             HomeNavigationSurfacePolicy.setMode(this, value); recreate();
                         }));
@@ -311,24 +308,6 @@ public final class SettingsActivity extends Activity {
                     if (checked) NavigationPermissionBootstrapper.ensureEarly(this, result ->
                             Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show());
                 });
-
-        addSection("Experimental map");
-        boolean mapEnabled = ExperimentalMapPolicy.enabled(this);
-        addInfoRow(R.drawable.ic_map, "Experimental Home map",
-                mapEnabled ? "Enabled as the legacy navigation display." : "Off");
-        if (mapEnabled) {
-            addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom and follow controls.",
-                    LauncherPrefs.mapControlsEnabled(this),
-                    checked -> LauncherPrefs.setMapControlsEnabled(this, checked));
-            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                addActionRow(R.drawable.ic_my_location, "Location access",
-                        "Allow location while using the experimental map.",
-                        v -> requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION}, 9201));
-            } else {
-                addInfoRow(R.drawable.ic_my_location, "Location access", "Granted");
-            }
-        }
 
         addSection("Backup & reset");
         addActionRow(R.drawable.ic_download, "Export settings", "Save a settings file.",

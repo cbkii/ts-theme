@@ -82,6 +82,7 @@ public final class Ts18LauncherApplication extends Application
 
     @Override public void onCreate() {
         super.onCreate();
+        HomeNavigationSurfacePolicy.migrateRetiredSurfaces(this);
         if (HomeMode.isDefaultHome(this)) RootTaskSession.warm(this);
         NavigationPermissionBootstrapper.ensureEarly(this);
         MediaNotificationAccessBootstrapper.ensureEarly(this);

@@ -67,7 +67,7 @@ All fixed/user-selectable monochrome glyphs use one pinned family: **Google Mate
 
 ### Appearance and accent hue
 
-Launcher chrome and the experimental map share Auto / Day / High contrast / Dim / Night appearance. Auto can use ambient light or schedule; stale/unavailable sensor evidence falls back to schedule. Generic unset schedule uses 07:00/19:00 anchors with transition/high-glare periods; user anchors may cross midnight.
+Launcher chrome uses Auto / Day / Night appearance (older High contrast / Dim selections map to Day / Night). Auto can use ambient light or schedule; stale/unavailable sensor evidence falls back to schedule. Generic unset schedule uses 07:00/19:00 anchors with transition/high-glare periods; user anchors may cross midnight.
 
 Accent hue is deliberately simple and independent of appearance mode. Settings presents a **single strip of coloured circles** for Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. Hue affects only the semantic accent role: primary/selected/focus elements, subtle source accents, section accents, fixed Navigation and experimental-map location accent. Neutral black/charcoal/white hierarchy remains unchanged.
 
@@ -87,17 +87,14 @@ Settings has one authoritative **HOME navigation surface** preference with three
 
 - **Native navigation window - TESTING** - primary path: one real external navigation task on display 0 in Android freeform `windowingMode=5`, bounded to the launcher navigation rectangle.
 - **Fullscreen only** - explicit safe fallback.
-- **Legacy online map fallback** - launcher-owned Leaflet/WebView surface; online-only, last-resort, never automatic.
 
-For upgrades, a previously explicit `map.enabled=true` is consulted only when the new surface preference has never been written, and historical `raw_freeform` is migrated to `native_window`. Once `navigation.surface.mode` exists it is the sole surface authority; an invalid stored mode fails safe to fullscreen. Standard Android PiP is no longer a selectable or automatic navigation path.
+The earlier launcher-owned Leaflet/WebView online map is **retired**. On upgrade or settings import, a stored `leaflet` surface or legacy `map.enabled=true` resolves to explicit **Fullscreen only**, historical `raw_freeform` resolves to `native_window`, and the retired keys are dropped. `navigation.surface.mode` is the sole surface authority.
 
 Exact TS18 evidence from a known-good DoFun/Organic Maps launch establishes a real external navigation task on display 0 in freeform mode 5, alongside Topway `isPipLauncher ... :navi` policy. The launcher therefore treats package + task ID + current top component + display + windowing mode + task bounds as the machine-state authority. It does **not** claim that raw `am task resize` reproduces DoFun's full private Topway navigation policy.
 
 The mode-5 path is root-assisted but bounded. Java resolves the configured package's ordinary exported launcher Activity and derives the Android user from the launcher process UID (the application UID itself is not used as a user ID). One helper transaction first adopts exactly one same-user, same-package task with a known matching component; only if none exists does it launch that component once with explicit display 0 and mode 5, then acquire, resize and verify the exact task. Ambiguous tasks fail closed. HOME stops do not cancel an in-flight transaction, callbacks coalesce behind one operation, and a failure latch keeps HOME usable until explicit Retry or Open fullscreen.
 
 Physical testing of `PR11-5aea8bc` proved visible bounded Organic Maps rendering on standalone HOME but also exposed unreliable warm lifecycle/app handoff and permission/settings UI after launcher-driven task handling. Current code no longer restarts a warm navigation Activity merely to park it: one atomic helper transaction validates the same-user Organic Maps and canonical HOME tasks, focuses HOME, then revalidates the unchanged mode-5 task, component and bounds. Cold acquisition remains the ordinary direct MAIN/LAUNCHER start. Explicit fullscreen/freeform mode changes remain a separate Android-Q transaction and may use `am start --task` because the captured TS18 behaviour rejects resize until the existing task is first established in mode 5. These changes are repository-verified but still require exact-device retest; inside-map touch, warm recovery and vehicle lifecycle remain physical gates.
-
-The Leaflet/WebView implementation remains **OFF by default on a clean install**. When selected it retains pinned Leaflet 1.9.4, restricted OSM raster requests through the native TileBroker, bounded cache/revalidation, renderer recovery, process-local state, no arbitrary browsing and no JS bridge. The raster cache is not an Organic Maps/OsmAnd/Google/Yandex offline database.
 
 Machine-state success is not physical HOME success. Mode 5 still requires exact-device qualification of visible composition, map touch inside the rectangle, launcher touch outside it, app-drawer round trips, fullscreen/HOME transitions, unrelated-task isolation, navigator switching, process recreation, reverse return, reboot, cold boot and ACC sleep/wake.
 
@@ -141,7 +138,7 @@ gradle :theme:lintDebug :theme:assembleDebug
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 ```
 
-CI also requires an empty launcher release runtime dependency graph, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin release envelope, pinned Leaflet assets, Material Symbols attribution and valid APK signature.
+CI also requires an empty launcher release runtime dependency graph, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin release envelope, no retired online-map assets or WebView bridge, Material Symbols attribution and valid APK signature.
 
 ## Testing and candidate releases
 

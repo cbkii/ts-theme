@@ -23,6 +23,7 @@ final class ConfigurationStore {
                         : LauncherPrefs.appearanceNightStartMinutes(context)); break;
                 case APPEARANCE: result.put(key, LauncherPrefs.appearanceMode(context)); break;
                 case AUTO_SOURCE: result.put(key, LauncherPrefs.AUTO_SOURCE_SCHEDULE); break;
+                case NAV_SURFACE: result.put(key, HomeNavigationSurfacePolicy.mode(context)); break;
                 default: result.put(key, prefs.getString(key, "")); break;
             }
         }
@@ -38,6 +39,7 @@ final class ConfigurationStore {
     private static SharedPreferences.Editor edit(Context context, Map<String, Object> values) {
         SharedPreferences.Editor editor = LauncherPrefs.prefs(context).edit();
         for (String key : ConfigurationCodec.KEYS.keySet()) editor.remove(key);
+        for (String key : ConfigurationCodec.RETIRED_BOOLEAN_KEYS) editor.remove(key);
         for (Map.Entry<String, Object> entry : values.entrySet()) {
             if (!ConfigurationCodec.KEYS.containsKey(entry.getKey())) continue;
             Object value = entry.getValue();

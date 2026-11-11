@@ -89,25 +89,13 @@ Radio is a separate authority from generic music. Third-party NavRadio+ (`com.na
 
 The exact current stock `com.tw.radio` APK declares no Android service component. It is therefore session-only in this launcher: an already-existing session may be observed, but HOME never hide-launches its Activity and does not infer private Topway commands. Exact-device evidence must identify the owning Topway service/transport before native radio control is extended. See `docs/MEDIA_BACKGROUND_READINESS.md`.
 
-## Home-screen map
+## Home-screen navigation surface
 
-The map uses bundled **Leaflet 1.9.4** inside the lifecycle-bound WebView, with mature touch zoom, double-tap zoom, inertial panning, current-position marker, accuracy circle, bearing indicator and follow/recentre behaviour without a native vector renderer or Android runtime dependency.
-
-Leaflet JS/CSS are fetched only during build from pinned HTTPS distribution endpoints and accepted only when their exact SHA-256 values match. HOME never downloads the map library at runtime.
-
-Driver-facing map actions are Material Symbols Rounded icon buttons: zoom in, zoom out, follow/recentre and one primary navigation action. They may be hidden as a group from Settings. Selected Follow uses redundant state: orange tint plus a 3dp accent outline/halo. Healthy map status is hidden; only locating/loading/offline/error states are surfaced. Map filter/overlay state consumes the shared launcher appearance resolver.
-
-### Tile broker
-
-WebView does not own tile HTTP. `TileBroker` intercepts only exact `https://tile.openstreetmap.org/{z}/{x}/{y}.png` requests and uses framework `HttpURLConnection` with identifying User-Agent, bounded connect/read timeouts, normal platform TLS, HTTP freshness/conditional revalidation, stale-cache fallback and a bounded 64 MiB disk cache. With no usable network it returns fresh/stale cache immediately or fails an uncached tile promptly. No bulk download or prefetch is used.
-
-WebView remains restricted to local map assets plus the exact OSM tile origin and exposes no JavaScript-to-Java bridge. Full route calculation/navigation remains with Organic Maps, Google Maps, Waze or OsmAnd via public hand-off intents.
-
-Renderer termination is handled with one bounded automatic WebView recreation. The dead instance is detached and destroyed, local Leaflet is reloaded and the in-memory viewport/follow state plus last GPS fix are restored. Repeated failure stops automatic recreation and exposes an explicit retry; no crash/reload loop or location history is persisted.
+HOME presents exactly one navigation surface, owned by `NavigationWindowController` and selected by `HomeNavigationSurfacePolicy`: the native navigation window (one real external navigation task) or the explicit fullscreen hand-off. The earlier launcher-owned Leaflet/WebView online map, its tile broker/cache and its build-time asset fetch are retired; the launcher renders no map of its own and declares no network permission. Stored or imported `leaflet` / `map.enabled=true` selections resolve to Fullscreen and the retired keys are dropped on first start. Route calculation, map rendering, GNSS use and offline data remain with the selected navigation app.
 
 ### Offline-first policy
 
-Network availability is optional. Core HOME operation must start and remain usable without Internet access. App launching, settings, GPS/location, local media, cached map tiles, navigation hand-off and the underlying MediaSession controls remain available where their installed source permits. Organic Maps, OsmAnd/OsmAnd+, Auxio-TS, Auxio and VLC are recommended offline-capable choices without becoming launcher dependencies; the OSM raster cache is not a complete offline navigation database. `ConnectivityManager` is used only to identify a definite no-network condition, never as proof that the public Internet is reachable.
+Network availability is optional. Core HOME operation must start and remain usable without Internet access. App launching, settings, GPS/location, local media, navigation hand-off and the underlying MediaSession controls remain available where their installed source permits. Organic Maps, OsmAnd/OsmAnd+, Auxio-TS, Auxio and VLC are recommended offline-capable choices without becoming launcher dependencies; the OSM raster cache is not a complete offline navigation database. `ConnectivityManager` is used only to identify a definite no-network condition, never as proof that the public Internet is reachable.
 
 ## Organic Maps future integration
 

@@ -113,13 +113,9 @@ Do not implement generic compact/split-screen profiles. Supported responsive rea
 
 The x=1225 safe-right remains a conservative historical full-panel design constraint when the right SystemUI sidebar is present; it does not replace live runtime bar/inset authority.
 
-## Experimental HOME map
+## Retired HOME map
 
-Leaflet/WebView is retained only as an **experimental physical-test comparator** and is off by default on clean installs. Upgrades preserve an explicit stored map preference. No more Leaflet presentation work is part of PR #10.
-
-When enabled, pinned Leaflet/TileBroker restrictions, renderer recovery, process-local state and bounded cache/revalidation remain. Only zoom/follow controls remain, opposite the side rail. The duplicate map Navigation action is removed.
-
-The raster cache is not a full offline navigation database and cannot consume Organic Maps/OsmAnd/Google/Yandex offline data. A polished `Map unavailable`/retry placeholder is a **future consideration only if physical testing proves the experimental WebView approach worth retaining**. Otherwise the separate map/windowing architecture thread owns replacement.
+The experimental Leaflet/WebView comparator is removed. An explicit stored map preference now resolves to the Fullscreen navigation surface on upgrade; the native navigation window remains the clean-install default.
 
 ## Repository privacy/offline policy
 
@@ -155,7 +151,7 @@ On a fresh install, test the launcher as an ordinary Activity before switching H
 8. Test cold/background one-tap media readiness, duplicate Play/Pause coalescing, deferred opposite-source pause, startup warm-up ON/OFF and shared metadata/marquee arbitration.
 9. Capture exact `wm size`, `wm density`, `densityDpi` before proposing further typography/icon/target changes.
 10. Validate full physical and decor-fitted/right-sidebar geometry. Do not infer generic split-screen support.
-11. Confirm experimental Leaflet remains off by default; do not score future placeholder work unless the WebView itself is retained.
+11. Confirm an upgraded unit that previously selected the online map shows the Fullscreen navigation surface and that Settings offers only Native window / Fullscreen.
 12. Run `collect-fast-media-evidence.sh`, `MONO_DRIVE_UX_ACCEPTANCE.md` and `measure-standalone-launcher.sh` where applicable.
 13. Only after ordinary-Activity gates pass continue HOME/reboot/cold-boot/ACC qualification.
 

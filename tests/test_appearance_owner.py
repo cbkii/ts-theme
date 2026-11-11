@@ -76,10 +76,13 @@ class AppearanceOwnerTest(unittest.TestCase):
             'com/cbkii/ts18launcher/MediaSelection.java': '''package com.cbkii.ts18launcher; class MediaSelection {
                 static final String RADIO="radio",MUSIC="music"; }''',
             'com/cbkii/ts18launcher/ConfigurationCodec.java': '''package com.cbkii.ts18launcher; import java.util.*;
-                class ConfigurationCodec {enum Type{BOOLEAN,COUNT,MINUTES,APPEARANCE,AUTO_SOURCE}
+                class ConfigurationCodec {enum Type{BOOLEAN,COUNT,MINUTES,APPEARANCE,AUTO_SOURCE,NAV_SURFACE}
+                static final Set<String> RETIRED_BOOLEAN_KEYS=Set.of("map.enabled");
                 static final Map<String,Type> KEYS=Map.of(LauncherPrefs.KEY_APPEARANCE_DAY_START,Type.MINUTES,
                 LauncherPrefs.KEY_APPEARANCE_NIGHT_START,Type.MINUTES,LauncherPrefs.KEY_APPEARANCE_MODE,Type.APPEARANCE,
                 LauncherPrefs.KEY_APPEARANCE_AUTO_SOURCE,Type.AUTO_SOURCE);}''',
+            'com/cbkii/ts18launcher/HomeNavigationSurfacePolicy.java': '''package com.cbkii.ts18launcher;
+                class HomeNavigationSurfacePolicy {static String mode(android.content.Context c){return "native_window";} }''',
             'com/cbkii/ts18launcher/PrefsHarness.java': '''package com.cbkii.ts18launcher; import android.content.*;
                 public class PrefsHarness {static void check(boolean v){if(!v)throw new AssertionError();}
                 public static void main(String[] args){Context c=new Context(); var p=c.data.values;

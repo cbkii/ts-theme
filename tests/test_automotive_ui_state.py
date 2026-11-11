@@ -186,30 +186,13 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("LauncherPrefs.APPEARANCE_AUTO.equals", settings)
         self.assertIn("AppearanceSchedule.valid", settings)
 
-    def test_map_controls_are_opposite_rail_no_duplicate_navigation_and_experimental_default_off(self):
-        panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
-        policy = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ExperimentalMapPolicy.java")
+    def test_retired_online_map_has_no_settings_or_home_surface(self):
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
-        self.assertIn("boolean controlsRight = !railRight", panel)
-        self.assertNotIn("openNavigation", panel)
-        self.assertNotIn("ic_navigation", panel)
-        self.assertIn('"Experimental Home map"', settings)
-        self.assertIn("if (mapEnabled)", settings)
-        self.assertIn("if (!LauncherPrefs.prefs(context).contains(LauncherPrefs.KEY_MAP_ENABLED)) return false", policy)
-        self.assertIn("return LauncherPrefs.mapEnabled(context)", policy)
+        for retired in ("Experimental Home map", "Map controls", "Legacy online map", "mapEnabled"):
+            self.assertNotIn(retired, settings)
+        self.assertNotIn("mapPanel", launcher)
         self.assertIn("styleRailButton(this, navigationButton, true)", launcher)
-
-    def test_map_follow_state_has_redundant_non_colour_cue_and_controls_can_hide(self):
-        ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
-        panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
-        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
-        self.assertIn("followModeBackground", ui)
-        self.assertIn("state_selected", ui)
-        self.assertIn("R.color.ui_accent, 3", ui)
-        self.assertIn("recenter.setBackground(AutomotiveUi.followModeBackground(activity))", panel)
-        self.assertIn("recenter.setImageTintList(AutomotiveUi.followTint(activity))", panel)
-        self.assertIn('"Map controls"', settings)
 
     def test_configuration_whitelists_icon_hue_warmup_and_home_shortcut_visibility(self):
         codec = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ConfigurationCodec.java")
@@ -260,16 +243,11 @@ class AutomotiveUiStateTests(unittest.TestCase):
 
     def test_motion_contract_uses_confirmed_micro_timings(self):
         ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
-        panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
-        html = self.read("launcher/src/main/assets/map/map.html")
         self.assertIn("STATE_CROSSFADE_MS = 120L", ui)
         self.assertIn("FEEDBACK_MS = 140L", ui)
         self.assertIn("PANEL_REVEAL_MS = 160L", ui)
         self.assertIn("DRAWER_MS = 180L", ui)
         self.assertIn("setIconWithCrossfade", ui)
-        self.assertIn("PANEL_REVEAL_MS", panel)
-        self.assertIn("STATE_CROSSFADE_MS", panel)
-        self.assertIn("transition:filter 120ms linear", html)
 
     def test_used_driver_tokens_and_focus_graph_exist(self):
         dimens = self.read("launcher/src/main/res/values/dimens.xml")

@@ -76,7 +76,7 @@ CompactStartupClient(android.app.Activity a,java.util.function.Consumer<Snapshot
 java.util.function.IntConsumer homeReturn;static void back(int task){latest.homeReturn.accept(task);}
 static void deliver(){if(next!=null)latest.callback.accept(next);}void setHomeReturnCallback(java.util.function.IntConsumer cb){homeReturn=cb;} void watch(){}void refresh(){}void close(){}
 }
-class HomeNavigationSurfacePolicy {static final String NATIVE_WINDOW="native",LEAFLET="leaflet",FULLSCREEN="full";
+class HomeNavigationSurfacePolicy {static final String NATIVE_WINDOW="native",FULLSCREEN="full";
 static String mode(android.app.Activity a){return NATIVE_WINDOW;}}
 class LauncherPrefs {static final String KEY_NAV="nav";static String packageFor(android.app.Activity a,String k){return "app.organicmaps.incar";}}
 class AppResolver {static String labelFor(android.app.Activity a,String p,String f){return p;}}
