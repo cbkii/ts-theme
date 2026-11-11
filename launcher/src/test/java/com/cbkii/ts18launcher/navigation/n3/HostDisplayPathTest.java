@@ -19,8 +19,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
-import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
+import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowPackageManager;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29)
@@ -32,7 +33,8 @@ public class HostDisplayPathTest {
         info.serviceInfo.packageName = HostDisplayPath.HOST_PACKAGE;
         info.serviceInfo.name = HostDisplayPath.HOST_PACKAGE + ".DisplayHostService";
         info.serviceInfo.exported = true;
-        Shadows.shadowOf(app.getPackageManager()).addResolveInfoForIntent(
+        ShadowPackageManager packages = Shadow.extract(app.getPackageManager());
+        packages.addResolveInfoForIntent(
                 new Intent(HostDisplayPath.ACTION).setPackage(HostDisplayPath.HOST_PACKAGE), info);
         ServiceConnection[] bound = new ServiceConnection[1];
         Context caller = new ContextWrapper(app) {
