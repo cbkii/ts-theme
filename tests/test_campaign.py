@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import shutil
@@ -174,6 +175,18 @@ class NativeWorkerTest(unittest.TestCase):
         self.assertEqual('INTERRUPTED', result.status)
         self.assertEqual('PASS', cleanup)
         self.assertIn(b'partial', result.output)
+        owner = int(re.search(rb'TS18_OWNER (\d+)', result.output).group(1))
+        live = []
+        for entry in Path('/proc').iterdir():
+            if not entry.name.isdecimal():
+                continue
+            try:
+                stat = (entry / 'stat').read_text().rsplit(') ', 1)[1].split()
+                if int(stat[2]) == owner and stat[0] != 'Z':
+                    live.append(entry.name)
+            except (OSError, IndexError, ValueError):
+                pass
+        self.assertEqual([], live, 'no native writer/descendant may outlive cleanup')
 
 
 class RecorderTest(unittest.TestCase):

@@ -281,6 +281,8 @@ class Device:
 
         body = '''
 set -f
+# Keep the registered leader available for identity-checked cleanup after interruption.
+trap ':' INT TERM HUP
 ids=$(/system/bin/sed 's/.*) //' /proc/$$/stat) || exit 70
 set -- $ids
 [ "$3 $4" = "$$ $$" ] || exit 70
@@ -302,7 +304,10 @@ printf 'TS18_OWNER %s %s\n' "$$" "$1"
                 pid, ticks = lease
                 # Validate the held leader's start time and session/group before either signal.
                 check = f'''set -f
-ids=$(/system/bin/sed 's/.*) //' /proc/{pid}/stat) || exit 4
+if ! ids=$(/system/bin/sed 's/.*) //' /proc/{pid}/stat); then
+  /system/bin/kill -0 -- -{pid} 2>/dev/null && exit 8
+  exit 0
+fi
 set -- $ids
 [ "$3 $4" = "{pid} {pid}" ] || exit 5
 shift 19
@@ -310,7 +315,10 @@ shift 19
 /system/bin/kill -INT -- -{pid} || exit 7
 /system/bin/sleep 1
 # The same held group leader must still be present before force cleanup.
-ids=$(/system/bin/sed 's/.*) //' /proc/{pid}/stat) || exit 0
+if ! ids=$(/system/bin/sed 's/.*) //' /proc/{pid}/stat); then
+  /system/bin/kill -0 -- -{pid} 2>/dev/null && exit 8
+  exit 0
+fi
 set -- $ids
 [ "$3 $4" = "{pid} {pid}" ] || exit 5
 shift 19
