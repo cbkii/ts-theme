@@ -325,6 +325,12 @@ public final class SettingsActivity extends Activity {
                             Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show());
                 });
 
+        addSection("Experimental · N3 display host");
+        addActionRow(R.drawable.ic_map, "Test N3 feasibility on this unit",
+                n3Result == null ? "Not tested. Creates and releases a private display; launches nothing."
+                        : n3Result,
+                v -> runN3Probe());
+
         addSection("Backup & reset");
         addActionRow(R.drawable.ic_download, "Export settings", "Save a settings file.",
                 v -> chooseConfigurationDocument(true));
@@ -565,6 +571,25 @@ public final class SettingsActivity extends Activity {
         addTrailingIcon(row, R.drawable.ic_settings, R.color.ui_accent);
         makeInteractive(row, listener);
         addRow(row);
+    }
+
+    private String n3Result;
+
+    /**
+     * Read-only N3 probe for the selected navigation app. It never changes the navigation surface;
+     * N3 presentation stays unavailable until a device result proves pixels and input.
+     */
+    private void runN3Probe() {
+        String pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
+        com.cbkii.ts18launcher.navigation.n3.N3Feasibility.Observation observation =
+                com.cbkii.ts18launcher.navigation.n3.N3DisplayProbe.run(this, pkg);
+        com.cbkii.ts18launcher.navigation.n3.N3Feasibility.Result result =
+                com.cbkii.ts18launcher.navigation.n3.N3Feasibility.classify(observation);
+        n3Result = result.name() + " · "
+                + com.cbkii.ts18launcher.navigation.n3.N3Feasibility.describe(result);
+        MediaEventTrace.record("n3", "probe", result.name() + " pkg=" + pkg
+                + " allowed=" + observation.startAllowed + " failure=" + observation.failure);
+        render();
     }
 
     private void addActionRow(int icon, String title, String value, View.OnClickListener listener) {
