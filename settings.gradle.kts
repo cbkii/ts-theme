@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "ts-theme"
 include(":launcher")
+// Optional, separately installed N3 display host. Never part of the launcher release.
+include(":n3host")

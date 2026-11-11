@@ -45,6 +45,10 @@ adb shell am instrument -w -e m2_browser 1 \
   com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation |
   tee "$proof/m2-browser-ipc.txt"
 grep -Fq 'PASS API29 M2 browser starter' "$proof/m2-browser-ipc.txt"
+adb shell am instrument -w -e n3_path 1 \
+  com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation |
+  tee "$proof/n3-path.txt"
+grep -Fq 'PASS API29 N3 private display' "$proof/n3-path.txt"
 adb shell am start -W -a android.settings.SETTINGS > "$proof/settings-start.txt"
 observe observe | tee "$proof/foreign-probe.txt"
 grep -Eq 'TS18_RESULT 1 OK code=FOREGROUND .*component=com.android.settings/' "$proof/foreign-probe.txt"
@@ -87,4 +91,4 @@ grep -Fq 'PASS untrusted cold-consent peer rejected' "$proof/untrusted-peer.txt"
 # Ephemeral fixture signing material and APKs are never uploaded as evidence.
 rm "$proof/fixture.jks" "$proof/cold-peer-unsigned.apk" "$proof/cold-peer.apk"
 adb shell logcat -d -v brief -s 'TS18Nav:*' > "$proof/probe-log.txt"
-printf 'PASS real API29 broker/dumpsys/HOME/foreign ownership/cold consent/untrusted peer/MediaSession IPC/M2 browser IPC\n'
+printf 'PASS real API29 broker/dumpsys/HOME/foreign ownership/cold consent/untrusted peer/MediaSession IPC/M2 browser IPC/N3 private display\n'

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      Granted only when the owner deliberately installs this APK as a privileged app with a
+      matching privapp-permissions entry. Without it, launches are limited to Activities that
+      allow embedding and the host reports that truthfully. No input-injection, system-alert,
+      network or storage permission is requested.
+    -->
+    <uses-permission
+        android:name="android.permission.ACTIVITY_EMBEDDING"
+        tools:ignore="ProtectedPermissions" />
+
+    <application
+        android:allowBackup="false"
+        android:label="TS18 N3 display host (experimental)">
+        <service
+            android:name=".DisplayHostService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.cbkii.ts18launcher.n3host.BIND_DISPLAY_HOST" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

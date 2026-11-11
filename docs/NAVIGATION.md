@@ -34,29 +34,86 @@ Activity on its private display unless that Activity opts in, so the probe will 
 `BLOCKED_NO_AUTHORITY`. If so, N3 needs a separately reviewed, disabled-by-default display host
 with caller validation; that host is not part of this build.
 
-### Input mapping and the optional host contract
+### N3 backend (experimental, default OFF)
 
-Two pure classes are in place for the presenter and host, and are unit-tested. Neither is reachable from any runtime path yet:
+To try N3, enable **Settings → Experimental · N3 display host → Enable experimental N3 navigation**,
+then open **Open N3 navigation screen**. N3 is never a HOME surface. While N3 holds a display,
+`NavigationFeatureFacade` refuses legacy automatic launch, so the two never compete for the
+navigator. Turning N3 off ends the session.
 
-- **`N3InputMapper`** maps presenter-view touches to display pixels.
-  - The display is aspect-fitted and centred inside the view minus its runtime insets.
-  - A gesture belongs to the display only if its first pointer goes down inside the fitted image. A gesture that starts in an inset or letterbox is dropped whole. Later moves are clamped.
-  - Up to 10 pointers keep their IDs.
-  - A malformed event (too many pointers, NaN or mismatched arrays) cancels an owned gesture once, so the navigator is never left pressed.
-- **`N3HostPolicy`** is the admission contract any future privileged display host must enforce. Its default configuration admits nothing. It checks:
-  - one package for the caller UID, the exact signing certificate and the exact Android user, all derived by the host, never from the request;
-  - an exact allowlisted navigator component (no package-only or implicit target);
-  - display ownership by that caller, with at most one display per caller;
-  - bounded size and DPI;
-  - in-bounds coordinates, at most 10 pointers and 240 events/s;
-  - on Binder death, every display the caller owned is released.
+**Display ownership.** `N3NavigationBackend` runs one `N3Session` through one display path:
 
-  It has no shell, intent, global input or wildcard path.
+- **Launcher private display (public API 29 path).** The launcher creates a private, non-default
+  virtual display (flags 0) at a fixed 1024×600. The first frames go to an off-screen reader, so
+  real pixels from the launched app are observed before the display is moved to the
+  `N3PresenterView` surface. Allocating the display or having a launch accepted is never reported
+  as rendering.
+- **Launching.** A user tap starts the exact launcher component with `setLaunchDisplayId`, after
+  `isActivityStartAllowedOnDisplay`. The launch is never replayed. Android admits another app's
+  Activity onto an app-owned private display only if that Activity allows embedding. Otherwise
+  the result is `BLOCKED_NO_AUTHORITY` for this caller; that is not a whole-ROM verdict.
 
-No host APK, service, permission or manifest entry exists. Static tests keep `INJECT_EVENTS`,
-trusted-display permissions and any runtime use of the policy out until a separately reviewed
-host is approved. Without one, N3 for a third-party navigator reports `BLOCKED_NO_AUTHORITY` /
-`HOST_UNAVAILABLE`.
+**Input.** `N3MotionConverter` transforms a copy of each MotionEvent, preserving pointer IDs,
+action and action index, down and event time, and history. A gesture belongs to the display only
+if its first pointer lands on the image. A finger dragged off the image is clamped. Malformed
+input cancels the gesture once. Delivery uses Android 10's display-owner input forwarder (the path
+ActivityView uses), and the platform checks display ownership. It is reached reflectively and
+fails closed: a refusal leaves N3 view-only and the status line says so. Back is a display-scoped
+key pair.
+
+**IME.** Private displays have no IME on Android 10, so the keyboard appears on the main screen.
+
+**Presenter lifecycle.**
+
+- Losing the surface (HOME stops, the screen is recreated) keeps the display and its content. A new
+  surface reattaches it without relaunching.
+- If the display is removed, the host dies or a deadline passes, the session fails and releases the
+  display. Only **Retry N3** tries again.
+- **Expand** shows the same display larger. It is not a hand-off of the task to the main screen.
+- **Open navigation normally** ends N3 and opens the app on the main screen (N0).
+- **Use legacy navigation** ends N3 and turns it off.
+
+**Status classifications:**
+
+| Classification | Meaning |
+|---|---|
+| `STATIC_POC_READY` | the software is in place; nothing has rendered yet |
+| `BLOCKED_NO_AUTHORITY` | this caller may not host the target |
+| `HOST_UNAVAILABLE` | the optional host is absent, disabled or refused the request |
+| `RENDER_OBSERVED_VIEW_ONLY` | pixels from the target arrived; no input path |
+| `RENDER_AND_INPUT_PATH_OBSERVED` | pixels arrived and an input path was granted |
+
+None of these is `DEVICE_FEASIBILITY_PASS`, which needs observed map pixels, touch, Back and a
+security review on the unit.
+
+### Optional display host (`n3host`, separate APK, inert by default)
+
+`n3host` builds an independent APK, `com.cbkii.ts18launcher.n3host`. It is never part of the
+launcher release and is not installed by any script here. It admits nothing unless it is built
+with an explicit identity:
+
+```
+-Pn3host.enabled=true -Pn3host.callerCertSha256=<launcher signer> -Pn3host.components=<pkg/cls,...>
+```
+
+Admission is `N3HostPolicy`, shared verbatim with the launcher from `shared/n3`:
+
+- The caller is derived from `Binder.getCallingUid()` and PackageManager: one package for the UID,
+  one exact signing certificate and the exact user.
+- The navigator component must be on the exact allowlist.
+- Display reservation is atomic, with one display per caller and a fresh lease per display.
+  Replayed or stale leases are rejected.
+- Geometry and coordinates are checked against what the host recorded, never caller-supplied
+  sizes. Pointers (at most 10) and actions are validated, and input is limited to 240 events/s.
+- Every display a caller owns is released when its client Binder dies.
+
+Protocol `IN3DisplayHost` v1 and `IN3DisplayHostClient` are AIDL in `shared/n3/aidl`. The host
+requests `ACTIVITY_EMBEDDING`, which only takes effect if the owner deliberately installs the APK as
+a privileged app with a matching allowlist entry. It requests no input-injection, overlay, network
+or settings permission and has no shell, intent or global-input API.
+
+Building the host grants nothing and does not authorise deploying it. The launcher only uses it
+when **Use optional display host** is switched on and the host is installed.
 
 ## Gates before N3 can be offered as a surface
 

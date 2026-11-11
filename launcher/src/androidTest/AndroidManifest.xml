@@ -12,5 +12,12 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+        <!-- Cooperative N3 target: a separate-UID Activity that allows embedding, used to prove the
+             launcher's private-display path end to end. Not a stand-in for third-party Maps. -->
+        <activity
+            android:name="com.cbkii.ts18launcher.navigation.n3.N3FixtureActivity"
+            android:allowEmbedded="true"
+            android:exported="true"
+            android:resizeableActivity="true" />
     </application>
 </manifest>
