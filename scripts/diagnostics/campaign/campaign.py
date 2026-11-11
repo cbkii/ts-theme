@@ -15,6 +15,7 @@ import selectors
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
@@ -36,6 +37,47 @@ PAIRS = (('HOME_START', 'HOME_VISIBLE'), ('HOME_START', 'HOME_TOUCH'),
          ('NAV_TAP', 'GNSS_FIX'), ('NAV_TAP', 'DRIVING_READY'))
 LIFECYCLES = ('cold_boot', 'reboot', 'acc_wake', 'home_resume', 'process_restart')
 SAFE_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,31}\Z')
+DEFAULT_STATE = (Path('/data/ts18-campaign') if os.getuid() == 0 and Path('/system/bin').exists()
+                 else Path.home() / '.local/state/ts18-campaign')
+
+
+def private_directory(path):
+    """Reject symlinks/foreign writable ancestors before any privileged child-file write."""
+    if not path.is_absolute() or '..' in path.parts:
+        raise ValueError('Private state path must be absolute without parent traversal')
+    trusted = {0, os.getuid()}
+    if Path('/system/bin').exists():
+        trusted.add(1000)  # Android system owns /data; shell/app-owned ancestors are not trusted by root.
+    current = Path('/')
+    for index, part in enumerate(path.parts[1:]):
+        current /= part
+        try:
+            current.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        info = current.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid not in trusted:
+            raise ValueError('Untrusted owner or symlink in private state path')
+        if info.st_mode & 0o022 and not (info.st_mode & stat.S_ISVTX and info.st_uid == 0):
+            raise ValueError('Writable ancestor in private state path')
+        if index == len(path.parts) - 2 and (info.st_uid != os.getuid() or info.st_mode & 0o077):
+            raise ValueError('Private state directory must be caller-owned with mode 0700')
+
+
+def private_open(path, mode):
+    flags = {'a+b': os.O_RDWR | os.O_CREAT | os.O_APPEND, 'r+b': os.O_RDWR,
+             'w': os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 'r': os.O_RDONLY}[mode]
+    # Do not truncate until ownership, type, mode and hard-link checks have passed.
+    flags &= ~os.O_TRUNC
+    fd = os.open(path, flags | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    info = os.fstat(fd)
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or info.st_mode & 0o077 or info.st_nlink != 1):
+        os.close(fd)
+        raise ValueError('Untrusted private state file')
+    if mode == 'w':
+        os.ftruncate(fd, 0)
+    return os.fdopen(fd, mode)
 
 
 def digest(path):
@@ -54,23 +96,28 @@ class MarkerChannel:
     """Private, file-locked markers: works without networking or Unix socket path limits."""
     def __init__(self, state):
         self.state = state
-        state.mkdir(parents=True, exist_ok=True)
-        self.owner = (state / 'collector.lock').open('a+b')
+        private_directory(state)
+        self.owner = private_open(state / 'collector.lock', 'a+b')
         try:
             fcntl.flock(self.owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             self.owner.close()
             raise ValueError('Another collector owns this campaign') from None
-        self.gate = (state / 'markers.lock').open('a+b')
+        self.gate = private_open(state / 'markers.lock', 'a+b')
         self.closed = False
         self.active = False
-        self.drain()  # Old queued markers never enter a new trial.
-        (state / 'active').unlink(missing_ok=True)
+        try:
+            self.drain(close=True)  # Clear old admission and queued markers under one lock.
+        except Exception:
+            self.gate.close()
+            self.owner.close()
+            raise
 
     def activate(self):
         fcntl.flock(self.gate, fcntl.LOCK_EX)
         try:
-            (self.state / 'active').write_text('1\n')
+            with private_open(self.state / 'active', 'w') as stream:
+                stream.write('1\n')
             self.active = True
         finally:
             fcntl.flock(self.gate, fcntl.LOCK_UN)
@@ -82,10 +129,18 @@ class MarkerChannel:
                 (self.state / 'active').unlink(missing_ok=True)
                 self.active = False
             queue = self.state / 'markers.queue'
-            lines = queue.read_text().splitlines() if queue.exists() else []
-            queue.write_text('')
+            if queue.exists() or queue.is_symlink():
+                with private_open(queue, 'r') as stream:
+                    retained = stream.read(65537)
+                    if len(retained) > 65536:
+                        raise ValueError('Marker queue exceeds byte limit; evidence remains unsealed')
+                    lines = retained.splitlines()
+            else:
+                lines = []
+            with private_open(queue, 'w'):
+                pass
             values = []
-            for line in lines[:1000]:
+            for line in lines:
                 try:
                     event, submitted = line.split('\t')
                     if event in EVENTS and submitted.isdecimal():
@@ -109,7 +164,8 @@ class MarkerChannel:
             raise ValueError('Unknown marker')
         submitted = time.monotonic_ns() // 1000000
         # Opening existing files only: a marker cannot create a fake active collector.
-        with (state / 'collector.lock').open('r+b') as owner, (state / 'markers.lock').open('r+b') as gate:
+        private_directory(state)
+        with private_open(state / 'collector.lock', 'r+b') as owner, private_open(state / 'markers.lock', 'r+b') as gate:
             try:
                 fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -117,13 +173,46 @@ class MarkerChannel:
             else:
                 raise ValueError('No active collector')
             fcntl.flock(gate, fcntl.LOCK_EX)
-            if not (state / 'active').exists():
+            try:
+                with private_open(state / 'active', 'r') as active:
+                    admitted = active.read(16) == '1\n'
+            except FileNotFoundError:
+                admitted = False
+            if not admitted:
                 raise ValueError('Collector is not accepting markers')
             queue = state / 'markers.queue'
-            if queue.stat().st_size > 65536:
+            value = f'{event}\t{submitted}\n'.encode()
+            if queue.stat().st_size + len(value) > 65536:
                 raise ValueError('Marker queue full')
-            with queue.open('a') as stream:
-                stream.write(f'{event}\t{submitted}\n')
+            with private_open(queue, 'a+b') as stream:
+                stream.write(value)
+
+
+class DeviceLock:
+    """One capture per host/target, across campaign names and --state-root choices."""
+    def __init__(self, transport, serial):
+        directory = DEFAULT_STATE / 'device-locks'
+        private_directory(directory)
+        key = hashlib.sha256((transport + ':' + (serial or 'local')).encode()).hexdigest()
+        self.file = private_open(directory / (key + '.lock'), 'a+b')
+        try:
+            fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self.file.close()
+            raise ValueError('Another capture owns this host/target') from None
+        with private_open(directory / (key + '.target'), 'a+b') as target:
+            target.seek(0)
+            value = target.read(64).decode('ascii')
+            if not value:
+                value = uuid.uuid4().hex
+                target.write(value.encode())
+            if not re.fullmatch('[a-f0-9]{32}', value):
+                self.file.close()
+                raise ValueError('Invalid private target identity')
+            self.target_id = value
+
+    def close(self):
+        self.file.close()
 
 
 def redact(text):
@@ -149,8 +238,11 @@ class Result:
         self.elapsed_ms, self.truncated = elapsed_ms, truncated
 
     def metadata(self):
-        return dict(status=self.status, exit_code=self.rc, elapsed_ms=self.elapsed_ms,
-                    truncated=self.truncated)
+        result = dict(status=self.status, exit_code=self.rc, elapsed_ms=self.elapsed_ms,
+                      truncated=self.truncated)
+        if hasattr(self, 'native_owner'):
+            result.update(native_owner=self.native_owner, native_completions=self.native_completions)
+        return result
 
 
 def terminate_group(process):
@@ -174,7 +266,7 @@ def terminate_group(process):
         return
 
 
-def bounded(argv, seconds=6, limit=512 * 1024, cancel=None, line_callback=None, env=None):
+def bounded(argv, seconds=6, limit=512 * 1024, cancel=None, line_callback=None, env=None, before_stop=None):
     """Drain without unbounded RAM/disk; deadline also covers orphaned inherited pipes."""
     start = time.monotonic()
     try:
@@ -217,6 +309,8 @@ def bounded(argv, seconds=6, limit=512 * 1024, cancel=None, line_callback=None, 
             except subprocess.TimeoutExpired:
                 status = 'TIMEOUT'
     finally:
+        if before_stop is not None and status in ('INTERRUPTED', 'TIMEOUT'):
+            before_stop()
         terminate_group(process)
         selector.close()
         process.stdout.close()
@@ -240,15 +334,19 @@ class Device:
             return self.adb + ['exec-out', '/system/bin/sh', '-c', shlex.quote(command)]
         return ['/system/bin/sh', '-c', command]
 
-    def read(self, args, seconds=6, limit=512 * 1024):
+    def read(self, args, seconds=6, limit=512 * 1024, deadline=None):
         # Native deadline also bounds a target-side process if ADB disconnects.
+        allowance = seconds + 2 if deadline is None else min(seconds + 2, deadline - time.monotonic())
+        if allowance <= 0:
+            return Result('BLOCKED', output=b'Phase deadline exhausted')
+        native_seconds = min(seconds, max(0.05, allowance - 1))
         command = 'PATH=' + ANDROID_PATH + ' exec /system/bin/toybox timeout -s KILL '
-        command += str(seconds) + ' ' + shlex.join(args)
-        return bounded(self.argv(command), seconds + 2, limit, env=self.env)
+        command += str(native_seconds) + ' ' + shlex.join(args)
+        return bounded(self.argv(command), allowance, limit, env=self.env)
 
-    def clock(self):
+    def clock(self, deadline=None):
         before = time.monotonic_ns() // 1000000
-        result = self.read(['/system/bin/cat', '/proc/uptime'], seconds=2, limit=256)
+        result = self.read(['/system/bin/cat', '/proc/uptime'], seconds=2, limit=256, deadline=deadline)
         after = time.monotonic_ns() // 1000000
         try:
             if result.status != 'PASS':
@@ -273,14 +371,57 @@ class Device:
         if cancel.is_set():
             return Result('NOT_RUN'), 'PASS'
         lease = []
+        completions = []
+        cleanup_proof = []
 
         def observe(line):
             match = re.fullmatch(r'TS18_OWNER (\d+) (\d+)', line)
             if match and not lease:
                 lease.extend(map(int, match.groups()))
+            completed = re.fullmatch(r'TS18_DONE (-?\d+)', line)
+            if completed:
+                completions.append(int(completed.group(1)))
+
+        def cleanup_native():
+            if not lease:
+                cleanup_proof.append('BLOCKED')
+                return
+            pid, ticks = lease
+            check = f'''set -f
+export LC_ALL=C
+if ids=$(/system/bin/sed 's/.*) //' /proc/{pid}/stat 2>/dev/null); then
+  set -- $ids
+  [ "$3 $4" = "{pid} {pid}" ] || exit 5
+  shift 19
+  [ "$1" = "{ticks}" ] || exit 6
+  /system/bin/kill -INT -- -{pid} || exit 7
+  /system/bin/sleep 1
+  if ids=$(/system/bin/sed 's/.*) //' /proc/{pid}/stat 2>/dev/null); then
+    set -- $ids
+    [ "$3 $4" = "{pid} {pid}" ] || exit 5
+    shift 19
+    [ "$1" = "{ticks}" ] || exit 6
+    /system/bin/kill -KILL -- -{pid} || exit 7
+  fi
+fi
+# A vanished leader alone is insufficient: require ESRCH for the whole owned group.
+for attempt in 1 2 3 4 5; do
+  if error=$(/system/bin/kill -0 -- -{pid} 2>&1); then
+    /system/bin/sleep 0.2
+  else
+    case "$error" in *'No such process'*) printf 'TS18_STOPPED\\n'; exit 0 ;; esac
+    exit 8
+  fi
+done
+exit 9
+'''
+            stopped = bounded(self.argv(check), 5, 2048, env=self.env)
+            cleanup_proof.append('PASS' if stopped.status == 'PASS'
+                                 and b'TS18_STOPPED' in stopped.output else 'BLOCKED')
 
         body = '''
 set -f
+umask 077
 # Keep the registered leader available for identity-checked cleanup after interruption.
 trap ':' INT TERM HUP
 ids=$(/system/bin/sed 's/.*) //' /proc/$$/stat) || exit 70
@@ -294,50 +435,23 @@ printf 'TS18_OWNER %s %s\n' "$$" "$1"
         # timeout creates a second group which would escape cancellation of this lease.
         body += '/system/bin/toybox timeout --foreground -s INT -k 2 ' + str(seconds) + ' ' + shlex.join(args)
         body += '\nrc=$?\nprintf "TS18_DONE %s\\n" "$rc"\n/system/bin/sleep 2\nexit "$rc"\n'
-        command = 'PATH=' + ANDROID_PATH + ' exec /system/bin/toybox setsid /system/bin/sh -c '
+        command = 'PATH=' + ANDROID_PATH + ' exec /system/bin/toybox setsid -w /system/bin/sh -c '
         command += shlex.quote(body)
-        result = bounded(self.argv(command), seconds + 5, limit, cancel, observe, self.env)
-        cleanup = 'PASS'
-        if result.status in ('TIMEOUT', 'INTERRUPTED'):
-            cleanup = 'BLOCKED'
-            if len(lease) == 2:
-                pid, ticks = lease
-                # Validate the held leader's start time and session/group before either signal.
-                check = f'''set -f
-if ! ids=$(/system/bin/sed 's/.*) //' /proc/{pid}/stat); then
-  /system/bin/kill -0 -- -{pid} 2>/dev/null && exit 8
-  exit 0
-fi
-set -- $ids
-[ "$3 $4" = "{pid} {pid}" ] || exit 5
-shift 19
-[ "$1" = "{ticks}" ] || exit 6
-/system/bin/kill -INT -- -{pid} || exit 7
-/system/bin/sleep 1
-# The same held group leader must still be present before force cleanup.
-if ! ids=$(/system/bin/sed 's/.*) //' /proc/{pid}/stat); then
-  /system/bin/kill -0 -- -{pid} 2>/dev/null && exit 8
-  exit 0
-fi
-set -- $ids
-[ "$3 $4" = "{pid} {pid}" ] || exit 5
-shift 19
-[ "$1" = "{ticks}" ] || exit 6
-/system/bin/kill -KILL -- -{pid}
-'''
-                stopped = bounded(self.argv(check), 4, 1024, env=self.env)
-                cleanup = stopped.status
-        if not lease:
-            # The trusted wrapper emits ownership before launching the producer. A terminal
-            # setup refusal is a BLOCKED prerequisite, with no producer to clean up.
-            cleanup = 'PASS' if result.status == 'BLOCKED' else 'BLOCKED'
-        text = result.output.decode('utf-8', 'replace')
-        done = re.findall(r'^TS18_DONE (-?\d+)$', text, re.MULTILINE)
-        expected_log_stop = (args[0] == '/system/bin/logcat' and done and int(done[-1]) == 124)
+        result = bounded(self.argv(command), seconds + 5, limit, cancel, observe, self.env,
+                         before_stop=cleanup_native)
+        if not cleanup_proof:
+            cleanup_native()
+        cleanup = cleanup_proof[-1]
+        result.native_owner, result.native_completions = lease, completions
+        expected_log_stop = (args[0] == '/system/bin/logcat' and completions
+                             and completions[-1] == 124 and result.elapsed_ms >= seconds * 1000)
         if expected_log_stop and result.status == 'BLOCKED':
             result.status = 'PASS'
-        if result.status == 'PASS' and (not done or (int(done[-1]) != 0 and not expected_log_stop)):
+        if result.status == 'PASS' and (not completions or (completions[-1] != 0 and not expected_log_stop)):
             result.status = 'BLOCKED'
+        # Retain protocol in metadata, not in the selected application event stream.
+        result.output = re.sub(rb'^TS18_(?:OWNER \d+ \d+|DONE -?\d+)\n', b'',
+                               result.output, flags=re.MULTILINE)
         return result, cleanup
 
     def pull(self, remote, local):
@@ -358,7 +472,7 @@ def snapshot(device, root, phase):
         'boot_completed': ['/system/bin/getprop', 'sys.boot_completed'],
         'build': ['/system/bin/getprop', 'ro.build.fingerprint'],
         'history': ['/system/bin/logcat', '-d', '-t', '1200', '-v', 'monotonic', '-s',
-                    'TS18Media:I', 'TS18Nav:I', 'TS18Launcher:I', '*:S'],
+                    'TS18Media:I', 'TS18Nav:I', 'TS18Launcher:I', 'InCarCompactStartup:I', '*:S'],
         'media': ['/system/bin/dumpsys', 'media_session'],
         'audio': ['/system/bin/dumpsys', 'audio'],
         'tasks': ['/system/bin/dumpsys', 'activity', 'activities'],
@@ -375,7 +489,7 @@ def snapshot(device, root, phase):
     until = time.monotonic() + 30
     for name, args in probes.items():
         remaining = int(until - time.monotonic())
-        result = (device.read(args, seconds=min(6, remaining)) if remaining > 0 else
+        result = (device.read(args, seconds=min(6, remaining), deadline=until) if remaining > 0 else
                   Result('BLOCKED', output=b'Snapshot budget exhausted; not a target failure'))
         text = result.output.decode('utf-8', 'replace')
         # Some vendor dumpsys commands print a denial but return zero.
@@ -393,38 +507,47 @@ def snapshot(device, root, phase):
 
 def package_identities(device):
     """Hash the bytes visible to the actual PM caller; unreadable identity stays UNKNOWN."""
-    user_result = device.read(['/system/bin/cmd', 'activity', 'get-current-user'], seconds=2, limit=128)
-    user = user_result.output.decode('ascii', 'replace').strip()
-    if user_result.status != 'PASS' or not user.isdecimal():
+    until = time.monotonic() + 30
+    user = ''
+    for command in (['/system/bin/cmd', 'activity', 'get-current-user'],
+                    ['/system/bin/am', 'get-current-user']):
+        result = device.read(command, seconds=2, limit=128, deadline=until)
+        value = result.output.decode('ascii', 'replace').strip()
+        if result.status == 'PASS' and value.isdecimal():
+            user = value
+            break
+    if not user:
         return dict(android_user=None, status='BLOCKED', packages={})
     identities = {}
-    until = time.monotonic() + 30
     for package in PACKAGES:
         info = dict(status='BLOCKED', apk_sha256=[])
         identities[package] = info
         if time.monotonic() >= until:
             continue
-        paths = device.read(['/system/bin/pm', 'path', '--user', user, package], seconds=2, limit=4096)
+        paths = device.read(['/system/bin/pm', 'path', '--user', user, package], seconds=2, limit=4096,
+                            deadline=until)
         if paths.status != 'PASS' or paths.truncated:
             continue
         values = paths.output.decode('utf-8', 'replace').splitlines()
         if not values or len(values) > 8 or any(not v.startswith('package:/') for v in values):
             continue
-        hashes = device.read(['/system/bin/sha256sum'] + [v[8:] for v in values], seconds=2, limit=4096)
+        hashes = device.read(['/system/bin/sha256sum'] + [v[8:] for v in values], seconds=2, limit=4096,
+                             deadline=until)
         found = re.findall(r'^([a-f0-9]{64})  ', hashes.output.decode('utf-8', 'replace'), re.MULTILINE)
         if hashes.status == 'PASS' and len(found) == len(values) and not hashes.truncated:
             info.update(status='PASS', apk_sha256=sorted(found))
     return dict(android_user=int(user), status='PASS', packages=identities)
 
 
-def record_segments(device, root, duration, cancel, enabled, segment_seconds=150):
+def record_segments(device, root, duration, cancel, enabled, segment_seconds=150, deadline=None):
     records = []
     if not enabled:
         return [dict(status='NOT_RUN', reason='operator selected --no-video')]
     started = time.monotonic()
+    deadline = started + duration if deadline is None else deadline
     previous_end = None
     while not cancel.is_set():
-        remaining = duration - (time.monotonic() - started)
+        remaining = deadline - time.monotonic()
         if remaining < 1:
             break
         seconds = max(1, min(segment_seconds, int(remaining)))
@@ -451,13 +574,19 @@ def record_segments(device, root, duration, cancel, enabled, segment_seconds=150
                 info['remote_cleanup'] = device.read(['/system/bin/rm', '-f', remote]).metadata()
                 if info['pull']['status'] != 'PASS':
                     info['status'] = 'BLOCKED'
+                if info['remote_cleanup']['status'] != 'PASS':
+                    info.update(status='BLOCKED', cleanup='BLOCKED',
+                                reason='Private remote recording cleanup failed')
             else:
                 info['pull'] = dict(status='BLOCKED', reason='producer termination unproven')
-        if local.stat().st_size:
+        if cleanup == 'PASS' and info.get('cleanup') == 'PASS' and local.stat().st_size:
             info.update(size_bytes=local.stat().st_size, sha256=digest(local))
-        else:
+        elif not local.stat().st_size:
             local.unlink()
             info['status'] = 'BLOCKED'
+        if device.transport == 'adb' and info.get('cleanup') != 'PASS':
+            info['remote_private_path'] = remote
+        write_json(root / (name + '.json'), info)
         records.append(info)
         previous_end = time.monotonic()
         # An unavailable recorder is one failed prerequisite, never 300 repeated starts.
@@ -496,7 +625,7 @@ def verify(archive):
             raise ValueError('duplicate members or file budget exceeded')
         for item in items:
             name = item.filename
-            if (name.startswith('/') or '\\' in name or '\n' in name or '\r' in name
+            if (not re.fullmatch(r'[A-Za-z0-9._/-]+', name) or name.startswith('/') or '\\' in name
                     or any(part in ('', '.', '..') for part in name.split('/'))
                     or item.is_dir() or item.external_attr >> 16 & 0o170000 not in (0, 0o100000)):
                 raise ValueError('unsafe member')
@@ -524,43 +653,77 @@ def verify(archive):
             if h.hexdigest() != expected:
                 raise ValueError('hash mismatch: ' + name)
         metadata = json.loads(zipped.read('trial.json'))
-        if metadata.get('schema') != SCHEMA or not metadata.get('writers_closed'):
+        markers = json.loads(zipped.read('markers.json'))
+        if (not isinstance(metadata, dict) or type(metadata.get('schema')) is not int
+                or metadata.get('schema') != SCHEMA or metadata.get('writers_closed') is not True):
             raise ValueError('unsealed or incompatible trial')
-        return metadata, json.loads(zipped.read('markers.json'))
+        if (not isinstance(metadata.get('campaign'), str) or not SAFE_NAME.fullmatch(metadata['campaign'])
+                or type(metadata.get('trial')) is not int or not 1 <= metadata['trial'] <= 5
+                or metadata.get('operator_reported_lifecycle') not in LIFECYCLES
+                or metadata.get('workload') not in ('idle', 'music', 'radio', 'navigation', 'combined')
+                or not isinstance(metadata.get('boot_id'), str)
+                or metadata.get('target_continuity') not in ('PASS', 'BLOCKED')):
+            raise ValueError('invalid trial metadata')
+        for key in ('trial_id', 'target_id'):
+            if key in metadata and (not isinstance(metadata[key], str)
+                                    or not re.fullmatch('[a-f0-9]{32}', metadata[key])):
+                raise ValueError('invalid trial or target identity')
+        if not isinstance(markers, list) or len(markers) > 10000:
+            raise ValueError('invalid marker list')
+        for marker in markers:
+            if (not isinstance(marker, dict) or marker.get('event') not in EVENTS
+                    or (marker.get('device_uptime_ms') is not None and
+                        (type(marker['device_uptime_ms']) is not int or marker['device_uptime_ms'] < 0))
+                    or type(marker.get('uncertainty_ms')) is not int or marker['uncertainty_ms'] < 0
+                    or type(marker.get('submission_delay_ms', 0)) is not int
+                    or marker.get('submission_delay_ms', 0) < 0):
+                raise ValueError('invalid marker observation')
+        return metadata, markers
 
 
 def export(archive, output, campaign, trial):
     output.mkdir(parents=True, exist_ok=True)
-    destination = output / f'{campaign}-trial-{trial:02d}.zip'
-    sidecar_path = destination.with_suffix('.zip.sha256')
-    if sidecar_path.exists() or sidecar_path.is_symlink():
-        raise ValueError('trial checksum already exists; choose another trial/campaign')
-    # Exclusive create prevents accidental replacement of an earlier physical trial.
+    group = output / f'{campaign}-trial-{trial:02d}'
+    if group.exists() or group.is_symlink():
+        raise ValueError('trial already exported; choose another trial/campaign')
+    # Stage both files, then atomically publish the complete directory on this filesystem.
+    # A power loss during copying cannot reserve the final trial name with a partial ZIP.
+    staging = Path(tempfile.mkdtemp(prefix='.ts18-export-', dir=output))
+    name = f'{campaign}-trial-{trial:02d}.zip'
     try:
+        destination = staging / name
         with destination.open('xb') as stream, archive.open('rb') as source:
             shutil.copyfileobj(source, stream)
         if digest(destination) != digest(archive):
             raise ValueError('export hash mismatch')
         verify(destination)
-        with sidecar_path.open('x') as sidecar:
+        with destination.with_suffix('.zip.sha256').open('x') as sidecar:
             sidecar.write(f'{digest(destination)}  {destination.name}\n')
-    except FileExistsError:
-        raise ValueError('trial already exported; choose another trial/campaign') from None
-    except Exception:
-        destination.unlink(missing_ok=True)
-        raise
-    return destination
+        if group.exists() or group.is_symlink():
+            raise ValueError('trial was exported concurrently')
+        staging.rename(group)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+    return group / name
 
 
 def capture(args):
     os.umask(0o077)
     state = args.state_root / args.campaign
-    channel = MarkerChannel(state)
+    device_lock = DeviceLock(args.transport, args.serial)
+    try:
+        channel = MarkerChannel(state)
+    except Exception:
+        device_lock.close()
+        raise
     stop = threading.Event()
+    producer_stop = threading.Event()
     previous = {}
 
     def interrupted(_signum, _frame):
         stop.set()
+        producer_stop.set()
 
     for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         previous[signum] = signal.signal(signum, interrupted)
@@ -576,15 +739,19 @@ def capture(args):
         if shutil.disk_usage(private).free < 256 * 1024 * 1024:
             raise ValueError('BLOCKED: less than 256 MiB free private storage')
         identities = package_identities(device)
+        fingerprint = device.read(['/system/bin/getprop', 'ro.build.fingerprint'], seconds=2, limit=1024)
+        build = fingerprint.output.decode('utf-8', 'replace').strip() if fingerprint.status == 'PASS' else None
         snapshot(device, private, 'before')
         started = device.clock()
         host_start = time.monotonic()
+        phase_deadline = host_start + args.duration
         channel.activate()
         print(f'Capturing {args.duration}s; marker channel ready for {args.campaign}.', flush=True)
 
         def video():
             try:
-                records.extend(record_segments(device, private, args.duration, stop, not args.no_video))
+                records.extend(record_segments(device, private, args.duration, producer_stop, not args.no_video,
+                                               deadline=phase_deadline))
             except Exception as error:
                 records.append(dict(status='BLOCKED', cleanup='BLOCKED',
                                     reason=type(error).__name__))
@@ -594,7 +761,9 @@ def capture(args):
             try:
                 result, cleanup = device.worker(['/system/bin/logcat', '-T', '1', '-v', 'monotonic',
                                                 '-s', 'TS18Media:I', 'TS18Nav:I', 'TS18Launcher:I',
-                                                '*:S'], args.duration, stop, 4 * 1024 * 1024)
+                                                'InCarCompactStartup:I', '*:S'],
+                                                max(1, int(phase_deadline - time.monotonic())),
+                                                producer_stop, 4 * 1024 * 1024)
                 (private / 'events.log').write_text(redact(result.output.decode('utf-8', 'replace')))
                 logs.append(dict(**result.metadata(), cleanup=cleanup, role='OPTIONAL'))
             except Exception as error:
@@ -606,7 +775,7 @@ def capture(args):
             worker.start()
         def accept(values):
             for name, submitted in values:
-                observation = device.clock()
+                observation = device.clock(deadline=phase_deadline)
                 observation.update(event=name, source='manual_operator',
                                    operator_submitted_host_ms=submitted,
                                    submission_delay_ms=max(0, observation.get('host_after_ms', submitted) - submitted),
@@ -617,23 +786,28 @@ def capture(args):
             accept(channel.drain())
             stop.wait(0.2)
         interrupted_run = stop.is_set()
+        producer_stop.set()
         # Closing admission precedes joining every writer and computing any hash.
         accept(channel.drain(close=True))
         for worker in workers:
             worker.join(args.duration + 10)
         if any(w.is_alive() for w in workers):
             raise ValueError('BLOCKED: collector worker did not terminate; evidence unsealed')
+        write_json(private / 'markers.json', markers)
+        write_json(private / 'segments.json', records)
         cleanup_ok = all(r.get('cleanup', 'PASS') == 'PASS' for r in records + logs)
         if not cleanup_ok:
             raise ValueError('BLOCKED: target producer cleanup unproven; evidence unsealed')
         end = device.clock()
         end_boot = device.boot()
+        end_identities = package_identities(device) if not interrupted_run else {}
+        end_fingerprint = device.read(['/system/bin/getprop', 'ro.build.fingerprint'], seconds=2, limit=1024)
+        end_build = (end_fingerprint.output.decode('utf-8', 'replace').strip()
+                     if end_fingerprint.status == 'PASS' else None)
         if not interrupted_run:
             snapshot(device, private, 'after')
-        write_json(private / 'markers.json', markers)
-        write_json(private / 'segments.json', records)
         write_json(private / 'trial.json', dict(
-            schema=SCHEMA, campaign=args.campaign, trial=args.trial,
+            schema=SCHEMA, trial_id=uuid.uuid4().hex, campaign=args.campaign, trial=args.trial,
             operator_reported_lifecycle=args.lifecycle, workload=args.workload,
             boot_id=boot, end_boot_id=end_boot, clock_anchor=anchor, start=started, end=end,
             target_continuity='PASS' if end_boot == boot else 'BLOCKED',
@@ -641,6 +815,10 @@ def capture(args):
             toolkit_sha256=digest(Path(__file__)), capture_duration_seconds=args.duration,
             interrupted=interrupted_run, writers_closed=True, logs=logs,
             installed_identity=identities,
+            end_installed_identity=end_identities,
+            identity_stability='PASS' if identities == end_identities and identities else 'BLOCKED',
+            target_id=device_lock.target_id, android_build=build,
+            build_stability='PASS' if build and build == end_build else 'BLOCKED',
             physical_qualification='NOT_RUN', video_privacy='REVIEW_BEFORE_SHARING',
             timing='manual observations; device clock round-trip uncertainty recorded'))
         archive = seal(private)
@@ -652,27 +830,47 @@ def capture(args):
         return 130 if interrupted_run else 0
     finally:
         stop.set()
+        producer_stop.set()
         for worker in workers:
             worker.join(args.duration + 10)
         channel.close()
+        device_lock.close()
         for signum, handler in previous.items():
             signal.signal(signum, handler)
         print(f'Private evidence retained: {private}', flush=True)
 
 
 def compare(paths):
-    rows, groups = [], {}
+    rows, groups, seen = [], {}, set()
     for path in paths:
         metadata, markers = verify(path)
+        trial_id = metadata.get('trial_id') or digest(path)
+        if trial_id in seen:
+            continue
+        seen.add(trial_id)
         row = dict(archive=path.name, campaign=metadata['campaign'], trial=metadata['trial'],
                    boot_id=metadata['boot_id'], lifecycle=metadata['operator_reported_lifecycle'],
                    workload=metadata['workload'], target_continuity=metadata['target_continuity'],
                    metrics_ms={}, missing=[], observations=markers)
         identities = metadata.get('installed_identity', {})
+        if not isinstance(identities, dict):
+            identities = {}
         packages = identities.get('packages', {})
+        if not isinstance(packages, dict):
+            packages = {}
         row['installed_identity'] = identities
+        row['target_id'], row['android_build'] = metadata.get('target_id'), metadata.get('android_build')
         row['comparison_identity'] = ('VERIFIED' if packages and all(
-            item.get('status') == 'PASS' for item in packages.values()) else 'UNKNOWN')
+            isinstance(item, dict) and item.get('status') == 'PASS'
+            and isinstance(item.get('apk_sha256'), list) and 1 <= len(item['apk_sha256']) <= 8
+            and all(isinstance(sha, str) and re.fullmatch('[a-f0-9]{64}', sha) for sha in item['apk_sha256'])
+            for item in packages.values())
+            and type(identities.get('android_user')) is int
+            and identities == metadata.get('end_installed_identity')
+            and metadata['target_continuity'] == 'PASS'
+            and metadata.get('identity_stability') == 'PASS' and metadata.get('build_stability') == 'PASS'
+            and isinstance(metadata.get('android_build'), str) and metadata['android_build']
+            and metadata.get('target_id') else 'UNKNOWN')
         # Repeated actions are paired in order. Never overwrite occurrences or reuse one start.
         for begin, end in PAIRS:
             waiting = []
@@ -696,10 +894,15 @@ def compare(paths):
                 row['missing'].append(key)
         rows.append(row)
         # Never imply comparability between unverified/mixed candidate bytes.
-        identity_key = json.dumps(identities, sort_keys=True) if row['comparison_identity'] == 'VERIFIED' else str(path)
+        identity_key = (json.dumps([identities, metadata['target_id'], metadata['android_build']], sort_keys=True)
+                        if row['comparison_identity'] == 'VERIFIED' else str(path))
         groups.setdefault((row['lifecycle'], row['workload'], identity_key), []).append(row)
     return dict(schema=SCHEMA, trials=rows, sample_count=len(rows),
-                comparable_groups=[dict(lifecycle=k[0], workload=k[1], sample_count=len(v))
+                comparable_groups=[dict(lifecycle=k[0], workload=k[1], sample_count=len(v),
+                                        identity=(dict(installed_identity=v[0]['installed_identity'],
+                                                       target_id=v[0]['target_id'], android_build=v[0]['android_build'])
+                                                  if v[0]['comparison_identity'] == 'VERIFIED' else 'UNKNOWN'),
+                                        trials=[dict(archive=r['archive'], trial=r['trial']) for r in v])
                                    for k, v in groups.items()],
                 qualification='NOT_RUN: observations require human evidence review',
                 statistics='Individual samples only; no inferred p95 or GNSS/audio success')
@@ -721,7 +924,7 @@ def main(argv=None):
     cap.add_argument('--out', type=Path, default=Path('/storage/emulated/0/Download/ts-theme/campaigns'))
     for target in (cap, sub.add_parser('mark')):
         target.add_argument('--state-root', type=Path,
-                            default=Path.home() / '.local/state/ts18-campaign')
+                            default=DEFAULT_STATE)
     mark = sub.choices['mark']
     mark.add_argument('--campaign', required=True)
     mark.add_argument('event', choices=EVENTS)

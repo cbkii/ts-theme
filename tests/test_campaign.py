@@ -66,6 +66,18 @@ class RunnerTest(unittest.TestCase):
 
 
 class DeviceTest(unittest.TestCase):
+    def test_adb_shell_boundary_keeps_metacharacters_as_literal_data(self):
+        import shlex
+        with tempfile.TemporaryDirectory() as temp:
+            sentinel = Path(temp) / 'must-not-exist'
+            literal = f'track; touch {sentinel}; $(printf expanded) `printf expanded`'
+            argv = campaign.Device('adb', 'one').argv(shlex.join(['/bin/echo', literal]))
+            remote = ' '.join(argv[4:]).replace('/system/bin/sh', '/bin/sh', 1)
+            result = campaign.bounded(['/bin/sh', '-c', remote])
+            self.assertEqual('PASS', result.status)
+            self.assertEqual(literal, result.output.decode().strip())
+            self.assertFalse(sentinel.exists())
+
     def test_transport_is_explicit_and_native_loader_environment_is_clean(self):
         with mock.patch.dict(os.environ, {'LD_PRELOAD': 'termux-exec.so', 'LD_LIBRARY_PATH': '/termux'}):
             device = campaign.Device('adb', 'exact-device')
@@ -86,18 +98,21 @@ class DeviceTest(unittest.TestCase):
         device = campaign.Device('local')
 
         def run(_args, *_positional, **_kwargs):
+            if len(_positional) < 4:
+                return campaign.Result('PASS', 0, b'TS18_STOPPED\n')
             _positional[3]('TS18_OWNER 123 456')
-            return campaign.Result('BLOCKED', 124, b'TS18_DONE 124\n')
+            _positional[3]('TS18_DONE 124')
+            return campaign.Result('BLOCKED', 124, b'TS18_DONE 124\n', elapsed_ms=30000)
 
         with mock.patch.object(campaign, 'bounded', side_effect=run):
             result, cleanup = device.worker(['/system/bin/logcat'], 30, threading.Event())
         self.assertEqual(('PASS', 'PASS'), (result.status, cleanup))
 
-    def test_setup_refusal_seals_blocked_evidence_without_claiming_a_producer(self):
+    def test_unowned_setup_or_transport_refusal_cannot_prove_cleanup(self):
         device = campaign.Device('local')
         with mock.patch.object(campaign, 'bounded', return_value=campaign.Result('BLOCKED', 127)):
             result, cleanup = device.worker(['/system/bin/screenrecord'], 30, threading.Event())
-        self.assertEqual(('BLOCKED', 'PASS'), (result.status, cleanup))
+        self.assertEqual(('BLOCKED', 'BLOCKED'), (result.status, cleanup))
 
     def test_interrupted_worker_without_identity_cannot_claim_cleanup(self):
         device = campaign.Device('local')
@@ -167,8 +182,9 @@ class NativeWorkerTest(unittest.TestCase):
         result, cleanup = self.device().worker(
             ['/system/bin/sh', '-c', 'printf "native complete\\n"; exit 7'], 1, threading.Event())
         self.assertEqual(('BLOCKED', 'PASS'), (result.status, cleanup))
-        self.assertIn(b'TS18_OWNER', result.output)
-        self.assertIn(b'TS18_DONE 7', result.output)
+        self.assertEqual(2, len(result.native_owner))
+        self.assertEqual([7], result.native_completions)
+        self.assertNotIn(b'TS18_DONE', result.output)
         self.assertIn(b'native complete', result.output)
 
     def test_native_worker_interrupts_only_its_owned_group(self):
@@ -183,7 +199,7 @@ class NativeWorkerTest(unittest.TestCase):
         self.assertEqual('INTERRUPTED', result.status)
         self.assertEqual('PASS', cleanup)
         self.assertIn(b'partial', result.output)
-        owner = int(re.search(rb'TS18_OWNER (\d+)', result.output).group(1))
+        owner = result.native_owner[0]
         live = []
         for entry in Path('/proc').iterdir():
             if not entry.name.isdecimal():
@@ -198,8 +214,26 @@ class NativeWorkerTest(unittest.TestCase):
 
 
 class RecorderTest(unittest.TestCase):
+    def test_failed_remote_removal_blocks_sealing_and_preserves_recovery_path(self):
+        device = mock.Mock(transport='adb')
+        device.clock.return_value = dict(device_uptime_ms=123, uncertainty_ms=1)
+        device.worker.return_value = campaign.Result('PASS', 0), 'PASS'
+        device.read.return_value = campaign.Result('BLOCKED', 1)
+
+        def pull(_remote, path):
+            path.write_bytes(b'fixture')
+            return campaign.Result('PASS', 0)
+
+        device.pull.side_effect = pull
+        with tempfile.TemporaryDirectory() as temp:
+            records = campaign.record_segments(device, Path(temp), 30, threading.Event(), True)
+        self.assertEqual('BLOCKED', records[0]['cleanup'])
+        self.assertNotIn('sha256', records[0])
+        self.assertTrue(records[0]['remote_private_path'].startswith('/data/local/tmp/ts18-campaign-'))
+
     def test_no_recorder_is_one_blocked_prerequisite_not_repeated_attempts(self):
         device = mock.Mock(transport='local')
+        device.clock.return_value = dict(device_uptime_ms=123, uncertainty_ms=1)
         device.worker.return_value = (campaign.Result('BLOCKED', 1, b'recorder unavailable'), 'PASS')
         with tempfile.TemporaryDirectory() as temp:
             result = campaign.record_segments(device, Path(temp), 300, threading.Event(), True)
@@ -233,6 +267,67 @@ class RecorderTest(unittest.TestCase):
 
 
 class IntegrityTest(unittest.TestCase):
+    def test_truthy_unclosed_flag_and_malformed_markers_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(ValueError, 'unsealed'):
+                self.make_trial(Path(temp) / 'truthy', writers_closed='yes')
+            for index, markers in enumerate(([1], [{'event': 'MUSIC_TAP', 'uncertainty_ms': 'bad'}])):
+                with self.assertRaisesRegex(ValueError, 'marker'):
+                    self.make_trial(Path(temp) / str(index), markers)
+
+    def test_duplicate_archive_copies_are_one_sample(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = self.make_trial(Path(temp) / 'private')
+            copied = Path(temp) / 'copy.zip'
+            shutil.copyfile(archive, copied)
+            report = campaign.compare([archive, archive, copied])
+            self.assertEqual(1, report['sample_count'])
+
+    def test_groups_retain_target_identity_and_membership_and_reject_mid_trial_change(self):
+        identities = dict(status='PASS', android_user=0,
+                          packages={'com.tw.media': dict(status='PASS', apk_sha256=['a' * 64])})
+        with tempfile.TemporaryDirectory() as temp:
+            paths = []
+            for index, target in enumerate(('a' * 32, 'b' * 32, 'a' * 32)):
+                paths.append(self.make_trial(Path(temp) / str(index), trial=index + 1,
+                    installed_identity=identities, end_installed_identity=identities,
+                    identity_stability='PASS' if index < 2 else 'BLOCKED',
+                    target_id=target, android_build='fixture', build_stability='PASS'))
+            report = campaign.compare(paths)
+        self.assertEqual(3, len(report['comparable_groups']))
+        self.assertEqual('a' * 32, report['comparable_groups'][0]['identity']['target_id'])
+        self.assertEqual(1, len(report['comparable_groups'][0]['trials']))
+        self.assertEqual('UNKNOWN', report['trials'][2]['comparison_identity'])
+
+    def test_copy_and_sidecar_failure_publish_no_partial_trial_and_retry_works(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = self.make_trial(Path(temp) / 'private')
+            output = Path(temp) / 'export'
+            with mock.patch.object(campaign.shutil, 'copyfileobj', side_effect=OSError('copy interrupted')):
+                with self.assertRaises(OSError):
+                    campaign.export(archive, output, 'fixture', 1)
+            self.assertEqual([], list(output.iterdir()))
+            original_open = Path.open
+
+            def fail_sidecar(path, *args, **kwargs):
+                if path.suffix == '.sha256':
+                    raise OSError('sidecar unavailable')
+                return original_open(path, *args, **kwargs)
+
+            with mock.patch.object(Path, 'open', new=fail_sidecar):
+                with self.assertRaises(OSError):
+                    campaign.export(archive, output, 'fixture', 1)
+            self.assertEqual([], list(output.iterdir()))
+            self.assertTrue(campaign.export(archive, output, 'fixture', 1).is_file())
+
+    def test_terminal_control_member_name_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            archive = self.make_trial(Path(temp) / 'private')
+            with zipfile.ZipFile(archive, 'a') as zipped:
+                zipped.writestr('\x1b[2Jspoof', b'bad')
+            with self.assertRaisesRegex(ValueError, '^unsafe member$'):
+                campaign.verify(archive)
+
     def make_trial(self, root, markers=None, **changes):
         root.mkdir()
         metadata = dict(schema=1, writers_closed=True, campaign='baseline', trial=1,
@@ -253,7 +348,7 @@ class IntegrityTest(unittest.TestCase):
             self.assertEqual(campaign.digest(archive), campaign.digest(target))
             original = target.read_bytes()
             with self.assertRaises(ValueError):
-                campaign.export(archive, target.parent, 'example', 1)
+                campaign.export(archive, target.parent.parent, 'example', 1)
             self.assertEqual(original, target.read_bytes())
 
     def test_unmanifested_and_traversal_members_are_rejected_without_extraction(self):
@@ -317,6 +412,54 @@ class IntegrityTest(unittest.TestCase):
 
 
 class CaptureTest(unittest.TestCase):
+    def test_private_state_rejects_symlink_queue_without_truncating_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = root / 'state'
+            state.mkdir(mode=0o700)
+            protected = root / 'protected'
+            protected.write_text('must remain unchanged')
+            (state / 'markers.queue').symlink_to(protected)
+            with self.assertRaises(OSError):
+                campaign.MarkerChannel(state)
+            self.assertEqual('must remain unchanged', protected.read_text())
+
+    def test_writable_state_and_symlink_ancestors_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = root / 'state'
+            state.mkdir()
+            state.chmod(0o777)
+            with self.assertRaisesRegex(ValueError, 'Writable ancestor'):
+                campaign.MarkerChannel(state)
+            state.chmod(0o700)
+            link = root / 'link'
+            link.symlink_to(state, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, 'symlink'):
+                campaign.MarkerChannel(link)
+
+    def test_device_lock_is_shared_across_campaign_state_choices(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch.object(campaign, 'DEFAULT_STATE', Path(temp) / 'global'):
+            lock = campaign.DeviceLock('adb', 'same-target')
+            try:
+                with self.assertRaisesRegex(ValueError, 'Another capture'):
+                    campaign.DeviceLock('adb', 'same-target')
+                other = campaign.DeviceLock('adb', 'different-target')
+                other.close()
+            finally:
+                lock.close()
+
+    def test_more_than_a_thousand_markers_are_retained(self):
+        with tempfile.TemporaryDirectory() as temp:
+            channel = campaign.MarkerChannel(Path(temp))
+            try:
+                channel.activate()
+                for _ in range(1100):
+                    campaign.MarkerChannel.submit(Path(temp), 'HOME_TOUCH')
+                self.assertEqual(1100, len(channel.drain()))
+            finally:
+                channel.close()
     def args(self, root):
         return argparse.Namespace(state_root=root / 'state', campaign='fixture', trial=1,
             transport='local', serial=None, duration=30, lifecycle='home_resume', workload='combined',
@@ -326,6 +469,7 @@ class CaptureTest(unittest.TestCase):
         device = mock.Mock()
         device.boot.return_value = '12345678-1234-1234-1234-123456789abc'
         device.clock.return_value = dict(status='PASS', device_uptime_ms=1000, uncertainty_ms=1)
+        device.read.return_value = campaign.Result('PASS', 0, b'synthetic build')
         return device
 
     def test_interruption_closes_writers_before_sealing_and_rejects_late_markers(self):
@@ -334,16 +478,17 @@ class CaptureTest(unittest.TestCase):
             device = self.fake_device()
 
             def log(_args, _seconds, stop, _limit):
-                stop.set()
+                signal.getsignal(signal.SIGINT)(signal.SIGINT, None)
                 time.sleep(0.05)  # The seal must wait for this producer's retained bytes.
                 return campaign.Result('INTERRUPTED', -2, b'last event\n'), 'PASS'
 
             device.worker.side_effect = log
             with mock.patch.object(campaign, 'Device', return_value=device), \
+                    mock.patch.object(campaign, 'DEFAULT_STATE', root / 'device-locks'), \
                     mock.patch.object(campaign, 'package_identities', return_value={}), \
                     mock.patch.object(campaign, 'snapshot'), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(130, campaign.capture(self.args(root)))
-            archive = next((root / 'export').glob('*.zip'))
+            archive = next((root / 'export').rglob('*.zip'))
             metadata, _ = campaign.verify(archive)
             self.assertTrue(metadata['interrupted'])
             with zipfile.ZipFile(archive) as zipped:
@@ -377,11 +522,12 @@ class CaptureTest(unittest.TestCase):
             device = self.fake_device()
 
             def log(_args, _seconds, stop, _limit):
-                stop.set()
+                signal.getsignal(signal.SIGINT)(signal.SIGINT, None)
                 return campaign.Result('INTERRUPTED'), 'BLOCKED'
 
             device.worker.side_effect = log
             with mock.patch.object(campaign, 'Device', return_value=device), \
+                    mock.patch.object(campaign, 'DEFAULT_STATE', root / 'device-locks'), \
                     mock.patch.object(campaign, 'package_identities', return_value={}), \
                     mock.patch.object(campaign, 'snapshot'), contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(ValueError, 'cleanup unproven'):
@@ -395,6 +541,7 @@ class CaptureTest(unittest.TestCase):
             device = self.fake_device()
             device.boot.return_value = None
             with mock.patch.object(campaign, 'Device', return_value=device), \
+                    mock.patch.object(campaign, 'DEFAULT_STATE', root / 'device-locks'), \
                     mock.patch.object(campaign, 'package_identities', return_value={}), \
                     mock.patch.object(campaign, 'snapshot') as snapshot, \
                     contextlib.redirect_stdout(io.StringIO()):

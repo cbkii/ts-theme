@@ -21,7 +21,10 @@ logs or record the screen: those capabilities become BLOCKED. For the TS18's exi
 root setup, run the collector once from a root shell using the original
 `$PREFIX/bin/su`; do not replace that binary or add a su wrapper. Keep the same caller
 and `--state-root` for marker commands. UID, SELinux, namespace and Android user are
-captured, with no claim that root has app/platform authority.
+captured, with no claim that root has app/platform authority. State directories must
+be caller-owned mode 0700 under trusted ancestors. Symlinks, hard links, foreign owners
+and unsafe permissions are rejected before truncating any private file. Root uses
+`/data/ts18-campaign`; do not use shared `/data/local/tmp` for root control state.
 
 ## First capture
 
@@ -30,7 +33,7 @@ From a root shell on the TS18, with the working directory containing `campaign.p
 ```sh
 python campaign.py capture --transport local --campaign baseline --trial 1 \
   --lifecycle home_resume --duration 180 \
-  --state-root /data/local/tmp/ts18-campaign
+  --state-root /data/ts18-campaign
 ```
 
 If the root shell's PATH does not contain Termux Python, use its existing absolute
@@ -50,7 +53,9 @@ That is the beginning of the timed phase. Keep this terminal running and exercis
 HOME, Music, Radio and navigation normally. ADB capture does not require root.
 For a quieter comparison, choose `--workload idle` and `--no-video`. The snapshot
 phases are outside the timed phase and each has a 30-second budget; identity reads
-have a separate 30-second budget. Recording/logging lasts 30–300 seconds.
+have a separate 30-second producer budget. All reads share the phase deadline;
+bounded process cleanup can add a few seconds. Recording/logging uses one shared
+30–300 second phase deadline, followed by flush/termination checks.
 
 Use trial numbers 1–5. Repeat the command after **each actual lifecycle event**, with
 the matching `--lifecycle cold_boot`, `reboot`, `acc_wake`, `process_restart` or
@@ -66,9 +71,9 @@ In a second terminal on the **same computer/caller**, while capture is active:
 
 ```sh
 python campaign.py mark --campaign baseline \
-  --state-root /data/local/tmp/ts18-campaign MUSIC_TAP
+  --state-root /data/ts18-campaign MUSIC_TAP
 python campaign.py mark --campaign baseline \
-  --state-root /data/local/tmp/ts18-campaign MUSIC_AUDIBLE
+  --state-root /data/ts18-campaign MUSIC_AUDIBLE
 ```
 
 For ADB computer captures, use `python3` and omit `--state-root` in both capture and
@@ -100,7 +105,9 @@ Speaker/radio audio is **not captured**. Use audible markers. Enable Developer
 **Show touches** yourself if wanted; the toolkit does not change it.
 
 Finished trials export to `/storage/emulated/0/Download/ts-theme/campaigns/`, or the
-explicit ADB computer output directory, with a ZIP and outer SHA-256 sidecar. Text
+explicit ADB computer output directory, with a ZIP and outer SHA-256 sidecar. Each
+trial is committed as one complete `baseline-trial-01/` directory containing both
+files; an interrupted copy does not reserve the final trial name. Text
 exports filter common paths, metadata, addresses and coordinates. **Video shows
 whatever was on screen; review it and the text before sharing.** No automatic upload
 occurs. Optional video compression should be done on a copy after capture; changing
@@ -110,7 +117,8 @@ a sealed ZIP invalidates its checksums. Keep originals for comparison.
 `segments.json` records video boundaries; `markers.json` records observations;
 `before/` and `after/` contain package, session/audio, task/window, display, location,
 memory and frame snapshots and per-probe statuses. `events.log` contains only the
-selected TS18 app tags. No paired-device list or full getprop dump is requested.
+selected TS18 app tags plus Organic Maps' `InCarCompactStartup` events. Worker
+protocol records are stored as metadata. No paired-device list or full getprop dump is requested.
 Redaction/filtering is supplementary privacy protection, not a guarantee that all
 vendor output formats are covered.
 
@@ -121,13 +129,16 @@ BLOCKED. Target-side producers have native time limits even if the ADB client di
 Never start another collector until an interrupted run's producer has stopped.
 If export fails, the printed private archive remains available. A stale collector
 lock is released automatically on process death; a late marker cannot create one.
+A shared host/target lock prevents overlapping campaigns with different names or
+state roots on that host. Coordinate explicitly with collectors on other computers
+or with different transport aliases; this is not a global vehicle lock.
 
 ## Verify and compare
 
 ```sh
-python3 campaign.py verify /path/to/baseline-trial-01.zip
-python3 campaign.py compare-runs /path/to/baseline-trial-01.zip \
-  /path/to/baseline-trial-02.zip > comparison.json
+python3 campaign.py verify /path/to/baseline-trial-01/baseline-trial-01.zip
+python3 campaign.py compare-runs /path/to/baseline-trial-01/baseline-trial-01.zip \
+  /path/to/baseline-trial-02/baseline-trial-02.zip > comparison.json
 ```
 
 Verification checks complete manifest coverage and hashes without extracting files.
@@ -139,7 +150,9 @@ absence or failure in the target.
 Comparison retains each repeated observation, boot-aligned uptime, latency samples,
 manual submission delay, missing phases and sample counts. A boot change inside a
 trial blocks cross-epoch latency claims. Grouping requires identical readable APK
-hashes, Android user, lifecycle label and workload. Unknown identities stay separate;
+hashes, stable Android user/build, local pseudonymous target identity, lifecycle label
+and workload. Identity is re-read after capture; changes prevent grouping. Copies of
+one trial count once; each group lists its candidate and member trials. Unknown identities stay separate;
 different candidate builds must be compared explicitly by the reviewer. No p95,
 automatic performance improvement, audible success or physical PASS is invented.
 Do not conflate Android boot, launcher response, player readiness, navigation pixels,
