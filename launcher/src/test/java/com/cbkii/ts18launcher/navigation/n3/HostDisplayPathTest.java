@@ -1,6 +1,7 @@
 package com.cbkii.ts18launcher.navigation.n3;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 import android.content.ComponentName;
 import android.content.Context;
@@ -38,6 +39,7 @@ public class HostDisplayPathTest {
                 new Intent(HostDisplayPath.ACTION).setPackage(HostDisplayPath.HOST_PACKAGE), info);
         ServiceConnection[] bound = new ServiceConnection[1];
         Context caller = new ContextWrapper(app) {
+            @Override public Context getApplicationContext() { return this; }
             @Override public boolean bindService(Intent intent, ServiceConnection connection, int flags) {
                 bound[0] = connection;
                 return true;
@@ -71,6 +73,7 @@ public class HostDisplayPathTest {
         ComponentName service = new ComponentName(info.serviceInfo.packageName, info.serviceInfo.name);
         path.create(1L, null, 1024, 600, 160, callback);
         ServiceConnection old = bound[0];
+        assertNotNull("the fixture must intercept the application-context binding", old);
         path.release();
         old.onServiceConnected(service, remote);
         assertEquals("release invalidates queued connection callbacks", 0, opened[0]);
