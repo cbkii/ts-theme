@@ -10,7 +10,7 @@ final class AppResolver {
 
     static boolean launchPackage(Context context, String packageName) {
         boolean launched = launchPackageQuietly(context, packageName);
-        if (launched) MediaListenerService.noteExplicitLaunch(context, packageName);
+        if (launched) MediaListenerService.noteExplicitLaunch(context, packagePart(packageName));
         return launched;
     }
 
@@ -18,9 +18,18 @@ final class AppResolver {
 
     /** A SecurityException is a definite admission refusal; arbitrary runtime errors are not. */
     static LaunchOutcome launchForStartup(Context context, String packageName) {
-        if (packageName == null || packageName.isEmpty()) return LaunchOutcome.REJECTED;
+        if (packageName == null || packageName.isEmpty() || !validTarget(packageName)) return LaunchOutcome.REJECTED;
         try {
-            Intent intent = context.getPackageManager().getLaunchIntentForPackage(packageName);
+            android.content.ComponentName component = android.content.ComponentName.unflattenFromString(packageName);
+            Intent intent = null;
+            if (component != null) {
+                try {
+                    android.content.pm.ActivityInfo info = context.getPackageManager().getActivityInfo(component, 0);
+                    if (AppCatalog.launchable(context, info)) intent = new Intent(Intent.ACTION_MAIN)
+                            .addCategory(Intent.CATEGORY_LAUNCHER).setComponent(component);
+                } catch (PackageManager.NameNotFoundException missing) { /* same-package fallback */ }
+            }
+            if (intent == null) intent = context.getPackageManager().getLaunchIntentForPackage(packagePart(packageName));
             if (intent == null) return LaunchOutcome.REJECTED;
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(intent);
@@ -53,11 +62,30 @@ final class AppResolver {
         }
     }
 
+    static String packagePart(String target) {
+        int slash = target == null ? -1 : target.indexOf('/');
+        return target == null ? "" : slash < 0 ? target : target.substring(0, slash);
+    }
+
+    static boolean validTarget(String target) {
+        if (target == null) return false;
+        String pkg = packagePart(target);
+        if (!pkg.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) return false;
+        if (target.equals(pkg)) return true;
+        android.content.ComponentName component = android.content.ComponentName.unflattenFromString(target);
+        return component != null && component.getClassName().matches("[A-Za-z_][A-Za-z0-9_.$]*");
+    }
+
     static String labelFor(Context context, String packageName, String fallback) {
         if (packageName == null || packageName.isEmpty()) return fallback;
         PackageManager pm = context.getPackageManager();
         try {
-            ApplicationInfo info = pm.getApplicationInfo(packageName, 0);
+            android.content.ComponentName component = android.content.ComponentName.unflattenFromString(packageName);
+            if (component != null) {
+                CharSequence label = pm.getActivityInfo(component, 0).loadLabel(pm);
+                if (label != null && label.length() > 0) return label.toString();
+            }
+            ApplicationInfo info = pm.getApplicationInfo(packagePart(packageName), 0);
             CharSequence label = pm.getApplicationLabel(info);
             return label == null || label.length() == 0 ? fallback : label.toString();
         } catch (PackageManager.NameNotFoundException e) {

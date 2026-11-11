@@ -1,5 +1,7 @@
 package com.cbkii.ts18launcher;
 
+import com.cbkii.ts18launcher.AppCatalog.Entry;
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ComponentName;
@@ -150,6 +152,7 @@ public final class AppDrawerActivity extends Activity {
     }
     @Override protected void onDestroy() {
         if (fullPage != null) fullPage.destroy();
+        AppCatalog.get(this).unsubscribe(catalogChanged);
         super.onDestroy();
     }
     @Override public void onBackPressed() { finish(); }
@@ -183,26 +186,13 @@ public final class AppDrawerActivity extends Activity {
         }
     }
 
-    private void loadEntries() {
-        allEntries.clear();
-        PackageManager pm = getPackageManager();
-        Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        List<ResolveInfo> resolved = pm.queryIntentActivities(query, PackageManager.MATCH_ALL);
-        Set<String> seenPackages = new HashSet<>();
-        for (ResolveInfo info : resolved) {
-            if (info.activityInfo == null) continue;
-            String packageName = info.activityInfo.packageName;
-            if (getPackageName().equals(packageName) || seenPackages.contains(packageName)) continue;
-            Intent canonical = pm.getLaunchIntentForPackage(packageName);
-            ComponentName component = canonical == null ? null : canonical.getComponent();
-            if (component == null) continue;
-            seenPackages.add(packageName);
-            CharSequence label = info.activityInfo.applicationInfo.loadLabel(pm);
-            allEntries.add(new Entry(packageName, component.getClassName(),
-                    label == null ? packageName : label.toString()));
-        }
-        Collections.sort(allEntries, Comparator.comparing(e -> e.label.toLowerCase(Locale.ROOT)));
-    }
+    private final java.util.function.Consumer<List<Entry>> catalogChanged = entries -> {
+        if (isFinishing() || isDestroyed()) return;
+        allEntries.clear(); allEntries.addAll(entries);
+        filter(search == null || search.getText() == null ? "" : search.getText().toString());
+    };
+
+    private void loadEntries() { AppCatalog.get(this).subscribe(catalogChanged); }
 
     private void filter(String query) {
         String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
@@ -216,7 +206,8 @@ public final class AppDrawerActivity extends Activity {
 
     private void onEntry(Entry entry) {
         if (pickKey != null && !pickKey.isEmpty()) {
-            LauncherPrefs.setPackage(this, pickKey, entry.packageName);
+            LauncherPrefs.setPackage(this, pickKey,
+                    ShortcutSlot.isSlotKey(pickKey) ? entry.target() : entry.packageName);
             if (LauncherPrefs.KEY_NAV.equals(pickKey)
                     && UiPersonalizationPrefs.navigationRootPermissionGrant(this)) {
                 NavigationPermissionBootstrapper.ensureEarly(this);
@@ -232,16 +223,6 @@ public final class AppDrawerActivity extends Activity {
         }
         if (!AppResolver.launchComponent(this, entry.packageName, entry.activityName)) {
             Toast.makeText(this, "App unavailable", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private static final class Entry {
-        final String packageName;
-        final String activityName;
-        final String label;
-        Drawable icon;
-        Entry(String packageName, String activityName, String label) {
-            this.packageName = packageName; this.activityName = activityName; this.label = label;
         }
     }
 
@@ -275,15 +256,8 @@ public final class AppDrawerActivity extends Activity {
                 cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 46));
             }
             Entry entry = visibleEntries.get(position);
-            if (entry.icon == null) {
-                PackageManager pm = getPackageManager();
-                try { entry.icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName)); }
-                catch (PackageManager.NameNotFoundException ignored) {
-                    try { entry.icon = pm.getApplicationIcon(entry.packageName); }
-                    catch (PackageManager.NameNotFoundException ignoredAgain) { entry.icon = getDrawable(R.drawable.ic_launcher); }
-                }
-            }
-            icon.setImageDrawable(entry.icon);
+            AppCatalog.get(AppDrawerActivity.this).bindIcon(icon, entry.target(),
+                    AutomotiveUi.dimen(AppDrawerActivity.this, R.dimen.ui_drawer_icon));
             label.setTextColor(AutomotiveUi.color(AppDrawerActivity.this, R.color.ui_text));
             label.setText(entry.label);
             cell.setMinimumHeight(116);

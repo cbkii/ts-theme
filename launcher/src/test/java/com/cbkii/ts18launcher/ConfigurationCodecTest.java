@@ -86,8 +86,10 @@ public class ConfigurationCodecTest {
         assertTrue(json.contains(LauncherPrefs.KEY_QUICK_COUNT));
     }
 
-    @Test(expected = JSONException.class)
-    public void unknownSettingIsRejected() throws Exception {
-        ConfigurationCodec.decode("{\"schema\":\"com.cbkii.ts18launcher.config\",\"version\":1,\"settings\":{\"secret\":true}}", name -> true);
+    @Test public void unknownSettingIsSkippedWithPreviewWarning() throws Exception {
+        ConfigurationCodec.Preview preview = decodeSettings("{\"future.setting\":true,\"ui.quick.count\":4}");
+        assertEquals(1, preview.values.size());
+        assertEquals(1, preview.unavailable.size());
+        assertTrue(preview.summary().contains("Unknown setting ignored"));
     }
 }

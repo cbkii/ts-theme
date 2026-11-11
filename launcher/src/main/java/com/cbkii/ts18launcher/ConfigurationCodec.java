@@ -13,7 +13,7 @@ import java.util.Map;
 /** Versioned, whitelisted configuration. No preferences dump, evidence, cache or location. */
 final class ConfigurationCodec {
     static final String SCHEMA = "com.cbkii.ts18launcher.config";
-    static final int VERSION = 1;
+    static final int VERSION = 2;
     static final int MAX_BYTES = 64 * 1024;
     interface Packages { boolean available(String name); }
     enum Type { PACKAGE, ROLE, ICON, HUE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE, NAV_SURFACE, ENGINE }
@@ -97,7 +97,7 @@ final class ConfigurationCodec {
             throw new JSONException("Configuration exceeds 64 KiB");
         JSONObject document = new JSONObject(json);
         if (document.length() != 3 || !SCHEMA.equals(document.opt("schema"))
-                || !(document.opt("version") instanceof Integer) || document.getInt("version") != VERSION
+                || !(document.opt("version") instanceof Integer) || (document.getInt("version") < 1 || document.getInt("version") > VERSION)
                 || !(document.opt("settings") instanceof JSONObject))
             throw new JSONException("Unsupported configuration schema/version");
         JSONObject settings = document.getJSONObject("settings");
@@ -108,6 +108,7 @@ final class ConfigurationCodec {
         while (names.hasNext()) {
             String key = names.next();
             Object value = settings.get(key);
+            if (DEVICE_CONSENT_KEYS.contains(key)) throw new JSONException("Device-local consent cannot be imported");
             if (RETIRED_BOOLEAN_KEYS.contains(key)) {
                 // Files exported before the online map was retired stay importable. The retired
                 // keys are type-checked, never stored, and only select the safe fullscreen surface.
@@ -116,11 +117,15 @@ final class ConfigurationCodec {
                     retiredMapEnabled = (Boolean) value;
                 continue;
             }
+            if (!KEYS.containsKey(key)) { unavailable.add("Unknown setting ignored: " + key); continue; }
             validate(key, value);
+            if (KEYS.get(key) == Type.PACKAGE && value instanceof String
+                    && ((String) value).contains("/") && !ShortcutSlot.isSlotKey(key))
+                throw new JSONException("Component requires a shortcut slot: " + key);
             if (KEYS.get(key) == Type.PACKAGE) {
                 String name = (String) value;
                 if (name.isEmpty()) continue;
-                if (!packages.available(name)) { unavailable.add(key + ": " + name); continue; }
+                if (!packages.available(AppResolver.packagePart(name))) { unavailable.add(key + ": " + name); continue; }
             }
             if (KEYS.get(key) == Type.APPEARANCE) value = LauncherPrefs.canonicalAppearance((String) value);
             if (KEYS.get(key) == Type.AUTO_SOURCE) value = LauncherPrefs.AUTO_SOURCE_SCHEDULE;
@@ -146,7 +151,7 @@ final class ConfigurationCodec {
         if (value instanceof String) {
             String text = (String) value;
             if (text.length() > 255) throw new JSONException("Setting too long: " + key);
-            if (type == Type.PACKAGE && (text.isEmpty() || text.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) return;
+            if (type == Type.PACKAGE && (text.isEmpty() || AppResolver.validTarget(text))) return;
             if (type == Type.ROLE && RoleIconCatalog.isKnown(text)) return;
             if (type == Type.ICON && SlotIconCatalog.isKnown(text)) return;
             if (type == Type.HUE && AccentPalette.isKnown(text)) return;

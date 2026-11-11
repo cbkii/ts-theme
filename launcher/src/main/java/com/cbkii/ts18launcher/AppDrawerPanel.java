@@ -1,5 +1,7 @@
 package com.cbkii.ts18launcher;
 
+import com.cbkii.ts18launcher.AppCatalog.Entry;
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -47,13 +49,6 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private LinearLayout searchRow;
     private ImageView searchIcon;
     private final List<ImageButton> headerButtons = new ArrayList<>();
-    private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "ts18-app-drawer-loader");
-        thread.setDaemon(true);
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
-
     private final Activity activity;
     private final Runnable onDismiss;
     private final List<Entry> allEntries = new ArrayList<>();
@@ -62,17 +57,6 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private final EditText search;
     private final GridView grid;
     private final AppsAdapter adapter = new AppsAdapter();
-    private final BroadcastReceiver packagesChanged = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) {
-            loadGeneration++;
-            loaded = false;
-            loading = false;
-            quickSignature = "";
-            allEntries.clear();
-            filter(search.getText() == null ? "" : search.getText().toString());
-            if (isOpen()) ensureLoaded();
-        }
-    };
     private boolean loaded;
     private boolean loading;
     private boolean preloadScheduled;
@@ -84,12 +68,6 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         super(activity);
         this.activity = activity;
         this.onDismiss = onDismiss;
-        IntentFilter packages = new IntentFilter();
-        packages.addAction(Intent.ACTION_PACKAGE_ADDED);
-        packages.addAction(Intent.ACTION_PACKAGE_REMOVED);
-        packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
-        packages.addDataScheme("package");
-        activity.registerReceiver(packagesChanged, packages);
         setBackgroundColor(0xF7050505);
 
         int gap = AutomotiveUi.dimen(activity, R.dimen.driver_gap);
@@ -219,11 +197,11 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     void destroy() {
         destroyed = true;
-        activity.unregisterReceiver(packagesChanged);
+        AppCatalog.get(activity).unsubscribe(catalogChanged);
         loadGeneration++;
         loading = false;
         preloadScheduled = false;
-        loader.shutdownNow();
+
         animate().cancel();
     }
 
@@ -333,73 +311,17 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         if (input != null) input.hideSoftInputFromWindow(search.getWindowToken(), 0);
     }
 
+    private final java.util.function.Consumer<List<Entry>> catalogChanged = this::onCatalogChanged;
+    private void onCatalogChanged(List<Entry> entries) {
+        if (destroyed) return;
+        allEntries.clear(); allEntries.addAll(entries); loaded = true; loading = false;
+        filter(search.getText() == null ? "" : search.getText().toString());
+    }
+
     private void ensureLoaded() {
         if (loaded || loading || destroyed) return;
         loading = true;
-        final int generation = ++loadGeneration;
-        final long started = SystemClock.uptimeMillis();
-        loader.execute(() -> {
-            List<Entry> entries = loadEntries(generation);
-            post(() -> {
-                if (destroyed || generation != loadGeneration) return;
-                allEntries.clear();
-                allEntries.addAll(entries);
-                loaded = true;
-                loading = false;
-                filter(search.getText() == null ? "" : search.getText().toString());
-                MediaEventTrace.record("drawer", "catalog-ready",
-                        "count=" + allEntries.size() + " elapsedMs="
-                                + (SystemClock.uptimeMillis() - started));
-                loader.execute(() -> loadIcons(entries, generation));
-            });
-        });
-    }
-
-    private List<Entry> loadEntries(int generation) {
-        List<Entry> entries = new ArrayList<>();
-        PackageManager pm = activity.getPackageManager();
-        Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        List<ResolveInfo> resolved = pm.queryIntentActivities(query, PackageManager.MATCH_ALL);
-        Set<String> seenPackages = new HashSet<>();
-        for (ResolveInfo info : resolved) {
-            if (Thread.currentThread().isInterrupted() || destroyed || generation != loadGeneration)
-                break;
-            if (info.activityInfo == null) continue;
-            String packageName = info.activityInfo.packageName;
-            if (activity.getPackageName().equals(packageName) || seenPackages.contains(packageName)) continue;
-            Intent canonical = pm.getLaunchIntentForPackage(packageName);
-            ComponentName component = canonical == null ? null : canonical.getComponent();
-            if (component == null) continue;
-            seenPackages.add(packageName);
-            CharSequence label = info.activityInfo.applicationInfo.loadLabel(pm);
-            Entry entry = new Entry(packageName, component.getClassName(),
-                    label == null ? packageName : label.toString());
-            entries.add(entry);
-        }
-        Collections.sort(entries, Comparator.comparing(e -> e.label.toLowerCase(Locale.ROOT)));
-        return entries;
-    }
-
-    private void loadIcons(List<Entry> entries, int generation) {
-        PackageManager pm = activity.getPackageManager();
-        List<Drawable> icons = new ArrayList<>(entries.size());
-        for (Entry entry : entries) {
-            if (Thread.currentThread().isInterrupted() || destroyed || generation != loadGeneration)
-                return;
-            Drawable icon = null;
-            try { icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName)); }
-            catch (PackageManager.NameNotFoundException ignored) {
-                try { icon = pm.getApplicationIcon(entry.packageName); }
-                catch (PackageManager.NameNotFoundException ignoredAgain) { /* UI fallback below. */ }
-            }
-            icons.add(icon);
-        }
-        post(() -> {
-            if (destroyed || generation != loadGeneration) return;
-            for (int i = 0; i < entries.size(); i++) entries.get(i).icon = icons.get(i);
-            if (isOpen()) adapter.notifyDataSetChanged();
-            MediaEventTrace.record("drawer", "icons-ready", "count=" + entries.size());
-        });
+        AppCatalog.get(activity).subscribe(catalogChanged);
     }
 
     private void filter(String query) {
@@ -450,16 +372,6 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         Toast.makeText(activity, "App unavailable", Toast.LENGTH_SHORT).show();
     }
 
-    private static final class Entry {
-        final String packageName;
-        final String activityName;
-        final String label;
-        Drawable icon;
-        Entry(String packageName, String activityName, String label) {
-            this.packageName = packageName; this.activityName = activityName; this.label = label;
-        }
-    }
-
     private final class AppsAdapter extends BaseAdapter {
         @Override public int getCount() { return visibleEntries.size(); }
         @Override public Object getItem(int position) { return visibleEntries.get(position); }
@@ -490,8 +402,8 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
                 cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 46));
             }
             Entry entry = visibleEntries.get(position);
-            icon.setImageDrawable(entry.icon == null
-                    ? activity.getDrawable(R.drawable.ic_launcher) : entry.icon);
+            AppCatalog.get(activity).bindIcon(icon, entry.target(),
+                    AutomotiveUi.dimen(activity, R.dimen.ui_drawer_icon));
             label.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
             label.setText(entry.label);
             cell.setMinimumHeight(116);

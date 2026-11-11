@@ -414,11 +414,14 @@ public final class SettingsActivity extends Activity {
         appearanceDialogs.builder().setTitle("Startup and return diagnostics")
                 .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
                         + "\n\n" + StartupReadinessCoordinator.get(this).summary()
-                        + "\n\nAutomatic root preparation; N2 / Bridge / fullscreen departure. "
+                        + "\n\nBackground source readiness; N2 task reuse / fullscreen recovery. "
                         + "Use the matching Auxio prepare-only build. Complete any real permission/setup screens. "
                         + "The guided kit records actual map/audio readiness and return reliability. "
                         + "About three seconds is the speed target; small overruns are not automatic failures.")
-                .setPositiveButton("Done", null).show();
+                .setNeutralButton("Sample 10s", (dialog, which) -> {
+                    PerfSampler.start();
+                    Toast.makeText(this, "Local frame/CPU sample started for 10 seconds", Toast.LENGTH_SHORT).show();
+                }).setPositiveButton("Done", null).show();
     }
 
     private void addAccentPaletteRow() {
@@ -775,11 +778,11 @@ public final class SettingsActivity extends Activity {
         String direct = com.cbkii.ts18launcher.media.MediaEngine.DIRECT.storedValue();
         addChoiceRow(icon, title,
                 current == com.cbkii.ts18launcher.media.MediaEngine.DIRECT
-                        ? "Direct · TESTING · exact app, one action per tap"
-                        : "Legacy · default",
+                        ? "Direct · TESTING default · exact app, one action per tap"
+                        : "Legacy · compatibility",
                 v -> choose(title,
-                        new String[] {"Legacy · default, can start the app",
-                                "Direct · TESTING · exact app, one action per tap"},
+                        new String[] {"Legacy · compatibility, can start the app",
+                                "Direct · TESTING default · exact app, one action per tap"},
                         new String[] {legacy, direct}, current.storedValue(), value -> {
                             MediaEngineSelector.setRequested(this, key,
                                     com.cbkii.ts18launcher.media.MediaEngine.fromStored(value));

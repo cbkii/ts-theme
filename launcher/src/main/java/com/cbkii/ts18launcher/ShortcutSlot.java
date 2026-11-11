@@ -52,8 +52,8 @@ final class ShortcutSlot {
         String pkg = LauncherPrefs.packageFor(context, key);
         if (isApp(pkg)) {
             button.setImageTintList(null);
-            try { button.setImageDrawable(context.getPackageManager().getApplicationIcon(pkg)); }
-            catch (PackageManager.NameNotFoundException ignored) { button.setImageResource(R.drawable.ic_shortcut); }
+            AppCatalog.get(context).bindIcon(button, pkg,
+                    AutomotiveUi.dimen(context, R.dimen.ui_drawer_icon));
             button.setContentDescription("App: " + label(context, key));
         } else {
             button.setImageResource(RoleIconCatalog.icon(role(context, key)));
