@@ -24,6 +24,7 @@ public final class N3PathIpcProbe {
         PublicDisplayPath path = new PublicDisplayPath(instrumentation.getTargetContext(), main);
         CountDownLatch created = new CountDownLatch(1), framed = new CountDownLatch(1), failed = new CountDownLatch(1);
         AtomicReference<String> failure = new AtomicReference<>("");
+        // The trampoline hands control back through the relay on the main thread.
         AtomicReference<Integer> display = new AtomicReference<>(0);
         N3DisplayPath.Callback callback = new N3DisplayPath.Callback() {
             @Override public void created(long gen, int id) { display.set(id); created.countDown(); }
@@ -36,9 +37,17 @@ public final class N3PathIpcProbe {
         check(created.await(5, TimeUnit.SECONDS) && display.get() > 0, "private display not created: " + failure.get());
         String input = path.input().unavailableReason();
 
+        CountDownLatch launched = new CountDownLatch(1);
+        N3DisplayPath.Callback launchCallback = new N3DisplayPath.Callback() {
+            @Override public void created(long gen, int id) { }
+            @Override public void launched(long gen) { launched.countDown(); }
+            @Override public void firstFrame(long gen) { framed.countDown(); }
+            @Override public void lost(long gen, String reason) { failure.set(reason); failed.countDown(); }
+            @Override public void failed(long gen, String reason) { failure.set(reason); failed.countDown(); }
+        };
         instrumentation.runOnMainSync(() -> path.launch(1L,
-                fixturePackage + "/com.cbkii.ts18launcher.navigation.n3.N3FixtureActivity", callback));
-        check(failed.getCount() == 1, "embeddable fixture refused: " + failure.get());
+                fixturePackage + "/com.cbkii.ts18launcher.navigation.n3.N3FixtureActivity", launchCallback));
+        check(launched.await(10, TimeUnit.SECONDS), "embeddable fixture not launched: " + failure.get());
         check(framed.await(10, TimeUnit.SECONDS), "no pixels from the launched fixture on the N3 display");
         instrumentation.runOnMainSync(path::release);
 
@@ -46,16 +55,18 @@ public final class N3PathIpcProbe {
         PublicDisplayPath second = new PublicDisplayPath(instrumentation.getTargetContext(), main);
         CountDownLatch created2 = new CountDownLatch(1);
         AtomicReference<String> refused = new AtomicReference<>("");
+        CountDownLatch decided = new CountDownLatch(1);
         N3DisplayPath.Callback callback2 = new N3DisplayPath.Callback() {
             @Override public void created(long gen, int id) { created2.countDown(); }
-            @Override public void launched(long gen) { refused.set("LAUNCHED"); }
+            @Override public void launched(long gen) { refused.set("LAUNCHED"); decided.countDown(); }
             @Override public void firstFrame(long gen) { }
             @Override public void lost(long gen, String reason) { }
-            @Override public void failed(long gen, String reason) { refused.set(reason); }
+            @Override public void failed(long gen, String reason) { refused.set(reason); decided.countDown(); }
         };
         instrumentation.runOnMainSync(() -> second.create(2L, presenter.getSurface(), 640, 360, 160, callback2));
         check(created2.await(5, TimeUnit.SECONDS), "second private display not created");
         instrumentation.runOnMainSync(() -> second.launch(2L, "com.android.settings/com.android.settings.Settings", callback2));
+        check(decided.await(10, TimeUnit.SECONDS), "no decision for the non-embeddable target");
         check(refused.get().startsWith(PublicDisplayPath.BLOCKED), "non-embeddable target not refused: " + refused.get());
         instrumentation.runOnMainSync(second::release);
         presenter.close();

@@ -27,13 +27,20 @@ class N3ContractTests(unittest.TestCase):
                               "VIRTUAL_DISPLAY_FLAG_PUBLIC", "VIRTUAL_DISPLAY_FLAG_TRUSTED"):
                 self.assertNotIn(forbidden, text, f"{path.name} must not contain {forbidden}")
             # The only external start is the user-initiated launch on the owned, non-default display.
-            if path.name != "PublicDisplayPath.java":
+            if path.name not in ("PublicDisplayPath.java", "N3TrampolineActivity.java"):
                 self.assertNotIn("startActivity(", text, path.name)
         public = code(N3 / "PublicDisplayPath.java")
         self.assertEqual(1, public.count("startActivity("))
+        self.assertIn("new Intent(app, N3TrampolineActivity.class)", public)
         self.assertIn("setLaunchDisplayId(id)", public)
-        self.assertIn("isActivityStartAllowedOnDisplay(app, id, intent)", public)
         self.assertIn("reader.getSurface(), 0,", public)
+        trampoline = code(N3 / "N3TrampolineActivity.java")
+        self.assertEqual(1, trampoline.count("startActivity("))
+        self.assertIn("N3LaunchRelay.take(token)", trampoline)
+        self.assertIn("if (result == null || target == null || display == 0) { finish(); return; }", trampoline)
+        self.assertIn("setLaunchDisplayId(display)", trampoline)
+        manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text()
+        self.assertRegex(manifest, r'android:name="\.navigation\.n3\.N3TrampolineActivity"[^>]*android:exported="false"')
 
     def test_probe_is_read_only_and_private(self):
         probe = code(N3 / "N3DisplayProbe.java")
