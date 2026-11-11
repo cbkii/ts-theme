@@ -132,6 +132,22 @@ public final class MediaFeatureFacade {
         if (directServes && direct != null) direct.refresh();
     }
 
+    /**
+     * Passive readiness for one boot, wake or HOME-return epoch. Only sources served by the Direct
+     * engine are asked here; the legacy engine keeps its own startup bootstrapper. A deselected
+     * engine is never asked.
+     */
+    public void preparePassive(long epoch) {
+        reconcile();
+        if (direct == null) return;
+        for (MediaSourceKey key : MediaSourceKey.values()) {
+            String packageName = packages.get(key);
+            if (backend(key) == direct && packageName != null && !packageName.isEmpty()) {
+                direct.preparePassive(key, packageName, epoch);
+            }
+        }
+    }
+
     public void command(MediaSourceKey key, String packageName, MediaUserAction action,
                         MediaBackend.ResultCallback callback) {
         reconcile();

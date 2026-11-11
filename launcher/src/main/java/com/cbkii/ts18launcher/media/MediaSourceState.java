@@ -45,19 +45,21 @@ public final class MediaSourceState {
     public final boolean startable;
     /** A Play tap is waiting for the source to publish its session. */
     public final boolean starting;
+    /** Passive readiness: the source is being asked, without playing, to load its queue. */
+    public final boolean preparing;
 
     public MediaSourceState(MediaSourceKey key, MediaEngine engine, String packageName,
                             Availability availability, int nativeState, long actions,
                             Object sessionIdentity, String itemId, String title, String subtitle,
                             long generation) {
         this(key, engine, packageName, availability, nativeState, actions, sessionIdentity, itemId,
-                title, subtitle, generation, false, false);
+                title, subtitle, generation, false, false, false);
     }
 
     private MediaSourceState(MediaSourceKey key, MediaEngine engine, String packageName,
                              Availability availability, int nativeState, long actions,
                              Object sessionIdentity, String itemId, String title, String subtitle,
-                             long generation, boolean startable, boolean starting) {
+                             long generation, boolean startable, boolean starting, boolean preparing) {
         this.key = key;
         this.engine = engine;
         this.packageName = packageName == null ? "" : packageName;
@@ -72,12 +74,17 @@ public final class MediaSourceState {
         boolean absent = availability == Availability.NO_SESSION || availability == Availability.SOURCE_LOST;
         this.startable = absent && startable;
         this.starting = absent && starting;
+        this.preparing = (absent || availability == Availability.LIVE) && preparing && !this.starting;
     }
 
     /** Copy carrying cold-start capability; only meaningful while the source has no session. */
     public MediaSourceState withStart(boolean canStart, boolean inProgress) {
+        return withStart(canStart, inProgress, false);
+    }
+
+    public MediaSourceState withStart(boolean canStart, boolean inProgress, boolean preparingNow) {
         return new MediaSourceState(key, engine, packageName, availability, nativeState, actions,
-                sessionIdentity, itemId, title, subtitle, generation, canStart, inProgress);
+                sessionIdentity, itemId, title, subtitle, generation, canStart, inProgress, preparingNow);
     }
 
     public static MediaSourceState unavailable(MediaSourceKey key, MediaEngine engine,
@@ -98,6 +105,7 @@ public final class MediaSourceState {
                 && availability == other.availability && nativeState == other.nativeState
                 && actions == other.actions && packageName.equals(other.packageName)
                 && startable == other.startable && starting == other.starting
+                && preparing == other.preparing
                 && itemId.equals(other.itemId) && title.equals(other.title)
                 && subtitle.equals(other.subtitle)
                 && (sessionIdentity == null ? other.sessionIdentity == null

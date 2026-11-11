@@ -39,7 +39,8 @@ class DirectMediaEngineContractTests(unittest.TestCase):
             "new MediaSession(", "requestAudioFocus", "AudioManager", "MediaPlayer",
             "startActivity", "startService", "startForegroundService", "bindService",
             "dispatchMediaButtonEvent", "sendBroadcast", "Runtime.getRuntime",
-            "RootShell", "playFromMediaId", "playFromSearch", "prepare(", "Thread.sleep",
+            "RootShell", "playFromMediaId", "playFromSearch", "prepareFromMediaId", "prepareFromSearch",
+            "prepareFromUri", "Thread.sleep",
         )
         for name, source in self.sources(DIRECT).items():
             code = strip_comments(source)
@@ -62,22 +63,31 @@ class DirectMediaEngineContractTests(unittest.TestCase):
             self.assertNotIn(marker, starter)
         # A start is requested only for a Play tap, and repeated taps join the one attempt.
         self.assertIn("if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback); return; }", engine)
-        self.assertEqual(1, engine.count("starter.start(key, packageName)"))
+        # Two owners may ask: a Play tap, and passive readiness (only while startable, once per epoch).
+        self.assertEqual(2, engine.count("starter.start(key, packageName)"))
+        passive = engine.split("private void tryPassivePrepare()", 1)[1].split("\n    }\n", 1)[0]
+        self.assertIn("if (!startable()) return;", passive)
+        self.assertIn("decidedPrepareEpoch = epoch;", passive)
+        self.assertNotIn("DirectOperation.PLAY", passive)
         # A timed-out attempt is abandoned so the next tap opens a fresh connection.
         self.assertIn("if (starter != null) starter.abandon(key, packageName);", engine)
-        # Play after a start is the engine's normal single dispatch; nothing else sends.
-        self.assertEqual(3, engine.count("transport.dispatch("))
+        # Play after a start is the engine's normal single dispatch; PREPARE is the passive one.
+        self.assertEqual(4, engine.count("transport.dispatch("))
 
     def test_transport_is_directional_and_single_dispatch(self):
         operation = (DIRECT / "DirectOperation.java").read_text()
         framework = (DIRECT / "FrameworkSessions.java").read_text()
         engine = strip_comments((DIRECT / "DirectSourceEngine.java").read_text())
-        self.assertIn("PLAY, PAUSE, NEXT, PREVIOUS;", operation)
+        self.assertIn("PLAY, PAUSE, NEXT, PREVIOUS, PREPARE;", operation)
         self.assertNotIn("TOGGLE", operation)
-        for call in ("controls.play()", "controls.pause()", "controls.skipToNext()", "controls.skipToPrevious()"):
+        for call in ("controls.play()", "controls.pause()", "controls.skipToNext()", "controls.skipToPrevious()",
+                     "controls.prepare()"):
             self.assertEqual(1, framework.count(call), call)
-        # Driver action, the one Play after a requested start, and the handover pause.
-        self.assertEqual(3, engine.count("transport.dispatch("))
+        # Driver action, the one Play after a requested start, the handover pause and passive PREPARE.
+        self.assertEqual(4, engine.count("transport.dispatch("))
+        self.assertEqual(1, engine.count("transport.dispatch(pinnedToken, DirectOperation.PREPARE)"))
+        command = engine.split("public void command(", 1)[1].split("\n    }\n", 1)[0]
+        self.assertNotIn("PREPARE", command, "a user tap never sends PREPARE")
         self.assertIn("transport.dispatch(pinnedToken, DirectOperation.PAUSE)", engine)
 
     def test_sessions_come_only_from_the_existing_listener_component(self):

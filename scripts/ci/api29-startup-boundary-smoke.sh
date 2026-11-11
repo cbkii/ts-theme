@@ -45,6 +45,8 @@ adb shell am instrument -w -e m2_browser 1 \
   com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation |
   tee "$proof/m2-browser-ipc.txt"
 grep -Fq 'PASS API29 M2 browser starter' "$proof/m2-browser-ipc.txt"
+grep -Fq 'PREPARE loads without Play' "$proof/m2-browser-ipc.txt"
+grep -Fq 'retry after death' "$proof/m2-browser-ipc.txt"
 adb shell am start -W -a android.settings.SETTINGS > "$proof/settings-start.txt"
 observe observe | tee "$proof/foreign-probe.txt"
 grep -Eq 'TS18_RESULT 1 OK code=FOREGROUND .*component=com.android.settings/' "$proof/foreign-probe.txt"

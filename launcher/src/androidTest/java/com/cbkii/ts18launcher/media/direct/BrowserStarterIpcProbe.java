@@ -33,11 +33,29 @@ public final class BrowserStarterIpcProbe {
         AttemptResult first = connect(instrumentation, connector, service);
         check(fixturePackage.equals(first.sessionPackage), "session owner " + first.sessionPackage);
         DirectSessionRegistry.Session session = first.session;
+        CountDownLatch loaded = new CountDownLatch(1);
         CountDownLatch playing = new CountDownLatch(1);
+        AtomicReference<Boolean> playedEarly = new AtomicReference<>(false);
         instrumentation.runOnMainSync(() -> session.watch(() -> {
-            if (session.read().nativeState == PlaybackState.STATE_PLAYING) playing.countDown();
+            SessionObservation now = session.read();
+            if (now.nativeState == PlaybackState.STATE_PLAYING) {
+                if (loaded.getCount() > 0) playedEarly.set(true);
+                playing.countDown();
+            }
+            if (DirectSourceEngine.loaded(now)) loaded.countDown();
         }, () -> { }));
-        check(session.read().nativeState == PlaybackState.STATE_PAUSED, "fixture did not start paused");
+        SessionObservation cold = session.read();
+        check(cold.nativeState == PlaybackState.STATE_PAUSED, "fixture did not start paused");
+        check(!DirectSourceEngine.loaded(cold), "fixture should start with nothing loaded");
+        check((cold.actions & PlaybackState.ACTION_PREPARE) != 0L, "PREPARE not advertised over IPC");
+
+        // Passive readiness over IPC: PREPARE loads the item and never starts playback.
+        AtomicReference<Boolean> prepared = new AtomicReference<>(false);
+        instrumentation.runOnMainSync(() -> prepared.set(session.dispatch(DirectOperation.PREPARE)));
+        check(prepared.get(), "PREPARE not dispatched");
+        check(loaded.await(5, TimeUnit.SECONDS), "PREPARE did not load an item over IPC");
+        check(!playedEarly.get() && session.read().nativeState != PlaybackState.STATE_PLAYING,
+                "PREPARE must not start playback");
         AtomicReference<Boolean> sent = new AtomicReference<>(false);
         instrumentation.runOnMainSync(() -> sent.set(session.dispatch(DirectOperation.PLAY)));
         check(sent.get(), "Play not dispatched");
@@ -47,14 +65,32 @@ public final class BrowserStarterIpcProbe {
         // A fresh attempt after teardown is a new, working connection (no stale cached link).
         AttemptResult second = connect(instrumentation, connector, service);
         check(second.session.token() != null, "second connection produced no session");
-        instrumentation.runOnMainSync(second.connection::disconnect);
-        return "PASS API29 M2 browser starter: resolve, cold bind, owned token, Play confirmed over IPC, fresh reconnect";
+
+        // Source process death: the bound connection and the session both report the loss.
+        CountDownLatch ended = new CountDownLatch(1);
+        instrumentation.runOnMainSync(() -> second.session.watch(() -> { }, ended::countDown));
+        instrumentation.runOnMainSync(() -> new android.media.session.MediaController(app,
+                (android.media.session.MediaSession.Token) second.session.token())
+                .getTransportControls().sendCustomAction(FixtureBrowserService.ACTION_DIE, null));
+        boolean lost = ended.await(8, TimeUnit.SECONDS) || second.lost.await(8, TimeUnit.SECONDS);
+        check(lost, "source death not reported by session or connection");
+        instrumentation.runOnMainSync(() -> { second.session.unwatch(); second.connection.disconnect(); });
+
+        // After death, a deliberate fresh attempt restarts the source and works again.
+        AttemptResult third = connect(instrumentation, connector, service);
+        check(fixturePackage.equals(third.sessionPackage) && third.session.token() != null,
+                "fresh attempt after source death failed");
+        check(!third.session.token().equals(second.session.token()), "stale token reused after death");
+        instrumentation.runOnMainSync(third.connection::disconnect);
+        return "PASS API29 M2 browser starter: resolve, cold bind, owned token, PREPARE loads without Play,"
+                + " Play confirmed over IPC, fresh reconnect, source death reported, retry after death";
     }
 
     private static final class AttemptResult {
         BrowserSessionStarter.Connection connection;
         String sessionPackage;
         DirectSessionRegistry.Session session;
+        final CountDownLatch lost = new CountDownLatch(1);
     }
 
     private static AttemptResult connect(Instrumentation instrumentation,
@@ -70,8 +106,14 @@ public final class BrowserStarterIpcProbe {
                         result.session = session;
                         answered.countDown();
                     }
-                    @Override public void onSuspended() { failure.set("suspended"); answered.countDown(); }
-                    @Override public void onFailed() { failure.set("failed"); answered.countDown(); }
+                    @Override public void onSuspended() {
+                        if (result.session != null) { result.lost.countDown(); return; }
+                        failure.set("suspended"); answered.countDown();
+                    }
+                    @Override public void onFailed() {
+                        if (result.session != null) { result.lost.countDown(); return; }
+                        failure.set("failed"); answered.countDown();
+                    }
                 }));
         check(answered.await(10, TimeUnit.SECONDS), "browser connection did not answer");
         check(failure.get().isEmpty() && result.session != null, "browser connection " + failure.get());

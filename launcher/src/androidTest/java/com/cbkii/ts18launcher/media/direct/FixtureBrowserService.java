@@ -11,10 +11,11 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Minimal external player for IPC tests: one MediaSession that changes state only when told to.
- * It produces no audio and requests no focus. Lives in the test APK's own package and process.
+ * Minimal external player for IPC tests: one MediaSession that starts with nothing loaded,
+ * loads an item on PREPARE and changes state only when told to. No audio, no focus. Lives in the test APK's own package and process.
  */
 public final class FixtureBrowserService extends MediaBrowserService {
+    static final String ACTION_DIE = "com.cbkii.ts18launcher.test.FIXTURE_DIE";
     private MediaSession session;
 
     @Override public void onCreate() {
@@ -23,10 +24,18 @@ public final class FixtureBrowserService extends MediaBrowserService {
         session.setCallback(new MediaSession.Callback() {
             @Override public void onPlay() { state(PlaybackState.STATE_PLAYING); }
             @Override public void onPause() { state(PlaybackState.STATE_PAUSED); }
+            // Like Auxio-TS onPrepare(): load the restored item, stay paused, take no focus.
+            @Override public void onPrepare() {
+                session.setMetadata(new MediaMetadata.Builder()
+                        .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "fixture-1")
+                        .putString(MediaMetadata.METADATA_KEY_TITLE, "Fixture track").build());
+                state(PlaybackState.STATE_PAUSED);
+            }
+            // Test-only: simulate the source process dying.
+            @Override public void onCustomAction(String action, Bundle extras) {
+                if (ACTION_DIE.equals(action)) android.os.Process.killProcess(android.os.Process.myPid());
+            }
         });
-        session.setMetadata(new MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, "fixture-1")
-                .putString(MediaMetadata.METADATA_KEY_TITLE, "Fixture track").build());
         state(PlaybackState.STATE_PAUSED);
         session.setActive(true);
         setSessionToken(session.getSessionToken());
@@ -34,7 +43,8 @@ public final class FixtureBrowserService extends MediaBrowserService {
 
     private void state(int value) {
         session.setPlaybackState(new PlaybackState.Builder().setState(value, 0L, 1f)
-                .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE).build());
+                .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
+                        | PlaybackState.ACTION_PREPARE).build());
     }
 
     @Override public BrowserRoot onGetRoot(String clientPackageName, int clientUid, Bundle rootHints) {

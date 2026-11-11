@@ -20,6 +20,7 @@ final class DirectMediaPresentation {
     static String absentText(MediaSourceState state) {
         if (state == null) return "";
         if (state.starting) return "Starting…";
+        if (state.preparing) return "Getting ready…";
         if (state.startable) return "Press Play to start";
         return unavailableText(state.availability);
     }

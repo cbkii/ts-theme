@@ -49,7 +49,7 @@ public Object getSystemService(String s){return switch(s){case "power"->new andr
             'com/cbkii/ts18launcher/Doubles.java': '''package com.cbkii.ts18launcher;
 class ProcessMediaSessionMonitor {interface Observer{void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
 class MediaListenerService {static boolean access=true;static boolean hasNotificationAccess(android.content.Context c){return access;}static class Snapshot{}}
-class Ts18LauncherApplication {static MediaSourceBootstrapper shared=new MediaSourceBootstrapper();static MediaSourceBootstrapper mediaSources(android.content.Context c){return shared;}static boolean legacyMediaEngineOwns(android.content.Context c,boolean radio){return true;}}
+class Ts18LauncherApplication {static MediaSourceBootstrapper shared=new MediaSourceBootstrapper();static MediaSourceBootstrapper mediaSources(android.content.Context c){return shared;}static boolean legacyMediaEngineOwns(android.content.Context c,boolean radio){return true;}static void prepareDirectSources(android.content.Context c,long epoch){}}
 class MediaSourceBootstrapper {interface PreparationRequester{void request(String p,long d);}void setPreparationRequester(PreparationRequester r){}boolean musicReady,radioReady,musicPlaying;long commands;int warms,pauses;
 boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radioReady;}
 boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
