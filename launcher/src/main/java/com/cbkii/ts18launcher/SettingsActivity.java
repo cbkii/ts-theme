@@ -297,6 +297,18 @@ public final class SettingsActivity extends Activity {
                         ? "Granted · active MediaSessions can be observed"
                         : "Allow access for active media sessions and notification metadata.",
                 v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        addSwitchRow(R.drawable.ic_notifications, "Grant notification access with root",
+                "Optional and off by default. When on, the launcher may enable only its own listener "
+                        + "using root. If you later remove access in Android Settings, this turns itself "
+                        + "off and access is not restored. Turning it off does not remove existing access.",
+                UiPersonalizationPrefs.mediaListenerRootGrant(this), checked -> {
+                    if (!checked) { UiPersonalizationPrefs.setMediaListenerRootGrant(this, false); return; }
+                    MediaNotificationAccessBootstrapper.requestRootGrant(this, (granted, detail) -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        Toast.makeText(this, detail, Toast.LENGTH_LONG).show();
+                        render();
+                    });
+                });
     }
 
     private void renderAdvanced() {

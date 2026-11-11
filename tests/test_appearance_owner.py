@@ -78,6 +78,7 @@ class AppearanceOwnerTest(unittest.TestCase):
             'com/cbkii/ts18launcher/ConfigurationCodec.java': '''package com.cbkii.ts18launcher; import java.util.*;
                 class ConfigurationCodec {enum Type{BOOLEAN,COUNT,MINUTES,APPEARANCE,AUTO_SOURCE,NAV_SURFACE}
                 static final Set<String> RETIRED_BOOLEAN_KEYS=Set.of("map.enabled");
+                static final Set<String> DEVICE_CONSENT_KEYS=Set.of("media.listener.root_grant");
                 static final Map<String,Type> KEYS=Map.of(LauncherPrefs.KEY_APPEARANCE_DAY_START,Type.MINUTES,
                 LauncherPrefs.KEY_APPEARANCE_NIGHT_START,Type.MINUTES,LauncherPrefs.KEY_APPEARANCE_MODE,Type.APPEARANCE,
                 LauncherPrefs.KEY_APPEARANCE_AUTO_SOURCE,Type.AUTO_SOURCE);}''',

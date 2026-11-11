@@ -16,6 +16,19 @@ class NotificationAccessBootstrapTest(unittest.TestCase):
         self.assertNotIn("settings put secure enabled_notification_listeners", BOOT)
         self.assertNotIn("pm grant", BOOT)
 
+    def test_root_grant_requires_stored_consent_and_respects_revocation(self):
+        policy = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/MediaListenerAccessPolicy.java").read_text(encoding="utf-8")
+        early = BOOT.split("static void ensureEarly(Context context) {", 1)[1].split("static void requestRootGrant", 1)[0]
+        self.assertIn("MediaListenerAccessPolicy.decide(", early)
+        self.assertIn("UiPersonalizationPrefs.mediaListenerRootGrant(app)", early)
+        self.assertIn("case WITHDRAW_CONSENT:", early)
+        self.assertIn("UiPersonalizationPrefs.setMediaListenerRootGrant(app, false);", early)
+        # The only root call sits behind the policy decision, never directly in process start.
+        self.assertNotIn("RootShell", early)
+        self.assertEqual(1, BOOT.count("RootShell.runMillis("))
+        self.assertIn("if (!rootConsent) return Action.USE_SETTINGS;", policy)
+        self.assertIn("if (grantApplied && !freshConsent) return Action.WITHDRAW_CONSENT;", policy)
+
     def test_application_starts_process_session_monitor_early(self):
         self.assertIn("MediaNotificationAccessBootstrapper.ensureEarly(this);", APP)
         self.assertIn("ProcessMediaSessionMonitor.start(this);", APP)

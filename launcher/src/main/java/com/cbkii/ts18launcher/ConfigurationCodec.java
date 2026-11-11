@@ -16,7 +16,7 @@ final class ConfigurationCodec {
     static final int VERSION = 1;
     static final int MAX_BYTES = 64 * 1024;
     interface Packages { boolean available(String name); }
-    enum Type { PACKAGE, ROLE, ICON, HUE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE, NAV_SURFACE }
+    enum Type { PACKAGE, ROLE, ICON, HUE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE, NAV_SURFACE, ENGINE }
     static final Map<String, Type> KEYS;
     static {
         Map<String, Type> keys = new LinkedHashMap<>();
@@ -39,6 +39,8 @@ final class ConfigurationCodec {
         keys.put(LauncherPrefs.KEY_RADIO_SIDE, Type.SIDE);
         keys.put(HomeNavigationSurfacePolicy.KEY, Type.NAV_SURFACE);
         keys.put(LauncherPrefs.KEY_MEDIA_MODE, Type.MEDIA);
+        keys.put(MediaEngineSelector.KEY_MUSIC_ENGINE, Type.ENGINE);
+        keys.put(MediaEngineSelector.KEY_RADIO_ENGINE, Type.ENGINE);
         keys.put(LauncherPrefs.KEY_APPEARANCE_MODE, Type.APPEARANCE);
         keys.put(LauncherPrefs.KEY_APPEARANCE_AUTO_SOURCE, Type.AUTO_SOURCE);
         keys.put(LauncherPrefs.KEY_APPEARANCE_DAY_START, Type.MINUTES);
@@ -51,6 +53,15 @@ final class ConfigurationCodec {
             new java.util.LinkedHashSet<>(java.util.Arrays.asList(
                     HomeNavigationSurfacePolicy.RETIRED_MAP_ENABLED_KEY,
                     HomeNavigationSurfacePolicy.RETIRED_MAP_CONTROLS_KEY)));
+
+    /**
+     * Device-local consent state. It is never exported or imported, and any import or reset clears
+     * it, so a settings file can never switch a root convenience on.
+     */
+    static final java.util.Set<String> DEVICE_CONSENT_KEYS = Collections.unmodifiableSet(
+            new java.util.LinkedHashSet<>(java.util.Arrays.asList(
+                    UiPersonalizationPrefs.KEY_MEDIA_LISTENER_ROOT_GRANT,
+                    UiPersonalizationPrefs.KEY_MEDIA_LISTENER_ROOT_GRANT_APPLIED)));
 
     static final class Preview {
         final Map<String, Object> values;
@@ -145,6 +156,7 @@ final class ConfigurationCodec {
             if (type == Type.APPEARANCE && oneOf(text, "auto", "day", "high_contrast", "dim", "night")) return;
             if (type == Type.AUTO_SOURCE && oneOf(text, "sensor", "schedule")) return;
             if (type == Type.NAV_SURFACE && HomeNavigationSurfacePolicy.isKnown(text)) return;
+            if (type == Type.ENGINE && com.cbkii.ts18launcher.media.MediaEngine.isKnownStoredValue(text)) return;
         }
         throw new JSONException("Invalid value for " + key);
     }

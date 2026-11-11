@@ -30,6 +30,36 @@ public final class Ts18LauncherApplication extends Application
     private MediaSourceBootstrapper mediaBootstrapper;
     private String mediaConfiguration = "";
 
+    private com.cbkii.ts18launcher.media.MediaFeatureFacade mediaFacade;
+
+    /** The single UI-facing media entry point; selects the engine acting for each source. */
+    static com.cbkii.ts18launcher.media.MediaFeatureFacade mediaFacade(Context context) {
+        Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();
+        if (app.mediaFacade == null) {
+            app.mediaFacade = new com.cbkii.ts18launcher.media.MediaFeatureFacade(
+                    new com.cbkii.ts18launcher.media.MediaFeatureFacade.Configuration() {
+                        @Override public com.cbkii.ts18launcher.media.MediaEngine requestedEngine(
+                                com.cbkii.ts18launcher.media.MediaSourceKey key) {
+                            return MediaEngineSelector.requested(app, key);
+                        }
+                        @Override public String configuredPackage(
+                                com.cbkii.ts18launcher.media.MediaSourceKey key) {
+                            return MediaEngineSelector.configuredPackage(app, key);
+                        }
+                    }, new LegacyMediaBackend(app), MediaEngines.createDirect(app));
+        }
+        app.mediaFacade.reconcile();
+        return app.mediaFacade;
+    }
+
+    /** True while the legacy engine is the one acting for Radio ({@code radio}) or Music. */
+    static boolean legacyMediaEngineOwns(Context context, boolean radio) {
+        return mediaFacade(context).engine(radio
+                ? com.cbkii.ts18launcher.media.MediaSourceKey.RADIO
+                : com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC)
+                == com.cbkii.ts18launcher.media.MediaEngine.LEGACY;
+    }
+
     /** One playback-command/bootstrap owner survives HOME stop and Activity recreation. */
     static MediaSourceBootstrapper mediaSources(Context context) {
         Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();

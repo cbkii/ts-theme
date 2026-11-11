@@ -43,10 +43,13 @@ class LauncherPrefs {static String KEY_MUSIC="music",KEY_MEDIA_MODE="mode",MEDIA
 static String configured="",storedMode;static String packageFor(Context c,String k){return configured;}
 static LauncherPrefs prefs(Context c){return new LauncherPrefs();}String getString(String k,String d){return storedMode==null?d:storedMode;}
 """ + mode + """}
+enum MediaSourceKey {MUSIC,RADIO} enum MediaEngine {LEGACY,DIRECT}
+class Facade {static MediaEngine music=MediaEngine.LEGACY;MediaEngine engine(MediaSourceKey k){return music;}}
 class ProcessMediaSessionMonitor {static String selected="";static String selectedMusicPackage(){return selected;}}
 class Snapshot {String packageName="other.player";}
 public class Harness extends Context {
 Snapshot genericSnapshot=new Snapshot();
+Facade mediaFacade(){return new Facade();}
 """ + methods + """
 static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
 public static void main(String[] args){Harness h=new Harness();
@@ -61,6 +64,7 @@ PackageManager.installed.add("com.tw.media");check("com.tw.media".equals(h.music
 LauncherPrefs.storedMode="auto";check("other.player".equals(h.musicControlPackage()),"explicit generic mode lost");
 ProcessMediaSessionMonitor.selected="verified.player";h.genericSnapshot.packageName="";
 check("verified.player".equals(h.musicControlPackage()),"temporary UI unknown redirected transport to configured app");
+Facade.music=MediaEngine.DIRECT;check("com.tw.media".equals(h.musicControlPackage()),"direct engine followed a foreign active player");Facade.music=MediaEngine.LEGACY;
 LauncherPrefs.storedMode="prefer_music";check("com.tw.media".equals(h.musicControlPackage()),"configured mode leaked generic recipient");
 PackageManager.unavailable=true;check(TopwayAdapter.defaultMusicPackage(h).isEmpty(),"failed package observation invented source");
 System.out.println("PASS actual Auxio/stock/default/explicit/unavailable/generic Music identity");}}

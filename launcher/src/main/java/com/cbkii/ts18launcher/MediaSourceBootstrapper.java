@@ -1217,6 +1217,27 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         }
     }
 
+    /** Engine hand-off: end every pending legacy command for one package without dispatching. */
+    void cancelPendingFor(String packageName, String reason) {
+        if (packageName == null || packageName.isEmpty()) return;
+        if (packageName.equals(deferredPauseCandidate)) deferredPauseCandidate = "";
+        for (Connection connection : connections.values()) {
+            if (packageName.equals(connection.adapter.packageName)) {
+                finishAll(connection.pending, false, reason);
+                connection.pending.clear();
+            }
+        }
+        for (ServiceStart start : serviceStarts.values()) {
+            if (packageName.equals(start.adapter.packageName)) {
+                finishAll(start.pending, false, reason);
+                start.pending.clear();
+            }
+        }
+        for (Pending pending : new ArrayList<>(inFlightToggle.values())) {
+            if (packageName.equals(pending.packageName)) finish(pending, false, reason);
+        }
+    }
+
     private void finishAll(List<Pending> pending, boolean success, String message) {
         for (Pending command : new ArrayList<>(pending)) finish(command, success, message);
     }

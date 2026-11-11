@@ -158,6 +158,19 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         if (!automaticMediaPreparation() && !explicitMusicPreparation() && !(foregroundBusy && stagedByLoader))
             cancelForeground("media-disabled-by-preference");
         for (Source source : Source.values()) {
+            if (source != Source.NAVIGATION && !legacyEngineOwns(source)) {
+                // Startup preparation is legacy-engine machinery. A source served by another
+                // engine is left entirely alone: no warm-up, no staging, no readiness claim.
+                if (foregroundSource == source) cancelForeground("source-engine-not-legacy");
+                foregroundQueue.remove(source);
+                int released = source.ordinal();
+                if (packages[released] != null) {
+                    // Forget legacy progress once, so returning to legacy starts a clean epoch.
+                    policy.configurationChanged(source); packages[released] = null;
+                    preDispatchRearms[released] = 0;
+                }
+                continue;
+            }
             if (source != Source.NAVIGATION && !automaticMediaPreparation()
                     && !(source == Source.MUSIC && explicitMusicPreparation())) continue;
             String pkg = packageFor(source);
@@ -961,6 +974,10 @@ final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Ob
         try { return Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1); }
         catch (RuntimeException ignored) { return -1L; }
     }
+    private boolean legacyEngineOwns(Source source) {
+        return Ts18LauncherApplication.legacyMediaEngineOwns(context, source == Source.RADIO);
+    }
+
     private String packageFor(Source source) {
         if (source == Source.MUSIC) {
             String pkg = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_MUSIC);

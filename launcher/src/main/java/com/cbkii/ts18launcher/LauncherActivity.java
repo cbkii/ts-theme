@@ -17,6 +17,9 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextClock;
 
+import com.cbkii.ts18launcher.media.MediaEngine;
+import com.cbkii.ts18launcher.media.MediaFeatureFacade;
+import com.cbkii.ts18launcher.media.MediaSourceKey;
 import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
 import java.util.ArrayList;
@@ -424,11 +427,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         selectSource(MediaSelection.RADIO);
         String radioPackage = RadioProvider.resolvePackage(this);
         if (radioPackage.isEmpty()) { openPicker(LauncherPrefs.KEY_RADIO); return; }
-        if (command == MediaListenerService.Command.PLAY_PAUSE && !mediaBootstrapper.isPlaying(radioPackage)) {
+        // Both sources legacy: the legacy engine keeps its own nominate-then-commit handover.
+        // Any other combination is committed by the facade after observed replacement playback.
+        if (mediaFacade().legacyOwnsHandover(MediaSourceKey.RADIO)
+                && command == MediaListenerService.Command.PLAY_PAUSE && !mediaBootstrapper.isPlaying(radioPackage)) {
             String musicPackage = musicControlPackage();
             if (!musicPackage.isEmpty()) mediaBootstrapper.pausePackage(musicPackage);
         }
-        runSourceCommand("Radio", radioPackage, command);
+        runSourceCommand(MediaSourceKey.RADIO, "Radio", radioPackage, command);
     }
 
     private void musicCommand(MediaListenerService.Command command) {
@@ -437,15 +443,21 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         String musicPackage = musicControlPackage();
         if (musicPackage.isEmpty()) { openPicker(LauncherPrefs.KEY_MUSIC); return; }
         LauncherPrefs.rememberMusic(this, musicPackage);
-        if (command == MediaListenerService.Command.PLAY_PAUSE && !mediaBootstrapper.isPlaying(musicPackage)) {
+        if (mediaFacade().legacyOwnsHandover(MediaSourceKey.MUSIC)
+                && command == MediaListenerService.Command.PLAY_PAUSE && !mediaBootstrapper.isPlaying(musicPackage)) {
             String radioPackage = RadioProvider.resolvePackage(this);
             if (!radioPackage.isEmpty()) mediaBootstrapper.pausePackage(radioPackage);
         }
-        runSourceCommand("Music", musicPackage, command);
+        runSourceCommand(MediaSourceKey.MUSIC, "Music", musicPackage, command);
     }
 
+    private MediaFeatureFacade mediaFacade() { return Ts18LauncherApplication.mediaFacade(this); }
+
     private String musicControlPackage() {
-        if (LauncherPrefs.MEDIA_MODE_AUTO.equals(LauncherPrefs.mediaMode(this))) {
+        // Only the legacy engine may follow a globally selected generic player. Every other
+        // engine controls the exact configured Music package and nothing else.
+        if (mediaFacade().engine(MediaSourceKey.MUSIC) == MediaEngine.LEGACY
+                && LauncherPrefs.MEDIA_MODE_AUTO.equals(LauncherPrefs.mediaMode(this))) {
             String selected = ProcessMediaSessionMonitor.selectedMusicPackage();
             if (!selected.isEmpty()) return selected;
             if (!genericSnapshot.packageName.isEmpty()) return genericSnapshot.packageName;
@@ -460,27 +472,30 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 && packageName.equals(radioSnapshot.packageName) && radioSnapshot.supports(command)));
     }
 
-    private void runSourceCommand(String label, String packageName, MediaListenerService.Command command) {
+    private void runSourceCommand(MediaSourceKey key, String label, String packageName,
+                                  MediaListenerService.Command command) {
         int generation = ++mediaStatusGeneration;
         mediaStatusActive = true;
         String appLabel = AppResolver.labelFor(this, packageName, label);
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
                 ? "Preparing " + label + "…" : label, appLabel);
-        dispatchSourceCommand(label, packageName, command, generation);
+        dispatchSourceCommand(key, label, packageName, command, generation);
     }
 
-    private void dispatchSourceCommand(String label, String packageName,
+    private void dispatchSourceCommand(MediaSourceKey key, String label, String packageName,
                                        MediaListenerService.Command command, int generation) {
-        mediaBootstrapper.command(label, packageName, command, (success, message) -> {
+        // One entry point for every engine. The legacy engine receives exactly the call it always
+        // did (same shared owner, label, package and command); only the routing is new.
+        mediaFacade().command(key, packageName, LegacyMediaBackend.userAction(command), result -> {
             if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
             ProcessMediaSessionMonitor.refresh(this);
             MediaListenerService.refreshActiveSessions();
-            if (success) {
+            if (result.settledWithoutError()) {
                 mediaStatusActive = false;
                 updateLabels();
             } else {
                 MediaEventTrace.record("readiness", "background-only-command-failed", packageName);
-                settleSourceCommandFailure(label, packageName, command, generation, message);
+                settleSourceCommandFailure(label, packageName, command, generation, result.message);
             }
         });
     }

@@ -27,6 +27,10 @@ public Context getApplicationContext(){return this;}public Object getSystemServi
 class MediaListenerService {static boolean granted=true,connected;static boolean hasNotificationAccess(android.content.Context c){return granted;}static boolean isConnected(){return connected;}static void refreshActiveSessions(){}}
 class ProcessMediaSessionMonitor {static int refreshes;static void refresh(android.content.Context c){refreshes++;}}
 class AndroidUserId {static int current(){return 0;}}
+class UiPersonalizationPrefs {static boolean consent,applied;static boolean mediaListenerRootGrant(android.content.Context c){return consent;}
+static boolean mediaListenerRootGrantApplied(android.content.Context c){return applied;}
+static void setMediaListenerRootGrant(android.content.Context c,boolean v){consent=v;applied=false;}
+static void markMediaListenerRootGrantApplied(android.content.Context c){applied=true;}}
 class MediaEventTrace {static void record(String a,String b,String... c){}}
 class RootShell {static class Result {boolean completed;int exitCode;}static Result runMillis(String c,long t){throw new AssertionError("connection recovery attempted root grant");}}
 ''',
@@ -38,6 +42,9 @@ Handler.until(100000);check(NotificationListenerService.requests==5,"rebind not 
 MediaNotificationAccessBootstrapper.ensureConnected(c);Handler.until(100000);check(NotificationListenerService.requests==6,"safe HOME did not re-arm");
 MediaListenerService.connected=true;MediaNotificationAccessBootstrapper.connected();Handler.until(200000);check(NotificationListenerService.requests==6,"connected listener kept retrying");
 MediaListenerService.connected=false;MediaNotificationAccessBootstrapper.ensureConnected(c);Handler.until(200000);int before=NotificationListenerService.requests;
+MediaListenerService.granted=false;UiPersonalizationPrefs.consent=true;UiPersonalizationPrefs.applied=true;MediaNotificationAccessBootstrapper.ensureEarly(c);
+check(!UiPersonalizationPrefs.consent&&!UiPersonalizationPrefs.applied,"revoked access did not withdraw root consent");
+MediaNotificationAccessBootstrapper.ensureEarly(c);Handler.until(200000);check(NotificationListenerService.requests==before,"unconsented process start acted");MediaListenerService.granted=true;
 MediaListenerService.granted=false;Handler.until(300000);check(NotificationListenerService.requests==before,"revoked access retried");
 MediaListenerService.granted=true;KeyguardManager.locked=true;MediaNotificationAccessBootstrapper.ensureConnected(c);Handler.until(300000);check(NotificationListenerService.requests==before,"locked user retried");
 KeyguardManager.locked=false;MediaNotificationAccessBootstrapper.ensureConnected(c);Handler.until(300000);check(NotificationListenerService.requests==before+1,"unlock did not retry");
@@ -45,6 +52,7 @@ PowerManager.awake=false;Handler.until(400000);check(NotificationListenerService
 System.out.println("PASS production listener granted/disconnected/bounded/connected/revoked/unlock/sleep");}}
 '''
         }
+        files['com/cbkii/ts18launcher/MediaListenerAccessPolicy.java'] = (ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher/MediaListenerAccessPolicy.java').read_text()
         files['com/cbkii/ts18launcher/MediaNotificationAccessBootstrapper.java'] = (ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher/MediaNotificationAccessBootstrapper.java').read_text()
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

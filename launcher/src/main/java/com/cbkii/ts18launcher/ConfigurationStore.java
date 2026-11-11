@@ -40,6 +40,7 @@ final class ConfigurationStore {
         SharedPreferences.Editor editor = LauncherPrefs.prefs(context).edit();
         for (String key : ConfigurationCodec.KEYS.keySet()) editor.remove(key);
         for (String key : ConfigurationCodec.RETIRED_BOOLEAN_KEYS) editor.remove(key);
+        for (String key : ConfigurationCodec.DEVICE_CONSENT_KEYS) editor.remove(key);
         for (Map.Entry<String, Object> entry : values.entrySet()) {
             if (!ConfigurationCodec.KEYS.containsKey(entry.getKey())) continue;
             Object value = entry.getValue();
