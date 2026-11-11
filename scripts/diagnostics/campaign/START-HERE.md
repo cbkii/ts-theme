@@ -117,7 +117,9 @@ a sealed ZIP invalidates its checksums. Keep originals for comparison.
 `segments.json` records video boundaries; `markers.json` records observations;
 `before/` and `after/` contain package, session/audio, task/window, display, location,
 memory and frame snapshots and per-probe statuses. `events.log` contains only the
-selected TS18 app tags plus Organic Maps' `InCarCompactStartup` events. Worker
+selected TS18 app tags (including the launcher's `TS18Startup` phases) plus Organic Maps'
+`InCarCompactStartup` events, and the framework's own `Displayed`/`Fully drawn` lines for the
+launcher and Organic Maps only (every other `ActivityTaskManager` line is dropped). Worker
 protocol records are stored as metadata. No paired-device list or full getprop dump is requested.
 Redaction/filtering is supplementary privacy protection, not a guarantee that all
 vendor output formats are covered.
@@ -157,3 +159,20 @@ different candidate builds must be compared explicitly by the reviewer. No p95,
 automatic performance improvement, audible success or physical PASS is invented.
 Do not conflate Android boot, launcher response, player readiness, navigation pixels,
 GNSS acquisition or Driving View acquisition.
+
+
+## Startup phases in comparisons
+
+`compare` parses `TS18Startup` lines from each archive's live `events.log` and history
+snapshots. For each launcher process it reports:
+
+- `boot_id` when it was readable;
+- every phase, with its offset from process start;
+- the synchronous startup spans;
+- any expected phase that is missing (`app.create`, `home.create`, `home.first_draw`,
+  `home.focus`);
+- framework `Displayed` and `Fully drawn` timings.
+
+Repeated phases are kept as separate entries. No percentiles or improvements are computed.
+Instrumented phases are what the launcher reported about itself. They are kept separate from
+manual markers and from audible, visible-pixel and GNSS evidence.

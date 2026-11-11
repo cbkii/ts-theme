@@ -218,6 +218,67 @@ class DeviceLock:
         self.file.close()
 
 
+# App evidence tags, the launcher's startup phases, and the framework's own launch timing. Framework
+# lines are narrowed after capture to Displayed/Fully drawn for the launcher and the navigator.
+LOG_TAGS = ['TS18Media:I', 'TS18Nav:I', 'TS18Launcher:I', 'TS18Startup:I', 'InCarCompactStartup:I',
+            'ActivityTaskManager:I', '*:S']
+FRAMEWORK_KEEP = re.compile(r'\b(?:Displayed|Fully drawn) (?:com\.cbkii\.ts18launcher|app\.organicmaps\.incar)/')
+
+
+def narrow_framework(text):
+    """Keep only launch-timing lines from ActivityTaskManager; every other framework line is dropped."""
+    kept = []
+    for line in text.splitlines():
+        if ' ActivityTaskManager' in line or 'ActivityTaskManager:' in line:
+            if not FRAMEWORK_KEEP.search(line):
+                continue
+        kept.append(line)
+    return '\n'.join(kept) + ('\n' if text.endswith('\n') else '')
+
+
+PHASE_LINE = re.compile(r'\bphase=([a-z0-9_.-]+) elapsed=(\d+) process=(-?\d+)(?: boot_id=([0-9a-f-]{36}))?(?: (.*))?$')
+SPAN_LINE = re.compile(r'\bspan=([a-z0-9_.-]+) ms=(\d+) process=(-?\d+)')
+FRAMEWORK_LINE = re.compile(r'\b(Displayed|Fully drawn) ([\w.]+)/[\w.$]+: \+((?:\d+s)?\d+ms)')
+EXPECTED_PHASES = ('app.create', 'home.create', 'home.first_draw', 'home.focus')
+
+
+def _framework_ms(text):
+    seconds = re.match(r'(?:(\d+)s)?(\d+)ms', text)
+    return int(seconds.group(1) or 0) * 1000 + int(seconds.group(2)) if seconds else None
+
+
+def parse_startup(text):
+    """Instrumented startup phases grouped per launcher process. Repeats are kept, never merged."""
+    epochs, framework = [], []
+    for line in text.splitlines():
+        phase = PHASE_LINE.search(line)
+        if phase:
+            name, elapsed, offset, boot_id, detail = phase.groups()
+            if name == 'process.start':
+                epochs.append(dict(process_start_elapsed_ms=int(elapsed), boot_id=boot_id,
+                                   phases=[], spans=[]))
+                continue
+            if not epochs:
+                epochs.append(dict(process_start_elapsed_ms=None, boot_id=None, phases=[], spans=[]))
+            epochs[-1]['phases'].append(dict(name=name, process_ms=int(offset), elapsed_ms=int(elapsed),
+                                             detail=(detail or '')[:160]))
+            continue
+        span = SPAN_LINE.search(line)
+        if span:
+            if not epochs:
+                epochs.append(dict(process_start_elapsed_ms=None, boot_id=None, phases=[], spans=[]))
+            epochs[-1]['spans'].append(dict(name=span.group(1), ms=int(span.group(2)), process_ms=int(span.group(3))))
+            continue
+        launch = FRAMEWORK_LINE.search(line)
+        if launch:
+            framework.append(dict(kind=launch.group(1), package=launch.group(2), ms=_framework_ms(launch.group(3))))
+    for epoch in epochs:
+        names = {p['name'] for p in epoch['phases']}
+        epoch['missing'] = [name for name in EXPECTED_PHASES if name not in names]
+    return dict(process_epochs=epochs, framework_launch=framework,
+                note='Instrumented phases are launcher-reported; not audio, pixels-to-driver or GNSS evidence')
+
+
 def redact(text):
     """Conservative text export. Video is deliberately excluded from this claim."""
     text = re.sub(r'(?i)\b(?:content|file|https?)://\S+', '[URI]', text)
@@ -474,8 +535,7 @@ def snapshot(device, root, phase):
         'density': ['/system/bin/wm', 'density'],
         'boot_completed': ['/system/bin/getprop', 'sys.boot_completed'],
         'build': ['/system/bin/getprop', 'ro.build.fingerprint'],
-        'history': ['/system/bin/logcat', '-d', '-t', '1200', '-v', 'monotonic', '-s',
-                    'TS18Media:I', 'TS18Nav:I', 'TS18Launcher:I', 'InCarCompactStartup:I', '*:S'],
+        'history': ['/system/bin/logcat', '-d', '-t', '1200', '-v', 'monotonic', '-s'] + LOG_TAGS,
         'media': ['/system/bin/dumpsys', 'media_session'],
         'audio': ['/system/bin/dumpsys', 'audio'],
         'tasks': ['/system/bin/dumpsys', 'activity', 'activities'],
@@ -504,7 +564,8 @@ def snapshot(device, root, phase):
             status['status'] = 'PARTIAL'
         status.update(name=name, role='OPTIONAL', argv=args)
         statuses.append(status)
-        (directory / (name + '.txt')).write_text(redact(text), encoding='utf-8')
+        (directory / (name + '.txt')).write_text(redact(narrow_framework(text) if name == 'history' else text),
+                                                 encoding='utf-8')
     write_json(directory / 'STATUS.json', statuses)
 
 
@@ -767,11 +828,10 @@ def capture(args):
         def log():
             try:
                 result, cleanup = device.worker(['/system/bin/logcat', '-T', '1', '-v', 'monotonic',
-                                                '-s', 'TS18Media:I', 'TS18Nav:I', 'TS18Launcher:I',
-                                                'InCarCompactStartup:I', '*:S'],
+                                                '-s'] + LOG_TAGS,
                                                 max(1, int(phase_deadline - time.monotonic())),
                                                 producer_stop, 4 * 1024 * 1024)
-                (private / 'events.log').write_text(redact(result.output.decode('utf-8', 'replace')))
+                (private / 'events.log').write_text(redact(narrow_framework(result.output.decode('utf-8', 'replace'))))
                 logs.append(dict(**result.metadata(), cleanup=cleanup, role='OPTIONAL'))
             except Exception as error:
                 logs.append(dict(status='BLOCKED', cleanup='BLOCKED', reason=type(error).__name__))
@@ -847,6 +907,17 @@ def capture(args):
         print(f'Private evidence retained: {private}', flush=True)
 
 
+def startup_evidence(path):
+    """Parse TS18Startup phases from the archive's live events and history snapshots (bounded)."""
+    sources = {}
+    with zipfile.ZipFile(path) as zipped:
+        for item in zipped.infolist():
+            base = item.filename.rsplit('/', 1)[-1]
+            if base in ('events.log', 'history.txt') and item.file_size <= 8 * 1024 * 1024:
+                sources[item.filename] = parse_startup(zipped.read(item.filename).decode('utf-8', 'replace'))
+    return sources
+
+
 def compare(paths):
     rows, groups, seen = [], {}, set()
     for path in paths:
@@ -866,6 +937,7 @@ def compare(paths):
         if not isinstance(packages, dict):
             packages = {}
         row['installed_identity'] = identities
+        row['instrumented_startup'] = startup_evidence(path)
         row['target_id'], row['android_build'] = metadata.get('target_id'), metadata.get('android_build')
         row['comparison_identity'] = ('VERIFIED' if packages and all(
             isinstance(item, dict) and item.get('status') == 'PASS'
