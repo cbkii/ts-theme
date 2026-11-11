@@ -21,6 +21,7 @@ public class LegacyMonitorDemandTest {
     @After public void restore() { ProcessMediaSessionMonitor.setDemand(context, true); }
 
     @Test public void noLegacySourceMeansNoMonitorAndNoReactivationFromCallers() {
+        ProcessMediaSessionMonitor.setDemand(context, true);
         ProcessMediaSessionMonitor.refresh(context);
         assertTrue(ProcessMediaSessionMonitor.active());
 

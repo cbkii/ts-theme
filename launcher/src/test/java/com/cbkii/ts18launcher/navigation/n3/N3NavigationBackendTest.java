@@ -202,7 +202,7 @@ public class N3NavigationBackendTest {
         assertEquals("RENDER_OBSERVED_VIEW_ONLY", backend.snapshot().classification());
     }
 
-    @Test public void hostSelectionAppliesOnlyToTheNextSessionAndShutdownReleases() {
+    @Test public void retiredHostSelectionIsIgnoredAndShutdownReleases() {
         interactive();
         backend.selectHost(true);
         assertFalse(path().host);
@@ -211,6 +211,6 @@ public class N3NavigationBackendTest {
         assertTrue(path().log.contains("release"));
         backend.selectHost(true);
         backend.start(MAPS);
-        assertTrue(path().host);
+        assertFalse(path().host);
     }
 }

@@ -44,7 +44,7 @@ public final class NavigationFeatureFacade {
         if (!enabled) n3.shutdown();
     }
 
-    public boolean useOptionalHost() { return prefs().getBoolean(KEY_N3_HOST, false); }
+    public boolean useOptionalHost() { return false; }
 
     public void setUseOptionalHost(boolean value) {
         prefs().edit().putBoolean(KEY_N3_HOST, value).apply();

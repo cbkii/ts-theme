@@ -31,7 +31,7 @@ public final class N3MotionConverter {
         if (view == null || !mapper.valid()) return null;
         int action = view.getActionMasked();
         int count = view.getPointerCount();
-        if (count < 1 || count > N3InputMapper.MAX_POINTERS || !N3HostPolicy.allowedAction(action)) {
+        if (count < 1 || count > N3InputMapper.MAX_POINTERS || !(action == 0 || action == 1 || action == 2 || action == 3 || action == 5 || action == 6)) {
             return cancelIfOwned(view);
         }
         if (action == MotionEvent.ACTION_DOWN) {

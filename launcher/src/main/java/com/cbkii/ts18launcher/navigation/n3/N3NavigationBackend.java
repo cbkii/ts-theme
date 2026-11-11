@@ -45,7 +45,7 @@ public final class N3NavigationBackend implements N3Session.Host {
     N3NavigationBackend(Context context, PathFactory factory) {
         this.app = context.getApplicationContext();
         this.factory = factory != null ? factory
-                : host -> host ? new HostDisplayPath(app, main) : new PublicDisplayPath(app, main);
+                : host -> new PublicDisplayPath(app, main);
     }
 
     public void addListener(Listener listener) { listeners.add(listener); if (last != null) listener.onN3(last); }
@@ -53,9 +53,9 @@ public final class N3NavigationBackend implements N3Session.Host {
     public N3Snapshot snapshot() { return last != null ? last : snapshot(session.state(), session.detail()); }
 
     /** Which display authority the next session uses. Changing it never affects a live session. */
-    public void selectHost(boolean optionalHost) { if (!session.state().holdsDisplay()) useHost = optionalHost; }
+    public void selectHost(boolean optionalHost) { useHost = false; }
 
-    public static boolean hostInstalled(Context context) { return HostDisplayPath.installed(context); }
+    public static boolean hostInstalled(Context context) { return false; }
 
     /** Fixed display geometry for the session; the presenter scales it, aspect preserved. */
     public void setGeometry(int displayWidth, int displayHeight, int densityDpi) {

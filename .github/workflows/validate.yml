@@ -84,8 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! gradle --no-daemon --stacktrace \
-              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug :launcher:assembleDebugAndroidTest \
-              :n3host:lintDebug :n3host:testDebugUnitTest :n3host:assembleDebug; then
+              :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug :launcher:assembleDebugAndroidTest; then
             launcher_report="launcher/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
             if [[ -f "$launcher_report" ]]; then cat "$launcher_report"; fi
             find launcher/build -type f -name 'lint-results-*.txt' -print -exec cat {} \; 2>/dev/null || true

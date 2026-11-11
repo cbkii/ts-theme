@@ -115,6 +115,21 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
         self.assertEqual(0, child.returncode)
         child.stdout.close()
 
+    def test_readonly_status_and_verify_then_park_reuse_the_same_task(self):
+        child = self.launch("bootstrap")
+        observed = self.request(child, ["status", 0, "app.organicmaps.incar", 42])
+        self.assertIn("OK code=STATUS", observed[-1])
+        self.assertFalse(any(x.startswith(("MODE", "RESIZE", "FOCUS")) for x in observed))
+        presented = self.request(child, ["resume-windowed", 0, "app.organicmaps.incar", 0, 141, 1131, 702, 42, "com.cbkii.ts18launcher", 7], 2)
+        self.assertIn("OK code=RESUMED_NATIVE", presented[-1])
+        verified = self.request(child, ["verify-native", 0, "app.organicmaps.incar", 0, 141, 1131, 702, 42], 3)
+        self.assertIn("OK code=VERIFIED_NATIVE", verified[-1])
+        parked = self.request(child, ["park-windowed", 0, "app.organicmaps.incar", 42, "com.cbkii.ts18launcher", 7], 4)
+        self.assertIn("FOCUS 7", parked)
+        self.assertIn("OK code=SUSPENDED", parked[-1])
+        self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in parked))
+        self.finish(child)
+
     def test_bootstrap_restores_same_task_then_reuses_process_for_return(self):
         child = self.launch("bootstrap")
         fields = ["resume-windowed", 0, "app.organicmaps.incar", 0, 141, 1131, 702, 42, "com.cbkii.ts18launcher", 7]

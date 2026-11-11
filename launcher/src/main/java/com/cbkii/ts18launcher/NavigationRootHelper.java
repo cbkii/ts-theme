@@ -85,7 +85,7 @@ final class NavigationRootHelper {
         if (Thread.currentThread().isInterrupted() || remaining() < 1500L)
             return NavigationHelperResult.failure("ACTION_TIMEOUT", "before helper admission");
         boolean mapFastPath = args.length > 0 && "app.organicmaps.incar".equals(args[0])
-                && ("resume-windowed".equals(action) || "return-home".equals(action) || "background-fullscreen".equals(action));
+                && ("status".equals(action) || "verify-native".equals(action) || "resume-windowed".equals(action) || "return-home".equals(action) || "park-windowed".equals(action) || "background-fullscreen".equals(action));
         boolean musicFastPath = args.length > 0 && "com.tw.media".equals(args[0]) && "startup-home".equals(action);
         if (mapFastPath || musicFastPath) {
             java.util.ArrayList<String> fields = new java.util.ArrayList<>();

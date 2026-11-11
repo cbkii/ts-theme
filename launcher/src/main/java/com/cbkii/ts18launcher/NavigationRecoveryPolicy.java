@@ -35,6 +35,7 @@ final class NavigationRecoveryPolicy {
         if (code == null) return false;
         switch (code) {
             case "TASK_OBSERVATION_UNCERTAIN": case "TASK_NOT_FOUND": case "TASK_REPLACED":
+            case "STARTUP_FOCUS_UNKNOWN": case "LEGITIMATE_FOREIGN_ACTIVITY":
             case "FOREGROUND_CHANGED": case "TASK_STATE_UNREADABLE": case "COMPONENT_UNKNOWN": case "BOOTSTRAP_PENDING":
             case "LAUNCH_PENDING": case "PHASE_TIMEOUT": case "PRESENTATION_UNCONFIRMED":
             case "NO_RESPONSE":

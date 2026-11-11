@@ -162,6 +162,34 @@ public final class NavTaskBridge {
             ComponentName component = (ComponentName) focused.getClass().getField("topActivity").get(focused);
             return "OK code=FOREGROUND user=" + expectedUser + " task=" + ids[0] + " component=" + component.flattenToString();
         }
+        if ((a.length == 4 && "status".equals(a[0]))
+                || (a.length == 8 && "verify-native".equals(a[0]))) {
+            int user = Integer.parseInt(a[1]);
+            String pkg = a[2];
+            int hint = Integer.parseInt(a[a.length - 1]);
+            if (user < 0 || hint < 0 || !"app.organicmaps.incar".equals(pkg))
+                throw new IllegalArgumentException("BAD_IDENTITY");
+            Object service = Class.forName("android.app.ActivityTaskManager").getDeclaredMethod("getService").invoke(null);
+            Object raw = Class.forName("android.app.IActivityTaskManager").getMethod("getAllStackInfos").invoke(service);
+            Task task = resolve(raw, pkg, user, hint);
+            if (task == null) return "FAIL code=TASK_NOT_FOUND";
+            if ("verify-native".equals(a[0])) requireMap(task);
+            Task home = resolve(raw, "com.cbkii.ts18launcher", user, 0);
+            if (home != null) requireHome(home);
+            if ("verify-native".equals(a[0])) {
+                Rect wanted = new Rect(Integer.parseInt(a[3]), Integer.parseInt(a[4]),
+                        Integer.parseInt(a[5]), Integer.parseInt(a[6]));
+                if (hint <= 0 || wanted.isEmpty()) throw new IllegalArgumentException("BAD_BOUNDS");
+                if (task.mode != 5) return "FAIL code=WINDOWING_MODE_MISMATCH";
+                if (!wanted.equals(task.bounds)) return "FAIL code=BOUNDS_MISMATCH";
+            }
+            return "OK code=" + ("status".equals(a[0]) ? "STATUS" : "VERIFIED_NATIVE")
+                    + " user=" + user + " package=" + pkg + " task=" + task.id + " stack=" + task.stack
+                    + " component=" + task.component + " display=" + task.display + " windowingMode=" + task.mode
+                    + " bounds=" + (task.bounds == null ? "unknown" : task.bounds.left + "," + task.bounds.top
+                        + "," + task.bounds.right + "," + task.bounds.bottom)
+                    + " launched=0 method=N2 phase=task-observation visible=unknown drawn=unknown";
+        }
         if (a.length < 6) throw new IllegalArgumentException("BAD_ARGUMENT");
         String action = a[0], pkg = a[2];
         int user = Integer.parseInt(a[1]);
@@ -178,7 +206,7 @@ public final class NavTaskBridge {
             taskId = Integer.parseInt(a[4]); homeId = Integer.parseInt(a[6]);
             if (!"com.tw.media".equals(pkg) || !"com.tw.media/org.oxycblt.auxio.MainActivity".equals(a[3])
                     || !"com.cbkii.ts18launcher".equals(a[5])) throw new IllegalArgumentException("BAD_IDENTITY");
-        } else if (("return-home".equals(action) && a.length == 6)
+        } else if ((("return-home".equals(action) || "park-windowed".equals(action)) && a.length == 6)
                 || ("background-fullscreen".equals(action) && a.length == 7)) {
             taskId = Integer.parseInt(a[3]); homeId = Integer.parseInt(a[5]);
             if (!"com.cbkii.ts18launcher".equals(a[4])) throw new IllegalArgumentException("BAD_HOME_PACKAGE");
@@ -196,17 +224,18 @@ public final class NavTaskBridge {
         Task task = resolve(stacks.invoke(service), pkg, user, taskId);
         if (task == null) return "FAIL code=TASK_NOT_FOUND";
         Task home = resolve(stacks.invoke(service), "com.cbkii.ts18launcher", user, homeId);
-        if (home == null || home.display != 0 || home.mode != 1 || home.taskCount != 1
-                || !homeComponent(home.component)) throw new IllegalStateException("HOME_STATE_CHANGED");
+        requireHome(home);
         if (sourceReturn) {
             if (task.display != 0 || task.taskCount != 1 || task.activityType != 1 || task.mode != 1 || task.foreignTop
                     || !a[3].equals(task.component)) throw new IllegalStateException("TASK_AUTHORITY_CHANGED");
         } else requireMap(task);
         boolean departure = "background-fullscreen".equals(action);
         foreground(request, focused.invoke(service), taskId, homeId, user, departure);
-        if ("return-home".equals(action) || sourceReturn) {
+        if ("return-home".equals(action) || "park-windowed".equals(action) || sourceReturn) {
+            if ("park-windowed".equals(action) && task.mode != 5)
+                throw new IllegalStateException("SUSPEND_MODE_MISMATCH");
             request.current(); focus.invoke(service, homeId);
-            return "OK code=" + (sourceReturn ? "STARTUP_HOME_RESTORED" : "HOME_RETURNED");
+            return "OK code=" + (sourceReturn ? "STARTUP_HOME_RESTORED" : "park-windowed".equals(action) ? "SUSPENDED" : "HOME_RETURNED");
         }
         if (departure) {
             request.current();
@@ -250,9 +279,16 @@ public final class NavTaskBridge {
 
     private static void requireMap(Task task) {
         if (task == null) throw new IllegalStateException("TASK_NOT_FOUND");
-        if (task.taskCount != 1 || task.display != 0 || task.activityType != 1 || task.foreignTop
-                || !"app.organicmaps.incar/app.organicmaps.MwmActivity".equals(task.component)
+        if (task.foreignTop) throw new IllegalStateException("LEGITIMATE_FOREIGN_ACTIVITY");
+        if ("unknown".equals(task.component)) throw new IllegalStateException("TASK_OBSERVATION_UNCERTAIN");
+        if (task.taskCount != 1 || task.display != 0 || task.activityType != 1
                 || task.mode != 1 && task.mode != 5) throw new IllegalStateException("TASK_AUTHORITY_CHANGED");
+        if (!"app.organicmaps.incar/app.organicmaps.MwmActivity".equals(task.component))
+            throw new IllegalStateException("BOOTSTRAP_PENDING");
+    }
+    private static void requireHome(Task home) {
+        if (home == null || home.display != 0 || home.mode != 1 || home.taskCount != 1
+                || !homeComponent(home.component)) throw new IllegalStateException("HOME_STATE_CHANGED");
     }
     private static boolean homeComponent(String component) {
         return "com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias".equals(component)

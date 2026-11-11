@@ -60,38 +60,16 @@ class N3ContractTests(unittest.TestCase):
         self.assertIn("if (navFacade.n3Enabled()) {", settings)
         facade = code(ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/navigation/NavigationFeatureFacade.java")
         self.assertIn("getBoolean(KEY_N3_ENABLED, false)", facade)
-        self.assertIn("getBoolean(KEY_N3_HOST, false)", facade)
+        self.assertIn("boolean useOptionalHost() { return false; }", facade)
         manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text()
         self.assertRegex(manifest, r'android:name="\.N3Activity"\s+android:configChanges="[^"]+"\s+android:exported="false"')
         policy = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/HomeNavigationSurfacePolicy.java").read_text()
         self.assertNotIn("n3", policy.lower(), "N3 is not a selectable surface until device feasibility passes")
 
-    def test_optional_host_is_separate_inert_by_default_and_identity_bound(self):
-        policy = code(SHARED / "N3HostPolicy.java")
-        self.assertIn("Config DISABLED = new Config(false", policy)
-        for banned in ("Runtime.getRuntime", "ProcessBuilder", "injectInputEvent", "Intent(", "su "):
-            self.assertNotIn(banned, policy)
-        # The launcher itself gains no privilege and never runs host admission.
-        manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text()
-        for banned in ("INJECT_EVENTS", "ACTIVITY_EMBEDDING", "CAPTURE_SECURE_VIDEO_OUTPUT", "ADD_TRUSTED_DISPLAY",
-                       "DisplayHostService"):
-            self.assertNotIn(banned, manifest)
-        for path in (ROOT / "launcher/src/main/java").rglob("*.java"):
-            self.assertNotIn("new N3HostPolicy(", path.read_text(), path.name)
-        # The host APK: inert unless built with an explicit identity, no injection or network permission.
-        host_manifest = (HOST / "src/main/AndroidManifest.xml").read_text()
-        for banned in ("INJECT_EVENTS", "INTERNET", "SYSTEM_ALERT_WINDOW", "WRITE_SECURE_SETTINGS", "sharedUserId"):
-            self.assertNotIn(banned, host_manifest)
-        host_build = (HOST / "build.gradle.kts").read_text()
-        self.assertIn('prop("n3host.enabled") == "true"', host_build)
-        service = code(HOST / "src/main/java/com/cbkii/ts18launcher/n3host/DisplayHostService.java")
-        for entry in ("open(", "launch(", "motion(", "back(", "setSurface(", "close("):
-            body = service.split("@Override public " , 1)[1]
-        self.assertEqual(6, service.count("int uid = Binder.getCallingUid();"))
-        for banned in ("Runtime.getRuntime", "ProcessBuilder", "injectInputEvent", "\"su\"", "ServerSocket", "Socket("):
-            self.assertNotIn(banned, service)
-        release = (ROOT / "release-config.json").read_text()
-        self.assertNotIn("n3host", release)
+    def test_privileged_host_is_retired(self):
+        self.assertFalse(HOST.exists())
+        self.assertFalse((N3 / "HostDisplayPath.java").exists())
+        self.assertNotIn('include(":n3host")', (ROOT / "settings.gradle.kts").read_text())
 
     def test_input_mapper_never_routes_through_root_or_freeform(self):
         mapper = code(SHARED / "N3InputMapper.java")

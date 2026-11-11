@@ -54,6 +54,9 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                             + "retaining authority without launching task=" + taskId);
                     return verified;
                 }
+                if ("LEGITIMATE_FOREIGN_ACTIVITY".equals(verified.code)
+                        || "BOOTSTRAP_PENDING".equals(verified.code)
+                        || "STARTUP_FOCUS_UNKNOWN".equals(verified.code)) return verified;
                 if ("TASK_NOT_FOUND".equals(verified.code)
                         || "TASK_AMBIGUOUS".equals(verified.code)
                         || "COMPONENT_MISMATCH".equals(verified.code)) return verified;

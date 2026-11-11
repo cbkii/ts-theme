@@ -186,10 +186,7 @@ def validate_project() -> list[str]:
     # The launcher is the only product. The retired DoFun theme module and its tooling stay gone.
     settings = (ROOT / "settings.gradle.kts").read_text(encoding="utf-8")
     included = re.findall(r'include\("(:[^"]+)"\)', settings)
-    # The optional N3 display host is a separate experimental APK; it is never the released product.
-    require(included == [":launcher", ":n3host"], f"Gradle must build :launcher and the optional :n3host only, found {included}", errors)
-    host_build = (ROOT / "n3host/build.gradle.kts").read_text(encoding="utf-8")
-    require('prop("n3host.enabled") == "true"' in host_build, "n3host must stay disabled unless explicitly enabled at build time", errors)
+    require(included == [":launcher"], f"Gradle must build :launcher only, found {included}", errors)
     for retired in ("theme", "tools/fetch_replugin.py", "tools/fetch_leaflet.py", "launcher/src/main/assets/map"):
         require(not (ROOT / retired).exists(), f"Retired product path is present: {retired}", errors)
     try:
