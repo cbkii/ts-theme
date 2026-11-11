@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- When neither Music nor Radio uses the Legacy engine, stop the legacy session monitor entirely (subscription, callbacks and its one-second visible tick) instead of computing state that is then discarded.
+
 - Add the experimental, independent N3 package (`navigation/n3`): a generation-tagged session state machine, a feasibility classifier and a read-only probe (Settings → Experimental · N3 display host) that asks Android whether the selected navigation Activity may start on a private launcher-owned display. N3 is not a selectable surface; N0–N2 are unchanged. See `docs/NAVIGATION.md`.
 
 - Retire the DoFun/RePlugin theme product: remove `theme/`, the RePlugin fetch, theme installers/rollback scripts and `docs/INSTALL_TS18.md`, and the theme lint/build/envelope steps in CI. The production release pipeline now builds, qualifies and publishes only `com.cbkii.ts18launcher` (`TS18-Launcher-<tag>.apk` with an install-tools ZIP). Qualification requires v2 signing and v1 only below minSdk 24. The installed OEM DoFun host is untouched.

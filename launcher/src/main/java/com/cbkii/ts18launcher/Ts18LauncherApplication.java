@@ -49,6 +49,12 @@ public final class Ts18LauncherApplication extends Application
                     }, new LegacyMediaBackend(app), MediaEngines.createDirect(app));
         }
         app.mediaFacade.reconcile();
+        // The legacy session monitor runs only while some source is on the legacy engine.
+        ProcessMediaSessionMonitor.setDemand(app,
+                app.mediaFacade.engine(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC)
+                        == com.cbkii.ts18launcher.media.MediaEngine.LEGACY
+                || app.mediaFacade.engine(com.cbkii.ts18launcher.media.MediaSourceKey.RADIO)
+                        == com.cbkii.ts18launcher.media.MediaEngine.LEGACY);
         return app.mediaFacade;
     }
 

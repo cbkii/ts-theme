@@ -73,6 +73,14 @@ its own. It observes sessions the source apps publish and sends them transport a
 - Whether Auxio-TS actually begins playback from a bare `play()` after a cold bind is a property
   of the installed Auxio-TS build and is **not yet physically verified**.
 
+## Idle cost per engine
+
+- No source on Direct: the direct engine holds no subscription, callback or timer.
+- No source on Legacy: the legacy `ProcessMediaSessionMonitor` is torn down (no session
+  subscription, per-session callbacks or one-second visible verification tick) and HOME,
+  listener and settings refreshes do not recreate it. Switching a source back to Legacy
+  restores it. The shared notification-listener component itself stays enabled for both.
+
 ## Qualification status
 
 Both engines are verified by host tests only (JVM/Robolectric API 29, source contracts, R8 release

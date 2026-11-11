@@ -102,12 +102,36 @@ final class ProcessMediaSessionMonitor {
         if (instance == null) instance = new ProcessMediaSessionMonitor(context);
         return instance;
     }
+    /**
+     * Whether any source is served by the legacy engine. When neither is, this monitor holds no
+     * session subscription, callbacks or one-second visible tick: its output would be discarded.
+     */
+    private static volatile boolean demand = true;
+
+    static void setDemand(Context context, boolean needed) {
+        if (demand == needed) return;
+        demand = needed;
+        if (!needed) {
+            ProcessMediaSessionMonitor owner = instance;
+            instance = null; // Observers stay registered; they are fed again when demand returns.
+            if (owner != null) owner.main.post(owner::destroy);
+            MediaEventTrace.record("m1", "monitor-idle", "no source on the legacy engine");
+        } else {
+            refresh(context);
+        }
+    }
+
+    /** True while a legacy monitor instance exists; for tests and diagnostics. */
+    static boolean active() { return instance != null; }
+
     static void start(Context context) { refresh(context); }
     static void refresh(Context context) {
+        if (!demand) return;
         ProcessMediaSessionMonitor owner = monitor(context);
         owner.main.post(owner::requestRefresh);
     }
     static void setVisible(Context context, boolean visible) {
+        if (!demand) return;
         ProcessMediaSessionMonitor owner = monitor(context);
         owner.main.post(() -> {
             owner.visible = visible;
@@ -119,7 +143,7 @@ final class ProcessMediaSessionMonitor {
         });
     }
     static void observeExternal(Context context, MediaController controller) {
-        if (controller == null) return;
+        if (controller == null || !demand) return;
         ProcessMediaSessionMonitor owner = monitor(context);
         owner.main.post(() -> {
             if (owner.destroyed) return;
@@ -159,6 +183,7 @@ final class ProcessMediaSessionMonitor {
         if (observer == null) return;
         for (WeakReference<Observer> r : OBSERVERS) if (r.get() == observer) return;
         OBSERVERS.add(new WeakReference<>(observer));
+        if (!demand) return;
         ProcessMediaSessionMonitor owner = monitor(context);
         owner.main.post(() -> {
             if (!contains(observer)) return;
