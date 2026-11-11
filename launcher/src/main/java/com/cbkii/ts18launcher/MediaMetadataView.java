@@ -21,6 +21,8 @@ final class MediaMetadataView extends LinearLayout {
     private final MetadataFadeRow secondaryRow;
     private final RadioMetadataResolver radioResolver;
     private MediaListenerService.Snapshot currentSnapshot;
+    private String statusPrimary;
+    private String statusSecondary = "";
     private String lastPrimary;
     private String lastSecondary;
     private String lastSourceIdentity;
@@ -73,12 +75,28 @@ final class MediaMetadataView extends LinearLayout {
     /** Command/readiness diagnostics must never replace now-playing metadata. */
     void setMetadata(String ignoredTitle, String ignoredContext) { }
 
+    /**
+     * Truthful state of a source that has nothing to play from: shown instead of metadata until
+     * cleared. Passing a null or empty primary clears it. Identical repeats do not re-render.
+     */
+    void setStatus(String primaryText, String secondaryText) {
+        String nextPrimary = primaryText == null || primaryText.trim().isEmpty() ? null : primaryText.trim();
+        String nextSecondary = nextPrimary == null || secondaryText == null ? "" : secondaryText.trim();
+        if (java.util.Objects.equals(nextPrimary, statusPrimary) && nextSecondary.equals(statusSecondary)) return;
+        statusPrimary = nextPrimary;
+        statusSecondary = nextSecondary;
+        renderSnapshot(currentSnapshot);
+    }
+
     private void renderSnapshot(MediaListenerService.Snapshot snapshot) {
         String selected = selectedSource;
         String sourceIdentity = sourceIdentity(snapshot);
         String appLabel = snapshot == null || snapshot.packageName.isEmpty()
                 ? "" : AppResolver.labelFor(getContext(), snapshot.packageName, "");
-        MediaTickerPolicy.Display display = MediaTickerPolicy.resolve(
+        if (statusPrimary != null) sourceIdentity = selected + ":status:" + statusPrimary;
+        MediaTickerPolicy.Display display = statusPrimary != null
+                ? new MediaTickerPolicy.Display(statusPrimary, statusSecondary)
+                : MediaTickerPolicy.resolve(
                 snapshot == null ? "" : snapshot.title,
                 snapshot == null ? "" : snapshot.artist,
                 appLabel,

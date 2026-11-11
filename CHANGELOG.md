@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the opt-in **M2 Direct** media engine (`media/direct`): exact configured package, one pinned session token, one directional dispatch per tap confirmed only by that session, truthful `ACKNOWLEDGED` / `SENT_UNCONFIRMED` / `UNSUPPORTED` / `SOURCE_LOST` / `FAILED` results, and no launching, binding or preparation of any app. Selectable per source under Settings → Media → Control engine; Legacy remains the default. HOME shows a non-live Direct source as unavailable with a one-line reason instead of a ready Play button. See `docs/MEDIA.md`.
+
 - Add per-source media engine selection behind one `MediaFeatureFacade`: `music.engine` and `radio.engine` (`legacy` | `m2`, default and fallback `legacy`) are persisted, exported/imported and reset independently. The existing machinery is kept unchanged as the M1 legacy engine behind `LegacyMediaBackend`; a deselected engine is detached before the selected one may act, cannot command, and cannot publish state. Legacy startup preparation skips any source not served by the legacy engine. This build contains no second engine, so a stored `m2` resolves to legacy.
 - Root is no longer used implicitly to enable the launcher's notification listener. The Android "Notification access" screen is the default; an explicit, device-local switch (off by default, never exported, cleared by import/reset) permits one root grant of the launcher's own listener. If access is removed after such a grant, the consent withdraws itself and access is not restored.
 

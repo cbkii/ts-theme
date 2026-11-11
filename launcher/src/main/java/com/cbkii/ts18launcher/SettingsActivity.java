@@ -291,6 +291,10 @@ public final class SettingsActivity extends Activity {
                             MediaListenerService.refreshActiveSessions(); render();
                         }));
 
+        addSection("Control engine");
+        addEngineRow(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC, R.drawable.ic_music, "Music control engine");
+        addEngineRow(com.cbkii.ts18launcher.media.MediaSourceKey.RADIO, R.drawable.ic_radio, "Radio control engine");
+
         addSection("Access");
         addSystemRow(R.drawable.ic_notifications, "Notification access",
                 MediaListenerService.hasNotificationAccess(this)
@@ -666,6 +670,31 @@ public final class SettingsActivity extends Activity {
         int value = day ? LauncherPrefs.appearanceDayStartMinutes(this) : LauncherPrefs.appearanceNightStartMinutes(this);
         if (value < 0) value = day ? LauncherPrefs.DEFAULT_DAY_START_MINUTES : LauncherPrefs.DEFAULT_NIGHT_START_MINUTES;
         return String.format(Locale.US, "%02d:%02d", value / 60, value % 60);
+    }
+
+    /**
+     * Legacy stays the default and the rollback. Direct controls only a session the selected app
+     * already publishes; it does not start the app, so it is offered as an explicit trial.
+     */
+    private void addEngineRow(com.cbkii.ts18launcher.media.MediaSourceKey key, int icon, String title) {
+        com.cbkii.ts18launcher.media.MediaEngine current =
+                Ts18LauncherApplication.mediaFacade(this).engine(key);
+        String legacy = com.cbkii.ts18launcher.media.MediaEngine.LEGACY.storedValue();
+        String direct = com.cbkii.ts18launcher.media.MediaEngine.DIRECT.storedValue();
+        addChoiceRow(icon, title,
+                current == com.cbkii.ts18launcher.media.MediaEngine.DIRECT
+                        ? "Direct · TESTING · controls a running app only"
+                        : "Legacy · default",
+                v -> choose(title,
+                        new String[] {"Legacy · default, can start the app",
+                                "Direct · TESTING · exact app, running sessions only"},
+                        new String[] {legacy, direct}, current.storedValue(), value -> {
+                            MediaEngineSelector.setRequested(this, key,
+                                    com.cbkii.ts18launcher.media.MediaEngine.fromStored(value));
+                            // Re-selects engines now: the deselected one is detached first.
+                            Ts18LauncherApplication.mediaFacade(this).refresh();
+                            render();
+                        }));
     }
 
     private String mediaModeLabel() {

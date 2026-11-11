@@ -83,6 +83,17 @@ public final class MediaFeatureFacade {
 
     public void setStateListener(MediaBackend.StateListener listener) { this.listener = listener; }
 
+    /** Ask the engines that currently serve a source to re-read live state. */
+    public void refresh() {
+        reconcile();
+        boolean legacyServes = false, directServes = false;
+        for (MediaSourceKey key : MediaSourceKey.values()) {
+            if (backend(key) == legacy) legacyServes = true; else directServes = true;
+        }
+        if (legacyServes) legacy.refresh();
+        if (directServes && direct != null) direct.refresh();
+    }
+
     public void command(MediaSourceKey key, String packageName, MediaUserAction action,
                         MediaBackend.ResultCallback callback) {
         reconcile();

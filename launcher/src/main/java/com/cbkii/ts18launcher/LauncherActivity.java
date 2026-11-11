@@ -20,6 +20,7 @@ import android.widget.TextClock;
 import com.cbkii.ts18launcher.media.MediaEngine;
 import com.cbkii.ts18launcher.media.MediaFeatureFacade;
 import com.cbkii.ts18launcher.media.MediaSourceKey;
+import com.cbkii.ts18launcher.media.MediaSourceState;
 import com.cbkii.ts18launcher.platform.TopwayAdapter;
 
 import java.util.ArrayList;
@@ -80,6 +81,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private volatile MediaListenerService.Snapshot processGenericSnapshot = emptyMediaSnapshot();
     private volatile MediaListenerService.Snapshot processRadioSnapshot = emptyMediaSnapshot();
     private volatile boolean processSnapshotAuthoritative;
+    /** Last failed direct-engine action, shown briefly in place of metadata. */
+    private String directFailureText = "";
+    private MediaSourceKey directFailureKey;
     private MediaListenerService.Snapshot genericSnapshot = emptyMediaSnapshot();
     private MediaListenerService.Snapshot radioSnapshot = emptyMediaSnapshot();
 
@@ -175,6 +179,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         super.onResume();
         if (redirectingToHome || root == null) return;
         ProcessMediaSessionMonitor.refresh(this);
+        mediaFacade().refresh();
         scheduleMediaReadiness();
     }
 
@@ -225,6 +230,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         MediaListenerService.addObserver(this);
         ProcessMediaSessionMonitor.refresh(this);
         MediaListenerService.refreshActiveSessions();
+        // A source served by the direct engine reports through the facade, never through the
+        // legacy observers above.
+        mediaFacade().setStateListener(state -> applyEffectiveMediaState());
+        mediaFacade().refresh();
         applyRailConfiguration();
         scheduleMediaReadiness();
         root.post(this::updateNavigationSurface);
@@ -242,6 +251,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         ProcessMediaSessionMonitor.setVisible(this, false);
         ProcessMediaSessionMonitor.removeObserver(this);
         MediaListenerService.removeObserver(this);
+        mediaFacade().setStateListener(null);
+        directFailureText = "";
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
         if (navigationWindowController != null) navigationWindowController.onHomeStopped();
         super.onStop();
@@ -495,13 +506,18 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 updateLabels();
             } else {
                 MediaEventTrace.record("readiness", "background-only-command-failed", packageName);
-                settleSourceCommandFailure(label, packageName, command, generation, result.message);
+                settleSourceCommandFailure(key, label, packageName, command, generation, result.message);
             }
         });
     }
 
-    private void settleSourceCommandFailure(String label, String packageName,
+    private void settleSourceCommandFailure(MediaSourceKey key, String label, String packageName,
             MediaListenerService.Command command, int generation, String message) {
+        if (mediaFacade().engine(key) == MediaEngine.DIRECT) {
+            directFailureKey = key;
+            directFailureText = message == null ? "" : message;
+            updateLabels();
+        }
         if (command == MediaListenerService.Command.PLAY_PAUSE)
             mediaSelection.reconcileAfterFailedSwitch(radioSnapshot.playing, genericSnapshot.playing);
         MediaEventTrace.record("command", "failed", packageName + " · " + message);
@@ -509,6 +525,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         mediaRefreshHandler.postDelayed(() -> {
             if (generation != mediaStatusGeneration) return;
             mediaStatusActive = false;
+            directFailureText = "";
             updateLabels();
         }, MEDIA_STATUS_MS);
     }
@@ -648,6 +665,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             }
             updatePlaybackButton(playPause, genericSnapshot, getString(R.string.media_source_music));
             setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
+            applyDirectSourcePresentation();
             updateMediaPresentation();
             return;
         }
@@ -663,7 +681,42 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         }
         updatePlaybackButton(playPause, genericSnapshot, getString(R.string.media_source_music));
         setMediaButtonsReady(mediaPrevious, playPause, mediaNext);
+        applyDirectSourcePresentation();
         updateMediaPresentation();
+    }
+
+    /**
+     * Truthful presentation for sources on the direct engine: a non-live source never shows a
+     * ready Play button, and the selected source explains in one line why it cannot be controlled.
+     */
+    private void applyDirectSourcePresentation() {
+        MediaFeatureFacade facade = mediaFacade();
+        MediaSourceKey displayedKey = MediaEngineSelector.keyFor(mediaSelection.displayed());
+        String status = "";
+        String statusDetail = "";
+        for (MediaSourceKey key : MediaSourceKey.values()) {
+            if (facade.engine(key) != MediaEngine.DIRECT) continue;
+            MediaSourceState state = facade.state(key);
+            ImageButton button = key == MediaSourceKey.RADIO ? radioPlayPause : playPause;
+            String sourceName = getString(key == MediaSourceKey.RADIO
+                    ? R.string.media_source_radio : R.string.media_source_music);
+            if (!state.live()) {
+                String reason = DirectMediaPresentation.unavailableText(state.availability);
+                button.setTag(R.drawable.ic_media_unavailable);
+                button.setImageResource(R.drawable.ic_media_unavailable);
+                button.setContentDescription(sourceName + ". " + reason);
+                if (key == displayedKey) {
+                    status = state.packageName.isEmpty() ? sourceName
+                            : AppResolver.labelFor(this, state.packageName, sourceName);
+                    statusDetail = reason;
+                }
+            }
+            if (key == displayedKey && key == directFailureKey && !directFailureText.isEmpty()) {
+                status = directFailureText;
+                statusDetail = "";
+            }
+        }
+        mediaText.setStatus(status, statusDetail);
     }
 
     private void updatePlaybackButton(ImageButton button, MediaListenerService.Snapshot snapshot, String source) {
@@ -759,11 +812,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void applyEffectiveMediaState() {
         runOnUiThread(() -> {
-            genericSnapshot = mergeSessionSnapshot(
+            MediaFeatureFacade facade = mediaFacade();
+            boolean musicDirect = facade.engine(MediaSourceKey.MUSIC) == MediaEngine.DIRECT;
+            boolean radioDirect = facade.engine(MediaSourceKey.RADIO) == MediaEngine.DIRECT;
+            // Each source is rendered only from the engine selected for it; the other engine's
+            // observation of that source is discarded here and never merged.
+            genericSnapshot = musicDirect
+                    ? DirectMediaPresentation.snapshot(facade.state(MediaSourceKey.MUSIC))
+                    : mergeSessionSnapshot(
                     processGenericSnapshot, listenerGenericSnapshot, processSnapshotAuthoritative);
-            radioSnapshot = mergeSessionSnapshot(
+            radioSnapshot = radioDirect
+                    ? DirectMediaPresentation.snapshot(facade.state(MediaSourceKey.RADIO))
+                    : mergeSessionSnapshot(
                     processRadioSnapshot, listenerRadioSnapshot, processSnapshotAuthoritative);
-            if (processSnapshotAuthoritative)
+            if ((musicDirect || processSnapshotAuthoritative) && (radioDirect || processSnapshotAuthoritative))
                 mediaSelection.reconcileObservedPlayback(radioSnapshot.playing, genericSnapshot.playing,
                         MediaCommandPolicy.usesPauseAction(radioSnapshot.state)
                                 || MediaCommandPolicy.usesPauseAction(genericSnapshot.state));

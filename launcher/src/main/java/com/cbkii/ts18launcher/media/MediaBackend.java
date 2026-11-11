@@ -40,4 +40,7 @@ public interface MediaBackend {
     void pauseForHandover(MediaSourceKey key);
 
     void setStateListener(StateListener listener);
+
+    /** Re-read live state now (for example when HOME returns). Engines without a pull path ignore it. */
+    default void refresh() { }
 }

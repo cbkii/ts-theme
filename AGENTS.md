@@ -92,3 +92,15 @@ exact-head TESTING candidate and its hash-pinned P/F/N kit for the physical smok
 ## Approved 20 October 2026 execution profile
 
 The current child selects N2 + guarded bridge + fullscreen departure, with immediate root-first Music preparation through paired Auxio’s non-exported capability. This supersedes historical browser-first delay and profile-comparison guidance above. Ordinary HOME interactions cannot disable startup for the boot. Preserve one coordinator, exact foreground/task checks and accepted/uncertain claims. Around three seconds is a soft target; fastest reliable measured behaviour is mandatory. Do not infer physical success from host tests.
+
+## Media engines (November 2026)
+
+`docs/MEDIA.md` is the current contract and supersedes older single-engine wording above.
+Music and Radio each use exactly one engine through `MediaFeatureFacade`: **M1 Legacy** (default
+and rollback; the original bootstrapper/monitor/listener machinery, left behaviourally unchanged)
+or **M2 Direct** (`media/direct`, opt-in TESTING). Keep them independent: `media/direct` must not
+reference legacy classes, start/bind/prepare any app, create a session or request audio focus, and
+`media/` (the contract) must stay free of Android and launcher types. A deselected engine must not
+command, prepare or publish for that source. Do not change a default engine without physical
+qualification and owner approval. The root grant of the launcher's own notification listener is
+explicit opt-in only and must never restore access the owner revoked.
