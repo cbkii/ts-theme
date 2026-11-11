@@ -10,7 +10,7 @@ final class HomeNavigationSurfacePolicy {
     static final String NATIVE_WINDOW = "native_window";
     /** Retired in-HOME online map. Accepted only as upgrade/import input; never stored again. */
     static final String RETIRED_LEAFLET = "leaflet";
-    /** Retired boolean that selected the online map before {@link #KEY} existed. */
+    /** Retired boolean that selected the online map before the surface-mode key existed. */
     static final String RETIRED_MAP_ENABLED_KEY = "map.enabled";
     /** Retired online-map option. Accepted in old exports and discarded. */
     static final String RETIRED_MAP_CONTROLS_KEY = "map.controls.enabled";

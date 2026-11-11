@@ -78,6 +78,18 @@ class StandaloneLauncherContractTests(unittest.TestCase):
         self.assertNotIn("leaflet.js", checker)
         self.assertIn('"assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt"', checker)
 
+    def test_launcher_sources_avoid_inline_javadoc_tags_that_crash_ci_lint(self):
+        # Android lint in the CI task set fails with an internal JavaDocParser error
+        # (NoSuchMethodError in parseDataItem) on inline Javadoc tags. Plain prose only.
+        source = ROOT / "launcher/src/main/java"
+        offenders = []
+        for path in sorted(source.rglob("*.java")):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                stripped = line.strip()
+                if stripped.startswith(("*", "/**")) and ("{@" in stripped or stripped.startswith("* @")):
+                    offenders.append(f"{path.relative_to(ROOT)}:{number}")
+        self.assertEqual([], offenders)
+
     def test_online_map_is_retired_from_source_build_and_permissions(self):
         gradle = self.read("launcher/build.gradle.kts")
         manifest = self.read("launcher/src/main/AndroidManifest.xml")
