@@ -137,12 +137,14 @@ public final class DirectSourceMediaBackend implements MediaBackend {
     @Override public void attach(MediaSourceKey key, String packageName) {
         engines.get(key).attach(packageName);
         host.trace("attached", key + " " + (packageName == null ? "" : packageName));
+        traced.remove(key);
         if (registry.started()) registry.refresh(); else registry.start();
     }
 
     @Override public void detach(MediaSourceKey key) {
         engines.get(key).detach();
         host.trace("detached", key.name());
+        traced.remove(key);
         for (DirectSourceEngine engine : engines.values()) if (engine.attached()) return;
         // Nothing is served by this engine any more: drop every subscription and callback.
         registry.stop();
@@ -163,6 +165,8 @@ public final class DirectSourceMediaBackend implements MediaBackend {
             host.trace("result", key + " " + action + " " + result);
             if (callback != null) callback.onResult(result);
         });
+        // A tap can change pending work without a presentation change, so record it here too.
+        traceStates();
     }
 
     @Override public void pauseForHandover(MediaSourceKey key) { engines.get(key).pauseForHandover(); }
@@ -170,6 +174,7 @@ public final class DirectSourceMediaBackend implements MediaBackend {
     @Override public void preparePassive(MediaSourceKey key, String packageName, long epoch) {
         DirectSourceEngine engine = engines.get(key);
         if (engine.attached() && engine.packageName().equals(packageName)) engine.preparePassive(epoch);
+        traceStates();
     }
 
     @Override public void setStateListener(StateListener listener) { this.listener = listener; }

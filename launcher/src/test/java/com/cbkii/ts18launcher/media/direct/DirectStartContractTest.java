@@ -110,7 +110,8 @@ public class DirectStartContractTest {
         FakeSession player = unloaded("m1", PLAYER);
         backend.attach(MediaSourceKey.MUSIC, PLAYER);
         assertEquals(Collections.singletonList(
-                "MUSIC avail=LIVE state=2 loaded=0 deadline=0 owned=0 startable=0 starting=0 preparing=0"), states);
+                "MUSIC avail=LIVE state=2 play=1 loaded=0 deadline=0 owned=0 startable=0 starting=0 preparing=0"),
+                states);
 
         player.deadlinePlay = true;
         player.emit();
@@ -120,5 +121,30 @@ public class DirectStartContractTest {
         assertEquals(3, states.size());
         assertTrue(states.get(1).contains("loaded=0 deadline=1"));
         assertTrue(states.get(2).contains("loaded=1 deadline=1"));
+
+        player.actions(PlaybackState.ACTION_PAUSE).emit();
+        assertTrue("losing the advertised Play action is recorded", states.get(3).contains(" play=0 "));
+    }
+
+    @Test public void reselectingASourceRecordsAFreshBaselineEvenWhenNothingChanged() {
+        unloaded("m1", PLAYER);
+        backend.attach(MediaSourceKey.MUSIC, PLAYER);
+        backend.detach(MediaSourceKey.MUSIC);
+        backend.attach(MediaSourceKey.MUSIC, PLAYER);
+
+        assertEquals(2, states.size());
+        assertEquals(states.get(0), states.get(1));
+    }
+
+    @Test public void aTapThatCancelsPassivePreparationIsRecordedWithoutAPresentationChange() {
+        FakeSession player = unloaded("m1", PLAYER).actions(DirectTestKit.FULL | PlaybackState.ACTION_PREPARE);
+        backend.attach(MediaSourceKey.MUSIC, PLAYER);
+        backend.preparePassive(MediaSourceKey.MUSIC, PLAYER, 1L);
+        assertTrue(states.get(states.size() - 1).endsWith("preparing=1"));
+
+        backend.command(MediaSourceKey.MUSIC, PLAYER, MediaUserAction.PLAY_PAUSE, results::add);
+
+        assertTrue(states.get(states.size() - 1).endsWith("preparing=0"));
+        assertEquals(Collections.singletonList(DirectOperation.PREPARE), player.dispatched);
     }
 }

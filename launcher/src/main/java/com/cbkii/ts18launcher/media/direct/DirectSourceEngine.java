@@ -221,14 +221,15 @@ public final class DirectSourceEngine {
 
     /**
      * One short line for the event trace: what a Play tap would meet right now. It changes only
-     * when availability, playback state, loaded-ness, the deadline capability or a pending start
-     * changes, never with position or track metadata.
+     * when availability, playback state, the advertised Play action, loaded-ness, the deadline
+     * capability or a pending start changes, never with position or track metadata.
      */
     String diagnostic() {
         if (!attached) return "unconfigured";
         boolean live = availability == MediaSourceState.Availability.LIVE && current != null;
         return "avail=" + availability
                 + " state=" + (live ? current.nativeState : -1)
+                + " play=" + (live && (current.actions & DirectOperation.PLAY.supportingActions()) != 0 ? 1 : 0)
                 + " loaded=" + (live && loaded(current) ? 1 : 0)
                 + " deadline=" + (live && current.deadlinePlay ? 1 : 0)
                 + " owned=" + (live && current.sourceOwned ? 1 : 0)

@@ -4,7 +4,7 @@ Use only the signed final-head TESTING launcher and its companion Auxio build li
 
 Install the two application updates, retaining settings. Music and Radio default to M2 when unset; an explicit Legacy setting remains available for rollback. Confirm the existing HOME selection, app choices and local permissions. Complete real Organic Maps permission/settings screens normally.
 
-Before the first scenario run the collector once (command below) and compare `apk-identity.txt` with the hand-off SHA-256 values: the first line is the launcher, the second Auxio. A mismatch means the campaign is testing something else; stop and reinstall.
+Before the first scenario run the collector once (command below) and compare `apk-identity.txt` with the hand-off SHA-256 values. Each line reads `package sha256 path`; match the `com.cbkii.ts18launcher` and `com.tw.media` lines by package name, not by position. A mismatch, a `NOT_INSTALLED` line or a section that is not PASS in `STATUS.tsv` means the campaign is not testing the delivered pair; stop and reinstall.
 
 For each row below, record PASS/FAIL/NOT_RUN and a short timestamped observation. Do not repeat a visibly failing scenario many times: capture its earliest failure first.
 
@@ -30,12 +30,14 @@ With root available, `timeline.txt` holds the launcher's `TS18Media` lines. For 
 
 | Line | Meaning |
 |---|---|
-| `m2/state · MUSIC avail=LIVE state=2 loaded=0 deadline=1 …` | What a Play tap would meet. `loaded=0 deadline=1` gets one bounded Play; `loaded=1` gets ordinary Play; `loaded=0 deadline=0` is refused with "needs a loaded item". `avail` other than `LIVE` with `startable=1` means a tap first connects the source's media browser |
-| `m2/deadline-dispatch` / `m2/dispatch · MUSIC PLAY` | The single command sent for a tap, bounded or ordinary |
-| `m2/result · …` | How that tap ended: acknowledged, sent-unconfirmed, unsupported, failed |
+| `m2/state · MUSIC avail=LIVE state=2 play=1 loaded=0 deadline=1 …` | What a Play tap would meet at that moment. `play` is whether the session advertises Play at all; with `play=0` a tap is refused as unsupported whatever else is set. `loaded` only means the session has published an item id or title. With `play=1`: `loaded=1` gets ordinary Play, `loaded=0 deadline=1` gets one bounded Play, and `loaded=0 deadline=0` is refused with "needs a loaded item". `avail` other than `LIVE` with `startable=1` means a tap first connects the source's media browser |
+| `m2/deadline-dispatch` / `m2/dispatch · MUSIC PLAY` | The single command actually sent for a tap, bounded or ordinary |
+| `m2/result · MUSIC PLAY_PAUSE ACKNOWLEDGED…` | How that tap ended. `ACKNOWLEDGED`: the session reported the requested state. `SENT_UNCONFIRMED`: sent once, no confirming state before the deadline (not a rejection, never retried). `UNSUPPORTED`: nothing sent. `SOURCE_LOST`: the pinned session disappeared or changed; record what the source app was doing. `FAILED`: nothing could be sent (no session, no access, ambiguous source) |
 | `m2/start-offered`, `start-failed` | Outcome of a media-browser connection |
 
-Two captures settle the open Radio questions without changing anything. With NavRadio+ already open and paused, a `RADIO` state line with `loaded=1` means Play from HOME is expected to work; `loaded=0 deadline=0` means the installed build publishes no station while paused and Play is refused by design: record it as an observation, not a launcher failure. `radio.txt` lists the services and intent filters the installed build actually exports, which is the evidence needed before any background Radio start could be considered.
+The state line is the launcher's view at the time it was written; always read it together with the dispatch and result lines that follow the tap.
+
+Two captures settle the open Radio questions without changing anything. With NavRadio+ already open and paused, a `RADIO` state line with `play=1 loaded=1` means Play from HOME is expected to work; `loaded=0 deadline=0` means the installed build publishes no station while paused and Play is refused by design: record it as an observation, not a launcher failure. `radio.txt` lists the services and intent filters the installed build actually exports, which is the evidence needed before any background Radio start could be considered.
 
 If Music or Radio misbehaves under M2, set that source back to the Legacy engine in Settings, note the time, and continue the remaining rows; this is the supported rollback and does not need a reinstall.
 
