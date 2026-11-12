@@ -75,6 +75,13 @@ final class LegacyMediaBackend implements MediaBackend {
                     MediaCommandResult.Outcome.FAILED, "Legacy engine is not selected", false, false));
             return;
         }
+        if (action == MediaUserAction.PLAY) {
+            boolean observed = playing(key, packageName);
+            if (callback != null) callback.onResult(new MediaCommandResult(observed
+                    ? MediaCommandResult.Outcome.ACKNOWLEDGED : MediaCommandResult.Outcome.UNSUPPORTED,
+                    observed ? "" : "Explicit Play continuation requires Direct media", observed, false));
+            return;
+        }
         MediaSourceBootstrapper owner = sources();
         owner.command(label(key), packageName, legacyCommand(action), (success, message) -> {
             if (callback == null) return;

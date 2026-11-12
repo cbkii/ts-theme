@@ -41,7 +41,7 @@ final class StartupReadinessLoader {
                 super.dispatchDraw(canvas);
                 if (this == mask && attached && drawn != null) {
                     Runnable callback = drawn; drawn = null;
-                    postOnAnimation(() -> { if (attached && canMask()) callback.run(); });
+                    postOnAnimation(callback);
                 }
             }
             @Override public boolean dispatchKeyEvent(KeyEvent event) {
@@ -123,18 +123,21 @@ final class StartupReadinessLoader {
     }
 
     void whenMaskDrawn(Runnable callback) {
-        if (!attached || !canMask()) return;
+        if (!attached || !canMask()) { callback.run(); return; }
         drawn = callback;
         mask.invalidate();
     }
 
     void hideMask() {
+        Runnable abandoned = drawn;
         drawn = null;
         if (title.equals(StartupMaskFocus.activeTitle)) StartupMaskFocus.activeTitle = "";
-        if (!attached) return;
-        attached = false;
-        try { windows.removeViewImmediate(mask); }
-        catch (RuntimeException gone) { /* Already removed by WMS. */ }
+        if (attached) {
+            attached = false;
+            try { windows.removeViewImmediate(mask); }
+            catch (RuntimeException gone) { /* Already removed by WMS. */ }
+        }
+        if (abandoned != null) abandoned.run();
     }
     void hide() { visible = false; homePanel.setVisibility(View.GONE); hideMask(); }
     void destroy() {

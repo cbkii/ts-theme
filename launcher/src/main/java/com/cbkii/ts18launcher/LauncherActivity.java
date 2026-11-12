@@ -551,6 +551,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 updateLabels();
             } else {
                 if (!staged && !result.dispatched && command == MediaListenerService.Command.PLAY_PAUSE
+                        && result.outcome != com.cbkii.ts18launcher.media.MediaCommandResult.Outcome.UNSUPPORTED
                         && mediaFacade().engine(key) == MediaEngine.DIRECT
                         && !result.playingObserved && key == MediaSourceKey.RADIO
                         && StartupReadinessCoordinator.get(this).prepareInteractively(this, packageName, deadline, ready -> {

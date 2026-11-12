@@ -121,7 +121,6 @@ public final class BrowserStarterIpcProbe {
         check(service != null && service.getClassName().endsWith("LegacySessionService"),
                 "Media3-only manifest not discovered");
         AttemptResult connected = connect(instrumentation, connector, service);
-        check(pkg.equals(connected.sessionPackage), "Media3 legacy token has wrong owner");
         DirectSessionRegistry.Session session = connected.session;
         CountDownLatch ready = new CountDownLatch(1), playing = new CountDownLatch(1);
         Runnable observe = () -> {
@@ -130,6 +129,8 @@ public final class BrowserStarterIpcProbe {
             if (state.nativeState == PlaybackState.STATE_PLAYING) playing.countDown();
         };
         try {
+            check(pkg.equals(connected.sessionPackage), "Media3 legacy token has wrong owner");
+            check(connector.passiveSafe(pkg), "Media3-only service is excluded from passive readiness");
             instrumentation.runOnMainSync(() -> { session.watch(observe, () -> { }); observe.run(); });
             check(ready.await(8, TimeUnit.SECONDS), "real Media3 decoder did not prepare silently");
             instrumentation.runOnMainSync(() -> check(session.dispatch(DirectOperation.PLAY), "legacy Play refused"));
@@ -163,9 +164,14 @@ public final class BrowserStarterIpcProbe {
                         failure.set("failed"); answered.countDown();
                     }
                 }));
-        check(answered.await(10, TimeUnit.SECONDS), "browser connection did not answer");
-        check(failure.get().isEmpty() && result.session != null, "browser connection " + failure.get());
-        return result;
+        try {
+            check(answered.await(10, TimeUnit.SECONDS), "browser connection did not answer");
+            check(failure.get().isEmpty() && result.session != null, "browser connection " + failure.get());
+            return result;
+        } catch (Exception | AssertionError error) {
+            instrumentation.runOnMainSync(() -> { if (result.connection != null) result.connection.disconnect(); });
+            throw error;
+        }
     }
 
     private static void check(boolean pass, String message) {

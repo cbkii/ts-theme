@@ -189,7 +189,7 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
         @Override public boolean passiveSafe(String packageName) {
             // NavRadio service creation may select the hardware source: user demand only.
             return !"com.navimods.radio".equals(packageName)
-                    && resolveForActions(packageName, BROWSER_SERVICE) != null;
+                    && resolve(packageName) != null;
         }
 
         @Override public ComponentName resolve(String packageName) {

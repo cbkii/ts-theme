@@ -46,10 +46,10 @@ check(p.type==2038&&(p.flags&8)==0&&(p.flags&32)!=0,"mask must receive BACK whil
 int[] drawn={0};l.whenMaskDrawn(()->drawn[0]++);check(drawn[0]==0,"launch before draw");try{java.lang.reflect.Method draw=WindowManager.shared.added.getClass().getDeclaredMethod("dispatchDraw",android.graphics.Canvas.class);draw.setAccessible(true);draw.invoke(WindowManager.shared.added,new android.graphics.Canvas());}catch(Exception e){throw new AssertionError(e);}check(drawn[0]==1,"draw barrier never completed");
 WindowManager.shared.added.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN));check(clicks[0]==0,"BACK down dismissed twice");WindowManager.shared.added.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP));check(clicks[0]==1,"owning-window BACK not wired");
 l.hide();check(WindowManager.shared.added==null&&WindowManager.shared.removes==1,"dismiss leaked window");
-l.show("Music: ready",false);l.showMask();l.geometry(96,88,900,600);check(WindowManager.shared.added==null,"old geometry retained");
+l.show("Music: ready",false);l.showMask();l.whenMaskDrawn(()->drawn[0]++);l.geometry(96,88,900,600);check(WindowManager.shared.added==null&&drawn[0]==2,"geometry teardown dropped draw completion");
 l.showMask();check(WindowManager.shared.params.width==1280&&WindowManager.shared.added.pr==264,"safe-area resize ignored");l.destroy();l.destroy();check(root.children.isEmpty()&&WindowManager.shared.added==null,"destroy leaked Activity/window");
 StartupReadinessLoader denied=new StartupReadinessLoader(activity,root,()->{});denied.geometry(0,0,100,100);denied.show("preparing",true);WindowManager.shared.deny=true;int before=WindowManager.shared.adds;
-denied.showMask();denied.showMask();check(WindowManager.shared.adds==before+1&&!denied.canMask(),"repeated failed WMS admission");denied.destroy();
+denied.showMask();denied.showMask();int[] failedDraw={0};denied.whenMaskDrawn(()->failedDraw[0]++);check(failedDraw[0]==1,"failed admission dropped draw completion");check(WindowManager.shared.adds==before+1&&!denied.canMask(),"repeated failed WMS admission");denied.destroy();
 System.out.println("PASS actual loader permission/focus/geometry/click/resize/destruction/fail-open");}}
 '''
         }

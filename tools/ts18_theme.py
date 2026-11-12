@@ -188,7 +188,9 @@ def validate_project() -> list[str]:
     included = re.findall(r'include\("(:[^"]+)"\)', settings)
     require(included == [":launcher", ":media-fixture"], f"Only launcher and its IPC test fixture may be built, found {included}", errors)
     fixture = (ROOT / "media-fixture/build.gradle.kts").read_text(encoding="utf-8")
-    require('applicationId = "com.cbkii.ts18mediafixture"' in fixture, "IPC fixture identity changed", errors)
+    active_fixture = re.sub(r"/\*.*?\*/|//[^\n]*", "", fixture, flags=re.S)
+    fixture_ids = re.findall(r'(?m)^\s*applicationId\s*=\s*"([^"]+)"\s*$', active_fixture)
+    require(fixture_ids == ["com.cbkii.ts18mediafixture"], "IPC fixture identity changed", errors)
     require("media-fixture" not in (LAUNCHER_ROOT / "build.gradle.kts").read_text(), "IPC fixture entered launcher dependencies", errors)
     for retired in ("theme", "tools/fetch_replugin.py", "tools/fetch_leaflet.py", "launcher/src/main/assets/map"):
         require(not (ROOT / retired).exists(), f"Retired product path is present: {retired}", errors)

@@ -170,7 +170,7 @@ public final class MediaFeatureFacade {
 
     public void resumePreparedSource(MediaSourceKey key, String packageName, long deadlineElapsedMs,
                                      MediaBackend.ResultCallback callback) {
-        command(key, packageName, MediaUserAction.PLAY_PAUSE, true, deadlineElapsedMs, callback);
+        command(key, packageName, MediaUserAction.PLAY, true, deadlineElapsedMs, callback);
     }
 
     private void command(MediaSourceKey key, String packageName, MediaUserAction action,

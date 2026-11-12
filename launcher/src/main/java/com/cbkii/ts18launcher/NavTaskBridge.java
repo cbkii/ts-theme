@@ -265,7 +265,8 @@ public final class NavTaskBridge {
                 requireHome(resolve(stacks.invoke(service), "com.cbkii.ts18launcher", user, homeId));
                 Task after = resolve(stacks.invoke(service), pkg, user, taskId);
                 if (after == null || !task.component.equals(after.component) || after.display != 0
-                        || after.mode != 1 || after.foreignTop) throw new IllegalStateException("TASK_AUTHORITY_CHANGED");
+                        || after.mode != 1 || after.activityType != 1 || after.foreignTop)
+                    throw new IllegalStateException("TASK_AUTHORITY_CHANGED");
                 foreground(request, focused.invoke(service), homeId, homeId, user, false);
             }
             return "OK code=" + (sourceReturn ? "STARTUP_HOME_RESTORED" : "park-windowed".equals(action) ? "SUSPENDED" : "HOME_RETURNED");

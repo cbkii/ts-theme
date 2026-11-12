@@ -63,6 +63,7 @@ String dump="mCurrentFocus=Window{abc u0 "+component+"}\\n";
 if("mask".equals(System.getenv("CASE")))dump="  Window #0 Window{abc u0 "+mask+"}:\\n    mOwnerUid=10211 showForAllUsers=false\\n    mAttrs={ ty=APPLICATION_OVERLAY fmt=OPAQUE }\\n  mCurrentFocus=Window{abc u0 "+mask+"}\\n";
 Files.writeString(Path.of(System.getenv("FOCUS_FILE")),dump);}catch(Exception e){throw new RuntimeException(e);}}
 public void setFocusedTask(int id){System.out.println("FOCUS "+id);focused=id;
+if(id==7&&"radio-type-change".equals(System.getenv("CASE")))music.configuration.windowConfiguration.type=2;
 if(id==7&&"park-geometry".equals(System.getenv("CASE")))map.taskBounds=new Rect[]{new Rect(0,0,200,200)};
 if(id==7&&"park-replaced".equals(System.getenv("CASE")))map.taskIds=new int[]{43};
 writeFocus();}
@@ -203,13 +204,23 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
                                              "com.navimods.radio/com.navimods.radio.Main", 84,
                                              "com.cbkii.ts18launcher", 7])
                 if case != "radio":
-                    self.assertIn("FAIL code=", result[-1])
+                    self.assertIn("FAIL code=TASK_AUTHORITY_CHANGED", result[-1])
                     self.assertNotIn("FOCUS 7", result)
                 else:
                     self.assertIn("OK code=STARTUP_HOME_RESTORED", result[-1])
                     self.assertIn("FOCUS 7", result)
                 self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in result))
                 self.finish(child)
+
+    def test_source_reparented_to_nonstandard_type_after_home_focus_is_not_ready(self):
+        child = self.launch("radio-type-change")
+        result = self.request(child, ["startup-home", 0, "com.navimods.radio",
+                                     "com.navimods.radio/com.navimods.radio.Main", 84,
+                                     "com.cbkii.ts18launcher", 7])
+        self.assertIn("FOCUS 7", result)
+        self.assertIn("FAIL code=TASK_AUTHORITY_CHANGED", result[-1])
+        self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in result))
+        self.finish(child)
 
     def test_source_return_only_focuses_the_existing_home_task(self):
         child = self.launch("source")

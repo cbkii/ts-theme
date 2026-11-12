@@ -21,6 +21,7 @@ final class ReadinessOverlayIpcProbe {
         int[] area = new int[4];
         File output = new File(test.getTargetContext().getExternalFilesDir(null), "readiness-overlay");
         check(output.isDirectory() || output.mkdirs(), "frame directory unavailable");
+        boolean[] fixtureStarted = { false };
         try {
             test.runOnMainSync(() -> {
                 FrameLayout root = home.findViewById(android.R.id.content);
@@ -36,22 +37,58 @@ final class ReadinessOverlayIpcProbe {
             });
             check(drawn.await(5, TimeUnit.SECONDS), "opaque frame was not drawn");
             sample(test, output, "before-launch.png", area);
-            test.getTargetContext().startActivity(new Intent().setClassName(
-                    "com.cbkii.ts18launcher.test", MaskFixtureActivity.class.getName())
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            android.content.ComponentName fixture = new android.content.ComponentName(
+                    "com.cbkii.ts18launcher.test", MaskFixtureActivity.class.getName());
+            check(test.getTargetContext().getPackageManager().getApplicationInfo(fixture.getPackageName(), 0).uid
+                    != android.os.Process.myUid(), "fixture does not have a separate UID");
+            fixtureStarted[0] = true;
+            check(startAndVerify(test, fixture) != home.getTaskId(), "fixture reused the HOME task");
             for (int frame = 0; frame < 12; frame++) {
                 SystemClock.sleep(50);
                 sample(test, output, frame == 0 ? "launch.png" : frame == 11 ? "background.png" : null, area);
             }
-            test.getTargetContext().startActivity(new Intent(test.getTargetContext(), LauncherActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+            check(startAndVerify(test, new android.content.ComponentName(test.getTargetContext(), LauncherActivity.class))
+                    == home.getTaskId(), "HOME task was replaced");
             test.waitForIdleSync();
             sample(test, output, "home-restored.png", area);
             test.runOnMainSync(() -> loader[0].hide());
             check(StartupMaskFocus.activeTitle.isEmpty(), "mask capability leaked");
             return "PASS API29 opaque draw before cross-UID splash, 12 covered frames, HOME and cleanup";
         } finally {
-            test.runOnMainSync(() -> { if (loader[0] != null) loader[0].destroy(); });
+            try {
+                if (fixtureStarted[0]) {
+                    // Test APK only: remove the fixture even after a failed assertion, then verify HOME.
+                    shell(test, "am broadcast -a " + MaskFixtureActivity.FINISH + " -p com.cbkii.ts18launcher.test");
+                    startAndVerify(test, new android.content.ComponentName(test.getTargetContext(), LauncherActivity.class));
+                }
+            } finally { test.runOnMainSync(() -> { if (loader[0] != null) loader[0].destroy(); }); }
+        }
+    }
+
+    private static int startAndVerify(Instrumentation test, android.content.ComponentName target) throws Exception {
+        String result = shell(test, "am start -W -f 0x10020000 -n " + target.flattenToString());
+        check(result.contains("Status: ok") && (result.contains("Activity: " + target.flattenToString())
+                || result.contains("Activity: " + target.flattenToShortString())), "Activity not confirmed: " + result);
+        String taskState = shell(test, "dumpsys activity activities");
+        java.util.regex.Matcher resumed = java.util.regex.Pattern.compile(
+                "(?m)^.*mResumedActivity[:=]\\s*ActivityRecord\\{[^\\r\\n]* (?:"
+                + java.util.regex.Pattern.quote(target.flattenToString()) + "|"
+                + java.util.regex.Pattern.quote(target.flattenToShortString()) + ") t([0-9]+)\\}")
+                .matcher(taskState);
+        check(resumed.find(), "Expected Activity is not resumed: " + target.flattenToString());
+        return Integer.parseInt(resumed.group(1));
+    }
+
+    private static String shell(Instrumentation test, String command) throws Exception {
+        try (java.io.InputStream input = new android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                test.getUiAutomation().executeShellCommand("/system/bin/toybox timeout 10 " + command));
+             java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+            byte[] bytes = new byte[1024]; int n;
+            while ((n = input.read(bytes)) > 0) {
+                check(output.size() + n <= 524288, "fixture command output exceeded bound");
+                output.write(bytes, 0, n);
+            }
+            return output.toString("UTF-8");
         }
     }
 

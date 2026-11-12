@@ -24,8 +24,8 @@ import org.junit.Test;
 /**
  * Play to a live, listener-discovered session that has nothing loaded. The other backend tests use
  * a fixture that always carries an item, so this path is exercised here on its own: ordinary Play
- * is reserved for a confirmed loaded session, and an unloaded one is sent only the bounded
- * deadline Play it advertises, for either source slot.
+ * follows the standard third-party contract even while unloaded. Auxio's separate unloaded
+ * contract requires the advertised bounded deadline action, for either source slot.
  */
 public class DirectStartContractTest {
     private static final String PLAYER = "com.example.player";

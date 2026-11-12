@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.media.session.PlaybackState;
 import android.provider.Settings;
 import com.cbkii.ts18launcher.StartupReadinessPolicy.*;
 import com.cbkii.ts18launcher.media.MediaSourceKey;
@@ -70,7 +71,8 @@ final class StartupReadinessCoordinator {
         if (boot >= 0L && boot != seen) {
             policy.resetForBoot(); journal.edit().putLong("boot_count", boot).apply();
         }
-        if (!policy.acceptTrigger(trigger, now)) return;
+        boolean waking = screenOff && (trigger == Trigger.HOME_RESUME || trigger == Trigger.SCREEN_ON
+                || trigger == Trigger.ACC_ON);
         if (trigger == Trigger.HOME_RESUME || trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON) {
             yielded = false;
             if (screenOff) {
@@ -78,6 +80,7 @@ final class StartupReadinessCoordinator {
                 for (MediaSourceKey key : MediaSourceKey.values()) policy.configurationChanged(source(key));
             }
         }
+        if (!policy.acceptTrigger(trigger, now) && !waking) return;
         if (trigger == Trigger.HOME_RESUME) {
             journal.edit().remove("pending_boot_v1").apply();
         }
@@ -116,8 +119,9 @@ final class StartupReadinessCoordinator {
                 || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
         String pkg = MediaEngineSelector.configuredPackage(context, key);
         if (pkg == null || pkg.isEmpty()) return;
-        if (!pkg.equals(configured.put(key, pkg))) policy.configurationChanged(source(key));
         MediaSourceState state = Ts18LauncherApplication.mediaFacade(context).state(key);
+        String identity = pkg + ":" + state.engine;
+        if (!identity.equals(configured.put(key, identity))) policy.configurationChanged(source(key));
         if (ready(state)) {
             cancelRecovery(key);
             policy.observedReady(source(key), now);
@@ -152,7 +156,8 @@ final class StartupReadinessCoordinator {
 
     static boolean ready(MediaSourceState state) {
         return state != null && state.live() && !state.preparing && !state.starting
-                && (state.playing() || state.nativeState == 2 && !state.itemId.isEmpty());
+                && (state.playing() || state.nativeState == PlaybackState.STATE_PAUSED && !state.itemId.isEmpty()
+                    && (state.actions & (PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PLAY_PAUSE)) != 0L);
     }
 
     void onMediaStateChanged(MediaSourceState state) {
@@ -160,10 +165,15 @@ final class StartupReadinessCoordinator {
         main.post(() -> {
             if (destroyed || screenOff) return;
             MediaSourceState latest = state == null ? null : Ts18LauncherApplication.mediaFacade(context).state(state.key);
+            if (state != null && !(latest.packageName + ":" + latest.engine).equals(configured.get(state.key))) {
+                reconcileSource(state.key, Trigger.READINESS_CHANGED, SystemClock.elapsedRealtime()); return;
+            }
             if (state != null && ready(latest)) {
                 cancelRecovery(state.key);
                 policy.observedReady(source(state.key), SystemClock.elapsedRealtime());
-            } else if (state != null && latest.availability == MediaSourceState.Availability.SOURCE_LOST) {
+            } else if (state != null && (latest.availability == MediaSourceState.Availability.SOURCE_LOST
+                    || policy.record(source(state.key)).state == State.READY
+                    || policy.record(source(state.key)).state == State.ACTIVE)) {
                 policy.sessionLost(source(state.key));
                 reconcileSource(state.key, Trigger.SESSION_LOST, SystemClock.elapsedRealtime());
             }

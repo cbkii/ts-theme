@@ -40,7 +40,7 @@
 ## Verification and delivery
 
 - Run `python3 tools/ts18_theme.py validate`, `python3 -m unittest discover -s tests -v`, relevant shell syntax/ShellCheck, and `:launcher:testDebugUnitTest :launcher:lintDebug :launcher:assembleDebug :launcher:assembleDebugAndroidTest`.
-- `media-fixture/` is an instrumentation-only companion (not a product/release or launcher dependency), using real AndroidX Media3 for legacy handshake and decoder qualification. Keep the launcher runtime dependency graph empty.
+- `media-fixture/` is a CI-only companion application (not an instrumentation module, product/release or launcher dependency), using real AndroidX Media3 for legacy handshake and decoder qualification. Keep the launcher runtime dependency graph empty.
 - Canonical Validate also runs real API29 IPC and signed/minified release dependency/envelope checks. No runtime dependencies may enter the launcher release.
 - Prefer behavioural tests for changed contracts; source rules should protect architecture rather than count implementation callsites.
 - TESTING snapshots use the established `/testing-apk` PR trigger or exact-ref workflow. Match final source/built/head SHA, package/version, signer and SHA-256; reject stale/mixed artefacts. Never commit keys, vendor APKs/code, private captures, device identifiers or local paths.

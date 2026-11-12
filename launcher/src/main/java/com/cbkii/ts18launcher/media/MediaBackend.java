@@ -39,6 +39,11 @@ public interface MediaBackend {
     /** Continuation of one admitted action; a supporting backend retains its original deadline. */
     default void commandUntil(MediaSourceKey key, String packageName, MediaUserAction action,
                               long deadlineElapsedMs, ResultCallback callback) {
+        if (deadlineElapsedMs != Long.MAX_VALUE) {
+            if (callback != null) callback.onResult(new MediaCommandResult(
+                    MediaCommandResult.Outcome.FAILED, "Backend does not support bounded commands", false, false));
+            return;
+        }
         command(key, packageName, action, callback);
     }
 

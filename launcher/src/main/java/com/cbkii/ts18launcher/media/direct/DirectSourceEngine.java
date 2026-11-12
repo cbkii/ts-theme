@@ -274,16 +274,18 @@ public final class DirectSourceEngine {
             deliver(callback, failed(labels.sourceLabel() + " source changed"));
             return;
         }
+        callback = boundedCallback(callback, deadlineElapsedMs);
         // A deliberate tap supersedes passive readiness; nothing further is sent for it.
         cancelPrepare();
         MediaCommandResult unavailable = unavailableResult();
         if (unavailable != null) {
-            if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback, deadlineElapsedMs); return; }
+            if ((action == MediaUserAction.PLAY_PAUSE || action == MediaUserAction.PLAY) && startable()) { requestStart(callback, deadlineElapsedMs); return; }
             deliver(callback, unavailable);
             return;
         }
 
-        DirectOperation operation = action == MediaUserAction.NEXT ? DirectOperation.NEXT
+        DirectOperation operation = action == MediaUserAction.PLAY ? DirectOperation.PLAY
+                : action == MediaUserAction.NEXT ? DirectOperation.NEXT
                 : action == MediaUserAction.PREVIOUS ? DirectOperation.PREVIOUS
                 : DirectOperation.resolvePlayPause(current.nativeState);
         if (operation.directional() && pendingToggle != null) {
@@ -443,12 +445,6 @@ public final class DirectSourceEngine {
             deliverAll(start, new MediaCommandResult(MediaCommandResult.Outcome.ACKNOWLEDGED, "", true, false));
             return;
         }
-        long effectiveActions = current.actions;
-        if ((effectiveActions & DirectOperation.PLAY.supportingActions()) == 0L) {
-            deliverAll(start, new MediaCommandResult(MediaCommandResult.Outcome.UNSUPPORTED,
-                    labels.appLabel(packageName) + " started but does not offer Play yet", false, false));
-            return;
-        }
         long now = clock.nowMs();
         long deadline = Math.min(start.deadlineElapsedMs, now + PLAY_ACK_MS);
         long remaining = deadline - now;
@@ -489,7 +485,8 @@ public final class DirectSourceEngine {
                 || availability == MediaSourceState.Availability.SERVICE_UNAVAILABLE) return;
         decidedPrepareEpoch = epoch;
         // A live Radio token does not make PREPARE's tuner/focus side effects safe.
-        if (starter != null && !starter.canPreparePassive(packageName)) return;
+        if ("com.navimods.radio".equals(packageName)
+                || starter != null && !starter.canPreparePassive(packageName)) return;
         if (live()) {
             if (loaded(current)) return;
             pendingPrepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");
@@ -579,6 +576,28 @@ public final class DirectSourceEngine {
         if (start.timer != null) { clock.cancel(start.timer); start.timer = null; }
         deliverAll(start, new MediaCommandResult(outcome, message, false, false));
         if (attached) publish();
+    }
+
+    /** A joining caller owns its deadline, without narrowing an earlier, independently owed Play. */
+    private MediaBackend.ResultCallback boundedCallback(MediaBackend.ResultCallback callback, long until) {
+        if (callback == null || until == Long.MAX_VALUE) return callback;
+        boolean[] delivered = { false };
+        Object[] timer = { null };
+        MediaBackend.ResultCallback[] relay = { null };
+        relay[0] = result -> {
+            if (delivered[0]) return;
+            delivered[0] = true;
+            if (timer[0] != null) clock.cancel(timer[0]);
+            if (clock.nowMs() >= until) {
+                boolean sent = result.dispatched || pendingToggle != null && pendingToggle.callbacks.contains(relay[0]);
+                for (Pending skip : pendingSkips) if (skip.callbacks.contains(relay[0])) sent = true;
+                deliver(callback, sent ? new MediaCommandResult(MediaCommandResult.Outcome.SENT_UNCONFIRMED,
+                        "Play window expired", false, true) : failed("Play window expired"));
+            } else deliver(callback, result);
+        };
+        timer[0] = clock.schedule(Math.max(1L, until - clock.nowMs()),
+                () -> relay[0].onResult(failed("Play window expired")));
+        return relay[0];
     }
 
     private void releaseStarter() {

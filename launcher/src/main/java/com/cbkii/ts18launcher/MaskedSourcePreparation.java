@@ -63,10 +63,10 @@ final class MaskedSourcePreparation {
         if (navigation != null && navigation.busy()) {
             main.postDelayed(this::awaitNavigation, 250L); return;
         }
-        loader.render("Preparing Radio…", true);
+        loader.render(home.getString(R.string.startup_radio_preparing), true);
         loader.mask(true);
         loader.whenMaskDrawn(() -> {
-            if (ended || !loader.ownsMask()) { finish(false); return; }
+            if (ended || !loader.ownsMask() || !loader.canMask()) { finish(false); return; }
             launchInFlight = true;
             io.execute(() -> {
                 if (ended || cancelRequested) { postLaunchFailed(); return; }
@@ -112,15 +112,16 @@ final class MaskedSourcePreparation {
         io.execute(() -> {
             NavigationHelperResult foreground = observe(deadline);
             main.post(() -> {
-                if (ended) return;
+                if (ended || cancelRequested || restoring) return;
                 if (valid(foreground)) {
-                    if (!resumedEntry.equals(foreground.component)) {
+                    boolean stillHome = foreground.taskId == home.getTaskId() && homeComponent(foreground.component);
+                    if (!stillHome && !resumedEntry.equals(foreground.component)) {
                         // Preserve login/settings/permission flows instead of hiding or dismissing them.
                         finish(false); return;
                     }
-                    sourceTask = foreground.taskId;
+                    if (!stillHome) sourceTask = foreground.taskId;
                     MediaSourceState source = Ts18LauncherApplication.mediaFacade(home).state(MediaSourceKey.RADIO);
-                    if (source.live() && pkg.equals(source.packageName)
+                    if (!stillHome && source.live() && pkg.equals(source.packageName)
                             && (source.playing() || (source.actions & android.media.session.PlaybackState.ACTION_PLAY) != 0L)) {
                         restoreHome(source); return;
                     }
@@ -141,7 +142,7 @@ final class MaskedSourcePreparation {
                 MediaSourceState after = Ts18LauncherApplication.mediaFacade(home).state(MediaSourceKey.RADIO);
                 boolean survived = after.live() && pkg.equals(after.packageName)
                         && source.sessionIdentity != null && source.sessionIdentity.equals(after.sessionIdentity);
-                finish(survived && valid(focused) && focused.taskId == home.getTaskId()
+                finish(!cancelRequested && survived && valid(focused) && focused.taskId == home.getTaskId()
                         && homeComponent(focused.component));
             }, 300L); // Observe onStop/session teardown after the verified task handoff.
         });
@@ -157,7 +158,7 @@ final class MaskedSourcePreparation {
         cancelRequested = true;
         // Keep the mask until an in-flight launch has reached its bounded outcome.
         if (launchInFlight) return;
-        if (restoring) { finish(false); return; }
+        if (restoring) return;
         cleanupAfterLaunch();
     }
 

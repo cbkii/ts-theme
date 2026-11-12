@@ -9,7 +9,7 @@ class StartupRootShellTests(unittest.TestCase):
     def run_root(self, action, package='com.navimods.radio', **changes):
         source = nav.ANDROID.replace("        print('mCurrentFocus=Window{fake u0 ' + focus_component + '}')\n", "").replace("if a[0] == 'window':", '''if a[0] == 'window':
         focused = s.get('startup_focus', (s.get('nav_component','com.navimods.radio/.RadioActivity') if s['focus']==42 else 'com.cbkii.ts18launcher/.HomeAlias'))
-        if s.get('owned_mask'):
+        if s.get('owned_mask') and 'startup_focus' not in s:
             focused='TS18Ready_10211_'+'a'*32
             if a[1] == 'windows': print('  Window #0 Window{abc u0 '+focused+'}:\\n    mOwnerUid=10211 mShowToOwnerOnly=true\\n    mAttrs={ty=2038 }')
         if a[1] == 'displays': print('  mCurrentFocus=' + ('null' if s.get('blank_startup_focus') else 'Window{abc u0 '+focused+'}'))''')

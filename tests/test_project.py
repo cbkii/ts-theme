@@ -27,6 +27,16 @@ class ProjectTests(unittest.TestCase):
         finally:
             (ROOT / "settings.gradle.kts").write_text(original, encoding="utf-8")
 
+    def test_fixture_identity_rejects_a_comment_with_a_different_active_assignment(self):
+        path = ROOT / "media-fixture/build.gradle.kts"
+        original = path.read_text()
+        try:
+            path.write_text(original.replace('applicationId = "com.cbkii.ts18mediafixture"',
+                            '// applicationId = "com.cbkii.ts18mediafixture"\n        applicationId = "wrong.fixture"'))
+            self.assertIn("IPC fixture identity changed", MODULE.validate_project())
+        finally:
+            path.write_text(original)
+
     def test_release_build_authority(self):
         config = json.loads((ROOT / "release-config.json").read_text(encoding="utf-8"))
         self.assertEqual("com.cbkii.ts18launcher", config["application_id"])
