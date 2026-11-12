@@ -148,7 +148,9 @@ public class DirectPassivePrepareTest {
         FakeSession session = new FakeSession("t1", AUXIO).state(PlaybackState.STATE_NONE).actions(NO_PREPARE);
         starter.events.onSessionOffered(AUXIO, session);
         assertTrue(session.dispatched.isEmpty());
-        assertFalse(backend.state(MediaSourceKey.MUSIC).preparing);
+        assertTrue(backend.state(MediaSourceKey.MUSIC).preparing);
+        session.actions(NO_PREPARE | PlaybackState.ACTION_PREPARE).emit();
+        assertEquals(java.util.Collections.singletonList(DirectOperation.PREPARE), session.dispatched);
     }
 
     @Test public void userPlayDuringPassivePreparationWinsAndNoPrepareIsSent() {

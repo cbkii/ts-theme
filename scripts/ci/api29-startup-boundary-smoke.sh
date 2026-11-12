@@ -47,6 +47,10 @@ adb shell am instrument -w -e m2_browser 1 \
 grep -Fq 'PASS API29 M2 browser starter' "$proof/m2-browser-ipc.txt"
 grep -Fq 'PREPARE loads without Play' "$proof/m2-browser-ipc.txt"
 grep -Fq 'retry after death' "$proof/m2-browser-ipc.txt"
+adb shell am instrument -w -e m2_media3 1 \
+  com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation | \
+  tee "$proof/m2-media3-legacy-ipc.txt"
+grep -Fq 'PASS API29 real Media3-only service legacy browser' "$proof/m2-media3-legacy-ipc.txt"
 adb shell am instrument -w -e n3_path 1 \
   com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation |
   tee "$proof/n3-path.txt"

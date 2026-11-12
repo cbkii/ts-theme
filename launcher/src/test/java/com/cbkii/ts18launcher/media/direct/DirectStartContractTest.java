@@ -56,7 +56,7 @@ public class DirectStartContractTest {
         return session;
     }
 
-    @Test public void unloadedSessionWithoutTheDeadlineProtocolIsNotSentPlay() {
+    @Test public void standardThirdPartySessionsResumeWithoutAnAuxioProtocol() {
         for (MediaSourceKey key : new MediaSourceKey[] {MediaSourceKey.MUSIC, MediaSourceKey.RADIO}) {
             String pkg = key == MediaSourceKey.MUSIC ? PLAYER : RADIO;
             FakeSession session = unloaded("t-" + key, pkg);
@@ -64,9 +64,9 @@ public class DirectStartContractTest {
 
             backend.command(key, pkg, MediaUserAction.PLAY_PAUSE, results::add);
 
-            assertEquals(key.name(), Outcome.UNSUPPORTED, last().outcome);
-            assertFalse(key.name(), last().dispatched);
-            assertTrue(key.name(), session.dispatched.isEmpty());
+            assertEquals(Collections.singletonList(DirectOperation.PLAY), session.dispatched);
+            session.state(PlaybackState.STATE_PLAYING).emit();
+            assertEquals(key.name(), Outcome.ACKNOWLEDGED, last().outcome);
         }
     }
 
@@ -145,6 +145,6 @@ public class DirectStartContractTest {
         backend.command(MediaSourceKey.MUSIC, PLAYER, MediaUserAction.PLAY_PAUSE, results::add);
 
         assertTrue(states.get(states.size() - 1).endsWith("preparing=0"));
-        assertEquals(Collections.singletonList(DirectOperation.PREPARE), player.dispatched);
+        assertEquals(java.util.Arrays.asList(DirectOperation.PREPARE, DirectOperation.PLAY), player.dispatched);
     }
 }

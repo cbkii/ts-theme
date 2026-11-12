@@ -807,6 +807,9 @@ require_startup_window_focus() {
   bounded dumpsys window displays >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
   focus_before=$(awk '/mCurrentFocus=/ {n++; sub(/^.*mCurrentFocus=/, ""); value=$0} END {if(n==1) print value}' "$WINDOWS")
   case "$focus_before" in Window\{*\}) ;; *) log_event 'focus reason=FOCUS_MISSING'; fail STARTUP_FOCUS_UNKNOWN ;; esac
+  if [ "${TS18_REQUIRE_MASK:-0}" = 1 ]; then
+    [ -n "$mask_uid" ] && printf '%s\n' "$focus_before" | grep -F " $mask_title}" >/dev/null || fail STARTUP_MASK_REQUIRED
+  fi
   : >"$window_owners"
   if [ -n "$mask_uid" ] && printf '%s\n' "$focus_before" | grep -F " $mask_title}" >/dev/null; then
     bounded dumpsys window windows >"$window_owners" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
@@ -1150,6 +1153,7 @@ case "$action" in
     validate_startup_source
     require_startup_home
     require_handoff_foreground "$home_task" "$home_task"
+    TS18_REQUIRE_MASK=1
     require_startup_window_focus com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity
     PHASE=dispatch
     if [ "$PKG" = com.tw.media ]; then

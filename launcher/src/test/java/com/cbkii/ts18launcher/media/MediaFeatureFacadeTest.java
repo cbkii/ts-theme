@@ -45,6 +45,29 @@ public class MediaFeatureFacadeTest {
         return facade;
     }
 
+    @Test public void preparedRadioAlreadyPlayingCommitsHandoverWithoutToggle() {
+        requested.put(MediaSourceKey.RADIO, MediaEngine.DIRECT);
+        MediaFeatureFacade facade = facade();
+        legacy.playing.put(MediaSourceKey.MUSIC, true);
+        direct.playing.put(MediaSourceKey.RADIO, true);
+        List<MediaCommandResult> results = new ArrayList<>();
+        facade.resumePreparedSource(MediaSourceKey.RADIO, "com.navimods.radio", results::add);
+        assertEquals("[LEGACY.pauseForHandover MUSIC]", log.toString());
+        assertEquals(1, results.size());
+        assertTrue(results.get(0).playingObserved);
+        assertFalse(results.get(0).dispatched);
+    }
+
+    @Test public void preparedPausedRadioSendsOnePlayBeforeHandover() {
+        requested.put(MediaSourceKey.RADIO, MediaEngine.DIRECT);
+        MediaFeatureFacade facade = facade();
+        legacy.playing.put(MediaSourceKey.MUSIC, true);
+        facade.resumePreparedSource(MediaSourceKey.RADIO, "com.navimods.radio", null);
+        assertEquals("[DIRECT.command RADIO com.navimods.radio PLAY_PAUSE]", log.toString());
+        direct.complete(ack(true));
+        assertEquals("[DIRECT.command RADIO com.navimods.radio PLAY_PAUSE, LEGACY.pauseForHandover MUSIC]", log.toString());
+    }
+
     @Test public void defaultSelectionAttachesOnlyLegacyAndLegacyOwnsHandover() {
         MediaFeatureFacade facade = new MediaFeatureFacade(configuration, legacy, direct);
         assertEquals(MediaEngine.LEGACY, facade.engine(MediaSourceKey.MUSIC));

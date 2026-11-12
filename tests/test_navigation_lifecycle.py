@@ -128,7 +128,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             work = Path(tmp)
             bin_dir = work / 'bin'
             bin_dir.mkdir()
-            for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout', 'mkdir', 'rmdir', 'mv'):
+            for name in ('awk', 'sed', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout', 'mkdir', 'rmdir', 'mv'):
                 resolved = shutil.which(name) or (shutil.which('gtimeout') if name == 'timeout' else None)
                 if resolved is None and name == 'timeout':
                     self.skipTest('GNU timeout required for bounded Android command doubles')

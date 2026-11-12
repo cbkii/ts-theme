@@ -42,6 +42,7 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
     interface Connector {
         /** One exported, enabled browser service of the package, or null with no guess made. */
         ComponentName resolve(String packageName);
+        default boolean passiveSafe(String packageName) { return true; }
         Connection connect(ComponentName service, ConnectionCallbacks callbacks);
     }
 
@@ -79,6 +80,8 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
     @Override public boolean canStart(String packageName) {
         return packageName != null && !packageName.isEmpty() && connector.resolve(packageName) != null;
     }
+
+    @Override public boolean canPreparePassive(String packageName) { return connector.passiveSafe(packageName); }
 
     @Override public void start(Object owner, String packageName) {
         Attempt existing = attempts.get(packageName);
@@ -183,22 +186,38 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
             this.handler = handler;
         }
 
+        @Override public boolean passiveSafe(String packageName) {
+            // NavRadio service creation may select the hardware source: user demand only.
+            return !"com.navimods.radio".equals(packageName)
+                    && resolveForActions(packageName, BROWSER_SERVICE) != null;
+        }
+
         @Override public ComponentName resolve(String packageName) {
-            List<ComponentName> candidates = new ArrayList<>();
+            return resolveForActions(packageName, BROWSER_SERVICE,
+                    "androidx.media3.session.MediaSessionService",
+                    "androidx.media3.session.MediaLibraryService");
+        }
+
+        private ComponentName resolveForActions(String packageName, String... actions) {
+            Set<ComponentName> candidates = new LinkedHashSet<>();
             try {
+                for (String action : actions) {
                 List<ResolveInfo> services = app.getPackageManager()
-                        .queryIntentServices(new Intent(BROWSER_SERVICE).setPackage(packageName), 0);
+                        .queryIntentServices(new Intent(action).setPackage(packageName), 0);
                 if (services != null) for (ResolveInfo info : services) {
                     ServiceInfo service = info == null ? null : info.serviceInfo;
                     if (service != null && service.enabled && service.exported
                             && packageName.equals(service.packageName)) {
-                        candidates.add(new ComponentName(service.packageName, service.name));
+                        if (service.permission == null || service.permission.isEmpty()
+                                || app.checkSelfPermission(service.permission) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                            candidates.add(new ComponentName(service.packageName, service.name));
                     }
+                }
                 }
             } catch (RuntimeException unavailable) {
                 return null;
             }
-            return choose(candidates);
+            return choose(new ArrayList<>(candidates));
         }
 
         @Override public Connection connect(ComponentName service, ConnectionCallbacks callbacks) {

@@ -163,7 +163,7 @@ public class DirectColdStartTest {
         assertEquals(0, clock.scheduled.size());
     }
 
-    @Test public void startedSessionWithoutPlayIsUnsupportedNotForced() {
+    @Test public void startedSessionWaitsForItsPlayCapability() {
         backend.attach(MediaSourceKey.MUSIC, "com.example.player");
         starter.startable.add("com.example.player");
         source.changed();
@@ -171,8 +171,12 @@ public class DirectColdStartTest {
         FakeSession session = new FakeSession("t1", "com.example.player")
                 .state(PlaybackState.STATE_NONE).actions(0L);
         starter.events.onSessionOffered("com.example.player", session);
-        assertEquals(Outcome.UNSUPPORTED, lastResult().outcome);
+        assertTrue(results.isEmpty());
         assertEquals(0, session.dispatched.size());
+        session.actions(PlaybackState.ACTION_PLAY).emit();
+        assertEquals(1, session.dispatched.size());
+        session.state(PlaybackState.STATE_PLAYING).emit();
+        assertEquals(Outcome.ACKNOWLEDGED, lastResult().outcome);
     }
 
     @Test public void packageWithoutAMediaServiceIsNotStartableAndIsNeverAsked() {

@@ -66,7 +66,7 @@ class DirectMediaEngineContractTests(unittest.TestCase):
         # Two owners may ask: a Play tap, and passive readiness (only while startable, once per epoch).
         self.assertEqual(2, engine.count("starter.start(key, packageName)"))
         passive = engine.split("private void tryPassivePrepare()", 1)[1].split("\n    }\n", 1)[0]
-        self.assertIn("if (!startable()) return;", passive)
+        self.assertIn("!starter.canPreparePassive(packageName)", passive)
         self.assertIn("decidedPrepareEpoch = epoch;", passive)
         self.assertNotIn("DirectOperation.PLAY", passive)
         # A timed-out attempt is abandoned so the next tap opens a fresh connection.

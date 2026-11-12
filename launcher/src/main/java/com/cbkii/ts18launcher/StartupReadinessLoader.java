@@ -19,6 +19,7 @@ final class StartupReadinessLoader {
     private final Rect bounds = new Rect();
     private final String title;
     private boolean visible, attached, overlayFailed;
+    private Runnable drawn;
 
     StartupReadinessLoader(Activity activity, FrameLayout root, Runnable dismiss) {
         this.activity = activity;
@@ -33,6 +34,13 @@ final class StartupReadinessLoader {
 
     private FrameLayout content(Runnable dismiss) {
         FrameLayout panel = new FrameLayout(activity) {
+            @Override protected void dispatchDraw(android.graphics.Canvas canvas) {
+                super.dispatchDraw(canvas);
+                if (this == mask && attached && drawn != null) {
+                    Runnable callback = drawn; drawn = null;
+                    postOnAnimation(() -> { if (attached && canMask()) callback.run(); });
+                }
+            }
             @Override public boolean dispatchKeyEvent(KeyEvent event) {
                 if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
                     if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) dismiss.run();
@@ -49,6 +57,12 @@ final class StartupReadinessLoader {
         int size = AutomotiveUi.dimen(activity, R.dimen.driver_target_min);
         FrameLayout.LayoutParams spin = new FrameLayout.LayoutParams(size, size, Gravity.CENTER);
         panel.addView(spinner, spin);
+        android.widget.Button cancel = new android.widget.Button(activity);
+        cancel.setText(R.string.startup_loader_dismiss);
+        cancel.setOnClickListener(v -> dismiss.run());
+        FrameLayout.LayoutParams button = new FrameLayout.LayoutParams(size * 3, size,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        panel.addView(cancel, button);
         return panel;
     }
 
@@ -99,7 +113,14 @@ final class StartupReadinessLoader {
         }
     }
 
+    void whenMaskDrawn(Runnable callback) {
+        if (!attached || !canMask()) return;
+        drawn = callback;
+        mask.invalidate();
+    }
+
     void hideMask() {
+        drawn = null;
         if (title.equals(StartupMaskFocus.activeTitle)) StartupMaskFocus.activeTitle = "";
         if (!attached) return;
         attached = false;

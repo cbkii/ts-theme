@@ -112,6 +112,35 @@ public final class BrowserStarterIpcProbe {
         final CountDownLatch lost = new CountDownLatch(1);
     }
 
+    public static String runMedia3(Instrumentation instrumentation) throws Exception {
+        Handler main = new Handler(Looper.getMainLooper());
+        BrowserSessionStarter.FrameworkConnector connector = new BrowserSessionStarter.FrameworkConnector(
+                instrumentation.getTargetContext(), main);
+        String pkg = "com.cbkii.ts18mediafixture";
+        ComponentName service = connector.resolve(pkg);
+        check(service != null && service.getClassName().endsWith("LegacySessionService"),
+                "Media3-only manifest not discovered");
+        AttemptResult connected = connect(instrumentation, connector, service);
+        check(pkg.equals(connected.sessionPackage), "Media3 legacy token has wrong owner");
+        DirectSessionRegistry.Session session = connected.session;
+        CountDownLatch ready = new CountDownLatch(1), playing = new CountDownLatch(1);
+        Runnable observe = () -> {
+            SessionObservation state = session.read();
+            if (state.nativeState == PlaybackState.STATE_PAUSED && !state.itemId.isEmpty()) ready.countDown();
+            if (state.nativeState == PlaybackState.STATE_PLAYING) playing.countDown();
+        };
+        try {
+            instrumentation.runOnMainSync(() -> { session.watch(observe, () -> { }); observe.run(); });
+            check(ready.await(8, TimeUnit.SECONDS), "real Media3 decoder did not prepare silently");
+            instrumentation.runOnMainSync(() -> check(session.dispatch(DirectOperation.PLAY), "legacy Play refused"));
+            check(playing.await(5, TimeUnit.SECONDS), "legacy Play did not reach Media3 playback");
+            instrumentation.runOnMainSync(() -> session.dispatch(DirectOperation.PAUSE));
+        } finally {
+            instrumentation.runOnMainSync(() -> { session.unwatch(); connected.connection.disconnect(); });
+        }
+        return "PASS API29 real Media3-only service legacy browser / source token / decoder PREPARE / one Play";
+    }
+
     private static AttemptResult connect(Instrumentation instrumentation,
                                          BrowserSessionStarter.FrameworkConnector connector,
                                          ComponentName service) throws Exception {
