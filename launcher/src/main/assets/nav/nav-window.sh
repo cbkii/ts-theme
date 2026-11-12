@@ -808,7 +808,8 @@ require_startup_window_focus() {
   focus_before=$(awk '/mCurrentFocus=/ {n++; sub(/^.*mCurrentFocus=/, ""); value=$0} END {if(n==1) print value}' "$WINDOWS")
   case "$focus_before" in Window\{*\}) ;; *) log_event 'focus reason=FOCUS_MISSING'; fail STARTUP_FOCUS_UNKNOWN ;; esac
   if [ "${TS18_REQUIRE_MASK:-0}" = 1 ]; then
-    [ -n "$mask_uid" ] && printf '%s\n' "$focus_before" | grep -F " $mask_title}" >/dev/null || fail STARTUP_MASK_REQUIRED
+    [ -n "$mask_uid" ] || fail STARTUP_MASK_REQUIRED
+    printf '%s\n' "$focus_before" | grep -F " $mask_title}" >/dev/null || fail STARTUP_MASK_REQUIRED
   fi
   : >"$window_owners"
   if [ -n "$mask_uid" ] && printf '%s\n' "$focus_before" | grep -F " $mask_title}" >/dev/null; then
