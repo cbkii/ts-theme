@@ -1,5 +1,7 @@
 # Android 10 InCar paired finalisation — 19 October 2026
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 Implementation follows the owner's updated section 16 prompt, on PR #26, above main
 `2cd04022231064deec627bd1593fc4cfde5d94ce`. Maps peer is the final #69 after #72 integration.
 

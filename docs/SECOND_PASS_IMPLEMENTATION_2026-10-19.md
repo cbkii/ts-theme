@@ -1,5 +1,7 @@
 # TS18 second-pass implementation — 19 October 2026
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 Target confirmed by owner: Android 10/API 29, Topway UIS8581A, Cortex-A55,
 PowerVR GE8322, 4 GB RAM, eMMC, 1280x720 landscape, Magisk and OEM services.
 Root is not platform-signature or privileged-app authority.

@@ -14,9 +14,9 @@ offset from process start (`Process.getStartElapsedRealtime()`). Timings are wri
 | `startup.kind` | first readiness trigger and its classification (`FULL_BOOT`, `SAME_BOOT_WAKE`, `HOME_RETURN`) |
 | `home.create` / `home.content` | HOME `onCreate` entry; the dashboard views are built |
 | `home.first_draw` | first HOME frame drawn; `reportFullyDrawn()` is called here |
-| `home.focus` | HOME window first gains focus (touchable) |
-| `music.ready` / `radio.ready` | the M1 coordinator first observes a usable queue for that source |
-| `navigation.ready` | the startup navigation controller first reports ready, with its boundary |
+| `home.focus` | HOME window first gains focus; physical touch is separately qualified |
+| `home.first_input` | the first noted HOME user interaction; not completion latency |
+| `nav.window.verified` | the coordinator receives successful navigation-boundary evidence; not physical pixels/touch |
 
 Spans time the synchronous main-thread steps in `Application.onCreate`:
 
@@ -40,9 +40,9 @@ logcat -d -v monotonic -s TS18Startup ActivityTaskManager | grep -E 'TS18Startup
 same launch. Keep these points in mind when reading a capture:
 
 - Match captures by `boot_id`.
-- A warm HOME return in an existing process records no new phases.
-- `music.ready` and `radio.ready` measure queue readiness, not audible output.
-- `navigation.ready` is the launcher's own judgement, not Organic Maps' GNSS time to first fix.
+- Each phase is recorded at most once per process. Repeated HOME returns do not repeat an existing phase; a previously unobserved boundary can still appear later.
+- Current media readiness/dispatch/results are in the bounded `TS18Media` startup/M2 events; current callsites do not emit the older `music.ready` / `radio.ready` phases.
+- `nav.window.verified` is launcher boundary evidence, not map pixels/touch or Organic Maps GNSS time to first fix. Old `navigation.ready` reports belong to earlier revisions.
 
 ## Campaign integration
 

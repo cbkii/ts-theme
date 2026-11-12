@@ -2,8 +2,7 @@
 
 Outcome: `app.organicmaps.incar` owns the explicit startup choice and renderer evidence;
 `com.cbkii.ts18launcher` owns admission and compact task presentation on API29.
-This child builds on #24; the matching Maps child builds on #67. Neither parent
-stack is merged, rewritten or replaced.
+The original change built on launcher #24 and Maps #67; that stack description is historical. Resolve the live integration/companion heads and installed signing identities before use. This document describes the protocol; [continuous readiness](CONTINUOUS_READINESS.md) describes current orchestration.
 
 ## Active contract and implementation
 
@@ -42,9 +41,7 @@ stack is merged, rewritten or replaced.
 
 ## Admission and recovery
 
-The original root helper remains the only cold/task mutator. It resolves the
-current task through existing corroborated ATM/activity/stack observations before
-admitting anything. An existing valid task is reused, even with opt-in OFF.
+Cold admission remains under the shell helper's durable claim contract; covered warm task mutations and observations use the bounded broker. Both remain within the existing navigation owner and corroborated ATM/activity/stack authority before admission. An existing valid task is reused, even with opt-in OFF.
 
 Automatic cold admission additionally requires ON, compatible authenticated
 peer, current unlocked/interactive API29 HOME, normal Android audio mode,
@@ -107,8 +104,7 @@ The root owner may use ordinary Activity entry when current prerequisites and ad
 
 ## Validation and remaining gates
 
-Use the matching ts-theme `scripts/qualification/ts18-validate.sh guide`, menu **a**, Compact A0-A16.
-Run A0-A2 smoke before long trials. P/F/N with optional comment is retained; the
+Start with [the consolidated campaign](CONSOLIDATED_TESTING_PLAYBOOK.md). For a targeted compact-protocol investigation, the matching `scripts/qualification/ts18-validate.sh guide`, menu **a**, retains Compact A0-A16; run A0-A2 before its long trials. P/F/N with optional comment is retained; the
 collector never installs, launches, reboots or fabricates a physical result.
 Historical embedded candidate rows remain comparison evidence; match the new
 pair using installed build/source metadata and final signed snapshot reports.
@@ -127,6 +123,8 @@ package before querying/registering. Capability probes use a bounded two-worker 
 queue. One stalled call leaves a second slot available; two stalled calls fail closed
 until a worker returns. Registration and cleanup use the same bounded capacity; cleanup
 is idempotent and never blocks HOME. Android Binder calls are not assumed interruptible.
+
+### Historical delivery record (original PR26)
 
 The attempted optional PR17 archive could not read draft release assets with the PR
 workflow token (HTTP403). It is removed from source CI; no archive is claimed. The live
@@ -154,10 +152,12 @@ Media foreground deferral invalidates the navigation wait epoch and starts a fre
 observation wait after release. Each Compact guide visit requires a new A0 smoke result;
 a retained PASS from another installed candidate cannot unlock A1–A16.
 
+### Historical companion-build record
+
 Android Check on Maps f71a3aa compiled arm64 and passed lint, then exhausted the default
 2 GiB Java heap while merging x86 debug resources. The x86 packaging invocation now uses
 a 4 GiB heap and two Gradle workers; canonical final-head CI must verify the change.
 
-## Current execution record
+## Execution records
 
-See [automatic preparation execution](AUTOMATIC_STARTUP_2026-10-20.md) for source pins, host checks, v2 kit and remaining physical gates.
+Current orchestration and acceptance are in [continuous readiness](CONTINUOUS_READINESS.md) and [the consolidated campaign](CONSOLIDATED_TESTING_PLAYBOOK.md). [Automatic preparation execution](AUTOMATIC_STARTUP_2026-10-20.md) preserves the October source pins/checks/v2 kit only; its artefact/status claims are historical.

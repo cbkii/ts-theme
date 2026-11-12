@@ -1,5 +1,7 @@
 # First-HOME acquisition repair after BootTrace v3.1
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 ## Scope and evidence
 
 Initial launcher head d768592c4f87098ac8c04d44f3f7417090c95424; Auxio head

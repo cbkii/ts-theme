@@ -1,5 +1,7 @@
 # TS18 diagnostics 1.3
 
+For current standalone-launcher acceptance use [the consolidated playbook](../../docs/CONSOLIDATED_TESTING_PLAYBOOK.md) first. This is an optional broader diagnostic toolkit; recorded candidate identities in its qualification ledger are historical, not the current APK handoff.
+
 For the manual multi-trial video/performance campaign, use
 [campaign/START-HERE.md](campaign/START-HERE.md). It runs independently, adds no boot
 entry, and supports the existing local caller or an explicitly selected ADB device.

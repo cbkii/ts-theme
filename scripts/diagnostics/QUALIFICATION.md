@@ -1,5 +1,7 @@
 # Execution ledger — 2026-10-05
 
+> **Historical execution ledger.** Results and candidate identities below belong to the named revision/run. They are not final-head CI or physical qualification of the current integration. Use [the documentation index](../../docs/README.md) and [current campaign](../../docs/CONSOLIDATED_TESTING_PLAYBOOK.md).
+
 No TS18 is connected. Q0–Q8 and Auxio #264 remain **NOT_RUN**. No merge,
 production publication or protected device operation was performed.
 

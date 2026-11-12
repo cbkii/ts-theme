@@ -1,5 +1,7 @@
 # Consolidated TS18 candidate — 21 October 2026
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 The final launcher candidate incorporates PRs #26, #27, #28, #29, #30 and #31 plus the current main checkpoint, preserving original heads as ancestors. It combines binary scheduled appearance, source-specific radio metadata, authenticated startup/task ownership and changed-edge-only navigation fallback layout.
 
 The Settings conflict retains the approved N2 / guarded bridge / fullscreen-departure / immediate silent Auxio preparation profile. Startup diagnostics use the shared appearance-aware dialog owner; obsolete N1/N2/retain selectors are not restored. Three seconds remains a soft target.

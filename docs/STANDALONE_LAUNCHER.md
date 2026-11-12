@@ -77,28 +77,23 @@ All fixed/user-selectable monochrome glyphs use **Google Material Symbols Rounde
 
 Accent is orthogonal to Day/Night appearance. Orange is the default; Settings presents a compact strip of colour circles for Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. Hue changes only semantic accent-role elements. Neutral black/charcoal/white hierarchy does not change.
 
-No first-run wizard is currently planned. The default Settings quick slot plus sensible defaults remain the onboarding model unless physical/user evidence shows a discoverability failure.
+A short skippable setup checklist is offered after HOME is usable when all three integration assignments are empty, and is repeatable from Settings. It does not take HOME or grant access silently.
 
 ### Media controls and bootstrap
 
-Radio and generic Music remain separate authorities. Transport buttons are never disabled merely because a session/action has not appeared. A press performs one bounded background-only chain:
+Music and Radio retain exact package/session authority through one selected engine per source. M2 Direct is the default when unset; explicit Legacy remains a compatibility rollback. A Play/Pause direction is resolved once and retained through connection and delayed capabilities. Pending duplicates join; an uncertain sent command never authorises replay. The previous source is paused only after replacement playback is observed.
 
-1. exact active MediaSession for the target package when available/capable;
-2. evidence-backed per-source adapter;
-3. Auxio-TS exported MediaBrowser/real session with optional advertised PREPARE; root `am startservice` priming is rejected/disabled;
-4. bounded root-first NavRadio service activation only for an interactive Play request while passive service start remains physically unqualified;
-5. exported `android.media.browse.MediaBrowserService` for other compatible sources;
-6. bounded exact-session retry, one directional command, playback acknowledgement for Play/Pause, and a short visible failure status.
+The application-scoped coordinator admits Maps, Music and Radio in that order without making later sources wait indefinitely for a blocked predecessor. Music uses its source-owned browser/PREPARE and the companion Auxio deadline contract. The launcher does not scan its library or own playback/focus.
 
-No readiness/transport path in the **current PR #17 code** launches a source Activity. Settings exposes **Warm media sources on HOME start**, currently limited to qualified background adapters rather than complete car-start preparation; NavRadio passive startup remains unqualified. A new controlled Activity fallback and coordinated boot/ACC recovery are authorised **as future code work**, not yet operational. See [automatic car-start readiness handoff](AUTOMATIC_CAR_START_READINESS_PLAN.md). Exact stock `com.tw.radio` is existing-session/external-route only until separately qualified. The launcher creates no MediaSession and never requests audio focus.
+NavRadio passive service creation remains gated because it may activate the tuner. Explicit cold Radio Play may use the implemented bounded masked Activity transaction after a non-dispatched service failure. It must establish the real overlay draw barrier, preserve legitimate prerequisites, restore the existing HOME/N2 authority and observe the surviving source session. Missing overlay/root/identity prerequisites block this fallback; they do not authorise an unmasked automatic launch. Stock TW Radio remains session-only pending its own evidenced contract.
 
-A Play/Pause intent is resolved once at tap time and retained through preparation. Duplicate in-flight Play/Pause intents are coalesced under one monotonic deadline. Preparing a new source does not stop the currently working opposite source; the opposite source is paused only after the requested source has acknowledged Play. Failed source switches reconcile the displayed source to actual playback rather than leaving a stale selected-source state. Generic Music uses explicit defensive refresh requests with a 15-second minimum spacing alongside event callbacks. Earlier Auxio-TS testing justified defensive queries; it does not qualify this current cadence.
+See [media](MEDIA.md), [continuous readiness](CONTINUOUS_READINESS.md) and [the consolidated campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for the active contract and qualification limits.
 
 MediaBrowser-acquired controllers feed the same metadata pipeline as active-session controllers and are deduplicated by real `MediaSession.Token`. Empty/whitespace title/artist fields fall through to valid display title/subtitle values. Identical snapshots do not restart the slow marquee's five-second stationary hold.
 
 ## Appearance
 
-Auto / Day / High contrast / Dim / Night remain one shared launcher/map appearance authority. Auto may use ambient light or schedule; stale/unavailable sensor evidence falls back to schedule. Generic unset schedule uses 07:00 / 19:00 anchors with bounded transition/high-glare periods; user anchors may cross midnight.
+Auto / Day / Night resolve to two effective appearances. Scheduled Auto defaults to 07:00 / 19:00; user anchors may cross midnight but must differ. Legacy High contrast maps to Day, Dim to Night and Sensor to Schedule. Launcher chrome updates in place. Organic Maps owns its independent appearance; no launcher map or lux-sensor controller remains.
 
 Physical validation should precede any further typography/icon/touch-target retuning. Capture exact TS18 `wm size`, `wm density`, `densityDpi` and relevant display metrics first.
 
@@ -155,7 +150,7 @@ On a fresh install, test the launcher as an ordinary Activity before switching H
 12. Run `collect-fast-media-evidence.sh`, `MONO_DRIVE_UX_ACCEPTANCE.md` and `measure-standalone-launcher.sh` where applicable.
 13. Only after ordinary-Activity gates pass continue HOME/reboot/cold-boot/ACC qualification.
 
-NavRadio passive warm-up and stock TW Radio external control remain unqualified. Current source readiness is background-only; the newly authorised controlled Activity staging remains NOT_IMPLEMENTED until a later code change and physical qualification. PR #14/#16/#17 already contain native navigation-window code, but its cold interactive readiness and stability are **not physically passed**. Native Topway radio/music, Bluetooth/projection and reverse-camera behaviour remain separate gates.
+NavRadio passive warm-up and stock TW Radio external control remain unqualified. Bounded explicit-demand masked NavRadio staging is implemented; installed-build behaviour, silence, audible onset and HOME/N2 restoration still require TS18 acceptance. Current native-window cold readiness and lifecycle stability are **not physically passed**. Native Topway radio/music, Bluetooth/projection and reverse-camera behaviour remain separate gates.
 
 ## Rollback
 
@@ -165,4 +160,4 @@ DoFun remains installed/enabled throughout qualification. Launcher Settings can 
 bash scripts/termux/install-standalone-launcher.sh --rollback-home
 ```
 
-Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; explicit listener refresh requests have a 15-second minimum spacing; no periodic timer is scheduled and storage events can request refresh while HOME is hidden. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
+Current observation contract: M2 uses its source-owned browser sessions and event-driven registry; listener-only discovery requires notification access. `ProcessMediaSessionMonitor` is demand-gated to explicit Legacy sources, with Binder reads on one worker and publication on main; its visible-only one-second verification tick is idle when both sources use M2. Storage events can request background reconciliation while HOME is hidden. Browser authority neither grants notification access nor creates a second playback authority.

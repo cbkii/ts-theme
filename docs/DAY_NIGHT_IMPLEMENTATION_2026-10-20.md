@@ -1,5 +1,7 @@
 # Binary Day/Night implementation and qualification
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 Owner decisions of 20 October 2026 supersede the previous five-mode appearance roadmap.
 Source base: PR #27 `11ec69a0c53f723cca0c046a255ddf0f4322b006`, including PR #26.
 Target: confirmed TS18 Android 10/API29, 1280×720 landscape touchscreen, no lux sensor.

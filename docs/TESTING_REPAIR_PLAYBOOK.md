@@ -1,5 +1,7 @@
 # TS18 repair candidate — guided validation
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 > **PR #24 startup candidate (16 October 2026):** automatic startup code and the PR #25 post-validation repairs now require a new exact-head signed APK. Historical T11/T13/T14 failures remain open until retested. Use Startup B1–B10 and the short three-source smoke gate before a long campaign. No physical boot/ACC/silence acceptance is implied by CI.
 
 11 October 2026. Physical qualification is **NOT_RUN**. Use the signed repair candidate identified in the PR handoff; do not choose an APK by its upload date. PR16 `ae2dd07` is the comparison baseline with reported regressions, not the repaired build. Keep a known rollback APK and DoFun available.

@@ -1,5 +1,7 @@
 # Scope and evidence
 
+> **Baseline provenance.** The hashes/PRs below identify the kit's original investigation, not the current candidate or installed APK pair. Re-match current source/signing/package/hash and use [the consolidated campaign](../../../docs/CONSOLIDATED_TESTING_PLAYBOOK.md) unless the boot-collector experiment is specifically needed.
+
 Prepared for TS18 Android 10 / API 29, UIS8581A Cortex-A55, PowerVR GE8322, 4 GB RAM, 64 GB eMMC and a 1280×720 display around 58 Hz with existing Magisk access. Runtime capability/permission failures are retained; root does not imply Android system permissions. No physical device or adb target was available in this authoring session.
 
 | Integration/source baseline inspected | Commit |

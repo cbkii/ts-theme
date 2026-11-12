@@ -1,15 +1,19 @@
 # TS18 launcher engineering rules
 
+Use the current user task as the scope/authorisation. Search relevant symbols before broad reads, batch independent evidence, reuse unchanged results and keep a compact revision/checkpoint ledger. Finish authorised edits and verification; an unavailable physical check blocks only that qualification level.
+
 ## Current authority
 
 - Reconcile live repository, PR/base/head, ancestry, review feedback, relevant workflows and artefact identity before mutation. Current code and original exact-device evidence outrank historical reports.
-- Primary integration remains PR #44. Consolidation work is a reviewable child; do not merge or publish production without a separate instruction. Preserve integration ancestry and previous signed TESTING recovery artefacts.
+- Read [the documentation index](docs/README.md) before specialist guides. It distinguishes current contracts from historical investigations and old test instructions. Refresh the live integration PR and its head rather than assuming the default branch contains the candidate. Preserve integration ancestry and previous signed TESTING recovery artefacts; do not merge or publish production unless requested.
 - The owner approved M2 defaults, source-owned browser sessions without notification access, removal of inert n3host, and a bounded N3 investigation. Physical TS18 testing is final acceptance, not an implementation prerequisite. Isolate uncertain contracts and continue independent work.
 
 - Local/offline/private by default. No analytics, tracking, remote configuration or automatic uploads. Diagnostics are explicit, bounded and local.
 - Source adapters must not retry the rejected Auxio root `startservice` route; use its evidenced browser/deadline contract.
 
 ## Product and UI
+
+- Prioritise automatic Maps → Music → Radio readiness, first-interaction correctness, responsive HOME/drawer/settings, accurate source state and safe handover, then efficiency and maintainability. Preserve healthy tasks/playback and deliberate opt-outs. “Open the app first”, a second Play tap and routine manual Retry are defects to investigate, not normal recovery requirements.
 
 - `launcher/`, package `com.cbkii.ts18launcher`, is the only product. Android 10/API29, framework Java/Views, one DEX and no native runtime. No AndroidX runtime, playback framework, networking stack, analytics or cloud dependency.
 - Retired DoFun theme and launcher Leaflet/WebView product paths stay removed. The installed OEM DoFun host remains protected and available as recovery HOME.
@@ -24,11 +28,11 @@
 - A source's own exported/unambiguous MediaBrowser may supply its authenticated package/token without notification access. Listener-discovered sessions still require that access. Deduplicate by token; preserve generation, ambiguity, disconnect, revocation and lifecycle handling.
 - The player owns playback service, queue, MediaSession and audio focus. The launcher only observes and forwards one directional transport operation.
 - Auxio cold Play requires advertised HOME_PLAY_V1 and its original elapsedRealtime deadline. Standard third-party players use their qualified directional Play contract. Wait for late capabilities without consuming the tap. Expired bounded Play must not fall back to unbounded PLAY; an unconfirmed send never authorises replay.
-- Pause the opposite source only after observed replacement playback. Never create a second playback authority, send blind media keys, switch the tuner for readiness or foreground a source secretly.
-- Maps, Music and Radio maintain independent observed readiness, admitted in that priority order. A user request may use the bounded authenticated overlay/source-task transaction when service preparation is insufficient; never launch an automatic source without a drawn mask or steal unrelated focus. Passive readiness must remain silent and must not select the tuner.
+- Pause the opposite source only after observed replacement playback. Never create a second playback authority, send blind media keys or switch the tuner for passive readiness. The authorised, drawn-mask fallback below is a source-specific exception to background-only activation, not permission for unmasked launches.
+- Maps, Music and Radio maintain independent observed readiness, admitted in that priority order. Authorisation for the bounded loader feature is already established; normal operation does not require repeated approval prompts. A user request may use the bounded authenticated overlay/source-task transaction when service preparation is insufficient; never launch an automatic source without a drawn mask or steal unrelated focus. Passive readiness must remain silent and must not select the tuner.
 - NavRadio's installed service protocol must be substantiated; a plain Media3 service bind does not establish a controller/session. An incompatible reference APK is not exact-device proof. Qualify its real legacy browser handshake; the authorised bounded mask may initialise its Activity on explicit Radio demand without a second Play tap.
 - N2 task/window control is primary. Reuse valid warm tasks; preserve user/display/task/bounds authority, legitimate permission/settings flows and unrelated foreground tasks. A transient missing task or failed focus read is inconclusive. Retain the stateful shell cold-claim/fullscreen compatibility path until broker parity covers its responsibilities. No repeated uncertain mutation or launch.
-- N3 remains a default-off isolated public-display experiment. The privileged n3host skeleton and its protocol are retired. Do not infer input/embedding privileges from root or from a created VirtualDisplay.
+- N3 remains a default-off isolated public-API private-display experiment. The privileged n3host skeleton and its protocol are retired. Do not infer input/embedding privileges from root or from a created VirtualDisplay.
 
 ## Protected boundaries
 
@@ -39,7 +43,7 @@
 
 ## Verification and delivery
 
-- Run `python3 tools/ts18_theme.py validate`, `python3 -m unittest discover -s tests -v`, relevant shell syntax/ShellCheck, and `:launcher:testDebugUnitTest :launcher:lintDebug :launcher:assembleDebug :launcher:assembleDebugAndroidTest`.
+- Scale checks to the diff; documentation-only work needs source validation, link/reference checks and diff review, not an unchanged APK rebuild. For behavioural changes run `python3 tools/ts18_theme.py validate`, `python3 -m unittest discover -s tests -v`, relevant shell syntax/ShellCheck, and `:launcher:testDebugUnitTest :launcher:lintDebug :launcher:assembleDebug :launcher:assembleDebugAndroidTest`.
 - `media-fixture/` is a CI-only companion application (not an instrumentation module, product/release or launcher dependency), using real AndroidX Media3 for legacy handshake and decoder qualification. Keep the launcher runtime dependency graph empty.
 - Canonical Validate also runs real API29 IPC and signed/minified release dependency/envelope checks. No runtime dependencies may enter the launcher release.
 - Prefer behavioural tests for changed contracts; source rules should protect architecture rather than count implementation callsites.

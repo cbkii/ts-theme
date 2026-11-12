@@ -1,5 +1,7 @@
 # BootTrace v3 repair candidate — 23 October 2026
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 Physical baseline: launcher `c834ce5778aebde9ac4a5b6e476e1e4a78b5320b`,
 Auxio `19babc11e8ff7bbbcbcd86cce8d7701b16d903f8`, Maps
 `1aaec09a26ac82a41abd3ae4abce24ff5cf1d2bc`. The revised reviewer audit

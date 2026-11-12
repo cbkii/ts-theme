@@ -1,6 +1,10 @@
 # Changelog
 
+Entries record changes at the time they landed and can be superseded by later entries; they are not current configuration or qualification claims. Use [the documentation index](docs/README.md) for active contracts. “Unreleased” means not promoted here, not installed or physically passed.
+
 ## Unreleased
+
+- Documentation audit: route current launcher work through one index; reconcile M2, Maps-first readiness, masked Radio recovery, component catalogue, binary Day/Night, release identity and retired theme/Leaflet/n3host guidance. Mark old investigations and test instructions as historical without rewriting their evidence. No runtime change or new device qualification.
 
 - Integration hardening: give each N3 phase its own deadline, retain the exact target in diagnostic snapshots, ignore invalid replacement starts while a display is owned, invalidate late optional-host bindings on release, and require a non-null display frame after target-launch acceptance before reporting rendering. M1 and N0–N2 remain the defaults; TS18 physical checks are deferred.
 

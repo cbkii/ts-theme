@@ -1,5 +1,7 @@
 # Layout specification
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 ## Controlling evidence
 
 The physical panel is **1280 x 720**. Last exact-device evidence showed the application-visible right boundary at **x=1225**, leaving a 55 px right Topway/SystemUI/navigation region. The top system region is approximately 55 px high. These direct device bounds supersede the earlier 18 px right-reserve design assumption.

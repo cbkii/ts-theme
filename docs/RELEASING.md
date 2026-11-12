@@ -1,5 +1,7 @@
 # Manual APK releases
 
+For nonproduction TESTING snapshots and exact-ref selection see [the launcher guide](STANDALONE_LAUNCHER.md#testing-build-workflow). This document describes the manual production/release transaction; it does not authorise merging, signing/publication or installation. Follow the current user task. Workflow definitions and `release-config.json` are the build/release authorities; inspect the selected revision before dispatch.
+
 The supported release path is `.github/workflows/manual-release.yml`. It is manual-only and uses the repository `GITHUB_TOKEN`; no PAT, deploy key, environment bypass or ruleset bypass is required.
 
 ## Authorities and prerequisites
@@ -14,7 +16,7 @@ The workflow has a repository-wide release lock and does not cancel an in-progre
 
 ## Qualification contract
 
-The qualify job checks out the immutable source SHA, validates sources, runs that source's `tools/launcher_apk_check.py` envelope, decodes the ephemeral keystore, builds `:theme:assembleRelease` exactly once and qualifies those exact APK bytes.
+The qualify job checks out the immutable source SHA, validates sources, runs that source's `tools/launcher_apk_check.py` envelope, decodes the ephemeral keystore, builds `:launcher:assembleRelease` exactly once and qualifies those exact APK bytes.
 
 Qualification fails unless all of the following agree:
 
@@ -22,7 +24,7 @@ Qualification fails unless all of the following agree:
 - requested `versionName`, `versionCode`, min/target/compile SDK;
 - v1/v2 APK signature validity and expected release certificate;
 - ZIP integrity/alignment, empty native ABI set, required launcher entries and classes, v2 signing (v1 is required only below minSdk 24);
-- compatibility/geometry validators, including safe-right x=1225 for the exact release profile;
+- launcher source/envelope validators; actual SystemUI geometry and touch are separately qualified from live display/decor/insets;
 - install manifest identity/version/source SHA/APK SHA-256.
 
 The installation-tools ZIP is built deterministically from repository scripts/docs plus the qualified release/install manifest. It does **not** duplicate the APK.
@@ -31,10 +33,10 @@ The installation-tools ZIP is built deterministically from repository scripts/do
 
 For resolved version `vX.Y.Z` the planned public assets are exactly:
 
-- `TS18-Dashboard-Theme-vX.Y.Z.apk`
-- `TS18-Dashboard-Theme-vX.Y.Z.apk.sha256`
-- `TS18-Dashboard-Theme-vX.Y.Z.apk.metadata.txt`
-- `TS18-Dashboard-Theme-vX.Y.Z-install-tools.zip`
+- `TS18-Launcher-vX.Y.Z.apk`
+- `TS18-Launcher-vX.Y.Z.apk.sha256`
+- `TS18-Launcher-vX.Y.Z.apk.metadata.txt`
+- `TS18-Launcher-vX.Y.Z-install-tools.zip`
 
 Every planned public asset participates in remote state verification. The publisher creates/uses a draft, uploads/reuses only expected bytes, waits for GitHub's uploaded state, checks GitHub's digest when supplied, downloads and hashes every expected asset, and changes the Release state only as the final API write.
 
@@ -69,15 +71,15 @@ If a run fails after tag creation, retain the tag as recovery evidence. Do not d
 
 ## Installation-tools boundary
 
-The ZIP contains Termux scripts, a concise README/install document and an immutable release/install manifest with tag/version, source SHA, application ID, plug-in ID, safe-area profile and expected APK SHA-256. Runtime scripts read that manifest rather than guessing release identity.
+The ZIP contains Termux scripts, a concise README/install document and an immutable release/install manifest with tag/version, source SHA, launcher application ID and expected APK SHA-256. Current launcher manifests do not carry a DoFun plug-in ID. Runtime scripts read that manifest rather than guessing release identity.
 
 No APK, keystore, vendor asset, device log or donor bytes are packaged into the public install-tools ZIP.
 
 ## Validation boundary
 
-CI validates source, geometry, Termux scripts/tests and debug/release configuration. The manual workflow validates the exact production-signed release bytes and all public assets. The theme has no launcher Activity and depends on the protected DoFun host, so emulator launch success would not prove the product.
+CI validates source, geometry, Termux scripts/tests and debug/release configuration. The manual workflow validates the exact production-signed release bytes and all public assets. The current product has its own launcher Activity and is independent of DoFun at runtime; DoFun remains installed/enabled for recovery. Emulator launch success does not prove TS18 presentation or audio.
 
-Installation, catalogue discovery, U-disk import acceptance, donor substitution, map interaction, right-SystemUI behaviour, media/radio behaviour and lifecycle persistence must be tested on the exact TS18 using [TS18 physical validation](TS18_VALIDATION.md).
+Installation/update, HOME/drawer, map pixels/touch, fullscreen/HOME return, SystemUI geometry, first-tap media/radio, loaders and lifecycle persistence need the exact TS18 [consolidated campaign](CONSOLIDATED_TESTING_PLAYBOOK.md). DoFun catalogue discovery, U-disk import and donor substitution are retired-theme work, not launcher release steps.
 
 
 ## Retired theme releases

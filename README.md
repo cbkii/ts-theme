@@ -1,10 +1,13 @@
 # TS18 Dashboard
 
+Start with the [documentation index](docs/README.md). It identifies current guides, historical evidence and the integration branch to inspect before a release review; old PR handoffs are not current build provenance.
+
 Android dashboard development for CB's Topway TS18 (Android 10/API 29, 1280 x 720).
 
-The repository has two deliberately separate runtime lanes:
+The repository has one launcher product and a separate test fixture:
 
 - **`launcher/` - standalone TS18 HOME candidate (primary direction).** An ordinary independently signed Android launcher that owns the dashboard directly and removes DoFun/RePlugin from the normal runtime path.
+- **`media-fixture/`** is a CI-only Media3 interoperability/decoder fixture, excluded from launcher runtime and distribution.
 - The former `theme/` DoFun/RePlugin plug-in is **retired** and no longer built or released from this repository. The OEM DoFun host on the head unit is not affected and remains the HOME fallback.
 
 DoFun remains installed and enabled during launcher qualification.
@@ -31,7 +34,7 @@ The launcher stays deliberately small: platform Android Views/Java, API 29, no C
 
 ### TS18 Mono Drive HOME
 
-Exact TS18 testing preserves the physical Topway/SystemUI authority: 1280 x 720 panel, 55 px top boundary, safe-right x=1225 and safe-bottom y=702. HOME uses a **96 px side rail** and **88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip**. Physical SystemUI boundaries remain raw pixels; inner UI uses semantic Android dimensions where appropriate.
+The known panel is 1280 x 720. Historical conservative geometry uses a 55 px top boundary, safe-right x=1225 and safe-bottom y=702; live display/decor/insets determine the current usable rectangle. HOME uses a **96 px side rail** and **88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip**. Physical SystemUI boundaries remain raw pixels; inner UI uses semantic Android dimensions where appropriate.
 
 The rail can be Driver side, Left or Right; on this exact Australian RHD unit Driver side means right. Radio/Music control groups can be swapped independently with `Radio / Music sides`.
 
@@ -69,9 +72,9 @@ All fixed/user-selectable monochrome glyphs use one pinned family: **Google Mate
 
 ### Appearance and accent hue
 
-Launcher chrome uses Auto / Day / Night appearance (older High contrast / Dim selections map to Day / Night). Auto can use ambient light or schedule; stale/unavailable sensor evidence falls back to schedule. Generic unset schedule uses 07:00/19:00 anchors with transition/high-glare periods; user anchors may cross midnight.
+Launcher chrome uses Auto / Day / Night appearance (older High contrast / Dim selections map to Day / Night). Scheduled Auto is the default, with 07:00/19:00 anchors unless changed; user anchors may cross midnight. Legacy sensor selection resolves to Schedule. Day/Night updates launcher chrome in place; the external navigation app owns its appearance independently.
 
-Accent hue is deliberately simple and independent of appearance mode. Settings presents a **single strip of coloured circles** for Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. Hue affects only the semantic accent role: primary/selected/focus elements, subtle source accents, section accents, fixed Navigation and experimental-map location accent. Neutral black/charcoal/white hierarchy remains unchanged.
+Accent hue is deliberately simple and independent of appearance mode. Settings presents a **single strip of coloured circles** for Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. Hue affects only the semantic accent role: primary/selected/focus elements, subtle source accents, section accents and fixed Navigation. Neutral black/charcoal/white hierarchy remains unchanged.
 
 Setup is a short, skippable checklist offered after HOME is usable when Music, Radio and Navigation assignments are all empty; it can be repeated from Settings. It never silently takes HOME or grants access.
 
@@ -85,7 +88,7 @@ This launcher is not a generic resizable/split-screen HOME. Responsive work is l
 
 ### HOME navigation surfaces
 
-Settings has one authoritative **HOME navigation surface** preference with three mutually exclusive modes:
+Settings has one authoritative **HOME navigation surface** preference with two mutually exclusive modes:
 
 - **Native navigation window - TESTING** - primary path: one real external navigation task on display 0 in Android freeform `windowingMode=5`, bounded to the launcher navigation rectangle.
 - **Fullscreen only** - explicit safe fallback.
@@ -94,7 +97,7 @@ The earlier launcher-owned Leaflet/WebView online map is **retired**. On upgrade
 
 Exact TS18 evidence from a known-good DoFun/Organic Maps launch establishes a real external navigation task on display 0 in freeform mode 5, alongside Topway `isPipLauncher ... :navi` policy. The launcher therefore treats package + task ID + current top component + display + windowing mode + task bounds as the machine-state authority. It does **not** claim that raw `am task resize` reproduces DoFun's full private Topway navigation policy.
 
-The mode-5 path is root-assisted but bounded. Java resolves the configured package's ordinary exported launcher Activity and derives the Android user from the launcher process UID (the application UID itself is not used as a user ID). One helper transaction first adopts exactly one same-user, same-package task with a known matching component; only if none exists does it launch that component once with explicit display 0 and mode 5, then acquire, resize and verify the exact task. Ambiguous tasks fail closed. HOME stops do not cancel an in-flight transaction, callbacks coalesce behind one operation, and a failure latch keeps HOME usable until explicit Retry or Open fullscreen.
+The mode-5 path is root-assisted but bounded. Java resolves the configured package's ordinary exported launcher Activity and derives the Android user from the launcher process UID (the application UID itself is not used as a user ID). One helper transaction first adopts exactly one same-user, same-package task with a known matching component; only if none exists does it launch that component once with explicit display 0 and mode 5, then acquire, resize and verify the exact task. Ambiguous tasks fail closed. HOME stops do not cancel an in-flight transaction, callbacks coalesce behind one operation, and bounded event-driven recovery keeps HOME usable; Retry and Open fullscreen remain explicit escape paths, not normal startup requirements.
 
 Physical testing of `PR11-5aea8bc` proved visible bounded Organic Maps rendering on standalone HOME but also exposed unreliable warm lifecycle/app handoff and permission/settings UI after launcher-driven task handling. Current code no longer restarts a warm navigation Activity merely to park it: one atomic helper transaction validates the same-user Organic Maps and canonical HOME tasks, focuses HOME, then revalidates the unchanged mode-5 task, component and bounds. Cold acquisition remains the ordinary direct MAIN/LAUNCHER start. Explicit fullscreen/freeform mode changes remain a separate Android-Q transaction and may use `am start --task` because the captured TS18 behaviour rejects resize until the existing task is first established in mode 5. These changes are repository-verified but still require exact-device retest; inside-map touch, warm recovery and vehicle lifecycle remain physical gates.
 
@@ -126,7 +129,7 @@ Physical validation is still required for the selected/inactive media hierarchy 
 
 ## Safe HOME rollout
 
-Install/test the APK as an ordinary Activity first; its HOME alias is disabled by default. Configure and physically qualify while DoFun remains HOME, then explicitly enable/select standalone HOME only after ordinary-Activity gates pass. DoFun remains rollback HOME through reboot/cold-boot/ACC qualification.
+For a new installation, test the APK as an ordinary Activity before explicitly enabling/selecting its HOME alias. On an already configured unit, resolve and preserve the current HOME. DoFun remains installed/enabled as rollback through reboot/cold-boot/ACC qualification. Automatic compact startup and masked Radio recovery need the launcher selected as HOME; those checks cannot pass in ordinary-Activity mode.
 
 Reverse-camera hand-off/return remains roadmapped physical validation only. There is no reverse-camera implementation in this launcher.
 
@@ -158,4 +161,4 @@ The separate **Standalone Launcher Candidate** workflow produces an explicitly v
 
 CI proves source/build/release contracts only. It does not prove physical head-unit behaviour.
 
-Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; explicit listener refresh requests have a 15-second minimum spacing; no periodic timer is scheduled and storage events can request refresh while HOME is hidden. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
+Current observation contract: M2 uses its source-owned browser sessions and event-driven registry; listener-only discovery requires notification access. `ProcessMediaSessionMonitor` is demand-gated to explicit Legacy sources, with Binder reads on one worker and publication on main; its visible-only one-second verification tick is idle when both sources use M2. Storage events can request background reconciliation while HOME is hidden. Browser authority neither grants notification access nor creates a second playback authority.

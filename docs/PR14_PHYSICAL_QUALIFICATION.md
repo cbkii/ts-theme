@@ -1,5 +1,7 @@
 # PR14 TS18 physical qualification
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 This gate applies to `fix/final-startup-runtime-hardening`. It does **not** claim physical qualification from CI, installation or static task identity alone.
 
 ## Preconditions

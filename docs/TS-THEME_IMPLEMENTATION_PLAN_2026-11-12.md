@@ -1,10 +1,10 @@
 # Authorised execution revision — 12 November 2026
 
-This section supersedes conflicting recommendations and physical-development gates in the preserved research below. Selective subsystem consolidation is approved; this is an implementation programme, not a rewrite.
+This section and the preserved comparison are historical programme context. Current implementation authority is [the documentation index](README.md), [architecture](ARCHITECTURE.md) and [continuous readiness](CONTINUOUS_READINESS.md); the original defect/status tables below are not an outstanding-work list. The following decisions retain their historical scope except where explicitly updated here. Selective subsystem consolidation is approved; this is an implementation programme, not a rewrite.
 
 ## Outcomes and decisions
 
-Priorities: independent, silent Music/Radio readiness; dependable N2 navigation and warm-task reuse; responsive HOME; fewer duplicate owners; preserved UI/settings/recovery.
+Priorities: automatic Maps → Music → Radio readiness; first-tap playback; dependable N2/warm-task reuse and HOME/fullscreen return; responsive UI; correct source state/handover; efficient owners and preserved settings/recovery.
 
 D1: M2 is the intended TESTING default per source when source/automated evidence supports it. Explicit Legacy settings remain a reversible compatibility path until their responsibilities are replaced. D2: exact-package MediaBrowser-owned tokens do not need notification access; unrelated listener sessions still do. D3: remove inert n3host and unused dependencies. D4: finish a bounded API29 N3 assessment; N2 remains primary.
 
@@ -15,12 +15,12 @@ Physical TS18 qualification is deferred until the consolidated candidate. NOT_RU
 | Phase | Work and automated acceptance |
 |---|---|
 | A | Reconcile PR44/current Auxio dev. Bound HOME_PLAY_V1 throughout deferred restoration, including autoplay override. Plain PLAY only for confirmed loaded sessions; unsupported cold Play is rejected. Validate browser provenance, revocation and token lifecycle. Investigate Radio/XTService from matching evidence. |
-| B | Default M2, independent readiness/handover; idle unused legacy observers and prohibit automatic foreground staging. Remove architecture only with replacement coverage. |
+| B | Default M2, independent readiness/handover and idle unused legacy observers. Prefer silent preparation; permit the authorised bounded drawn-mask transaction for explicit NavRadio demand before any transport dispatch. Passive tuner activation stays gated. Remove architecture only with replacement coverage. |
 | C | Preserve warm tasks, permission/settings flows and unrelated foreground; inconclusive task/focus results never authorise relaunch. Consolidate proven broker verbs, retain narrowly justified compatibility fallback. Remove n3host; bound N3 assessment. |
 | D | Background component catalogue/icons; aliases and component shortcuts; v1/v2 import compatibility and deterministic fallback. Bounded local diagnostics and behavioural regression coverage. |
 | E | Combined review, relevant host/JVM/lint/build/API29 CI; final-head signed TESTING provenance; one beginner-friendly lifecycle qualification package. |
 
-HOME_PLAY_V1 uses elapsedRealtime deadlines. Accepted dispatch without observed playback is SENT_UNCONFIRMED, never a rejection or retry instruction. Do not pause the opposite source before replacement playback is observed. A bind alone does not establish Media3 interoperability or safe tuner readiness. Unsupported Radio cold activation retains explicit app opening; no guessed service binding or hidden Activity launch.
+HOME_PLAY_V1 uses elapsedRealtime deadlines. Accepted dispatch without observed playback is SENT_UNCONFIRMED, never a rejection or retry instruction. Do not pause the opposite source before replacement playback is observed. A bind alone does not establish Media3 interoperability or safe tuner readiness. Unsupported background Radio activation may use the implemented, source-gated masked Activity fallback on explicit Play. It must not require manual priming, replay uncertain transport, use a guessed plain bind or launch unmasked. Exact installed-build/tuner acceptance remains separate.
 
 Qualification states are IMPLEMENTED, STATIC VERIFIED, UNIT TESTED, EMULATOR VERIFIED, REFERENCE SUPPORTED, TS18 NOT_RUN and prerequisite-specific BLOCKED. Claim only executed checks. MediaSession PLAYING does not prove audible output; screen recordings provide visual evidence unless audio capture is separately verified. Android reboot, cold power and ACC are separate.
 

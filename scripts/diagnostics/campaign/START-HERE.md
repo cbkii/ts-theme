@@ -1,5 +1,7 @@
 # TS18 capture campaign
 
+> **Extended diagnostic campaign.** The default owner handoff is the [consolidated acceptance campaign](../../../docs/CONSOLIDATED_TESTING_PLAYBOOK.md). Use this larger kit only for a targeted evidence gap; its old comparison/profile and phase names do not override current code or require repeat qualification of retired engines.
+
 Capture one trial after a cold boot, reboot, ACC wake, process restart or HOME return.
 The toolkit observes; it never reboots, launches an app, presses Play, changes HOME,
 changes permissions or installs anything. Perform the intended actions yourself.

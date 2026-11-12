@@ -1,5 +1,7 @@
 # One fixed startup profile — validation kit v3
 
+> **Optional persistent boot collector.** This kit installs a bounded Magisk `service.d` observer. It is separate from the default [read-only consolidated campaign](../../../docs/CONSOLIDATED_TESTING_PLAYBOOK.md); do not install it as a routine launcher prerequisite. Use its current scripts/hash manifest and distinguish its historical source baseline from the candidate under test.
+
 Use the matching launcher, Maps and Auxio TESTING candidates. The profile is fixed to N2 / Bridge / fullscreen departure with root-assisted silent preparation. Do not select or compare alternate profiles. An old Auxio APK without the prepare-only capability is reported blocked; it is never silently automated. A saved Maps startup OFF choice remains OFF; enable its compact-startup setting once if that was your earlier choice.
 
 # TS18 Music + Maps + Radio cold-start diagnostics

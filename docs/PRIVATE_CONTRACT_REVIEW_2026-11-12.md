@@ -14,7 +14,7 @@ Available `NavRadio_Plus_v4_00_PREMIUM (1).apk`: package `com.navimods.radio`, v
 
 Its manifest exports `com.navimods.radio.RadioService` for `androidx.media3.session.MediaSessionService`; no framework MediaBrowser action appears on that service. A plain service bind is not a Media3 controller connection. Neither session publication nor tuner/source side effects of creating the installed API29 service are established by these bytes.
 
-Decision: use M2 for existing authenticated sessions; use its public browser connector only when the configured installed package actually exposes one enabled/exported/unambiguous browser service. Otherwise cold Play reports the need to open the app; the source icon is the explicit interactive fallback. Do not add a guessed plain bind, hidden Activity or Topway tuner writer.
+Current decision after the readiness integration: use an existing exact session, then the real framework MediaBrowser handshake against one accessible/unambiguous framework-browser or Media3 service candidate. A declaration/plain bind is insufficient. A non-dispatched explicit NavRadio Play can enter the authorised bounded masked Activity transaction; manual app priming is not the normal solution. Passive tuner activation stays gated. See [continuous readiness](CONTINUOUS_READINESS.md).
 
 Deferred discriminator: record installed version/signer/service declarations, test any evidenced background protocol while Music plays, then confirm session token ownership, unchanged source/tuner/audio during preparation and one requested Radio Play. This isolated gap does not block Music, catalogue or N2 work.
 
@@ -22,4 +22,4 @@ Deferred discriminator: record installed version/signer/service declarations, te
 
 The existing API29 IPC probe already exercises a launcher-owned private display, non-embeddable refusal and pixel observation. Existing qualified API29 evidence reports the input forwarder unavailable and therefore view-only; Organic Maps embedding permission is not established. A new privileged host skeleton cannot confer platform signing, input injection or embedding authority.
 
-N2 remains the product path. Remove the inert n3host module, Binder protocol and client. Keep the already isolated, default-off public-display experiment for explicit developer inspection; it has no automatic startup ownership. No root input injection or hidden-API exemption was introduced. Exact TS18 N3 is NOT_RUN and provides no demonstrated advantage sufficient to replace N2.
+N2 remains the product path. The inert n3host module, Binder protocol and client have been removed. Keep the already isolated, default-off public-API private-display experiment for explicit developer inspection; it has no automatic startup ownership. No root input injection or hidden-API exemption was introduced. Exact TS18 N3 is NOT_RUN and provides no demonstrated advantage sufficient to replace N2.

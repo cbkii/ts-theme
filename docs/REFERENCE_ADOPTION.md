@@ -18,15 +18,15 @@ TS18 authority.
 Files inspected: `app/src/main/java/com/syu/util/WindowHostVdClient.java`, `WindowHostVdDisplay.java`
 and `WindowHostActivityView.java`.
 
-**Adopted (design).** FYT states that a launcher which is not a system launcher cannot start other
+**Historical host design (retired locally).** FYT states that a launcher which is not a system launcher cannot start other
 apps in an ActivityView without `ACTIVITY_EMBEDDING`, and needs `INJECT_EVENTS` for touches. It
-therefore delegates to a separately installed virtual-display host. Our split follows the same
+therefore delegates to a separately installed virtual-display host. The initial N3 split followed that
 shape:
 
 - the launcher's own private display covers cooperative (embeddable) targets;
-- the separate `n3host` APK is the only route for generic targets.
+- a separate `n3host` skeleton was proposed for generic targets.
 
-Unlike FYT's host, ours is inert by default and derives caller identity from Binder.
+That skeleton, client and protocol have since been removed. It never established usable privileges. Only the isolated launcher-owned private-display experiment remains; generic-target embedding/input are not solved. See [navigation](NAVIGATION.md).
 
 **Adopted (lifecycle lessons).**
 
@@ -90,9 +90,9 @@ broadcast would be an acceptable read-only Day/Night input, but it has not been 
 TS18. Until it is observed in the launcher's own context, illumination stays `UNKNOWN` and
 appearance stays manual or scheduled.
 
-## Not studied in this pass
+## Scope of this original pass
 
-The following were not studied:
+The following were not studied in this four-reference pass. Later targeted comparison is recorded in [the preserved implementation-plan research](TS-THEME_IMPLEMENTATION_PLAN_2026-11-12.md), and AOSP/Taskbar/Media3 mechanisms in [continuous readiness](CONTINUOUS_READINESS.md); do not treat this list as a requirement to repeat that research:
 
 - open-car-project
 - device-reveng

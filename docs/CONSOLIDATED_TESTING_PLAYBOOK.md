@@ -11,7 +11,7 @@ For each row below, record PASS/FAIL/NOT_RUN and a short timestamped observation
 | Stage | Actions and acceptance |
 |---|---|
 | First HOME | Maps is admitted first, then Music and safe Radio service readiness; HOME responds and no unsolicited playback/source change occurs |
-| Music | One Play starts the restored item inside its bounded window; no late automatic playback after an unconfirmed/expired request; Next/Pause/metadata remain correct |
+| Music | One Play starts the restored item; Auxio cold Play honours its source-enforced deadline. Record SENT_UNCONFIRMED separately: timeout of a sent standard command does not prove cancellation and must not trigger replay. No late playback after an actually cancelled/expired bounded Auxio request; Next/Pause/metadata remain correct |
 | Radio | One Play works with a supported session or configured NavRadio+ automatically uses the bounded masked cold fallback. Mark other unsupported cold packages BLOCKED by their missing contract; opening their icon is a setup/diagnostic path, not a one-tap playback pass. No manual app priming, bright splash or second tap; HOME/N2 returns and the source survives backgrounding. Genuine setup/permission screens remain visible. Verify audibility separately |
 | Handover | While one source plays, request the other; old source is not paused before replacement playback is observed; no duplicate commands |
 | N2 | Navigation rail, Retry, fullscreen, HOME and windowed return preserve the same warm task/active route; map pixels and touch work; unrelated foreground apps stay undisturbed |

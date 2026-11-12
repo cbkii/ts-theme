@@ -1,10 +1,12 @@
 # TS18 Termux tools
 
+Current launcher acceptance starts with [the consolidated campaign](../../docs/CONSOLIDATED_TESTING_PLAYBOOK.md) and `qualify-consolidated-candidate.sh`. Resolve installed source/signer/hash and preserve the current HOME. Legacy theme installers below apply only to historical theme packages, are not launcher prerequisites and are never routine readiness repair.
+
 Use these helpers from Termux on the target TS18. Keep diagnostic collection read-only unless a specific installer/rollback action is intended.
 
 ## Legacy DoFun theme installation
 
-Start with read-only preflight or the interactive installer; do not jump directly to donor substitution.
+Historical theme support only: current releases do not build a theme. Do not use this section for standalone-launcher review, installation or rollback. If separately tasked with a historical theme, establish current DoFun identity/recovery and the intended operation before using these mutating helpers.
 
 ```bash
 bash scripts/termux/ts18-theme-preflight.sh --apk /path/to/TS18-Dashboard-Theme-vX.Y.Z.apk

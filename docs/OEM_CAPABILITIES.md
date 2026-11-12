@@ -46,12 +46,9 @@ The run is single-flight and every wait has a deadline. Late callbacks are ignor
 Topway source observation**, is turned on. That switch names the risk below. The check runs only
 on that explicit request, never automatically, and is re-checked when it runs.
 
-### Known open risk
+### Static coexistence and runtime boundary
 
-Static evidence does not show whether the service keeps one status callback or a list. If it keeps
-one, the temporary registration could briefly displace another app's status listener until that
-app re-registers. Music-key routing (a separate callback) is not affected. This is one reason the
-observation is manual only.
+Exact-byte DEX inspection now establishes a separate `RemoteCallbackList` for command callbacks, with register/unregister affecting that callback rather than replacing a singleton. See [the binary review](PRIVATE_CONTRACT_REVIEW_2026-11-12.md). Runtime Binder/SELinux admission, actual cleanup and coexistence with normal clients still need the one-off TS18 check. Music-key registration is a separate authority and remains excluded; observation stays manual, bounded and hash-gated.
 
 ## Contract provenance
 
@@ -79,8 +76,7 @@ Host tests cover:
 - a static guard that only transactions 1, 2 and 67 exist, with no TWUtil, writer, music callback or service creation.
 
 **No TS18 run has been performed (NOT_RUN).** Bind admission for this app, the descriptor,
-callback acceptance, the source reply and the single-versus-list callback behaviour are all
-unverified on the device.
+callback acceptance, the source reply, cleanup and coexistence are unverified on the device. The callback-list storage model is statically established for the pinned APK; it is no longer an unknown.
 
 ## Native radio
 
