@@ -17,7 +17,7 @@ NavRadio service creation can activate the tuner. Passive creation is therefore 
 Only the configured `com.navimods.radio` launch component is admitted. The device must be unlocked, interactive, API29, with ts-theme as default HOME, normal audio mode, overlay permission and known HOME/task authority. No guessed tuner, protected package or private vendor command is used.
 
 1. Wait boundedly for an already accepted navigation transaction; defer new automatic presentation.
-2. Attach the existing opaque application overlay and wait for its real draw barrier. Root dispatch rechecks the exact mask title, owner UID and window type against the focused window.
+2. Attach the opaque full-display application overlay beneath SystemUI and wait for its real draw barrier. Its dark underlay covers app-drawn status-bar backgrounds; controls remain padded into the measured safe area. SystemUI retains its higher window/input authority. Root dispatch rechecks the exact mask title, owner UID and window type against the focused window.
 3. Launch the assigned exported component once. Accepted/uncertain outcomes are observed, never replayed.
 4. Observe the intended Activity and source-owned session/actions. Foreign permission/setup/login Activities yield visibly; nothing auto-accepts or dismisses them.
 5. Focus the existing HOME task through the broker, retaining the source task. Verify HOME and the same session token surviving backgrounding before completion.

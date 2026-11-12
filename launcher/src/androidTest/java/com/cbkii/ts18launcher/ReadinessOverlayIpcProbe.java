@@ -62,9 +62,11 @@ final class ReadinessOverlayIpcProbe {
             // Avoid the spinner and cancel affordance; the rest of the mask must be opaque black.
             for (int x : new int[] {20, 35, 65, 80}) for (int y : new int[] {20, 35, 65}) {
                 int pixel = frame.getPixel(area[0] + area[2] * x / 100, area[1] + area[3] * y / 100);
-                int mask = AutomotiveUi.color(test.getTargetContext(), R.color.ui_black) & 0x00ffffff;
-                check((pixel & 0x00ffffff) == mask, "foreign splash visible under mask: " + Integer.toHexString(pixel));
+                check((pixel & 0x00ffffff) == 0, "foreign splash visible under mask: " + Integer.toHexString(pixel));
             }
+            // The bright fixture must not tint the app-drawn strip behind SystemUI's status icons.
+            if (area[1] > 2) check((frame.getPixel(frame.getWidth() / 2, area[1] / 2) & 0x00ffffff) == 0,
+                    "foreign status-bar background escaped the underlay");
             if (name != null) try (FileOutputStream stream = new FileOutputStream(new File(output, name))) {
                 check(frame.compress(Bitmap.CompressFormat.PNG, 100, stream), "frame export failed");
             }
