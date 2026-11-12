@@ -4,6 +4,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity android:name="com.cbkii.ts18launcher.MaskFixtureActivity" android:exported="true" />
+        <receiver android:name="com.cbkii.ts18launcher.MaskFixtureActivity$Cleanup"
+            android:exported="true" android:permission="android.permission.DUMP">
+            <intent-filter><action android:name="com.cbkii.ts18launcher.test.FINISH_MASK_FIXTURE" /></intent-filter>
+        </receiver>
         <service
             android:name="com.cbkii.ts18launcher.media.direct.FixtureBrowserService"
             android:exported="true"
