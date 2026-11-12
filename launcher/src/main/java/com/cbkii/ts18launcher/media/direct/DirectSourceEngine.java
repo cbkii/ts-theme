@@ -488,6 +488,8 @@ public final class DirectSourceEngine {
         if (availability == MediaSourceState.Availability.AMBIGUOUS_SOURCE
                 || availability == MediaSourceState.Availability.SERVICE_UNAVAILABLE) return;
         decidedPrepareEpoch = epoch;
+        // A live Radio token does not make PREPARE's tuner/focus side effects safe.
+        if (starter != null && !starter.canPreparePassive(packageName)) return;
         if (live()) {
             if (loaded(current)) return;
             pendingPrepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");

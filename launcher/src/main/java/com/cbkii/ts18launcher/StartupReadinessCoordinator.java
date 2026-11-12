@@ -96,6 +96,7 @@ final class StartupReadinessCoordinator {
     private static Source source(MediaSourceKey key) { return key == MediaSourceKey.MUSIC ? Source.MUSIC : Source.RADIO; }
 
     private void reconcileSource(MediaSourceKey key, Trigger trigger, long now) {
+        if (destroyed || screenOff || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
         String pkg = MediaEngineSelector.configuredPackage(context, key);
         if (pkg == null || pkg.isEmpty()) return;
         if (!pkg.equals(configured.put(key, pkg))) policy.configurationChanged(source(key));

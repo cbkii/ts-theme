@@ -28,7 +28,7 @@ final class MaskedSourcePreparation {
     private long deadline;
     private int sourceTask;
     private volatile boolean ended, cancelRequested;
-    private boolean dispatched, restoring, launchInFlight;
+    private boolean dispatched, restoring, launchInFlight, presentationLeased;
 
     MaskedSourcePreparation(Activity home, StartupReadinessCoordinator.LoaderUi loader,
             StartupReadinessCoordinator.NavigationHook navigation, Runnable released) {
@@ -53,6 +53,7 @@ final class MaskedSourcePreparation {
             finish(false); return;
         }
         main.postDelayed(this::cancel, Math.max(1L, deadline - SystemClock.elapsedRealtime()));
+        if (navigation != null) { presentationLeased = true; navigation.deferAutomaticPresentation(true); }
         awaitNavigation();
     }
 
@@ -62,7 +63,6 @@ final class MaskedSourcePreparation {
         if (navigation != null && navigation.busy()) {
             main.postDelayed(this::awaitNavigation, 250L); return;
         }
-        if (navigation != null) navigation.deferAutomaticPresentation(true);
         loader.render("Preparing Radio…", true);
         loader.mask(true);
         loader.whenMaskDrawn(() -> {
@@ -104,7 +104,7 @@ final class MaskedSourcePreparation {
 
     private void observeSource() {
         if (ended || restoring) return;
-        if (home.isFinishing() || home.isDestroyed() || !loader.ownsMask()
+        if (home.isFinishing() || home.isDestroyed() || !loader.ownsMask() || !loader.canMask()
                 || !pkg.equals(MediaEngineSelector.configuredPackage(home, MediaSourceKey.RADIO))) {
             cancel(); return;
         }
@@ -203,7 +203,7 @@ final class MaskedSourcePreparation {
         ended = true;
         main.removeCallbacksAndMessages(null);
         loader.hide();
-        if (navigation != null) navigation.deferAutomaticPresentation(false);
+        if (navigation != null && presentationLeased) navigation.deferAutomaticPresentation(false);
         io.shutdown();
         released.run();
         MediaEventTrace.record("startup-loader", ready ? "background-ready" : "released", pkg);
