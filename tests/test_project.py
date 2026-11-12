@@ -22,7 +22,8 @@ class ProjectTests(unittest.TestCase):
         original = (ROOT / "settings.gradle.kts").read_text(encoding="utf-8")
         try:
             (ROOT / "settings.gradle.kts").write_text(original + 'include(":theme")\n', encoding="utf-8")
-            self.assertTrue(any("build :launcher only" in e for e in MODULE.validate_project()))
+            self.assertTrue(any("Only launcher and its IPC test fixture may be built" in e
+                                for e in MODULE.validate_project()))
         finally:
             (ROOT / "settings.gradle.kts").write_text(original, encoding="utf-8")
 

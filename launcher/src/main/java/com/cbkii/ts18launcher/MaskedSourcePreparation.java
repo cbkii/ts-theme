@@ -189,7 +189,7 @@ final class MaskedSourcePreparation {
     }
 
     private static boolean valid(NavigationHelperResult result) {
-        return result != null && result.success && result.taskId > 0 && result.userId >= 0;
+        return result != null && result.success && result.taskId > 0 && result.userId == AndroidUserId.current();
     }
     private static boolean homeComponent(String component) {
         return "com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity".equals(component)

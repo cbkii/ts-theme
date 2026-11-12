@@ -51,6 +51,12 @@ adb shell am instrument -w -e m2_media3 1 \
   com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation | \
   tee "$proof/m2-media3-legacy-ipc.txt"
 grep -Fq 'PASS API29 real Media3-only service legacy browser' "$proof/m2-media3-legacy-ipc.txt"
+adb shell appops set com.cbkii.ts18launcher SYSTEM_ALERT_WINDOW allow
+adb shell am instrument -w -e readiness_overlay 1 \
+  com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation | \
+  tee "$proof/readiness-overlay.txt"
+grep -Fq 'PASS API29 opaque draw before cross-UID splash' "$proof/readiness-overlay.txt"
+adb pull /sdcard/Android/data/com.cbkii.ts18launcher/files/readiness-overlay "$proof/readiness-overlay"
 adb shell am instrument -w -e n3_path 1 \
   com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation |
   tee "$proof/n3-path.txt"

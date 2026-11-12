@@ -279,15 +279,16 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         AppCatalog.get(this).unsubscribe(catalogChanged);
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        mediaStatusGeneration++;
-        mediaStatusActive = false;
+        // A masked source transaction temporarily stops HOME but still owns its original Play.
+        boolean maskedHandoff = readinessLoader != null && readinessLoader.ownsMask();
+        if (!maskedHandoff) { mediaStatusGeneration++; mediaStatusActive = false; }
         ProcessMediaSessionMonitor.setVisible(this, false);
         ProcessMediaSessionMonitor.removeObserver(this);
         MediaListenerService.removeObserver(this);
         mediaFacade().setStateListener(null);
         directFailureText = "";
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
-        if (navigationWindowController != null) navigationWindowController.onHomeStopped();
+        if (navigationWindowController != null && !maskedHandoff) navigationWindowController.onHomeStopped();
         super.onStop();
     }
 

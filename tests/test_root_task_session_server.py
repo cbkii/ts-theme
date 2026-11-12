@@ -45,6 +45,9 @@ music.taskIds=new int[]{84};music.taskNames=new String[]{"com.tw.media/com.tw.mu
 music.topActivity=ComponentName.unflattenFromString("com.tw.media/org.oxycblt.auxio.MainActivity");
 foreign.taskIds=new int[]{99};foreign.taskNames=new String[]{"other.app/.Main"};foreign.stackId=8;foreign.topActivity=ComponentName.unflattenFromString("other.app/.Main");
 if("source".equals(System.getenv("CASE")))focused=84;
+if(System.getenv("CASE").startsWith("radio")){focused=84;music.taskNames=new String[]{"com.navimods.radio/com.navimods.radio.Main"};music.topActivity=ComponentName.unflattenFromString(music.taskNames[0]);}
+if("radio-shared".equals(System.getenv("CASE"))){music.taskIds=new int[]{84,85};music.taskNames=new String[]{"com.navimods.radio/com.navimods.radio.Main","other.app/.Main"};music.taskUserIds=new int[]{0,0};}
+if("radio-permission".equals(System.getenv("CASE")))music.topActivity=ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
 if("bootstrap".equals(System.getenv("CASE")))focused=42;
 if("foreign".equals(System.getenv("CASE")))focused=99;
 if("shared".equals(System.getenv("CASE"))){map.taskIds=new int[]{42,43};map.taskUserIds=new int[]{0,0};map.taskNames=new String[]{map.taskNames[0],"other.app/.Main"};}
@@ -191,6 +194,22 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
         self.assertIn("OK code=BACKGROUND_FULLSCREEN", result[-1])
         self.assertFalse(any(x.startswith("FOCUS") for x in result))
         self.finish(child)
+
+    def test_radio_return_refuses_ambiguous_stack_and_permission_activity(self):
+        for case in ("radio", "radio-shared", "radio-permission"):
+            with self.subTest(case=case):
+                child = self.launch(case)
+                result = self.request(child, ["startup-home", 0, "com.navimods.radio",
+                                             "com.navimods.radio/com.navimods.radio.Main", 84,
+                                             "com.cbkii.ts18launcher", 7])
+                if case != "radio":
+                    self.assertIn("FAIL code=", result[-1])
+                    self.assertNotIn("FOCUS 7", result)
+                else:
+                    self.assertIn("OK code=STARTUP_HOME_RESTORED", result[-1])
+                    self.assertIn("FOCUS 7", result)
+                self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in result))
+                self.finish(child)
 
     def test_source_return_only_focuses_the_existing_home_task(self):
         child = self.launch("source")

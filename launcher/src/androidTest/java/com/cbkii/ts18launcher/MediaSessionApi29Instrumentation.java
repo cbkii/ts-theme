@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
  * Run: adb shell am instrument -w com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation
  */
 public final class MediaSessionApi29Instrumentation extends Instrumentation {
-    private boolean observeLive, coldConsent, m2Browser, m2Media3, n3Path;
+    private boolean observeLive, coldConsent, m2Browser, m2Media3, n3Path, readinessOverlay;
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         coldConsent = arguments != null && "1".equals(arguments.getString("cold_consent"));
@@ -26,10 +26,12 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
         m2Browser = arguments != null && "1".equals(arguments.getString("m2_browser"));
         n3Path = arguments != null && "1".equals(arguments.getString("n3_path"));
         m2Media3 = arguments != null && "1".equals(arguments.getString("m2_media3"));
+        readinessOverlay = arguments != null && "1".equals(arguments.getString("readiness_overlay"));
         start();
     }
     @Override public void onStart() {
         if (coldConsent) { rejectUntrustedColdConsent(); return; }
+        if (readinessOverlay) { exerciseReadinessOverlay(); return; }
         if (m2Media3) { exerciseM2Media3(); return; }
         if (m2Browser) { exerciseM2BrowserStarter(); return; }
         if (n3Path) { exerciseN3Path(); return; }
@@ -93,6 +95,16 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
         try {
             String evidence = com.cbkii.ts18launcher.navigation.n3.N3PathIpcProbe.run(this, getContext().getPackageName());
             result.putString("stream", evidence + "\n");
+            finish(Activity.RESULT_OK, result);
+        } catch (Exception | AssertionError error) {
+            result.putString("stream", "FAIL " + error + "\n"); finish(Activity.RESULT_CANCELED, result);
+        }
+    }
+
+    private void exerciseReadinessOverlay() {
+        Bundle result = new Bundle();
+        try {
+            result.putString("stream", ReadinessOverlayIpcProbe.run(this) + "\n");
             finish(Activity.RESULT_OK, result);
         } catch (Exception | AssertionError error) {
             result.putString("stream", "FAIL " + error + "\n"); finish(Activity.RESULT_CANCELED, result);

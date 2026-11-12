@@ -3,6 +3,7 @@
      so the launcher's M2 cold-start path is exercised over genuine cross-process Binder IPC. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity android:name="com.cbkii.ts18launcher.MaskFixtureActivity" android:exported="true" />
         <service
             android:name="com.cbkii.ts18launcher.media.direct.FixtureBrowserService"
             android:exported="true"
