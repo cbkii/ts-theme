@@ -56,7 +56,9 @@ capture selinux "${plain[@]}" cat /proc/self/attr/current
 capture boot "${plain[@]}" cat /proc/sys/kernel/random/boot_id
 capture uptime "${plain[@]}" cat /proc/uptime
 capture home "${plain[@]}" cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
-# Installed bytes, for comparison with the hand-off hashes. Reads only.
+# Installed bytes, for comparison with the hand-off hashes. Reads only. The loop is expanded by
+# the capturing shell, not this one.
+# shellcheck disable=SC2016
 framework apk-identity 'for p in com.cbkii.ts18launcher com.tw.media; do for f in $(pm path "$p" | sed "s/^package://"); do sha256sum "$f"; done; done'
 framework launcher 'dumpsys package com.cbkii.ts18launcher'
 framework auxio 'dumpsys package com.tw.media'
