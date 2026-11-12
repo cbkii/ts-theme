@@ -159,17 +159,22 @@ public final class MediaFeatureFacade {
 
     public void command(MediaSourceKey key, String packageName, MediaUserAction action,
                         MediaBackend.ResultCallback callback) {
-        command(key, packageName, action, false, callback);
+        command(key, packageName, action, false, Long.MAX_VALUE, callback);
     }
 
     /** Continue the original Play after Activity staging; never toggle an auto-resumed source. */
     public void resumePreparedSource(MediaSourceKey key, String packageName,
                                      MediaBackend.ResultCallback callback) {
-        command(key, packageName, MediaUserAction.PLAY_PAUSE, true, callback);
+        resumePreparedSource(key, packageName, Long.MAX_VALUE, callback);
+    }
+
+    public void resumePreparedSource(MediaSourceKey key, String packageName, long deadlineElapsedMs,
+                                     MediaBackend.ResultCallback callback) {
+        command(key, packageName, MediaUserAction.PLAY_PAUSE, true, deadlineElapsedMs, callback);
     }
 
     private void command(MediaSourceKey key, String packageName, MediaUserAction action,
-                         boolean resumeOnly, MediaBackend.ResultCallback callback) {
+                         boolean resumeOnly, long deadlineElapsedMs, MediaBackend.ResultCallback callback) {
         reconcile();
         long epoch = ++intentEpoch;
         lastIntent.put(key, epoch);
@@ -198,7 +203,7 @@ public final class MediaFeatureFacade {
         if (resumeOnly && requested.playing(key, packageName)) {
             completion.onResult(new MediaCommandResult(MediaCommandResult.Outcome.ACKNOWLEDGED,
                     "Source is already playing", true, false));
-        } else requested.command(key, packageName, action, completion);
+        } else requested.commandUntil(key, packageName, action, deadlineElapsedMs, completion);
     }
 
     /**

@@ -62,7 +62,7 @@ class DirectMediaEngineContractTests(unittest.TestCase):
         for marker in ("getTransportControls", ".play()", "Intent.ACTION_MAIN", "FLAG_ACTIVITY", "su "):
             self.assertNotIn(marker, starter)
         # A start is requested only for a Play tap, and repeated taps join the one attempt.
-        self.assertIn("if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback); return; }", engine)
+        self.assertIn("if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback, deadlineElapsedMs); return; }", engine)
         # Two owners may ask: a Play tap, and passive readiness (only while startable, once per epoch).
         self.assertEqual(2, engine.count("starter.start(key, packageName)"))
         passive = engine.split("private void tryPassivePrepare()", 1)[1].split("\n    }\n", 1)[0]
@@ -87,7 +87,7 @@ class DirectMediaEngineContractTests(unittest.TestCase):
         self.assertEqual(3, engine.count("transport.dispatch("))
         self.assertEqual(1, engine.count("transport.dispatchDeadline(token, deadline)"))
         self.assertEqual(1, engine.count("transport.dispatch(pinnedToken, DirectOperation.PREPARE)"))
-        command = engine.split("public void command(", 1)[1].split("\n    }\n", 1)[0]
+        command = engine.split("public void commandUntil(", 1)[1].split("\n    }\n", 1)[0]
         self.assertNotIn("PREPARE", command, "a user tap never sends PREPARE")
         self.assertIn("transport.dispatch(pinnedToken, DirectOperation.PAUSE)", engine)
 

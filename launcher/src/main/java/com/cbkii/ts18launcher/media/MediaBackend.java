@@ -36,6 +36,12 @@ public interface MediaBackend {
     void command(MediaSourceKey key, String packageName, MediaUserAction action,
                  ResultCallback callback);
 
+    /** Continuation of one admitted action; a supporting backend retains its original deadline. */
+    default void commandUntil(MediaSourceKey key, String packageName, MediaUserAction action,
+                              long deadlineElapsedMs, ResultCallback callback) {
+        command(key, packageName, action, callback);
+    }
+
     /** Pause this backend's attached source once, only if it is observed playing. */
     void pauseForHandover(MediaSourceKey key);
 

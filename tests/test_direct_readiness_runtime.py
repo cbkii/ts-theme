@@ -34,6 +34,8 @@ Rig passive=new Rig("com.tw.media");passive.e.preparePassive(1);passive.offer(pa
 Rig buffering=new Rig("com.tw.media");buffering.offer(buffering.state(16384,true,6,"saved"));buffering.e.preparePassive(1);check(buffering.t.sent.isEmpty(),"in-flight decoder restoration restarted");
 Rig expired=new Rig("com.tw.media");expired.tap();expired.offer(expired.state(0,false,0,""));expired.c.expire();expired.e.onSessionChanged(expired.state(4,true,2,""));check(expired.t.sent.isEmpty()&&expired.results.size()==1,"expired tap revived");
 Rig disabled=new Rig("com.navimods.radio");disabled.s.passive=false;disabled.e.preparePassive(1);check(disabled.s.starts==0,"passive Radio selected hardware");disabled.tap();check(disabled.s.starts==1,"user Radio Play could not activate");
+Rig original=new Rig("com.tw.media");original.e.commandUntil(original.pkg,MediaUserAction.PLAY_PAUSE,350,original.results::add);original.c.now=300;original.offer(original.state(4,true,0,""));check(original.t.deadline==350,"continuation extended original Play deadline");
+Rig tooLate=new Rig("com.tw.media");tooLate.e.commandUntil(tooLate.pkg,MediaUserAction.PLAY_PAUSE,100,tooLate.results::add);check(tooLate.s.starts==0&&tooLate.t.sent.isEmpty()&&tooLate.results.size()==1,"expired continuation launched source");
 System.out.println("PASS M2 delayed actions/capability, joined tap, bounded Auxio, standard Radio, passive restore, no replay");
 }}
 ''',

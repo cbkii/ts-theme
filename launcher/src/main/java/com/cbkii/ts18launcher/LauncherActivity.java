@@ -551,6 +551,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 updateLabels();
             } else {
                 if (!staged && !result.dispatched && command == MediaListenerService.Command.PLAY_PAUSE
+                        && mediaFacade().engine(key) == MediaEngine.DIRECT
                         && !result.playingObserved && key == MediaSourceKey.RADIO
                         && StartupReadinessCoordinator.get(this).prepareInteractively(this, packageName, deadline, ready -> {
                             if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
@@ -563,7 +564,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 settleSourceCommandFailure(key, label, packageName, command, generation, result.message);
             }
         };
-        if (staged) mediaFacade().resumePreparedSource(key, packageName, completion);
+        if (staged) mediaFacade().resumePreparedSource(key, packageName, deadline, completion);
         else mediaFacade().command(key, packageName, LegacyMediaBackend.userAction(command), completion);
     }
 

@@ -262,6 +262,12 @@ public final class DirectSourceEngine {
     }
 
     public void command(String expectedPackage, MediaUserAction action, MediaBackend.ResultCallback callback) {
+        commandUntil(expectedPackage, action, Long.MAX_VALUE, callback);
+    }
+
+    public void commandUntil(String expectedPackage, MediaUserAction action, long deadlineElapsedMs,
+                             MediaBackend.ResultCallback callback) {
+        if (deadlineElapsedMs <= clock.nowMs()) { deliver(callback, failed("Play window expired")); return; }
         if (!attached) { deliver(callback, failed("Direct engine is not selected")); return; }
         if (!packageName.equals(expectedPackage)) {
             // The caller is addressing a package this engine does not own. Never redirect.
@@ -272,7 +278,7 @@ public final class DirectSourceEngine {
         cancelPrepare();
         MediaCommandResult unavailable = unavailableResult();
         if (unavailable != null) {
-            if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback); return; }
+            if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback, deadlineElapsedMs); return; }
             deliver(callback, unavailable);
             return;
         }
@@ -287,7 +293,7 @@ public final class DirectSourceEngine {
         }
         if (operation == DirectOperation.PLAY && (pendingStart != null
                 || !canDispatchPlay())) {
-            requestStart(callback);
+            requestStart(callback, deadlineElapsedMs);
             continueStart();
             return;
         }
@@ -302,7 +308,7 @@ public final class DirectSourceEngine {
         Object token = pinnedToken;
         Pending pending = new Pending(++nextOpId, token, generation, operation, itemIdentity(current));
         if (callback != null) pending.callbacks.add(callback);
-        long deadline = clock.nowMs() + PLAY_ACK_MS;
+        long deadline = Math.min(deadlineElapsedMs, clock.nowMs() + PLAY_ACK_MS);
         if (!dispatch(token, operation, deadline)) {
             // The session vanished between observation and dispatch. Report it; do not retry.
             deliverAll(pending, new MediaCommandResult(MediaCommandResult.Outcome.SOURCE_LOST,
@@ -312,7 +318,8 @@ public final class DirectSourceEngine {
         if (operation.directional()) pendingToggle = pending; else pendingSkips.add(pending);
         long window = operation == DirectOperation.PLAY ? PLAY_ACK_MS
                 : operation == DirectOperation.PAUSE ? PAUSE_ACK_MS : SKIP_OBSERVE_MS;
-        pending.timer = clock.schedule(window, () -> onDeadline(pending));
+        pending.timer = clock.schedule(Math.min(window, Math.max(1L, deadlineElapsedMs - clock.nowMs())),
+                () -> onDeadline(pending));
     }
 
     /** Source switch: pause once, only when this source is observed playing. */
@@ -401,7 +408,7 @@ public final class DirectSourceEngine {
                         || availability == MediaSourceState.Availability.SOURCE_LOST);
     }
 
-    private void requestStart(MediaBackend.ResultCallback callback) {
+    private void requestStart(MediaBackend.ResultCallback callback, long deadlineElapsedMs) {
         if (pendingStart != null) {
             // Further taps join the one attempt; the source is asked once.
             if (callback != null) pendingStart.callbacks.add(callback);
@@ -409,9 +416,9 @@ public final class DirectSourceEngine {
         }
         Pending start = new Pending(++nextOpId, null, generation, DirectOperation.PLAY, "");
         if (callback != null) start.callbacks.add(callback);
-        start.deadlineElapsedMs = clock.nowMs() + COLD_START_MS;
+        start.deadlineElapsedMs = Math.min(deadlineElapsedMs, clock.nowMs() + COLD_START_MS);
         pendingStart = start;
-        start.timer = clock.schedule(COLD_START_MS, () -> {
+        start.timer = clock.schedule(Math.max(1L, start.deadlineElapsedMs - clock.nowMs()), () -> {
             if (pendingStart != start) return;
             start.timer = null;
             // Tear down this owner's claim on the stalled connection so a later tap is a fresh,

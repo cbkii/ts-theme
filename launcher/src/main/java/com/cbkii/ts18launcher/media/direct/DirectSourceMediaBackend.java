@@ -160,8 +160,13 @@ public final class DirectSourceMediaBackend implements MediaBackend {
 
     @Override public void command(MediaSourceKey key, String packageName, MediaUserAction action,
                                   ResultCallback callback) {
+        commandUntil(key, packageName, action, Long.MAX_VALUE, callback);
+    }
+
+    @Override public void commandUntil(MediaSourceKey key, String packageName, MediaUserAction action,
+                                       long deadlineElapsedMs, ResultCallback callback) {
         DirectSourceEngine engine = engines.get(key);
-        engine.command(packageName, action, result -> {
+        engine.commandUntil(packageName, action, deadlineElapsedMs, result -> {
             host.trace("result", key + " " + action + " " + result);
             if (callback != null) callback.onResult(result);
         });
