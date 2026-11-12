@@ -22,6 +22,7 @@ class ConsolidatedCollectorTests(unittest.TestCase):
         text = SCRIPT.read_text()
         capture = text.split('capture() {', 1)[1].split('\n# Platform tools', 1)[0]
         root_capture = text.split('root_capture() {', 1)[1].split('\n# Framework dumps', 1)[0]
+        quote = next(line for line in text.splitlines() if line.startswith('quote() {'))
         framework = text.split('framework() {', 1)[1].split('\ncapture identity', 1)[0]
         # The device paths do not exist on the host; the fake su maps them to host tools.
         root_capture = root_capture.replace('/system/bin/toybox ', '').replace('/system/bin/sh', 'sh')
@@ -29,14 +30,17 @@ class ConsolidatedCollectorTests(unittest.TestCase):
             fake_su = Path(tmp) / 'su'
             fake_su.write_text('#!/bin/sh\nshift\necho used >> "$(dirname "$0")/su-used"\nexec sh -c "$1"\n')
             fake_su.chmod(0o700)
-            work = Path(tmp) / 'work'
+            # An apostrophe and a command separator in the path must stay inert under root.
+            work = Path(tmp) / "it's; touch injected #"
             work.mkdir()
             code = ('work=$1; status="$work/STATUS.tsv"; max_capture_bytes=1024; root=%d\n' % root
                     + 'android_path=$PATH; plain=(env); su_bin=$3\n'
-                    + 'capture() {' + capture + '\nroot_capture() {' + root_capture
+                    + 'capture() {' + capture + '\n' + quote + '\nroot_capture() {' + root_capture
                     + '\nframework() {' + framework + '\nframework probe "$2"\n')
             subprocess.run(['bash', '-c', code, 'framework-test', str(work), command, str(fake_su)],
-                           check=True, timeout=30)
+                           check=True, timeout=30, cwd=tmp)
+            self.assertEqual([], [p.name for p in Path(tmp).rglob('injected')] + [
+                p.name for p in Path.cwd().glob('injected')], 'a path fragment was executed')
             return ((work / 'STATUS.tsv').read_text(), (work / 'probe.txt').read_text(),
                     (Path(tmp) / 'su-used').exists(), sorted(path.name for path in work.iterdir()))
 

@@ -42,6 +42,7 @@ if [ -x "$su_bin" ] && [ "$(timeout -k 1 5 "$su_bin" -c '/system/bin/id -u' 2>/d
 # straight to a file (never a pipe this script waits on), the child is bounded in time and size on
 # the root side, and completion is the sentinel root writes, not the client's lifetime. The client
 # is then stopped whatever state it is in.
+quote() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
 root_capture() {
     local name=$1 command=$2 command_file sentinel pid deadline result=124 bytes outcome
     command_file="$work/.command-$name"
@@ -50,7 +51,8 @@ root_capture() {
     printf 'PATH=%s\nexport PATH\nunset LD_PRELOAD LD_LIBRARY_PATH\nulimit -f %s\n%s\n' \
         "$android_path" "$((max_capture_bytes / 512 + 2))" "$command" > "$command_file"
     : > "$sentinel" # Created here so it stays owned by this user; root only overwrites it.
-    "$su_bin" -c "/system/bin/toybox timeout -k 1 8 /system/bin/sh '$command_file' 2>&1; printf '%s\\n' \"\$?\" > '$sentinel'" \
+    # Both paths derive from TMPDIR, so they are shell-quoted before root parses them.
+    "$su_bin" -c "/system/bin/toybox timeout -k 1 8 /system/bin/sh $(quote "$command_file") 2>&1; printf '%s\\n' \"\$?\" > $(quote "$sentinel")" \
         > "$work/$name.txt" 2>/dev/null &
     pid=$!
     deadline=$((SECONDS + 12))

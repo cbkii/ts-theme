@@ -4,7 +4,7 @@ Use only the signed final-head TESTING launcher and its companion Auxio build li
 
 Install the two application updates, retaining settings. Music and Radio default to M2 when unset; an explicit Legacy setting remains available for rollback. Confirm the existing HOME selection, app choices and local permissions. Complete real Organic Maps permission/settings screens normally.
 
-Before the first scenario run the collector once (command below) and compare `apk-identity.txt` with the hand-off SHA-256 values. Each line reads `package sha256 path`; match the `com.cbkii.ts18launcher` and `com.tw.media` lines by package name, not by position. A mismatch, a `NOT_INSTALLED` line or a section that is not PASS in `STATUS.tsv` means the campaign is not testing the delivered pair; stop and reinstall.
+Before the first scenario run the collector once (command below) and compare `apk-identity.txt` with the hand-off SHA-256 values. Each line reads `package sha256 path`; match the `com.cbkii.ts18launcher` and `com.tw.media` lines by package name, not by position. A hash mismatch or a `NOT_INSTALLED` line means the campaign is not testing the delivered pair; stop and reinstall. If the `apk-identity` section itself is BLOCKED or WARN in `STATUS.tsv` (for example without root), the collector could not establish identity: compare the versions shown in Android's app details with the hand-off instead and note that the hash was not checked. BLOCKED sections elsewhere are collector limits and do not stop the campaign.
 
 For each row below, record PASS/FAIL/NOT_RUN and a short timestamped observation. Do not repeat a visibly failing scenario many times: capture its earliest failure first.
 
