@@ -69,14 +69,31 @@ final class ReadinessOverlayIpcProbe {
         String result = shell(test, "am start -W -f 0x10020000 -n " + target.flattenToString());
         check(result.contains("Status: ok") && (result.contains("Activity: " + target.flattenToString())
                 || result.contains("Activity: " + target.flattenToShortString())), "Activity not confirmed: " + result);
-        String taskState = shell(test, "dumpsys activity activities");
-        java.util.regex.Matcher resumed = java.util.regex.Pattern.compile(
+        java.util.regex.Pattern resumedPattern = java.util.regex.Pattern.compile(
                 "(?m)^.*mResumedActivity[:=]\\s*ActivityRecord\\{[^\\r\\n]* (?:"
                 + java.util.regex.Pattern.quote(target.flattenToString()) + "|"
-                + java.util.regex.Pattern.quote(target.flattenToShortString()) + ") t([0-9]+)\\}")
-                .matcher(taskState);
-        check(resumed.find(), "Expected Activity is not resumed: " + target.flattenToString());
-        return Integer.parseInt(resumed.group(1));
+                + java.util.regex.Pattern.quote(target.flattenToShortString()) + ") t([0-9]+)\\}");
+        String taskState = "";
+        long until = SystemClock.elapsedRealtime() + 2000L;
+        do {
+            taskState = shell(test, "dumpsys activity activities");
+            java.util.regex.Matcher resumed = resumedPattern.matcher(taskState);
+            if (resumed.find()) return Integer.parseInt(resumed.group(1));
+            SystemClock.sleep(100L);
+        } while (SystemClock.elapsedRealtime() < until);
+        File output = new File(test.getTargetContext().getExternalFilesDir(null), "readiness-overlay");
+        saveText(new File(output, "activities-" + target.getPackageName() + ".txt"), taskState);
+        saveText(new File(output, "windows-" + target.getPackageName() + ".txt"), shell(test, "dumpsys window displays"));
+        StringBuilder relevant = new StringBuilder();
+        for (String line : taskState.split("\\n")) if (line.contains("Resumed") || line.contains(target.getPackageName())
+                || line.contains("Focused") || line.contains("Permission Denial")) {
+            if (relevant.length() < 4000) relevant.append(line).append('\n');
+        }
+        throw new AssertionError("Expected Activity is not resumed: " + target.flattenToString() + "\n" + relevant);
+    }
+
+    private static void saveText(File file, String text) throws Exception {
+        try (FileOutputStream stream = new FileOutputStream(file)) { stream.write(text.getBytes("UTF-8")); }
     }
 
     private static String shell(Instrumentation test, String command) throws Exception {

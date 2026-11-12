@@ -132,6 +132,7 @@ jobs:
           path: |
             ${{ runner.temp }}/startup-boundary-proof/*.txt
             ${{ runner.temp }}/startup-boundary-proof/readiness-overlay/*.png
+            ${{ runner.temp }}/startup-boundary-proof/readiness-overlay/*.txt
             ${{ runner.temp }}/startup-emulator.txt
             ${{ runner.temp }}/startup-avd-create.txt
           if-no-files-found: ignore
