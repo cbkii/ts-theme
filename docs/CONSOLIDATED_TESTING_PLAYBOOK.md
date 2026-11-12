@@ -4,6 +4,8 @@ Use only the signed final-head TESTING launcher and its companion Auxio build li
 
 Install the two application updates, retaining settings. Music and Radio default to M2 when unset; an explicit Legacy setting remains available for rollback. Confirm the existing HOME selection, app choices and local permissions. Complete real Organic Maps permission/settings screens normally.
 
+Before the first scenario run the collector once (command below) and compare `apk-identity.txt` with the hand-off SHA-256 values: the first line is the launcher, the second Auxio. A mismatch means the campaign is testing something else; stop and reinstall.
+
 For each row below, record PASS/FAIL/NOT_RUN and a short timestamped observation. Do not repeat a visibly failing scenario many times: capture its earliest failure first.
 
 | Stage | Actions and acceptance |
@@ -22,12 +24,29 @@ For each row below, record PASS/FAIL/NOT_RUN and a short timestamped observation
 
 Optional: Settings → startup/return diagnostics → Sample 10s, then exercise HOME/drawer/navigation. `TS18Perf` reports frame intervals, slow intervals, CPU time and one off-main-thread PSS snapshot. Input received is not action completion; use visible response and timestamped observations for latency. A screen recording proves visual behaviour only unless audio recording was independently verified.
 
+## Reading the media timeline
+
+With root available, `timeline.txt` holds the launcher's `TS18Media` lines. For M2 the useful ones are:
+
+| Line | Meaning |
+|---|---|
+| `m2/state · MUSIC avail=LIVE state=2 loaded=0 deadline=1 …` | What a Play tap would meet. `loaded=0 deadline=1` gets one bounded Play; `loaded=1` gets ordinary Play; `loaded=0 deadline=0` is refused with "needs a loaded item". `avail` other than `LIVE` with `startable=1` means a tap first connects the source's media browser |
+| `m2/deadline-dispatch` / `m2/dispatch · MUSIC PLAY` | The single command sent for a tap, bounded or ordinary |
+| `m2/result · …` | How that tap ended: acknowledged, sent-unconfirmed, unsupported, failed |
+| `m2/start-offered`, `start-failed` | Outcome of a media-browser connection |
+
+Two captures settle the open Radio questions without changing anything. With NavRadio+ already open and paused, a `RADIO` state line with `loaded=1` means Play from HOME is expected to work; `loaded=0 deadline=0` means the installed build publishes no station while paused and Play is refused by design: record it as an observation, not a launcher failure. `radio.txt` lists the services and intent filters the installed build actually exports, which is the evidence needed before any background Radio start could be considered.
+
+If Music or Radio misbehaves under M2, set that source back to the Legacy engine in Settings, note the time, and continue the remaining rows; this is the supported rollback and does not need a reinstall.
+
+## Collector
+
 Extract the delivered `TS18-testing-qualification` folder into `Download`, keeping the collector beside this playbook. From a repository checkout instead, copy `scripts/termux/qualify-consolidated-candidate.sh` from the candidate head to that same folder. After each stage run the read-only collector from Termux:
 
 ```sh
 bash /storage/emulated/0/Download/TS18-testing-qualification/qualify-consolidated-candidate.sh smoke
 ```
 
-Replace `smoke` with `restart`, `reboot`, `coldboot` or `acc-wake` as appropriate. It does not launch, stop, tap, Play, grant permissions or change settings. Evidence is exported under `Download/TS18/qualification/`. If root is unavailable, root-only sections are BLOCKED and ordinary captures still seal. Add your audible/visual observations to the accompanying campaign notes; a collector exit code is not a feature PASS.
+Replace `smoke` with `restart`, `reboot`, `coldboot` or `acc-wake` as appropriate. It does not launch, stop, tap, Play, grant permissions or change settings. Evidence is exported under `Download/TS18/qualification/`. Framework dumps and the launcher timeline need root; if root is unavailable those sections are BLOCKED in `STATUS.tsv` (a collector limit, not an application result) and the remaining captures still seal. Add your audible/visual observations to the accompanying campaign notes; a collector exit code is not a feature PASS.
 
 No physical TS18 acceptance is claimed until this campaign is actually performed. NavRadio cold activation and OEM map visibility/touch remain explicit exact-device questions.

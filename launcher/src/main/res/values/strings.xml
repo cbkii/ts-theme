@@ -62,7 +62,7 @@
     <string name="setup_n3_on">N3 navigation on</string>
     <string name="setup_n3_off">N3 navigation off</string>
     <string name="setup_m2_on">Direct media engine in use</string>
-    <string name="setup_m2_off">Legacy media engine (default)</string>
+    <string name="setup_m2_off">Legacy media engine (compatibility)</string>
     <string name="setup_rollback">If something goes wrong</string>
     <string name="setup_rollback_text">Settings, then Backup and reset restores defaults. Choosing another Home in Android Settings, or disabling this launcher, returns to the stock Home.</string>
     <string name="setup_run_again">Run setup again</string>

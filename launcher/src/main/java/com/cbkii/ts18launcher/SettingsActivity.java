@@ -764,8 +764,8 @@ public final class SettingsActivity extends Activity {
     }
 
     /**
-     * Legacy stays the default and the rollback. Direct controls the selected app's own session
-     * and starts the app only through its own media service; it is offered as an explicit trial.
+     * Direct is the TESTING default: it controls the selected app's own session and starts the
+     * app only through its own media browser service. Legacy is the explicit rollback.
      */
     private void addEngineRow(com.cbkii.ts18launcher.media.MediaSourceKey key, int icon, String title) {
         com.cbkii.ts18launcher.media.MediaEngine current =
