@@ -46,6 +46,19 @@ same() {
   same_id=$(identity "$1") || return 1
   [ "${same_id%% *}" = "$2" ]
 }
+# True while any process other than a zombie still belongs to process group $1.
+group_live() {
+  gl_group=$1
+  for gl_stat in /proc/[0-9]*/stat; do
+    IFS= read -r gl_line < "$gl_stat" 2>/dev/null || continue
+    gl_line=${gl_line##*) }
+    # shellcheck disable=SC2086 # Numeric token splitting, literal AWK or Magisk ash pipefail.
+    set -- $gl_line
+    # state ppid pgrp ...
+    if [ "$1" != Z ] && [ "$3" = "$gl_group" ]; then return 0; fi
+  done
+  return 1
+}
 safe_dir() {
   [ ! -L "$BASE" ] || return 1
   [ -d "$1" ] && [ ! -L "$1" ] || return 1
@@ -130,7 +143,15 @@ stop_worker() {
     "$BB" kill -KILL "-$st_pid" 2>/dev/null || : > "$OUT/CLEANUP_UNPROVEN"
     wait "$st_pid" 2>/dev/null || :
   else
-    : > "$OUT/CLEANUP_UNPROVEN"
+    # The leader is gone: normally the worker's own watchdog killed the whole group because
+    # this stop arrived late. Reap it, then cleanup is proven only if no member of the group
+    # is left. Survivors are not killed here, because their identity can no longer be shown.
+    wait "$st_pid" 2>/dev/null || :
+    if group_live "$st_pid"; then
+      : > "$OUT/CLEANUP_UNPROVEN"
+    else
+      event "NOTE worker $st_pid ended by its watchdog before stop"
+    fi
   fi
   st_bytes=$("$BB" stat -c %s "$st_dir/output.txt" 2>/dev/null) || st_bytes=0
   st_cap=$("$BB" sed -n 's/^cap_bytes=//p' "$st_dir/meta.txt")

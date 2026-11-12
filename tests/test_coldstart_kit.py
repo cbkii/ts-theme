@@ -174,6 +174,28 @@ probe probe {cap} {budget} {command}
         time.sleep(4)
         self.assertFalse(sentinel.exists())
 
+    def test_late_stop_after_watchdog_cleanup_is_proven_and_survivors_are_not(self):
+        out = self.base / 'run-late'; (out / 'probes').mkdir(parents=True)
+        body = f'''OUT='{out}'
+WORK_END=$(( $(ms) + 9000 )); RESERVED=0; COUNT=0
+: > "$OUT/workers.tsv"
+start_worker late 1024 1 /bin/bash -c 'echo done'
+set -- $LAST_WORKER
+sleep 3.6
+stop_worker "$1" "$2" "$3" "$4"
+[ ! -e "$OUT/CLEANUP_UNPROVEN" ] || exit 3
+grep -q 'ended by its watchdog' "$OUT/events.tsv" || exit 4
+# A group that outlived its leader is still unproven and is left untouched.
+setsid /bin/bash -c 'sleep 30 & exit 0' </dev/null >/dev/null 2>&1 &
+lead=$!; wait "$lead"
+mkdir "$OUT/probes/2-survivor"; printf 'cap_bytes=1024\n' > "$OUT/probes/2-survivor/meta.txt"
+stop_worker "$lead" 0 "$OUT/probes/2-survivor"
+[ -e "$OUT/CLEANUP_UNPROVEN" ] || exit 5
+kill -KILL "-$lead" 2>/dev/null || exit 6
+'''
+        result = self.shell(body, timeout=12)
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_worker_watchdog_cleans_up_after_supervisor_loss(self):
         out = self.base / 'run-watch'; out.mkdir()
         sentinel = self.root / 'WATCHDOG_LEAK'
@@ -216,7 +238,9 @@ probe probe {cap} {budget} {command}
         # A missing COMPLETE.txt has two distinct causes (late sealing or unproven cleanup); say which.
         self.assertTrue((runs[0] / 'COMPLETE.txt').is_file(),
                         'not sealed: ' + (runs[0] / 'STATUS.txt').read_text().replace('\n', ' ')
-                        + ' files=' + ','.join(sorted(q.name for q in runs[0].iterdir())))
+                        + ' files=' + ','.join(sorted(q.name for q in runs[0].iterdir()))
+                        + ' blocked=' + ' | '.join(line for line in (runs[0] / 'events.tsv').read_text().splitlines()
+                                                    if 'BLOCKED' in line or 'SKIP' in line))
         self.assertFalse(list((runs[0] / 'probes').glob('*-activities')))
         self.assertFalse((self.base / 'active').exists())
 
