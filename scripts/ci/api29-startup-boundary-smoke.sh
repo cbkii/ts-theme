@@ -57,6 +57,7 @@ adb shell am instrument -w -e readiness_overlay 1 \
   tee "$proof/readiness-overlay.txt"
 if ! adb pull /sdcard/Android/data/com.cbkii.ts18launcher/files/readiness-overlay "$proof/readiness-overlay"; then
   echo 'Overlay probe did not export its evidence directory.' >&2
+  exit 1
 fi
 grep -Fq 'PASS API29 opaque draw before cross-UID splash' "$proof/readiness-overlay.txt"
 adb shell am instrument -w -e n3_path 1 \

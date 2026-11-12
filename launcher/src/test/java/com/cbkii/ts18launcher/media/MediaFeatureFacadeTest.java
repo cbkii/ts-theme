@@ -68,6 +68,21 @@ public class MediaFeatureFacadeTest {
         assertEquals("[DIRECT.command RADIO com.navimods.radio PLAY, LEGACY.pauseForHandover MUSIC]", log.toString());
     }
 
+    @Test public void expiredAlreadyPlayingContinuationCannotCommitHandover() {
+        requested.put(MediaSourceKey.RADIO, MediaEngine.DIRECT);
+        MediaFeatureFacade facade = new MediaFeatureFacade(configuration, legacy, direct, () -> 100L);
+        facade.reconcile();
+        log.clear();
+        legacy.playing.put(MediaSourceKey.MUSIC, true);
+        direct.playing.put(MediaSourceKey.RADIO, true);
+        List<MediaCommandResult> results = new ArrayList<>();
+        facade.resumePreparedSource(MediaSourceKey.RADIO, "com.navimods.radio", 100L, results::add);
+        assertTrue(log.isEmpty());
+        assertEquals(MediaCommandResult.Outcome.FAILED, results.get(0).outcome);
+        assertFalse(results.get(0).playingObserved);
+        assertFalse(results.get(0).dispatched);
+    }
+
     @Test public void backendWithoutDeadlineSupportRefusesFiniteContinuation() {
         MediaFeatureFacade facade = facade();
         List<MediaCommandResult> results = new ArrayList<>();

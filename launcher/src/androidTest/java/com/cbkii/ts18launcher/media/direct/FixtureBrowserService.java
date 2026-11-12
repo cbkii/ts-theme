@@ -15,6 +15,10 @@ import java.util.List;
  * loads an item on PREPARE and changes state only when told to. No audio, no focus. Lives in the test APK's own package and process.
  */
 public final class FixtureBrowserService extends MediaBrowserService {
+    /** Discovery decoy: an unrelated Media3 candidate must not hide the standard browser. */
+    public static final class Media3Candidate extends android.app.Service {
+        @Override public android.os.IBinder onBind(android.content.Intent intent) { return null; }
+    }
     static final String ACTION_DIE = "com.cbkii.ts18launcher.test.FIXTURE_DIE";
     private MediaSession session;
 

@@ -75,15 +75,15 @@ final class ReadinessOverlayIpcProbe {
                 + java.util.regex.Pattern.quote(target.flattenToShortString()) + ") t([0-9]+)\\}");
         String taskState = "";
         long until = SystemClock.elapsedRealtime() + 2000L;
-        do {
-            taskState = shell(test, "dumpsys activity activities");
+        while (SystemClock.elapsedRealtime() < until) {
+            taskState = shell(test, "dumpsys activity activities", until - SystemClock.elapsedRealtime());
             java.util.regex.Matcher resumed = resumedPattern.matcher(taskState);
             if (resumed.find()) return Integer.parseInt(resumed.group(1));
-            SystemClock.sleep(100L);
-        } while (SystemClock.elapsedRealtime() < until);
+            SystemClock.sleep(Math.min(100L, Math.max(0L, until - SystemClock.elapsedRealtime())));
+        }
         File output = new File(test.getTargetContext().getExternalFilesDir(null), "readiness-overlay");
         saveText(new File(output, "activities-" + target.getPackageName() + ".txt"), taskState);
-        saveText(new File(output, "windows-" + target.getPackageName() + ".txt"), shell(test, "dumpsys window displays"));
+        saveText(new File(output, "windows-" + target.getPackageName() + ".txt"), shell(test, "dumpsys window displays", 1000L));
         StringBuilder relevant = new StringBuilder();
         for (String line : taskState.split("\\n")) if (line.contains("Resumed") || line.contains(target.getPackageName())
                 || line.contains("Focused") || line.contains("Permission Denial")) {
@@ -97,8 +97,13 @@ final class ReadinessOverlayIpcProbe {
     }
 
     private static String shell(Instrumentation test, String command) throws Exception {
+        return shell(test, command, 10000L);
+    }
+
+    private static String shell(Instrumentation test, String command, long timeoutMs) throws Exception {
+        String seconds = String.format(java.util.Locale.ROOT, "%.3f", Math.max(1L, timeoutMs) / 1000.0);
         try (java.io.InputStream input = new android.os.ParcelFileDescriptor.AutoCloseInputStream(
-                test.getUiAutomation().executeShellCommand("/system/bin/toybox timeout 10 " + command));
+                test.getUiAutomation().executeShellCommand("/system/bin/toybox timeout -s KILL " + seconds + " " + command));
              java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
             byte[] bytes = new byte[1024]; int n;
             while ((n = input.read(bytes)) > 0) {

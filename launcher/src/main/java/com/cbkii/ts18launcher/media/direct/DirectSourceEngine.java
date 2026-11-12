@@ -381,7 +381,7 @@ public final class DirectSourceEngine {
             clearHandoverPause();
             failAllPending(MediaCommandResult.Outcome.SOURCE_LOST,
                     labels.appLabel(packageName) + " session ended");
-            if (pendingPrepare != null && pendingPrepare.token != null) cancelPrepare();
+            if (pendingPrepare != null && (pendingPrepare.token != null || pinnedToken != null)) cancelPrepare();
         }
         pinnedToken = nextToken;
         current = session;

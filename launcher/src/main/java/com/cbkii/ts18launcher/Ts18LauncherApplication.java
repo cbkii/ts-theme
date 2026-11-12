@@ -55,7 +55,7 @@ public final class Ts18LauncherApplication extends Application
                                 com.cbkii.ts18launcher.media.MediaSourceKey key) {
                             return MediaEngineSelector.configuredPackage(app, key);
                         }
-                    }, new LegacyMediaBackend(app), MediaEngines.createDirect(app));
+                    }, new LegacyMediaBackend(app), MediaEngines.createDirect(app), android.os.SystemClock::elapsedRealtime);
             app.mediaFacade.setReadinessListener(state -> StartupReadinessCoordinator.get(app).onMediaStateChanged(state));
         }
         app.mediaFacade.reconcile();

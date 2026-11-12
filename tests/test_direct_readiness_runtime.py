@@ -41,6 +41,7 @@ Rig tooLate=new Rig("com.tw.media");tooLate.e.commandUntil(tooLate.pkg,MediaUser
 Rig explicit=new Rig("com.navimods.radio");explicit.offer(explicit.state(4,false,6,"station"));explicit.e.commandUntil(explicit.pkg,MediaUserAction.PLAY,500,explicit.results::add);check(explicit.t.sent.equals(Collections.singletonList(DirectOperation.PLAY)),"buffering continuation became Pause");
 Rig stopped=new Rig("com.tw.media");stopped.offer(stopped.state(4,true,1,"saved"));stopped.tap();check(stopped.t.sent.equals(Collections.singletonList(DirectOperation.PLAY))&&stopped.t.deadline>stopped.c.now,"stopped Auxio did not receive bounded Play");
 Rig noStarter=new Rig("com.navimods.radio",false);noStarter.e.onSessions(true,Collections.singletonList(noStarter.state(16384,false,2,"")));noStarter.e.preparePassive(1);check(noStarter.t.sent.isEmpty(),"missing Starter bypassed Radio safety");
+Rig replacement=new Rig("com.tw.media");replacement.offer(replacement.state(0,true,0,""));replacement.e.preparePassive(1);check(replacement.e.preparing(),"live capability wait absent");replacement.offer(new SessionObservation("replacement",replacement.pkg,0,16384,"","","",true,true));check(!replacement.e.preparing()&&replacement.t.sent.isEmpty(),"live prepare crossed replaced token");replacement.e.preparePassive(2);check(replacement.t.sent.equals(Collections.singletonList(DirectOperation.PREPARE)),"fresh admission could not prepare replacement");
 System.out.println("PASS M2 delayed actions/capability, joined tap, bounded Auxio, standard Radio, passive restore, no replay");
 }}
 ''',

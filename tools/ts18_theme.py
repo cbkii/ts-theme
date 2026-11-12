@@ -186,7 +186,7 @@ def validate_project() -> list[str]:
     # The launcher is the only product. The retired DoFun theme module and its tooling stay gone.
     settings = (ROOT / "settings.gradle.kts").read_text(encoding="utf-8")
     included = re.findall(r'include\("(:[^"]+)"\)', settings)
-    require(included == [":launcher", ":media-fixture"], f"Only launcher and its IPC test fixture may be built, found {included}", errors)
+    require(sorted(included) == [":launcher", ":media-fixture"], f"Only launcher and its IPC test fixture may be built, found {included}", errors)
     fixture = (ROOT / "media-fixture/build.gradle.kts").read_text(encoding="utf-8")
     active_fixture = re.sub(r"/\*.*?\*/|//[^\n]*", "", fixture, flags=re.S)
     fixture_ids = re.findall(r'(?m)^\s*applicationId\s*=\s*"([^"]+)"\s*$', active_fixture)

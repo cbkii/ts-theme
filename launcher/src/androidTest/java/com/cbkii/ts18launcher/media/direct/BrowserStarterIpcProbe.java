@@ -135,9 +135,14 @@ public final class BrowserStarterIpcProbe {
             check(ready.await(8, TimeUnit.SECONDS), "real Media3 decoder did not prepare silently");
             instrumentation.runOnMainSync(() -> check(session.dispatch(DirectOperation.PLAY), "legacy Play refused"));
             check(playing.await(5, TimeUnit.SECONDS), "legacy Play did not reach Media3 playback");
-            instrumentation.runOnMainSync(() -> session.dispatch(DirectOperation.PAUSE));
         } finally {
-            instrumentation.runOnMainSync(() -> { session.unwatch(); connected.connection.disconnect(); });
+            instrumentation.runOnMainSync(() -> {
+                try { session.dispatch(DirectOperation.PAUSE); }
+                finally {
+                    try { session.unwatch(); }
+                    finally { connected.connection.disconnect(); }
+                }
+            });
         }
         return "PASS API29 real Media3-only service legacy browser / source token / decoder PREPARE / one Play";
     }

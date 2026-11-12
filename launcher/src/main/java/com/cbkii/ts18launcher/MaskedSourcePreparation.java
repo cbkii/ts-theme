@@ -122,7 +122,8 @@ final class MaskedSourcePreparation {
                     if (!stillHome) sourceTask = foreground.taskId;
                     MediaSourceState source = Ts18LauncherApplication.mediaFacade(home).state(MediaSourceKey.RADIO);
                     if (!stillHome && source.live() && pkg.equals(source.packageName)
-                            && (source.playing() || (source.actions & android.media.session.PlaybackState.ACTION_PLAY) != 0L)) {
+                            && (source.playing() || (source.actions & (android.media.session.PlaybackState.ACTION_PLAY
+                                | android.media.session.PlaybackState.ACTION_PLAY_PAUSE)) != 0L)) {
                         restoreHome(source); return;
                     }
                 }

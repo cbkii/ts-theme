@@ -63,7 +63,7 @@ final class LegacyMediaBackend implements MediaBackend {
     }
 
     @Override public boolean playing(MediaSourceKey key, String packageName) {
-        return attached.containsKey(key) && packageName != null && !packageName.isEmpty()
+        return packageName != null && !packageName.isEmpty() && packageName.equals(attached.get(key))
                 && sources().isPlaying(packageName);
     }
 

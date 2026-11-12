@@ -193,12 +193,15 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
         }
 
         @Override public ComponentName resolve(String packageName) {
-            return resolveForActions(packageName, BROWSER_SERVICE,
+            List<ComponentName> browser = resolveForActions(packageName, BROWSER_SERVICE);
+            // Prefer the standard browser contract, preserving its ambiguity/failure boundary.
+            if (browser == null || !browser.isEmpty()) return choose(browser);
+            return choose(resolveForActions(packageName,
                     "androidx.media3.session.MediaSessionService",
-                    "androidx.media3.session.MediaLibraryService");
+                    "androidx.media3.session.MediaLibraryService"));
         }
 
-        private ComponentName resolveForActions(String packageName, String... actions) {
+        private List<ComponentName> resolveForActions(String packageName, String... actions) {
             Set<ComponentName> candidates = new LinkedHashSet<>();
             try {
                 for (String action : actions) {
@@ -217,7 +220,7 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
             } catch (RuntimeException unavailable) {
                 return null;
             }
-            return choose(new ArrayList<>(candidates));
+            return new ArrayList<>(candidates);
         }
 
         @Override public Connection connect(ComponentName service, ConnectionCallbacks callbacks) {

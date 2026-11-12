@@ -34,7 +34,7 @@ public ActivityInfo getActivityInfo(android.content.ComponentName c,int f)throws
 ''',
             'android/os/Looper.java': 'package android.os;public class Looper {public static Looper getMainLooper(){return new Looper();}}',
             'android/os/SystemClock.java': '''package android.os;public class SystemClock {
-public static long elapsedRealtime(){return System.nanoTime()/1000000;}}
+public static volatile long offset;public static long elapsedRealtime(){return System.nanoTime()/1000000+offset;}}
 ''',
             'android/os/Handler.java': '''package android.os;import java.util.*;public class Handler {
 static class Item {Runnable r;long at;Item(Runnable r,long a){this.r=r;at=a;}}
@@ -43,7 +43,7 @@ public void post(Runnable r){postDelayed(r,0);}public void postDelayed(Runnable 
 public void removeCallbacksAndMessages(Object x){synchronized(pending){pending.clear();}}
 public static void pump() {List<Runnable> due=new ArrayList<>();synchronized(pending){long n=SystemClock.elapsedRealtime();pending.removeIf(i->{if(i.at<=n){due.add(i.r);return true;}return false;});}for(Runnable r:due)r.run();}}
 ''',
-            'android/media/session/PlaybackState.java': 'package android.media.session;public class PlaybackState {public static long ACTION_PLAY=4;}',
+            'android/media/session/PlaybackState.java': 'package android.media.session;public class PlaybackState {public static long ACTION_PLAY=4,ACTION_PLAY_PAUSE=512;}',
             'com/cbkii/ts18launcher/Doubles.java': '''package com.cbkii.ts18launcher;
 import com.cbkii.ts18launcher.media.*;
 class StartupReadinessCoordinator {interface LoaderUi {boolean canMask();boolean ownsMask();void render(String s,boolean b);void mask(boolean b);void whenMaskDrawn(Runnable r);void hide();}interface NavigationHook {boolean busy();void deferAutomaticPresentation(boolean b);int taskId();}}
@@ -54,7 +54,7 @@ class MediaEngineSelector {static String configuredPackage(android.app.Activity 
 class R {static class string {static int startup_radio_preparing=1;}}
 class MediaEventTrace {static void record(String a,String b,String c){}}
 class Ts18LauncherApplication {static Facade facade=new Facade();static Facade mediaFacade(android.app.Activity a){return facade;}}
-class Facade {volatile boolean live=true;void refresh(){}MediaSourceState state(MediaSourceKey k){return live?new MediaSourceState(k,MediaEngine.DIRECT,"com.navimods.radio",MediaSourceState.Availability.LIVE,2,4,"token","station","FM","",1):MediaSourceState.unavailable(k,MediaEngine.DIRECT,"com.navimods.radio",MediaSourceState.Availability.NO_SESSION,1);}}
+class Facade {volatile boolean live=true;long actions=4;void refresh(){}MediaSourceState state(MediaSourceKey k){return live?new MediaSourceState(k,MediaEngine.DIRECT,"com.navimods.radio",MediaSourceState.Availability.LIVE,2,actions,"token","station","FM","",1):MediaSourceState.unavailable(k,MediaEngine.DIRECT,"com.navimods.radio",MediaSourceState.Availability.NO_SESSION,1);}}
 class RootTaskSession {
 static RootTaskSession one=new RootTaskSession();static volatile int task=10,pendingFocus;static volatile String component="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity";static int parks,mapParks;static volatile boolean blockHome,homeEntered,dropAfterPark,blockObservation,observationEntered;static java.util.List<String> events=new java.util.concurrent.CopyOnWriteArrayList<>();
 static RootTaskSession get(android.app.Activity a){return one;}
@@ -64,9 +64,9 @@ if(f[0].equals("observe")&&NavigationRootHelper.entered){if(blockObservation){ob
 if(f[0].equals("return-home")){mapParks++;task=10;component="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity";}
 if(f[0].equals("startup-home")){homeEntered=true;waitGate(()->blockHome);parks++;task=10;component="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity";if(dropAfterPark)Ts18LauncherApplication.facade.live=false;}
 return NavigationHelperResult.parse("OK code=FOREGROUND user=0 task="+task+" component="+component);}}
-class NavigationRootHelper {static int launches;static volatile boolean block,entered;static boolean permission;
+class NavigationRootHelper {static int launches;static volatile boolean block,entered;static boolean permission;static int outcome;
 NavigationRootHelper(android.app.Activity a){}void setDeadline(long d){}
-NavigationHelperResult run(String... f){if(RootTaskSession.task!=10)throw new AssertionError("Maps not parked before launch");RootTaskSession.events.add("launch");launches++;entered=true;RootTaskSession.waitGate(()->block);if(RootTaskSession.pendingFocus==0){RootTaskSession.task=20;RootTaskSession.component=permission?"com.android.permissioncontroller/GrantPermissionsActivity":"com.navimods.radio/com.navimods.radio.Main";}return NavigationHelperResult.parse("OK code=STARTUP_SOURCE user=0 task=20");}}
+NavigationHelperResult run(String... f){if(RootTaskSession.task!=10)throw new AssertionError("Maps not parked before launch");RootTaskSession.events.add("launch");launches++;entered=true;RootTaskSession.waitGate(()->block);if(outcome==1)return NavigationHelperResult.parse("FAIL code=STARTUP_SOURCE_REJECTED");if(RootTaskSession.pendingFocus==0){RootTaskSession.task=20;RootTaskSession.component=permission?"com.android.permissioncontroller/GrantPermissionsActivity":"com.navimods.radio/com.navimods.radio.Main";}return NavigationHelperResult.parse(outcome==2?"FAIL code=STARTUP_SOURCE_UNCERTAIN":"OK code=STARTUP_SOURCE user=0 task=20");}}
 
 ''',
             'com/cbkii/ts18launcher/Harness.java': '''package com.cbkii.ts18launcher;
@@ -75,7 +75,7 @@ static class Loader implements StartupReadinessCoordinator.LoaderUi {boolean vis
 static class Nav implements StartupReadinessCoordinator.NavigationHook {boolean deferred;public boolean busy(){return false;}public void deferAutomaticPresentation(boolean d){deferred=d;}public int taskId(){return 30;}}
 static void check(boolean b,String why){if(!b)throw new AssertionError(why);}
 static void until(java.util.function.BooleanSupplier done)throws Exception{long end=android.os.SystemClock.elapsedRealtime()+3500;while(!done.getAsBoolean()&&android.os.SystemClock.elapsedRealtime()<end){android.os.Handler.pump();Thread.sleep(3);}check(done.getAsBoolean(),"transaction did not settle");}
-static void reset(){RootTaskSession.task=10;RootTaskSession.component="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity";RootTaskSession.parks=0;RootTaskSession.mapParks=0;RootTaskSession.pendingFocus=0;RootTaskSession.blockHome=false;RootTaskSession.homeEntered=false;RootTaskSession.dropAfterPark=false;RootTaskSession.blockObservation=false;RootTaskSession.observationEntered=false;RootTaskSession.events.clear();NavigationRootHelper.launches=0;NavigationRootHelper.entered=false;NavigationRootHelper.block=false;NavigationRootHelper.permission=false;Ts18LauncherApplication.facade.live=true;}
+static void reset(){android.os.SystemClock.offset=0;Ts18LauncherApplication.facade.actions=4;NavigationRootHelper.outcome=0;RootTaskSession.task=10;RootTaskSession.component="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity";RootTaskSession.parks=0;RootTaskSession.mapParks=0;RootTaskSession.pendingFocus=0;RootTaskSession.blockHome=false;RootTaskSession.homeEntered=false;RootTaskSession.dropAfterPark=false;RootTaskSession.blockObservation=false;RootTaskSession.observationEntered=false;RootTaskSession.events.clear();NavigationRootHelper.launches=0;NavigationRootHelper.entered=false;NavigationRootHelper.block=false;NavigationRootHelper.permission=false;Ts18LauncherApplication.facade.live=true;}
 static void scenario(int kind)throws Exception{reset();Loader l=new Loader();Nav n=new Nav();boolean[] ended={false},ready={false};int[] callbacks={0};
 var t=new MaskedSourcePreparation(new android.app.Activity(),l,n,()->ended[0]=true);
 t.begin("com.navimods.radio",android.os.SystemClock.elapsedRealtime()+3000,r->{ready[0]=r;callbacks[0]++;});
@@ -89,20 +89,26 @@ if(kind==6){RootTaskSession.task=30;RootTaskSession.component="app.organicmaps.i
 if(kind==7)RootTaskSession.pendingFocus=3;
 if(kind==8)RootTaskSession.blockHome=true;
 if(kind==9)RootTaskSession.blockObservation=true;
+if(kind==10)NavigationRootHelper.outcome=1;
+if(kind==11)NavigationRootHelper.outcome=2;
+if(kind==12)NavigationRootHelper.block=true;
+if(kind==13)Ts18LauncherApplication.facade.actions=512;
 l.draw.run();
 if(kind==4){until(()->NavigationRootHelper.entered);t.cancel();check(l.visible&&!ended[0],"unmasked in-flight launch");NavigationRootHelper.block=false;}
 if(kind==8){until(()->RootTaskSession.homeEntered);t.cancel();check(l.visible&&!ended[0],"unmasked HOME restoration in flight");RootTaskSession.blockHome=false;}
 if(kind==9){until(()->RootTaskSession.observationEntered);t.cancel();RootTaskSession.blockObservation=false;}
+if(kind==12){until(()->NavigationRootHelper.entered);android.os.SystemClock.offset=4000;android.os.Handler.pump();check(l.visible&&!ended[0],"deadline unmasked accepted launch in flight");NavigationRootHelper.block=false;}
 until(()->ended[0]);check(!l.visible&&!n.deferred&&callbacks[0]==1&&l.hides==1,"cleanup not exactly once");
 check(NavigationRootHelper.launches==(kind==2?0:1),"unexpected launch replay");
-if(kind==1||kind==6||kind==7){check(ready[0]&&RootTaskSession.task==10&&RootTaskSession.parks==1,"ready before park/session receipt");}
+if(kind==1||kind==6||kind==7||kind==13){check(ready[0]&&RootTaskSession.task==10&&RootTaskSession.parks==1,"ready before park/session receipt");}
 else check(!ready[0],"false readiness");
 if(kind==3)check(RootTaskSession.parks==0&&RootTaskSession.task==20,"permission flow hidden");
-if(kind==4||kind==8||kind==9)check(RootTaskSession.parks==1&&RootTaskSession.task==10,"late launch not parked");
+if(kind==4||kind==8||kind==9||kind==11||kind==12)check(RootTaskSession.parks==1&&RootTaskSession.task==10,"late launch not parked");
+if(kind==10)check(RootTaskSession.parks==0,"rejected launch repaired unrelated HOME");
 if(kind==5)check(RootTaskSession.parks==1&&!Ts18LauncherApplication.facade.live,"source death after park not observed");
 if(kind==6)check(RootTaskSession.mapParks==1&&RootTaskSession.events.indexOf("return-home")<RootTaskSession.events.indexOf("launch"),"valid Maps task was not parked first");
 t.cancel();check(callbacks[0]==1,"double cleanup");}
-public static void main(String[] a)throws Exception{for(int i=0;i<10;i++)scenario(i);System.out.println("PASS opaque barrier / exact task / permission yield / in-flight cancellation / session loss");}}
+public static void main(String[] a)throws Exception{for(int i=0;i<14;i++)scenario(i);System.out.println("PASS opaque barrier / exact task / permission yield / in-flight cancellation / session loss");}}
 ''',
         }
         with tempfile.TemporaryDirectory() as tmp:

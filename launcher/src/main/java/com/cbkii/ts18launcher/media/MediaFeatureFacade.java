@@ -25,6 +25,7 @@ public final class MediaFeatureFacade {
     private final Configuration configuration;
     private final MediaBackend legacy;
     private final MediaBackend direct;
+    private final java.util.function.LongSupplier elapsedRealtime;
     private final Map<MediaSourceKey, MediaEngine> effective = new EnumMap<>(MediaSourceKey.class);
     private final Map<MediaSourceKey, String> packages = new EnumMap<>(MediaSourceKey.class);
     private MediaBackend.StateListener listener;
@@ -67,10 +68,18 @@ public final class MediaFeatureFacade {
 
     /** direct: may be null: a requested direct engine then resolves to legacy. */
     public MediaFeatureFacade(Configuration configuration, MediaBackend legacy, MediaBackend direct) {
+        // Without a platform clock, finite already-playing continuations fail closed.
+        this(configuration, legacy, direct, () -> Long.MAX_VALUE);
+    }
+
+    public MediaFeatureFacade(Configuration configuration, MediaBackend legacy, MediaBackend direct,
+                              java.util.function.LongSupplier elapsedRealtime) {
         if (configuration == null || legacy == null) throw new IllegalArgumentException("legacy engine required");
+        if (elapsedRealtime == null) throw new IllegalArgumentException("elapsed realtime required");
         this.configuration = configuration;
         this.legacy = legacy;
         this.direct = direct;
+        this.elapsedRealtime = elapsedRealtime;
         legacy.setStateListener(state -> forward(legacy, state));
         if (direct != null) direct.setStateListener(state -> forward(direct, state));
     }
@@ -201,8 +210,11 @@ public final class MediaFeatureFacade {
             if (callback != null) callback.onResult(result);
         };
         if (resumeOnly && requested.playing(key, packageName)) {
-            completion.onResult(new MediaCommandResult(MediaCommandResult.Outcome.ACKNOWLEDGED,
-                    "Source is already playing", true, false));
+            boolean expired = deadlineElapsedMs != Long.MAX_VALUE
+                    && deadlineElapsedMs <= elapsedRealtime.getAsLong();
+            completion.onResult(new MediaCommandResult(expired ? MediaCommandResult.Outcome.FAILED
+                    : MediaCommandResult.Outcome.ACKNOWLEDGED,
+                    expired ? "Play window expired" : "Source is already playing", !expired, false));
         } else requested.commandUntil(key, packageName, action, deadlineElapsedMs, completion);
     }
 
