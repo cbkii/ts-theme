@@ -293,7 +293,11 @@ public final class MediaListenerService extends NotificationListenerService {
             sessionManager.addOnActiveSessionsChangedListener(sessionsChangedListener, listenerComponent, main);
         } catch (RuntimeException unavailable) {
             MediaEventTrace.record("listener", "registration-unavailable", "attempt=" + attempt);
+            // Nothing is attached or replayed until registration holds, so a retry cannot
+            // duplicate controller callbacks or notification replays.
             if (attempt < 3) main.postDelayed(() -> activateLegacy(serial, attempt + 1), 250L << attempt);
+            else publishEmpty();
+            return;
         }
         attachRegisteredExternalControllers();
         refresh();

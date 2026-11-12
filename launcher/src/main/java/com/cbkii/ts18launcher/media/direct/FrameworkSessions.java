@@ -26,9 +26,20 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
     private final ComponentName listenerComponent;
     private final Handler handler;
     private final MediaSessionManager manager;
-    private final java.util.concurrent.ExecutorService reader = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "ts18-session-membership"); thread.setDaemon(true); return thread;
-    });
+    /** Serial reader whose one thread exits when idle, so a quiet launcher holds no worker. */
+    private final java.util.concurrent.ExecutorService reader = serialIdleExecutor();
+
+    private static java.util.concurrent.ExecutorService serialIdleExecutor() {
+        java.util.concurrent.ThreadPoolExecutor executor = new java.util.concurrent.ThreadPoolExecutor(
+                1, 1, 30L, java.util.concurrent.TimeUnit.SECONDS,
+                new java.util.concurrent.LinkedBlockingQueue<>(), r -> {
+                    Thread thread = new Thread(r, "ts18-session-membership");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
     private final MediaSessionManager.OnActiveSessionsChangedListener membership = controllers -> invalidate();
     private final ContentObserver accessObserver;
     private volatile Runnable changeListener;

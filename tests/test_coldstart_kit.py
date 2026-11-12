@@ -213,7 +213,10 @@ probe probe {cap} {budget} {command}
         runs = list(self.base.glob('run-manual-*'))
         self.assertEqual(1, len(runs))
         self.assertIn('status=CLOSED', (runs[0] / 'STATUS.txt').read_text())
-        self.assertTrue((runs[0] / 'COMPLETE.txt').is_file())
+        # A missing COMPLETE.txt has two distinct causes (late sealing or unproven cleanup); say which.
+        self.assertTrue((runs[0] / 'COMPLETE.txt').is_file(),
+                        'not sealed: ' + (runs[0] / 'STATUS.txt').read_text().replace('\n', ' ')
+                        + ' files=' + ','.join(sorted(q.name for q in runs[0].iterdir())))
         self.assertFalse(list((runs[0] / 'probes').glob('*-activities')))
         self.assertFalse((self.base / 'active').exists())
 

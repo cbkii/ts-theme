@@ -125,8 +125,11 @@ public final class Ts18LauncherApplication extends Application
         }
     };
 
+    private String catalogLocales = "";
+
     @Override public void onCreate() {
         super.onCreate();
+        catalogLocales = getResources().getConfiguration().getLocales().toLanguageTags();
         StartupTimeline.mark("app.create");
         // Registers package invalidation only; discovery/icons stay lazy and off-thread.
         AppCatalog.get(this);
@@ -160,6 +163,10 @@ public final class Ts18LauncherApplication extends Application
 
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration) {
         super.onConfigurationChanged(configuration);
+        // Only a locale change alters labels. Day/night and other changes keep the catalogue.
+        String locales = configuration.getLocales().toLanguageTags();
+        if (locales.equals(catalogLocales)) return;
+        catalogLocales = locales;
         AppCatalog.get(this).invalidate();
     }
 
