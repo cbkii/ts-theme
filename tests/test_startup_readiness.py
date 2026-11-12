@@ -19,12 +19,14 @@ class StartupReadinessTests(unittest.TestCase):
         self.assertNotIn("NAVIGATION_DWELL_MS", coordinator)
         self.assertNotIn("holdNavigation", coordinator)
 
-    def test_startup_has_no_foreground_lane_or_competing_media_owner(self):
+    def test_readiness_uses_one_bounded_owner_without_playback_authority(self):
         coordinator = read("StartupReadinessCoordinator.java")
         for forbidden in ("startActivity", "moveTaskToFront", "StartupRootFallback",
-                          "new MediaSourceBootstrapper", "requestAudioFocus", "postDelayed"):
+                          "new MediaSourceBootstrapper", "requestAudioFocus"):
             self.assertNotIn(forbidden, coordinator)
-        self.assertIn("prepareDirectSources(context, ++epoch)", coordinator)
+        self.assertIn("prepareDirectSource(context, key, ++epoch)", coordinator)
+        self.assertIn("MAX_ATTEMPTS_PER_BOOT", coordinator)
+        self.assertIn("new MaskedSourcePreparation", coordinator)
         self.assertIn("navigation.deferAutomaticPresentation(false)", coordinator)
 
     def test_boot_receiver_signals_only(self):

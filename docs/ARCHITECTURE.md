@@ -9,7 +9,8 @@ The launcher is an API29 framework-Java HOME application. It owns presentation a
 | `DirectSessionRegistry` / `FrameworkSessions` | Deduplicated membership and token callbacks; browser authority independent of notification discovery |
 | `BrowserSessionStarter` | Source-owned exported MediaBrowser connection, stale-attempt and owner lifetime |
 | Auxio-TS | Queue restoration, HOME_PLAY_V1 deadline through decoder readiness, one player/session/focus owner |
-| `StartupReadinessCoordinator` | Boot/wake/HOME classification and independent background readiness epochs; no foreground staging or polling |
+| `StartupReadinessCoordinator` | Maps-first admission, independent Music/Radio readiness, bounded recovery and one masked source lease |
+| `MaskedSourcePreparation` / `StartupReadinessLoader` | Explicit cold Radio fallback: opaque frame, exact source launch, observed readiness, same-task HOME return and cleanup |
 | `NavigationWindowController` / N2 backend | Task admission, lifecycle, warm adoption, recovery and presentation |
 | `RootTaskSession` / `NavTaskBridge` | Bounded persistent broker for task observation/verification, warm resume, parking, HOME return and background fullscreen |
 | `nav-window.sh` | Narrow remaining cold-launch claim/bootstrap and explicit fullscreen/OEM compatibility operations |
@@ -17,9 +18,9 @@ The launcher is an API29 framework-Java HOME application. It owns presentation a
 | `ConfigurationCodec` | Version 2 export, v1/v2 import, strict known values, component shortcuts and explicit unknown-key preview |
 | `PerfSampler` / `StartupTimeline` | Explicit local 10-second frame/CPU/PSS sample and bounded process timeline |
 
-M2 is the default. Explicit Legacy remains a rollback for source-specific compatibility; its observers are demand-gated. There is no source Activity staging or startup mask ownership. A source without a substantiated background protocol remains explicitly openable through its icon.
+M2 is the default. Explicit Legacy remains a rollback for source-specific compatibility; its observers are demand-gated. The operator authorised masked Activity staging for closed apps when their supported service path cannot become ready. The current fallback is package-gated to NavRadio and explicit Play; passive tuner activation is unqualified and remains gated. See [readiness contract and acceptance](CONTINUOUS_READINESS.md).
 
-Cold Play uses a source-advertised action and an absolute elapsedRealtime deadline. Binding consumes the original operation budget. Ordinary Play is reserved for confirmed loaded media. Dispatch without playback acknowledgement is SENT_UNCONFIRMED; it never triggers an automatic duplicate or premature opposite-source pause.
+Cold Play waits for the owning session's transport capabilities within the original elapsedRealtime budget. Auxio's unloaded HOME Play requires its advertised HOME_PLAY_V1 deadline; an ordinary third-party Play contract may itself load/resume a station. Confirmed loaded media requires an item identity and PAUSED/PLAYING state, not a stale title. Dispatch without playback acknowledgement is SENT_UNCONFIRMED; it never triggers a duplicate or premature opposite-source pause. A Radio fallback is allowed only before any transport dispatch. Auto-resume during staging fulfils Play without a toggle.
 
 N2 remains primary. Broker task ownership and actual top Activity are distinct. Permission/settings and bootstrap Activities retain their task; failed observations do not authorise relaunch. The shell compatibility path remains because its cold-start claims and Android10 fullscreen delivery responsibilities are not interchangeable with a mode change. Geometry verification does not claim pixels or touch.
 

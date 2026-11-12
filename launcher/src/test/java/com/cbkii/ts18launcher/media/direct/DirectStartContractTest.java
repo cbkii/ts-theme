@@ -24,8 +24,8 @@ import org.junit.Test;
 /**
  * Play to a live, listener-discovered session that has nothing loaded. The other backend tests use
  * a fixture that always carries an item, so this path is exercised here on its own: ordinary Play
- * is reserved for a confirmed loaded session, and an unloaded one is sent only the bounded
- * deadline Play it advertises, for either source slot.
+ * follows the standard third-party contract even while unloaded. Auxio's separate unloaded
+ * contract requires the advertised bounded deadline action, for either source slot.
  */
 public class DirectStartContractTest {
     private static final String PLAYER = "com.example.player";
@@ -56,7 +56,7 @@ public class DirectStartContractTest {
         return session;
     }
 
-    @Test public void unloadedSessionWithoutTheDeadlineProtocolIsNotSentPlay() {
+    @Test public void standardThirdPartySessionsResumeWithoutAnAuxioProtocol() {
         for (MediaSourceKey key : new MediaSourceKey[] {MediaSourceKey.MUSIC, MediaSourceKey.RADIO}) {
             String pkg = key == MediaSourceKey.MUSIC ? PLAYER : RADIO;
             FakeSession session = unloaded("t-" + key, pkg);
@@ -64,9 +64,9 @@ public class DirectStartContractTest {
 
             backend.command(key, pkg, MediaUserAction.PLAY_PAUSE, results::add);
 
-            assertEquals(key.name(), Outcome.UNSUPPORTED, last().outcome);
-            assertFalse(key.name(), last().dispatched);
-            assertTrue(key.name(), session.dispatched.isEmpty());
+            assertEquals(Collections.singletonList(DirectOperation.PLAY), session.dispatched);
+            session.state(PlaybackState.STATE_PLAYING).emit();
+            assertEquals(key.name(), Outcome.ACKNOWLEDGED, last().outcome);
         }
     }
 
@@ -145,6 +145,6 @@ public class DirectStartContractTest {
         backend.command(MediaSourceKey.MUSIC, PLAYER, MediaUserAction.PLAY_PAUSE, results::add);
 
         assertTrue(states.get(states.size() - 1).endsWith("preparing=0"));
-        assertEquals(Collections.singletonList(DirectOperation.PREPARE), player.dispatched);
+        assertEquals(java.util.Arrays.asList(DirectOperation.PREPARE, DirectOperation.PLAY), player.dispatched);
     }
 }

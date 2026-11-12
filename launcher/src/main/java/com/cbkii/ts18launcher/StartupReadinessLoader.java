@@ -19,6 +19,7 @@ final class StartupReadinessLoader {
     private final Rect bounds = new Rect();
     private final String title;
     private boolean visible, attached, overlayFailed;
+    private Runnable drawn;
 
     StartupReadinessLoader(Activity activity, FrameLayout root, Runnable dismiss) {
         this.activity = activity;
@@ -29,10 +30,20 @@ final class StartupReadinessLoader {
         homePanel.setVisibility(View.GONE);
         root.addView(homePanel);
         mask = content(dismiss);
+        // Cover app-drawn bar backgrounds too, below the higher SystemUI windows. A fixed dark
+        // underlay keeps their icons legible; only our controls are inset into the safe area.
+        mask.setBackgroundColor(0xff000000);
     }
 
     private FrameLayout content(Runnable dismiss) {
         FrameLayout panel = new FrameLayout(activity) {
+            @Override protected void dispatchDraw(android.graphics.Canvas canvas) {
+                super.dispatchDraw(canvas);
+                if (this == mask && attached && drawn != null) {
+                    Runnable callback = drawn; drawn = null;
+                    postOnAnimation(callback);
+                }
+            }
             @Override public boolean dispatchKeyEvent(KeyEvent event) {
                 if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
                     if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) dismiss.run();
@@ -49,6 +60,12 @@ final class StartupReadinessLoader {
         int size = AutomotiveUi.dimen(activity, R.dimen.driver_target_min);
         FrameLayout.LayoutParams spin = new FrameLayout.LayoutParams(size, size, Gravity.CENTER);
         panel.addView(spinner, spin);
+        android.widget.Button cancel = new android.widget.Button(activity);
+        cancel.setText(R.string.startup_loader_dismiss);
+        cancel.setOnClickListener(v -> dismiss.run());
+        FrameLayout.LayoutParams button = new FrameLayout.LayoutParams(size * 3, size,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        panel.addView(cancel, button);
         return panel;
     }
 
@@ -81,12 +98,18 @@ final class StartupReadinessLoader {
     void showMask() {
         if (!visible || attached || !canMask()) return;
         try {
-            WindowManager.LayoutParams layout = new WindowManager.LayoutParams(bounds.width(), bounds.height(),
+            android.util.DisplayMetrics display = new android.util.DisplayMetrics();
+            windows.getDefaultDisplay().getRealMetrics(display);
+            if (display.widthPixels < bounds.right || display.heightPixels < bounds.bottom)
+                throw new IllegalStateException("display bounds unavailable");
+            mask.setPadding(bounds.left, bounds.top, display.widthPixels - bounds.right,
+                    display.heightPixels - bounds.bottom);
+            WindowManager.LayoutParams layout = new WindowManager.LayoutParams(display.widthPixels, display.heightPixels,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.OPAQUE);
             layout.gravity = Gravity.TOP | Gravity.LEFT;
-            layout.x = bounds.left; layout.y = bounds.top;
+            layout.x = 0; layout.y = 0;
             layout.setTitle(title);
             attached = true;
             StartupMaskFocus.activeTitle = title;
@@ -99,12 +122,22 @@ final class StartupReadinessLoader {
         }
     }
 
+    void whenMaskDrawn(Runnable callback) {
+        if (!attached || !canMask()) { callback.run(); return; }
+        drawn = callback;
+        mask.invalidate();
+    }
+
     void hideMask() {
+        Runnable abandoned = drawn;
+        drawn = null;
         if (title.equals(StartupMaskFocus.activeTitle)) StartupMaskFocus.activeTitle = "";
-        if (!attached) return;
-        attached = false;
-        try { windows.removeViewImmediate(mask); }
-        catch (RuntimeException gone) { /* Already removed by WMS. */ }
+        if (attached) {
+            attached = false;
+            try { windows.removeViewImmediate(mask); }
+            catch (RuntimeException gone) { /* Already removed by WMS. */ }
+        }
+        if (abandoned != null) abandoned.run();
     }
     void hide() { visible = false; homePanel.setVisibility(View.GONE); hideMask(); }
     void destroy() {

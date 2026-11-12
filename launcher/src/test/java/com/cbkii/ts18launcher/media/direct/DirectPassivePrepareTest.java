@@ -142,13 +142,27 @@ public class DirectPassivePrepareTest {
         assertTrue(starter.log.isEmpty());
     }
 
-    @Test public void coldSourceWithoutPrepareIsBoundButNeverCommanded() {
+    @Test public void coldSourceWaitsForLatePrepareCapabilityAndSendsItOnce() {
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
         backend.preparePassive(MediaSourceKey.MUSIC, AUXIO, 1L);
         FakeSession session = new FakeSession("t1", AUXIO).state(PlaybackState.STATE_NONE).actions(NO_PREPARE);
         starter.events.onSessionOffered(AUXIO, session);
         assertTrue(session.dispatched.isEmpty());
+        assertTrue(backend.state(MediaSourceKey.MUSIC).preparing);
+        session.actions(NO_PREPARE | PlaybackState.ACTION_PREPARE).emit();
+        assertEquals(java.util.Collections.singletonList(DirectOperation.PREPARE), session.dispatched);
+    }
+
+    @Test public void coldSourceThatNeverOffersPrepareExpiresWithoutAnyCommand() {
+        backend.attach(MediaSourceKey.MUSIC, AUXIO);
+        backend.preparePassive(MediaSourceKey.MUSIC, AUXIO, 1L);
+        FakeSession session = new FakeSession("t1", AUXIO).state(PlaybackState.STATE_NONE).actions(NO_PREPARE);
+        starter.events.onSessionOffered(AUXIO, session);
+        clock.advanceTo(1000L + DirectSourceEngine.COLD_START_MS);
         assertFalse(backend.state(MediaSourceKey.MUSIC).preparing);
+        assertTrue(session.dispatched.isEmpty());
+        session.actions(NO_PREPARE | PlaybackState.ACTION_PREPARE).emit();
+        assertTrue("Expired readiness is never revived by a late action", session.dispatched.isEmpty());
     }
 
     @Test public void userPlayDuringPassivePreparationWinsAndNoPrepareIsSent() {

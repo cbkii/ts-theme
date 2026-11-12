@@ -63,7 +63,7 @@ final class LegacyMediaBackend implements MediaBackend {
     }
 
     @Override public boolean playing(MediaSourceKey key, String packageName) {
-        return attached.containsKey(key) && packageName != null && !packageName.isEmpty()
+        return packageName != null && !packageName.isEmpty() && packageName.equals(attached.get(key))
                 && sources().isPlaying(packageName);
     }
 
@@ -73,6 +73,13 @@ final class LegacyMediaBackend implements MediaBackend {
             // A deselected engine never commands; report instead of acting.
             if (callback != null) callback.onResult(new MediaCommandResult(
                     MediaCommandResult.Outcome.FAILED, "Legacy engine is not selected", false, false));
+            return;
+        }
+        if (action == MediaUserAction.PLAY) {
+            boolean observed = playing(key, packageName);
+            if (callback != null) callback.onResult(new MediaCommandResult(observed
+                    ? MediaCommandResult.Outcome.ACKNOWLEDGED : MediaCommandResult.Outcome.UNSUPPORTED,
+                    observed ? "" : "Explicit Play continuation requires Direct media", observed, false));
             return;
         }
         MediaSourceBootstrapper owner = sources();

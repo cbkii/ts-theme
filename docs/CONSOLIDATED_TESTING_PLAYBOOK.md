@@ -10,14 +10,14 @@ For each row below, record PASS/FAIL/NOT_RUN and a short timestamped observation
 
 | Stage | Actions and acceptance |
 |---|---|
-| First HOME | HOME responds while Music, Radio and Maps prepare independently; no unwanted audio/source change or hidden media foregrounding |
+| First HOME | Maps is admitted first, then Music and safe Radio service readiness; HOME responds and no unsolicited playback/source change occurs |
 | Music | One Play starts the restored item inside its bounded window; no late automatic playback after an unconfirmed/expired request; Next/Pause/metadata remain correct |
-| Radio | Warm session: one Play and transport work. Cold unsupported protocol: truthful app-opening fallback; no guessed tuner/service activation. Verify actual audibility separately |
+| Radio | One Play works with a supported session or configured NavRadio+ automatically uses the bounded masked cold fallback. Mark other unsupported cold packages BLOCKED by their missing contract; opening their icon is a setup/diagnostic path, not a one-tap playback pass. No manual app priming, bright splash or second tap; HOME/N2 returns and the source survives backgrounding. Genuine setup/permission screens remain visible. Verify audibility separately |
 | Handover | While one source plays, request the other; old source is not paused before replacement playback is observed; no duplicate commands |
 | N2 | Navigation rail, Retry, fullscreen, HOME and windowed return preserve the same warm task/active route; map pixels and touch work; unrelated foreground apps stay undisturbed |
 | Permissions | Organic Maps permissions/settings can finish without task destruction, focus theft or repeated starts |
 | Catalogue | Drawer/picker remains responsive; multi-Activity aliases are distinct; component shortcuts survive export/import and same-package fallback after removal/disable |
-| Process restart | Restart launcher and source separately through ordinary Android controls; recover readiness without duplicate playback or loss of valid Maps task |
+| Process restart | Restart launcher and source separately through ordinary Android controls; recover readiness without duplicate playback or loss of valid Maps task. Cancel cold Radio and verify no late unmasked launch or stuck loader |
 | Android reboot | Repeat first HOME/Music/Radio/N2 checks and label this Android reboot |
 | Cold power | Repeat after genuine power removal/start; label separately |
 | ACC sleep/wake | Repeat after a genuine vehicle ACC cycle, recording actual sleep/wake conditions; screen-on alone is not proof |
@@ -30,14 +30,14 @@ With root available, `timeline.txt` holds the launcher's `TS18Media` lines. For 
 
 | Line | Meaning |
 |---|---|
-| `m2/state · MUSIC avail=LIVE state=2 play=1 loaded=0 deadline=1 …` | What a Play tap would meet at that moment. `play` is whether the session advertises Play at all; with `play=0` a tap is refused as unsupported whatever else is set. `loaded` only means the session has published an item id or title. With `play=1`: `loaded=1` gets ordinary Play, `loaded=0 deadline=1` gets one bounded Play, and `loaded=0 deadline=0` is refused with "needs a loaded item". `avail` other than `LIVE` with `startable=1` means a tap first connects the source's media browser |
+| `m2/state · MUSIC avail=LIVE state=2 play=1 loaded=0 deadline=1 …` | `play` records the advertised action. A pending tap waits for late actions within its original budget. `loaded` requires an item identity plus PAUSED/PLAYING. Loaded Auxio gets ordinary Play; unloaded Auxio requires its bounded HOME_PLAY_V1 capability. Third-party Radio may use ordinary advertised Play to load/resume its own station. A startable absent source first connects its owning service |
 | `m2/deadline-dispatch` / `m2/dispatch · MUSIC PLAY` | The single command actually sent for a tap, bounded or ordinary |
 | `m2/result · MUSIC PLAY_PAUSE ACKNOWLEDGED…` | How that tap ended. `ACKNOWLEDGED`: the session reported the requested state. `SENT_UNCONFIRMED`: sent once, no confirming state before the deadline (not a rejection, never retried). `UNSUPPORTED`: nothing sent. `SOURCE_LOST`: the pinned session disappeared or changed; record what the source app was doing. `FAILED`: nothing could be sent (no session, no access, ambiguous source) |
 | `m2/start-offered`, `start-failed` | Outcome of a media-browser connection |
 
 The state line is the launcher's view at the time it was written; always read it together with the dispatch and result lines that follow the tap.
 
-Two captures settle the open Radio questions without changing anything. With NavRadio+ already open and paused, a `RADIO` state line with `play=1 loaded=1` means Play from HOME is expected to work; `loaded=0 deadline=0` means the installed build publishes no station while paused and Play is refused by design: record it as an observation, not a launcher failure. `radio.txt` lists the services and intent filters the installed build actually exports, which is the evidence needed before any background Radio start could be considered.
+The installed API29 NavRadio binary remains the authority for its service and tuner contracts. An empty paused item does not by itself invalidate an advertised Play action. `radio.txt` records actual exported components. Do not treat an Android12+ reference APK as proof of the installed Android10 contract. See [readiness behaviour and qualification](CONTINUOUS_READINESS.md), including when passive Radio activation is deferred to first Play.
 
 If Music or Radio misbehaves under M2, set that source back to the Legacy engine in Settings, note the time, and continue the remaining rows; this is the supported rollback and does not need a reinstall.
 

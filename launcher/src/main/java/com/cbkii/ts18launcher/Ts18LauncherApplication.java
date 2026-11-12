@@ -37,6 +37,10 @@ public final class Ts18LauncherApplication extends Application
         mediaFacade(context).preparePassive(epoch);
     }
 
+    static void prepareDirectSource(Context context, com.cbkii.ts18launcher.media.MediaSourceKey key, long epoch) {
+        mediaFacade(context).preparePassive(key, epoch);
+    }
+
     /** The single UI-facing media entry point; selects the engine acting for each source. */
     static com.cbkii.ts18launcher.media.MediaFeatureFacade mediaFacade(Context context) {
         Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();
@@ -51,7 +55,8 @@ public final class Ts18LauncherApplication extends Application
                                 com.cbkii.ts18launcher.media.MediaSourceKey key) {
                             return MediaEngineSelector.configuredPackage(app, key);
                         }
-                    }, new LegacyMediaBackend(app), MediaEngines.createDirect(app));
+                    }, new LegacyMediaBackend(app), MediaEngines.createDirect(app), android.os.SystemClock::elapsedRealtime);
+            app.mediaFacade.setReadinessListener(state -> StartupReadinessCoordinator.get(app).onMediaStateChanged(state));
         }
         app.mediaFacade.reconcile();
         // The legacy session monitor runs only while some source is on the legacy engine.

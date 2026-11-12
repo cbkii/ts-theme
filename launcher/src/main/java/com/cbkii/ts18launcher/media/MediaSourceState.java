@@ -73,7 +73,7 @@ public final class MediaSourceState {
         this.generation = generation;
         boolean absent = availability == Availability.NO_SESSION || availability == Availability.SOURCE_LOST;
         this.startable = absent && startable;
-        this.starting = absent && starting;
+        this.starting = (absent || availability == Availability.LIVE) && starting;
         this.preparing = (absent || availability == Availability.LIVE) && preparing && !this.starting;
     }
 

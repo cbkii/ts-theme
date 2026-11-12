@@ -206,8 +206,11 @@ public final class NavTaskBridge {
                     || target.right > 16384 || target.bottom > 16384) throw new IllegalArgumentException("BAD_BOUNDS");
         } else if (sourceReturn) {
             taskId = Integer.parseInt(a[4]); homeId = Integer.parseInt(a[6]);
-            if (!"com.tw.media".equals(pkg) || !"com.tw.media/org.oxycblt.auxio.MainActivity".equals(a[3])
-                    || !"com.cbkii.ts18launcher".equals(a[5])) throw new IllegalArgumentException("BAD_IDENTITY");
+            boolean auxio = "com.tw.media".equals(pkg) && "com.tw.media/org.oxycblt.auxio.MainActivity".equals(a[3]);
+            boolean radio = "com.navimods.radio".equals(pkg) && a[3].startsWith(pkg + "/")
+                    && a[3].matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+");
+            if ((!auxio && !radio) || !"com.cbkii.ts18launcher".equals(a[5]))
+                throw new IllegalArgumentException("BAD_IDENTITY");
         } else if ((("return-home".equals(action) || "park-windowed".equals(action)) && a.length == 6)
                 || ("background-fullscreen".equals(action) && a.length == 7)) {
             taskId = Integer.parseInt(a[3]); homeId = Integer.parseInt(a[5]);
@@ -256,6 +259,15 @@ public final class NavTaskBridge {
                         + " stack=" + task.stack + " component=" + task.component + " display=0 windowingMode=5 bounds="
                         + task.bounds.left + "," + task.bounds.top + "," + task.bounds.right + "," + task.bounds.bottom
                         + " launched=0 method=N2 phase=park-verified visible=unknown drawn=unknown";
+            }
+            if (sourceReturn) {
+                request.windowComponent = null;
+                requireHome(resolve(stacks.invoke(service), "com.cbkii.ts18launcher", user, homeId));
+                Task after = resolve(stacks.invoke(service), pkg, user, taskId);
+                if (after == null || !task.component.equals(after.component) || after.display != 0
+                        || after.mode != 1 || after.activityType != 1 || after.foreignTop)
+                    throw new IllegalStateException("TASK_AUTHORITY_CHANGED");
+                foreground(request, focused.invoke(service), homeId, homeId, user, false);
             }
             return "OK code=" + (sourceReturn ? "STARTUP_HOME_RESTORED" : "park-windowed".equals(action) ? "SUSPENDED" : "HOME_RETURNED");
         }

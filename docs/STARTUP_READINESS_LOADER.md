@@ -1,4 +1,12 @@
-# Startup Readiness Loader — 22 October 2026
+# Historical startup-loader design — 22 October 2026
+
+**Historical reference only.** The current runtime and operator contract is
+[Continuous Maps and media readiness](CONTINUOUS_READINESS.md), with the
+[consolidated physical playbook](CONSOLIDATED_TESTING_PLAYBOOK.md). Those documents
+supersede the opt-in settings, old preparation trampoline, eight-second ceiling and
+SystemUI geometry described below. Current explicit Radio staging has a 12-second
+budget within the original Play request, plus guarded cleanup; this historical note
+is retained for its earlier investigation and source references, not as test instructions.
 
 ## Current-code audit and decision
 

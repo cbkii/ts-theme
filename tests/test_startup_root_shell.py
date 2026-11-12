@@ -9,26 +9,29 @@ class StartupRootShellTests(unittest.TestCase):
     def run_root(self, action, package='com.navimods.radio', **changes):
         source = nav.ANDROID.replace("        print('mCurrentFocus=Window{fake u0 ' + focus_component + '}')\n", "").replace("if a[0] == 'window':", '''if a[0] == 'window':
         focused = s.get('startup_focus', (s.get('nav_component','com.navimods.radio/.RadioActivity') if s['focus']==42 else 'com.cbkii.ts18launcher/.HomeAlias'))
+        if s.get('owned_mask') and 'startup_focus' not in s:
+            focused='TS18Ready_10211_'+'a'*32
+            if a[1] == 'windows': print('  Window #0 Window{abc u0 '+focused+'}:\\n    mOwnerUid=10211 mShowToOwnerOnly=true\\n    mAttrs={ty=2038 }')
         if a[1] == 'displays': print('  mCurrentFocus=' + ('null' if s.get('blank_startup_focus') else 'Window{abc u0 '+focused+'}'))''')
         source = source.replace("print('      * Hist #0: ActivityRecord{fake u0 %s t%s}' % (component, task))",
             "print('      * Hist #0: ActivityRecord{fake u0 %s t%s}' % (component, task))\n        if task == 7 and s.get('extra_home_activity'): print('      * Hist #1: ActivityRecord{fake u0 com.android.permissioncontroller/.Grant t7}')")
         source = source.replace("s['mode'] = int(a[a.index('--windowingMode')+1]);", "s['mode'] = int(a[a.index('--windowingMode')+1]) if '--windowingMode' in a else 1;")
         options = dict(nav_package=package, nav_component=package+'/.RadioActivity',
-                       mode=1, focus=7 if action=='startup-source' else 42)
+                       mode=1, owned_mask=action=='startup-source', focus=7 if action=='startup-source' else 42)
         options.update(changes)
         args=[action,'0',package,package+'/.RadioActivity']
         if action=='startup-home': args+=['42']
         args+=['com.cbkii.ts18launcher','7']
-        with patch.object(nav, 'ANDROID', source):
+        with patch.object(nav, 'ANDROID', source), patch.dict(os.environ, {'TS18_MASK_TITLE': 'TS18Ready_10211_' + 'a' * 32}):
             return nav.NavigationLifecycleTest().run_helper(args, **options)
 
-    def test_oem_display_focus_is_used_even_when_mask_capability_is_present(self):
+    def test_unmasked_launch_is_refused_even_with_a_mask_title(self):
         # On TS18 window windows has no mCurrentFocus line. A valid mask capability
         # may be attached while focus is still HOME; it must not switch dump surfaces.
         with patch.dict(os.environ, {'TS18_MASK_TITLE': 'TS18Ready_10211_' + 'a' * 32}):
-            r, state = self.run_root('startup-source')
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(state['start_dispatches'], 1)
+            r, state = self.run_root('startup-source',owned_mask=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(state['start_dispatches'], 0)
 
     def test_start_dispatches_once_from_exact_home(self):
         r,s=self.run_root('startup-source')

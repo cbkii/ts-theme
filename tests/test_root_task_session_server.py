@@ -45,6 +45,9 @@ music.taskIds=new int[]{84};music.taskNames=new String[]{"com.tw.media/com.tw.mu
 music.topActivity=ComponentName.unflattenFromString("com.tw.media/org.oxycblt.auxio.MainActivity");
 foreign.taskIds=new int[]{99};foreign.taskNames=new String[]{"other.app/.Main"};foreign.stackId=8;foreign.topActivity=ComponentName.unflattenFromString("other.app/.Main");
 if("source".equals(System.getenv("CASE")))focused=84;
+if(System.getenv("CASE").startsWith("radio")){focused=84;music.taskNames=new String[]{"com.navimods.radio/com.navimods.radio.Main"};music.topActivity=ComponentName.unflattenFromString(music.taskNames[0]);}
+if("radio-shared".equals(System.getenv("CASE"))){music.taskIds=new int[]{84,85};music.taskNames=new String[]{"com.navimods.radio/com.navimods.radio.Main","other.app/.Main"};music.taskUserIds=new int[]{0,0};}
+if("radio-permission".equals(System.getenv("CASE")))music.topActivity=ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
 if("bootstrap".equals(System.getenv("CASE")))focused=42;
 if("foreign".equals(System.getenv("CASE")))focused=99;
 if("shared".equals(System.getenv("CASE"))){map.taskIds=new int[]{42,43};map.taskUserIds=new int[]{0,0};map.taskNames=new String[]{map.taskNames[0],"other.app/.Main"};}
@@ -60,6 +63,7 @@ String dump="mCurrentFocus=Window{abc u0 "+component+"}\\n";
 if("mask".equals(System.getenv("CASE")))dump="  Window #0 Window{abc u0 "+mask+"}:\\n    mOwnerUid=10211 showForAllUsers=false\\n    mAttrs={ ty=APPLICATION_OVERLAY fmt=OPAQUE }\\n  mCurrentFocus=Window{abc u0 "+mask+"}\\n";
 Files.writeString(Path.of(System.getenv("FOCUS_FILE")),dump);}catch(Exception e){throw new RuntimeException(e);}}
 public void setFocusedTask(int id){System.out.println("FOCUS "+id);focused=id;
+if(id==7&&"radio-type-change".equals(System.getenv("CASE")))music.configuration.windowConfiguration.type=2;
 if(id==7&&"park-geometry".equals(System.getenv("CASE")))map.taskBounds=new Rect[]{new Rect(0,0,200,200)};
 if(id==7&&"park-replaced".equals(System.getenv("CASE")))map.taskIds=new int[]{43};
 writeFocus();}
@@ -190,6 +194,32 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
         result = self.request(child, ["background-fullscreen", 0, "app.organicmaps.incar", 42, "com.cbkii.ts18launcher", 7, 1])
         self.assertIn("OK code=BACKGROUND_FULLSCREEN", result[-1])
         self.assertFalse(any(x.startswith("FOCUS") for x in result))
+        self.finish(child)
+
+    def test_radio_return_refuses_ambiguous_stack_and_permission_activity(self):
+        for case in ("radio", "radio-shared", "radio-permission"):
+            with self.subTest(case=case):
+                child = self.launch(case)
+                result = self.request(child, ["startup-home", 0, "com.navimods.radio",
+                                             "com.navimods.radio/com.navimods.radio.Main", 84,
+                                             "com.cbkii.ts18launcher", 7])
+                if case != "radio":
+                    self.assertIn("FAIL code=TASK_AUTHORITY_CHANGED", result[-1])
+                    self.assertNotIn("FOCUS 7", result)
+                else:
+                    self.assertIn("OK code=STARTUP_HOME_RESTORED", result[-1])
+                    self.assertIn("FOCUS 7", result)
+                self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in result))
+                self.finish(child)
+
+    def test_source_reparented_to_nonstandard_type_after_home_focus_is_not_ready(self):
+        child = self.launch("radio-type-change")
+        result = self.request(child, ["startup-home", 0, "com.navimods.radio",
+                                     "com.navimods.radio/com.navimods.radio.Main", 84,
+                                     "com.cbkii.ts18launcher", 7])
+        self.assertIn("FOCUS 7", result)
+        self.assertIn("FAIL code=TASK_AUTHORITY_CHANGED", result[-1])
+        self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in result))
         self.finish(child)
 
     def test_source_return_only_focuses_the_existing_home_task(self):

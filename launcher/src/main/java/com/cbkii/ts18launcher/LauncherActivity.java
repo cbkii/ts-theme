@@ -143,6 +143,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             @Override public void mask(boolean show) { if (show) readinessLoader.showMask(); else readinessLoader.hideMask(); }
             @Override public boolean canMask() { return readinessLoader.canMask(); }
             @Override public boolean ownsMask() { return readinessLoader.ownsMask(); }
+            @Override public void whenMaskDrawn(Runnable ready) { readinessLoader.whenMaskDrawn(ready); }
             @Override public void hide() { readinessLoader.hide(); }
             @Override public void incomplete() {
                 android.widget.Toast.makeText(LauncherActivity.this, R.string.startup_loader_incomplete,
@@ -278,15 +279,16 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         AppCatalog.get(this).unsubscribe(catalogChanged);
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
-        mediaStatusGeneration++;
-        mediaStatusActive = false;
+        // A masked source transaction temporarily stops HOME but still owns its original Play.
+        boolean maskedHandoff = readinessLoader != null && readinessLoader.ownsMask();
+        if (!maskedHandoff) { mediaStatusGeneration++; mediaStatusActive = false; }
         ProcessMediaSessionMonitor.setVisible(this, false);
         ProcessMediaSessionMonitor.removeObserver(this);
         MediaListenerService.removeObserver(this);
         mediaFacade().setStateListener(null);
         directFailureText = "";
         if (appDrawerPanel != null && appDrawerPanel.isOpen()) appDrawerPanel.hideImmediately();
-        if (navigationWindowController != null) navigationWindowController.onHomeStopped();
+        if (navigationWindowController != null && !maskedHandoff) navigationWindowController.onHomeStopped();
         super.onStop();
     }
 
@@ -525,19 +527,22 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
 
     private void runSourceCommand(MediaSourceKey key, String label, String packageName,
                                   MediaListenerService.Command command) {
+        StartupReadinessCoordinator.get(this).onExplicitSource(packageName);
         int generation = ++mediaStatusGeneration;
         mediaStatusActive = true;
         String appLabel = AppResolver.labelFor(this, packageName, label);
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
                 ? "Preparing " + label + "…" : label, appLabel);
-        dispatchSourceCommand(key, label, packageName, command, generation);
+        dispatchSourceCommand(key, label, packageName, command, generation,
+                android.os.SystemClock.elapsedRealtime() + 22000L, false);
     }
 
     private void dispatchSourceCommand(MediaSourceKey key, String label, String packageName,
-                                       MediaListenerService.Command command, int generation) {
+                                       MediaListenerService.Command command, int generation,
+                                       long deadline, boolean staged) {
         // One entry point for every engine. The legacy engine receives exactly the call it always
         // did (same shared owner, label, package and command); only the routing is new.
-        mediaFacade().command(key, packageName, LegacyMediaBackend.userAction(command), result -> {
+        com.cbkii.ts18launcher.media.MediaBackend.ResultCallback completion = result -> {
             if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
             ProcessMediaSessionMonitor.refresh(this);
             MediaListenerService.refreshActiveSessions();
@@ -545,10 +550,23 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 mediaStatusActive = false;
                 updateLabels();
             } else {
+                if (!staged && !result.dispatched && command == MediaListenerService.Command.PLAY_PAUSE
+                        && result.outcome != com.cbkii.ts18launcher.media.MediaCommandResult.Outcome.UNSUPPORTED
+                        && mediaFacade().engine(key) == MediaEngine.DIRECT
+                        && !result.playingObserved && key == MediaSourceKey.RADIO
+                        && StartupReadinessCoordinator.get(this).prepareInteractively(this, packageName, deadline, ready -> {
+                            if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
+                            if (ready && android.os.SystemClock.elapsedRealtime() < deadline)
+                                dispatchSourceCommand(key, label, packageName, command, generation, deadline, true);
+                            else settleSourceCommandFailure(key, label, packageName, command, generation,
+                                    "Radio could not become ready · check setup permissions");
+                        })) return;
                 MediaEventTrace.record("readiness", "background-only-command-failed", packageName);
                 settleSourceCommandFailure(key, label, packageName, command, generation, result.message);
             }
-        });
+        };
+        if (staged) mediaFacade().resumePreparedSource(key, packageName, deadline, completion);
+        else mediaFacade().command(key, packageName, LegacyMediaBackend.userAction(command), completion);
     }
 
     private void settleSourceCommandFailure(MediaSourceKey key, String label, String packageName,

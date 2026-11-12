@@ -25,9 +25,11 @@ public final class MediaFeatureFacade {
     private final Configuration configuration;
     private final MediaBackend legacy;
     private final MediaBackend direct;
+    private final java.util.function.LongSupplier elapsedRealtime;
     private final Map<MediaSourceKey, MediaEngine> effective = new EnumMap<>(MediaSourceKey.class);
     private final Map<MediaSourceKey, String> packages = new EnumMap<>(MediaSourceKey.class);
     private MediaBackend.StateListener listener;
+    private MediaBackend.StateListener readinessListener;
     /** Monotonic count of user commands, across both sources. */
     private long intentEpoch;
     /** Epoch of the newest user command per source. */
@@ -66,10 +68,18 @@ public final class MediaFeatureFacade {
 
     /** direct: may be null: a requested direct engine then resolves to legacy. */
     public MediaFeatureFacade(Configuration configuration, MediaBackend legacy, MediaBackend direct) {
+        // Without a platform clock, finite already-playing continuations fail closed.
+        this(configuration, legacy, direct, () -> Long.MAX_VALUE);
+    }
+
+    public MediaFeatureFacade(Configuration configuration, MediaBackend legacy, MediaBackend direct,
+                              java.util.function.LongSupplier elapsedRealtime) {
         if (configuration == null || legacy == null) throw new IllegalArgumentException("legacy engine required");
+        if (elapsedRealtime == null) throw new IllegalArgumentException("elapsed realtime required");
         this.configuration = configuration;
         this.legacy = legacy;
         this.direct = direct;
+        this.elapsedRealtime = elapsedRealtime;
         legacy.setStateListener(state -> forward(legacy, state));
         if (direct != null) direct.setStateListener(state -> forward(direct, state));
     }
@@ -121,6 +131,14 @@ public final class MediaFeatureFacade {
 
     public void setStateListener(MediaBackend.StateListener listener) { this.listener = listener; }
 
+    public void setReadinessListener(MediaBackend.StateListener listener) { readinessListener = listener; }
+
+    public void preparePassive(MediaSourceKey key, long epoch) {
+        reconcile();
+        String pkg = packages.get(key);
+        if (pkg != null && !pkg.isEmpty()) backend(key).preparePassive(key, pkg, epoch);
+    }
+
     /** Ask the engines that currently serve a source to re-read live state. */
     public void refresh() {
         reconcile();
@@ -150,13 +168,29 @@ public final class MediaFeatureFacade {
 
     public void command(MediaSourceKey key, String packageName, MediaUserAction action,
                         MediaBackend.ResultCallback callback) {
+        command(key, packageName, action, false, Long.MAX_VALUE, callback);
+    }
+
+    /** Continue the original Play after Activity staging; never toggle an auto-resumed source. */
+    public void resumePreparedSource(MediaSourceKey key, String packageName,
+                                     MediaBackend.ResultCallback callback) {
+        resumePreparedSource(key, packageName, Long.MAX_VALUE, callback);
+    }
+
+    public void resumePreparedSource(MediaSourceKey key, String packageName, long deadlineElapsedMs,
+                                     MediaBackend.ResultCallback callback) {
+        command(key, packageName, MediaUserAction.PLAY, true, deadlineElapsedMs, callback);
+    }
+
+    private void command(MediaSourceKey key, String packageName, MediaUserAction action,
+                         boolean resumeOnly, long deadlineElapsedMs, MediaBackend.ResultCallback callback) {
         reconcile();
         long epoch = ++intentEpoch;
         lastIntent.put(key, epoch);
         MediaBackend requested = backend(key);
         MediaSourceKey oppositeKey = key.opposite();
         MediaBackend opposite = backend(oppositeKey);
-        boolean wantsPlay = action == MediaUserAction.PLAY_PAUSE && !requested.playing(key, packageName);
+        boolean wantsPlay = resumeOnly || action == MediaUserAction.PLAY_PAUSE && !requested.playing(key, packageName);
         boolean legacyOwnsHandover = requested == legacy && opposite == legacy;
         Handover handover = null;
         if (wantsPlay && !legacyOwnsHandover && opposite.attached(oppositeKey)) {
@@ -171,10 +205,17 @@ public final class MediaFeatureFacade {
             if (handover == null) pendingHandover.remove(key); else pendingHandover.put(key, handover);
         }
         final Handover captured = handover;
-        requested.command(key, packageName, action, result -> {
+        MediaBackend.ResultCallback completion = result -> {
             if (captured != null) commitHandover(key, captured, result);
             if (callback != null) callback.onResult(result);
-        });
+        };
+        if (resumeOnly && requested.playing(key, packageName)) {
+            boolean expired = deadlineElapsedMs != Long.MAX_VALUE
+                    && deadlineElapsedMs <= elapsedRealtime.getAsLong();
+            completion.onResult(new MediaCommandResult(expired ? MediaCommandResult.Outcome.FAILED
+                    : MediaCommandResult.Outcome.ACKNOWLEDGED,
+                    expired ? "Play window expired" : "Source is already playing", !expired, false));
+        } else requested.commandUntil(key, packageName, action, deadlineElapsedMs, completion);
     }
 
     /**
@@ -207,7 +248,8 @@ public final class MediaFeatureFacade {
 
     private void forward(MediaBackend source, MediaSourceState state) {
         // A deselected engine can never overwrite the UI state of a source it no longer owns.
-        if (state == null || backend(state.key) != source || listener == null) return;
-        listener.onMediaSourceStateChanged(state);
+        if (state == null || backend(state.key) != source) return;
+        if (readinessListener != null) readinessListener.onMediaSourceStateChanged(state);
+        if (listener != null) listener.onMediaSourceStateChanged(state);
     }
 }

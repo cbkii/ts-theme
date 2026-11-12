@@ -163,7 +163,7 @@ public class DirectColdStartTest {
         assertEquals(0, clock.scheduled.size());
     }
 
-    @Test public void startedSessionWithoutPlayIsUnsupportedNotForced() {
+    @Test public void startedSessionWaitsForItsPlayCapability() {
         backend.attach(MediaSourceKey.MUSIC, "com.example.player");
         starter.startable.add("com.example.player");
         source.changed();
@@ -171,8 +171,12 @@ public class DirectColdStartTest {
         FakeSession session = new FakeSession("t1", "com.example.player")
                 .state(PlaybackState.STATE_NONE).actions(0L);
         starter.events.onSessionOffered("com.example.player", session);
-        assertEquals(Outcome.UNSUPPORTED, lastResult().outcome);
+        assertTrue(results.isEmpty());
         assertEquals(0, session.dispatched.size());
+        session.actions(PlaybackState.ACTION_PLAY).emit();
+        assertEquals(1, session.dispatched.size());
+        session.state(PlaybackState.STATE_PLAYING).emit();
+        assertEquals(Outcome.ACKNOWLEDGED, lastResult().outcome);
     }
 
     @Test public void packageWithoutAMediaServiceIsNotStartableAndIsNeverAsked() {
@@ -269,8 +273,39 @@ public class DirectColdStartTest {
         session.deadlinePlay = false;
         starter.events.onSessionOffered(AUXIO, session);
         assertTrue(session.dispatched.isEmpty());
-        assertEquals(Outcome.UNSUPPORTED, lastResult().outcome);
+        assertTrue(results.isEmpty()); // An early snapshot may still publish the capability.
+        clock.advanceTo(1000L + DirectSourceEngine.COLD_START_MS);
+        assertEquals(Outcome.FAILED, lastResult().outcome);
         assertFalse(lastResult().dispatched);
+    }
+
+    @Test public void finiteJoinExpiresWithoutNarrowingAnEarlierPlay() {
+        backend.attach(MediaSourceKey.MUSIC, AUXIO);
+        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
+        List<MediaCommandResult> joining = new ArrayList<>();
+        backend.commandUntil(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY, 1250L, joining::add);
+        clock.advanceTo(1250L);
+        assertEquals(Outcome.FAILED, joining.get(0).outcome);
+        assertTrue(results.isEmpty());
+        FakeSession session = offer("late", PlaybackState.STATE_PAUSED);
+        assertEquals(1, session.dispatched.size());
+        session.state(PlaybackState.STATE_PLAYING).emit();
+        assertEquals(Outcome.ACKNOWLEDGED, lastResult().outcome);
+        assertEquals(1, joining.size());
+    }
+
+    @Test public void finiteJoinToDispatchedPlayExpiresAsUnconfirmedNotRejected() {
+        backend.attach(MediaSourceKey.MUSIC, AUXIO);
+        FakeSession session = offer("sent", PlaybackState.STATE_PAUSED);
+        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
+        List<MediaCommandResult> joining = new ArrayList<>();
+        backend.commandUntil(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY, 1250L, joining::add);
+        clock.advanceTo(1250L);
+        assertEquals(Outcome.SENT_UNCONFIRMED, joining.get(0).outcome);
+        assertTrue(joining.get(0).dispatched);
+        assertEquals(1, session.dispatched.size());
+        session.state(PlaybackState.STATE_PLAYING).emit();
+        assertEquals(1, joining.size());
     }
 
     @Test public void bindingConsumesTheOriginalDeadlineAndDoesNotResetPlayBudget() {

@@ -7,6 +7,10 @@ proof=${3:?proof directory required}
 mkdir -p "$proof"
 [[ $(adb shell getprop ro.kernel.qemu | tr -d '\r') == 1 ]]
 [[ $(adb shell getprop ro.build.version.sdk | tr -d '\r') == 29 ]]
+if ! adb shell pm path com.cbkii.ts18mediafixture | grep -q '^package:'; then
+  echo 'BLOCKED: install the media-fixture debug APK before this API29 probe.' >&2
+  exit 2
+fi
 adb root
 adb wait-for-device
 [[ $(adb shell id -u | tr -d '\r') == 0 ]]
@@ -47,6 +51,38 @@ adb shell am instrument -w -e m2_browser 1 \
 grep -Fq 'PASS API29 M2 browser starter' "$proof/m2-browser-ipc.txt"
 grep -Fq 'PREPARE loads without Play' "$proof/m2-browser-ipc.txt"
 grep -Fq 'retry after death' "$proof/m2-browser-ipc.txt"
+adb shell am instrument -w -e m2_media3 1 \
+  com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation | \
+  tee "$proof/m2-media3-legacy-ipc.txt"
+grep -Fq 'PASS API29 real Media3-only service legacy browser' "$proof/m2-media3-legacy-ipc.txt"
+overlay_state=$(adb shell appops get com.cbkii.ts18launcher SYSTEM_ALERT_WINDOW | tr -d '\r')
+if [[ $overlay_state == 'No operations.'* ]]; then
+  previous_overlay=default
+elif [[ $overlay_state =~ SYSTEM_ALERT_WINDOW:[[:space:]](allow|ignore|deny|default|foreground) ]]; then
+  previous_overlay=${BASH_REMATCH[1]}
+else
+  echo 'BLOCKED: cannot establish prior overlay app-op.' >&2
+  exit 2
+fi
+restore_overlay_appop() {
+  local result=$?
+  trap - EXIT
+  if ! adb shell appops set com.cbkii.ts18launcher SYSTEM_ALERT_WINDOW "$previous_overlay"; then
+    echo 'Failed to restore prior overlay app-op.' >&2
+    result=1
+  fi
+  exit "$result"
+}
+trap restore_overlay_appop EXIT
+adb shell appops set com.cbkii.ts18launcher SYSTEM_ALERT_WINDOW allow
+adb shell am instrument -w -e readiness_overlay 1 \
+  com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation | \
+  tee "$proof/readiness-overlay.txt"
+if ! adb pull /sdcard/Android/data/com.cbkii.ts18launcher/files/readiness-overlay "$proof/readiness-overlay"; then
+  echo 'Overlay probe did not export its evidence directory.' >&2
+  exit 1
+fi
+grep -Fq 'PASS API29 opaque draw before cross-UID splash' "$proof/readiness-overlay.txt"
 adb shell am instrument -w -e n3_path 1 \
   com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation |
   tee "$proof/n3-path.txt"

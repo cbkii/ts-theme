@@ -49,6 +49,7 @@ public final class DirectSourceEngine {
      */
     public interface Starter {
         boolean canStart(String packageName);
+        default boolean canPreparePassive(String packageName) { return true; }
         /**
          * Begin, or join, one start attempt for the package on behalf of owner. A joined attempt
          * that is still connecting is shared; one that already produced a session is replaced.
@@ -213,6 +214,8 @@ public final class DirectSourceEngine {
                 || !pinnedToken.equals(observation.token)
                 || !packageName.equals(observation.packageName)) return;
         current = observation;
+        continueStart();
+        continuePrepare();
         if (handoverPause != null && observation.nativeState != PlaybackState.STATE_PLAYING) clearHandoverPause();
         resolvePending(observation);
         observePrepare(observation);
@@ -250,7 +253,7 @@ public final class DirectSourceEngine {
         MediaSourceState live = new MediaSourceState(key, MediaEngine.DIRECT, packageName, availability,
                 current.nativeState, current.actions,
                 current.token, current.itemId, current.title, current.subtitle, generation);
-        return pendingPrepare == null ? live : live.withStart(false, false, true);
+        return live.withStart(false, pendingStart != null, pendingPrepare != null);
     }
 
     public boolean playing(String expectedPackage) {
@@ -259,27 +262,41 @@ public final class DirectSourceEngine {
     }
 
     public void command(String expectedPackage, MediaUserAction action, MediaBackend.ResultCallback callback) {
+        commandUntil(expectedPackage, action, Long.MAX_VALUE, callback);
+    }
+
+    public void commandUntil(String expectedPackage, MediaUserAction action, long deadlineElapsedMs,
+                             MediaBackend.ResultCallback callback) {
+        if (deadlineElapsedMs <= clock.nowMs()) { deliver(callback, failed("Play window expired")); return; }
         if (!attached) { deliver(callback, failed("Direct engine is not selected")); return; }
         if (!packageName.equals(expectedPackage)) {
             // The caller is addressing a package this engine does not own. Never redirect.
             deliver(callback, failed(labels.sourceLabel() + " source changed"));
             return;
         }
+        callback = boundedCallback(callback, deadlineElapsedMs);
         // A deliberate tap supersedes passive readiness; nothing further is sent for it.
         cancelPrepare();
         MediaCommandResult unavailable = unavailableResult();
         if (unavailable != null) {
-            if (action == MediaUserAction.PLAY_PAUSE && startable()) { requestStart(callback); return; }
+            if ((action == MediaUserAction.PLAY_PAUSE || action == MediaUserAction.PLAY) && startable()) { requestStart(callback, deadlineElapsedMs); return; }
             deliver(callback, unavailable);
             return;
         }
 
-        DirectOperation operation = action == MediaUserAction.NEXT ? DirectOperation.NEXT
+        DirectOperation operation = action == MediaUserAction.PLAY ? DirectOperation.PLAY
+                : action == MediaUserAction.NEXT ? DirectOperation.NEXT
                 : action == MediaUserAction.PREVIOUS ? DirectOperation.PREVIOUS
                 : DirectOperation.resolvePlayPause(current.nativeState);
         if (operation.directional() && pendingToggle != null) {
             // A second tap before the first is confirmed joins it; it is never a second dispatch.
             if (callback != null) pendingToggle.callbacks.add(callback);
+            return;
+        }
+        if (operation == DirectOperation.PLAY && (pendingStart != null
+                || !canDispatchPlay())) {
+            requestStart(callback, deadlineElapsedMs);
+            continueStart();
             return;
         }
         long effectiveActions = current.actions;
@@ -293,11 +310,7 @@ public final class DirectSourceEngine {
         Object token = pinnedToken;
         Pending pending = new Pending(++nextOpId, token, generation, operation, itemIdentity(current));
         if (callback != null) pending.callbacks.add(callback);
-        long deadline = clock.nowMs() + PLAY_ACK_MS;
-        if (operation == DirectOperation.PLAY && !loaded(current) && !current.deadlinePlay) {
-            deliver(callback, coldUnsupported());
-            return;
-        }
+        long deadline = Math.min(deadlineElapsedMs, clock.nowMs() + PLAY_ACK_MS);
         if (!dispatch(token, operation, deadline)) {
             // The session vanished between observation and dispatch. Report it; do not retry.
             deliverAll(pending, new MediaCommandResult(MediaCommandResult.Outcome.SOURCE_LOST,
@@ -307,7 +320,8 @@ public final class DirectSourceEngine {
         if (operation.directional()) pendingToggle = pending; else pendingSkips.add(pending);
         long window = operation == DirectOperation.PLAY ? PLAY_ACK_MS
                 : operation == DirectOperation.PAUSE ? PAUSE_ACK_MS : SKIP_OBSERVE_MS;
-        pending.timer = clock.schedule(window, () -> onDeadline(pending));
+        pending.timer = clock.schedule(Math.min(window, Math.max(1L, deadlineElapsedMs - clock.nowMs())),
+                () -> onDeadline(pending));
     }
 
     /** Source switch: pause once, only when this source is observed playing. */
@@ -334,16 +348,18 @@ public final class DirectSourceEngine {
     }
 
     private boolean dispatch(Object token, DirectOperation operation, long deadline) {
-        if (operation == DirectOperation.PLAY && !loaded(current)) {
-            return current.deadlinePlay && deadline > clock.nowMs()
-                    && transport.dispatchDeadline(token, deadline);
+        if (operation == DirectOperation.PLAY && !loaded(current) && current.deadlinePlay) {
+            return deadline > clock.nowMs() && transport.dispatchDeadline(token, deadline);
         }
+        if (operation == DirectOperation.PLAY && !loaded(current) && boundedSource()) return false;
         return transport.dispatch(token, operation);
     }
 
-    private MediaCommandResult coldUnsupported() {
-        return new MediaCommandResult(MediaCommandResult.Outcome.UNSUPPORTED,
-                labels.appLabel(packageName) + " needs a loaded item · open it once", false, false);
+    private boolean boundedSource() { return "com.tw.media".equals(packageName); }
+
+    private boolean canDispatchPlay() {
+        return live() && (current.actions & DirectOperation.PLAY.supportingActions()) != 0L
+                && (!boundedSource() || loaded(current) || current.deadlinePlay);
     }
 
     private void clearHandoverPause() {
@@ -365,7 +381,7 @@ public final class DirectSourceEngine {
             clearHandoverPause();
             failAllPending(MediaCommandResult.Outcome.SOURCE_LOST,
                     labels.appLabel(packageName) + " session ended");
-            if (pendingPrepare != null && pendingPrepare.token != null) cancelPrepare();
+            if (pendingPrepare != null && (pendingPrepare.token != null || pinnedToken != null)) cancelPrepare();
         }
         pinnedToken = nextToken;
         current = session;
@@ -394,7 +410,7 @@ public final class DirectSourceEngine {
                         || availability == MediaSourceState.Availability.SOURCE_LOST);
     }
 
-    private void requestStart(MediaBackend.ResultCallback callback) {
+    private void requestStart(MediaBackend.ResultCallback callback, long deadlineElapsedMs) {
         if (pendingStart != null) {
             // Further taps join the one attempt; the source is asked once.
             if (callback != null) pendingStart.callbacks.add(callback);
@@ -402,25 +418,26 @@ public final class DirectSourceEngine {
         }
         Pending start = new Pending(++nextOpId, null, generation, DirectOperation.PLAY, "");
         if (callback != null) start.callbacks.add(callback);
-        start.deadlineElapsedMs = clock.nowMs() + COLD_START_MS;
+        start.deadlineElapsedMs = Math.min(deadlineElapsedMs, clock.nowMs() + COLD_START_MS);
         pendingStart = start;
-        start.timer = clock.schedule(COLD_START_MS, () -> {
+        start.timer = clock.schedule(Math.max(1L, start.deadlineElapsedMs - clock.nowMs()), () -> {
             if (pendingStart != start) return;
             start.timer = null;
             // Tear down this owner's claim on the stalled connection so a later tap is a fresh,
             // bounded attempt rather than a wait on the same one.
             if (starter != null) starter.abandon(key, packageName);
             endStart(MediaCommandResult.Outcome.FAILED,
-                    labels.appLabel(packageName) + " did not start · open it once");
+                    labels.appLabel(packageName) + " did not become ready in time");
         });
         publish();
-        starter.start(key, packageName);
+        if (!live() && starter != null) starter.start(key, packageName);
     }
 
     /** The awaited session is now pinned: send the one Play the driver asked for. */
     private void continueStart() {
         Pending start = pendingStart;
         if (start == null || !live()) return;
+        if (!DirectOperation.PLAY.acknowledgedBy(current.nativeState) && !canDispatchPlay()) return;
         pendingStart = null;
         if (start.timer != null) { clock.cancel(start.timer); start.timer = null; }
         if (DirectOperation.PLAY.acknowledgedBy(current.nativeState)) {
@@ -428,21 +445,11 @@ public final class DirectSourceEngine {
             deliverAll(start, new MediaCommandResult(MediaCommandResult.Outcome.ACKNOWLEDGED, "", true, false));
             return;
         }
-        long effectiveActions = current.actions;
-        if ((effectiveActions & DirectOperation.PLAY.supportingActions()) == 0L) {
-            deliverAll(start, new MediaCommandResult(MediaCommandResult.Outcome.UNSUPPORTED,
-                    labels.appLabel(packageName) + " started but does not offer Play yet", false, false));
-            return;
-        }
         long now = clock.nowMs();
         long deadline = Math.min(start.deadlineElapsedMs, now + PLAY_ACK_MS);
         long remaining = deadline - now;
         if (remaining <= 0L) {
             deliverAll(start, failed("Play window expired · tap again"));
-            return;
-        }
-        if (!loaded(current) && !current.deadlinePlay) {
-            deliverAll(start, coldUnsupported());
             return;
         }
         Pending play = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PLAY,
@@ -477,14 +484,17 @@ public final class DirectSourceEngine {
         if (availability == MediaSourceState.Availability.AMBIGUOUS_SOURCE
                 || availability == MediaSourceState.Availability.SERVICE_UNAVAILABLE) return;
         decidedPrepareEpoch = epoch;
+        // A live Radio token does not make PREPARE's tuner/focus side effects safe.
+        if ("com.navimods.radio".equals(packageName)
+                || starter != null && !starter.canPreparePassive(packageName)) return;
         if (live()) {
-            if (loaded(current) || !advertisesPrepare(current)) return;
+            if (loaded(current)) return;
             pendingPrepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");
             continuePrepare();
             publish();
             return;
         }
-        if (!startable()) return;
+        if (!startable() || starter == null || !starter.canPreparePassive(packageName)) return;
         Pending prepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");
         pendingPrepare = prepare;
         prepare.timer = clock.schedule(COLD_START_MS, () -> {
@@ -501,8 +511,17 @@ public final class DirectSourceEngine {
     private void continuePrepare() {
         Pending prepare = pendingPrepare;
         if (prepare == null || !live() || prepare.token != null) return;
+        if (loaded(current)) { endPrepare(); return; }
+        // Preserve the original timer while a newly published session initialises its actions.
+        if (!advertisesPrepare(current) || !current.itemId.isEmpty()
+                && (current.nativeState == PlaybackState.STATE_BUFFERING
+                    || current.nativeState == PlaybackState.STATE_CONNECTING)) {
+            if (prepare.timer == null) prepare.timer = clock.schedule(PREPARE_OBSERVE_MS, () -> {
+                if (pendingPrepare == prepare) endPrepare();
+            });
+            return;
+        }
         if (prepare.timer != null) { clock.cancel(prepare.timer); prepare.timer = null; }
-        if (loaded(current) || !advertisesPrepare(current)) { endPrepare(); return; }
         Pending sent = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PREPARE, "");
         pendingPrepare = sent;
         if (!transport.dispatch(pinnedToken, DirectOperation.PREPARE)) { endPrepare(); return; }
@@ -541,9 +560,9 @@ public final class DirectSourceEngine {
 
     /** A playable item is loaded: the source's own current item, not just a process or token. */
     static boolean loaded(SessionObservation observation) {
-        return observation != null && observation.nativeState != PlaybackState.STATE_NONE
-                && observation.nativeState != PlaybackState.STATE_ERROR
-                && (!observation.itemId.isEmpty() || !observation.title.isEmpty());
+        return observation != null && !observation.itemId.isEmpty()
+                && (observation.nativeState == PlaybackState.STATE_PAUSED
+                    || observation.nativeState == PlaybackState.STATE_PLAYING);
     }
 
     private static boolean advertisesPrepare(SessionObservation observation) {
@@ -557,6 +576,28 @@ public final class DirectSourceEngine {
         if (start.timer != null) { clock.cancel(start.timer); start.timer = null; }
         deliverAll(start, new MediaCommandResult(outcome, message, false, false));
         if (attached) publish();
+    }
+
+    /** A joining caller owns its deadline, without narrowing an earlier, independently owed Play. */
+    private MediaBackend.ResultCallback boundedCallback(MediaBackend.ResultCallback callback, long until) {
+        if (callback == null || until == Long.MAX_VALUE) return callback;
+        boolean[] delivered = { false };
+        Object[] timer = { null };
+        MediaBackend.ResultCallback[] relay = { null };
+        relay[0] = result -> {
+            if (delivered[0]) return;
+            delivered[0] = true;
+            if (timer[0] != null) clock.cancel(timer[0]);
+            if (clock.nowMs() >= until) {
+                boolean sent = result.dispatched || pendingToggle != null && pendingToggle.callbacks.contains(relay[0]);
+                for (Pending skip : pendingSkips) if (skip.callbacks.contains(relay[0])) sent = true;
+                deliver(callback, sent ? new MediaCommandResult(MediaCommandResult.Outcome.SENT_UNCONFIRMED,
+                        "Play window expired", false, true) : failed("Play window expired"));
+            } else deliver(callback, result);
+        };
+        timer[0] = clock.schedule(Math.max(1L, until - clock.nowMs()),
+                () -> relay[0].onResult(failed("Play window expired")));
+        return relay[0];
     }
 
     private void releaseStarter() {
@@ -620,11 +661,11 @@ public final class DirectSourceEngine {
                 return failed(app + " has several sessions · open it to choose");
             case SOURCE_LOST:
                 return new MediaCommandResult(MediaCommandResult.Outcome.SOURCE_LOST,
-                        app + " stopped · open it again", false, false);
+                        app + " playback service stopped", false, false);
             case SERVICE_UNAVAILABLE:
                 return failed("Media service not answering · try again");
             default:
-                return failed(app + " is not running · open it first");
+                return failed(app + " has no connected playback service");
         }
     }
 
