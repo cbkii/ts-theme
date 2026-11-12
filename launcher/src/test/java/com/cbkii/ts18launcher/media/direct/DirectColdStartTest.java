@@ -273,7 +273,9 @@ public class DirectColdStartTest {
         session.deadlinePlay = false;
         starter.events.onSessionOffered(AUXIO, session);
         assertTrue(session.dispatched.isEmpty());
-        assertEquals(Outcome.UNSUPPORTED, lastResult().outcome);
+        assertTrue(results.isEmpty()); // An early snapshot may still publish the capability.
+        clock.advanceTo(1000L + DirectSourceEngine.COLD_START_MS);
+        assertEquals(Outcome.FAILED, lastResult().outcome);
         assertFalse(lastResult().dispatched);
     }
 

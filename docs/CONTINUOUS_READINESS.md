@@ -2,7 +2,7 @@
 
 ## Runtime contract
 
-`StartupReadinessCoordinator` admits Maps through the existing N2 owner first, then Music, then Radio. Safe service preparation proceeds independently; Maps permission screens or unavailable Music storage do not hold other sources hostage. A boot journal classifies the transition and never stands in for a readiness receipt.
+`StartupReadinessCoordinator` admits Maps through the existing N2 owner first, then Music, then Radio. Process creation gives the not-yet-attached HOME/Maps host up to 750 ms to take first admission; HOME resume ends this grace immediately. A missing host then yields to safe media preparation. Maps permission screens or unavailable Music storage do not hold other sources hostage. A boot journal classifies the transition and never stands in for a readiness receipt.
 
 Each media source has one in-flight preparation, a 14-second observation window and at most three attempts separated by 15 seconds after failure. Observed session loss, configuration change, a new vehicle session/wake and late Music storage can rearm recovery. Screen-off cancels pending recovery. Healthy sources are observed rather than repeatedly prepared. These are active-session readiness guarantees, not a promise to keep Android processes immortal or a parked vehicle awake.
 

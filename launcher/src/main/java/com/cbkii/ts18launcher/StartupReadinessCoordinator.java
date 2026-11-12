@@ -52,6 +52,8 @@ final class StartupReadinessCoordinator {
     private final java.util.Map<MediaSourceKey, String> configured = new java.util.EnumMap<>(MediaSourceKey.class);
     private final java.util.Map<MediaSourceKey, Runnable> recovery = new java.util.EnumMap<>(MediaSourceKey.class);
     private boolean screenOff;
+    private boolean initialGraceUsed;
+    private Runnable initialAdmission;
     private MaskedSourcePreparation staging;
     private String navigationBoundary = "not observed";
 
@@ -89,6 +91,20 @@ final class StartupReadinessCoordinator {
         if ((!directPrepareTrigger(trigger) && trigger != Trigger.SESSION_LOST
                 && trigger != Trigger.READINESS_CHANGED) || screenOff
                 || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
+        // Application.onCreate precedes the Maps Activity host. Give its first frame a bounded
+        // admission grace; an unavailable host must not indefinitely block safe media readiness.
+        if (initialAdmission != null) return;
+        if (!initialGraceUsed && navigation == null
+                && (trigger == Trigger.RESTART || trigger == Trigger.BOOT)) {
+            initialGraceUsed = true;
+            initialAdmission = () -> {
+                initialAdmission = null;
+                for (MediaSourceKey key : MediaSourceKey.values())
+                    reconcileSource(key, trigger, SystemClock.elapsedRealtime());
+            };
+            main.postDelayed(initialAdmission, 750L);
+            return;
+        }
         // Every source has independent admission/recovery. A boot journal is never a success receipt.
         for (MediaSourceKey key : MediaSourceKey.values()) reconcileSource(key, trigger, now);
     }
@@ -96,7 +112,8 @@ final class StartupReadinessCoordinator {
     private static Source source(MediaSourceKey key) { return key == MediaSourceKey.MUSIC ? Source.MUSIC : Source.RADIO; }
 
     private void reconcileSource(MediaSourceKey key, Trigger trigger, long now) {
-        if (destroyed || screenOff || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
+        if (destroyed || screenOff || initialAdmission != null
+                || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
         String pkg = MediaEngineSelector.configuredPackage(context, key);
         if (pkg == null || pkg.isEmpty()) return;
         if (!pkg.equals(configured.put(key, pkg))) policy.configurationChanged(source(key));
@@ -185,11 +202,16 @@ final class StartupReadinessCoordinator {
     void onExplicitSource(String pkg) { if (staging != null && !staging.serves(pkg)) staging.cancel(); }
     void attachNavigationHook(NavigationHook hook) { navigation = hook; }
     void detachNavigationHook(NavigationHook hook) { if (navigation == hook) navigation = null; }
-    void onHomeResumed(Activity activity) { homeResumed = true; onTrigger(Trigger.HOME_RESUME); }
+    void onHomeResumed(Activity activity) {
+        homeResumed = true;
+        if (initialAdmission != null) { main.removeCallbacks(initialAdmission); initialAdmission = null; }
+        onTrigger(Trigger.HOME_RESUME);
+    }
     void onHomePaused() { homeResumed = false; }
     void onHomeFocusChanged() { }
     void onScreenOff() {
         yielded = true; screenOff = true;
+        if (initialAdmission != null) { main.removeCallbacks(initialAdmission); initialAdmission = null; }
         for (MediaSourceKey key : MediaSourceKey.values()) cancelRecovery(key);
         if (staging != null) staging.cancel();
     }
