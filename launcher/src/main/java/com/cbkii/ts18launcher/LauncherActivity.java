@@ -175,11 +175,15 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 try { reportFullyDrawn(); } catch (RuntimeException ignored) { }
             }
             // A genuinely new install (no apps chosen yet) is offered setup once, after Home is
-            // already usable. Configured or upgraded launchers are never interrupted.
+            // already usable. Configured or upgraded launchers are never interrupted, and neither
+            // is an app the driver opened during the delay: the offer is made only while Home
+            // still holds window focus, otherwise it waits for a later launch.
             if (LauncherPrefs.packageFor(this, LauncherPrefs.KEY_MUSIC).isEmpty()
                     && LauncherPrefs.packageFor(this, LauncherPrefs.KEY_RADIO).isEmpty()
                     && LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV).isEmpty()) {
-                root.postDelayed(() -> { if (!isFinishing()) SetupActivity.offerOnce(this); }, 1500L);
+                root.postDelayed(() -> {
+                    if (!isFinishing() && hasWindowFocus()) SetupActivity.offerOnce(this);
+                }, 1500L);
             }
         });
         root.getViewTreeObserver().addOnDrawListener(holder[0]);

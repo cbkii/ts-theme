@@ -30,6 +30,8 @@ class SetupFlowContract(unittest.TestCase):
         for key in ("KEY_MUSIC", "KEY_RADIO", "KEY_NAV"):
             self.assertIn(f"LauncherPrefs.packageFor(this, LauncherPrefs.{key}).isEmpty()", offer)
         self.assertIn("SetupActivity.offerOnce(this)", offer)
+        # The delayed offer must not pull Home back over an app opened in the meantime.
+        self.assertIn("if (!isFinishing() && hasWindowFocus()) SetupActivity.offerOnce(this);", offer)
 
     def test_setup_is_repeatable_and_not_exported(self):
         settings = code(SRC / "SettingsActivity.java")
