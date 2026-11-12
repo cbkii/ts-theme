@@ -173,9 +173,11 @@ public final class NavTaskBridge {
             Object raw = Class.forName("android.app.IActivityTaskManager").getMethod("getAllStackInfos").invoke(service);
             Task task = resolve(raw, pkg, user, hint);
             if (task == null) return "FAIL code=TASK_NOT_FOUND";
-            if ("verify-native".equals(a[0])) requireMap(task);
-            Task home = resolve(raw, "com.cbkii.ts18launcher", user, 0);
-            if (home != null) requireHome(home);
+            // Read-only verbs report the task as it is, exactly as the shell helper does. They do
+            // not judge HOME (a launcher Settings or drawer screen on top is legitimate) and they
+            // accept any Activity of the navigation package: the driver may be in its settings.
+            // Bootstrap and HOME state are enforced by the verbs that change something.
+            if ("verify-native".equals(a[0])) requireParkable(task);
             if ("verify-native".equals(a[0])) {
                 Rect wanted = new Rect(Integer.parseInt(a[3]), Integer.parseInt(a[4]),
                         Integer.parseInt(a[5]), Integer.parseInt(a[6]));
@@ -235,6 +237,9 @@ public final class NavTaskBridge {
         if ("return-home".equals(action) || "park-windowed".equals(action) || sourceReturn) {
             if ("park-windowed".equals(action) && task.mode != 5)
                 throw new IllegalStateException("SUSPEND_MODE_MISMATCH");
+            // Unknown geometry cannot be verified afterwards, so refuse before HOME is focused.
+            if ("park-windowed".equals(action) && task.bounds == null)
+                throw new IllegalStateException("BOUNDS_UNKNOWN");
             Rect parkedBounds = task.bounds == null ? null : new Rect(task.bounds.left, task.bounds.top,
                     task.bounds.right, task.bounds.bottom);
             int parkedStack = task.stack;
