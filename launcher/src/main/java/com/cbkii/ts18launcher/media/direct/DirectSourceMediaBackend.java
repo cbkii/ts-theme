@@ -37,6 +37,7 @@ public final class DirectSourceMediaBackend implements MediaBackend {
     private final Host host;
     private final DirectSessionRegistry registry;
     private final Map<MediaSourceKey, DirectSourceEngine> engines = new EnumMap<>(MediaSourceKey.class);
+    private final Map<MediaSourceKey, String> traced = new EnumMap<>(MediaSourceKey.class);
     private StateListener listener;
 
     /** Builds the optional cold-start path once the backend can receive its events. */
@@ -75,6 +76,7 @@ public final class DirectSourceMediaBackend implements MediaBackend {
         this.registry = new DirectSessionRegistry(source, new DirectSessionRegistry.Sink() {
             @Override public void onMembership(boolean accessGranted, List<SessionObservation> sessions) {
                 for (DirectSourceEngine engine : engines.values()) engine.onSessions(accessGranted, sessions);
+                traceStates();
             }
             @Override public void onMembershipUnknown() {
                 host.trace("membership-unknown", "");
@@ -82,6 +84,7 @@ public final class DirectSourceMediaBackend implements MediaBackend {
             }
             @Override public void onSessionChanged(SessionObservation observation) {
                 for (DirectSourceEngine engine : engines.values()) engine.onSessionChanged(observation);
+                traceStates();
             }
         });
         for (MediaSourceKey key : MediaSourceKey.values()) {
@@ -98,6 +101,7 @@ public final class DirectSourceMediaBackend implements MediaBackend {
                 return sent;
             }}, clock, labelsFor(sourceLabel), starter);
             engine.setListener(state -> {
+                traceStates();
                 StateListener current = listener;
                 if (current != null) current.onMediaSourceStateChanged(state);
             });
@@ -106,6 +110,17 @@ public final class DirectSourceMediaBackend implements MediaBackend {
     }
 
     private DirectSessionRegistry registry() { return registry; }
+
+    /** Records each source's Play-relevant state when it changes; see DirectSourceEngine.diagnostic. */
+    private void traceStates() {
+        for (Map.Entry<MediaSourceKey, DirectSourceEngine> entry : engines.entrySet()) {
+            if (!entry.getValue().attached()) { traced.remove(entry.getKey()); continue; }
+            String diagnostic = entry.getValue().diagnostic();
+            if (!diagnostic.equals(traced.put(entry.getKey(), diagnostic))) {
+                host.trace("state", entry.getKey() + " " + diagnostic);
+            }
+        }
+    }
 
     private DirectSourceEngine.Labels labelsFor(String sourceLabel) {
         return new DirectSourceEngine.Labels() {

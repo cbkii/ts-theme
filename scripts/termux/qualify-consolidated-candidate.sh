@@ -3,7 +3,7 @@
 umask 077
 label=${1:-smoke}
 case "$label" in smoke|restart|reboot|coldboot|acc-wake) ;; *) printf 'Use smoke, restart, reboot, coldboot or acc-wake\n'; exit 2 ;; esac
-for required in timeout mktemp tar date head wc sha256sum mkdir mv rm; do
+for required in timeout mktemp tar date head wc sha256sum mkdir mv rm env grep sed; do
     command -v "$required" >/dev/null 2>&1 || { printf 'BLOCKED required command: %s\n' "$required"; exit 2; }
 done
 work=$(mktemp -d "${TMPDIR:-/data/data/com.termux/files/usr/tmp}/ts18-qualified.XXXXXXXX") || exit 2
@@ -31,22 +31,46 @@ capture() {
     elif [ "$result" -eq 0 ]; then outcome=PASS; else outcome=WARN; fi
     printf '%s\t%s\t%s\n' "$name" "$outcome" "$result" >> "$status"
 }
-capture identity id
-capture selinux /system/bin/cat /proc/self/attr/current
-capture boot /system/bin/cat /proc/sys/kernel/random/boot_id
-capture uptime /system/bin/cat /proc/uptime
-capture home /system/bin/cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
-capture launcher /system/bin/dumpsys package com.cbkii.ts18launcher
-capture auxio /system/bin/dumpsys package com.tw.media
-capture radio /system/bin/dumpsys package com.navimods.radio
-capture media /system/bin/dumpsys media_session
-capture timeline /system/bin/logcat -d -t 5000 -v threadtime TS18Startup:I TS18Perf:I TS18Nav:I TS18Media:I '*:S'
+# Platform tools run without the Termux preload/library path; the caller's environment is untouched.
+plain=(env -u LD_PRELOAD -u LD_LIBRARY_PATH PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin)
 su_bin="${PREFIX:-/data/data/com.termux/files/usr}/bin/su"
-if [ -x "$su_bin" ] && [ "$(timeout -k 1 5 "$su_bin" -c '/system/bin/id -u' 2>/dev/null)" = 0 ]; then
+root=0
+if [ -x "$su_bin" ] && [ "$(timeout -k 1 5 "$su_bin" -c '/system/bin/id -u' 2>/dev/null)" = 0 ]; then root=1; fi
+# Framework dumps and other applications' log lines need DUMP/READ_LOGS, which the Termux UID
+# lacks. They are taken through root when it is available. Without root, a refused capture is
+# BLOCKED (a collector limit), never a PASS and never evidence about the application.
+framework() {
+    local name=$1 command=$2
+    if [ "$root" -eq 1 ]; then
+        capture "$name" "$su_bin" -c "export PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin; $command"
+        return
+    fi
+    capture "$name" "${plain[@]}" sh -c "$command"
+    if grep -q 'Permission Denial' "$work/$name.txt" 2>/dev/null; then
+        sed -i '$d' "$status"
+        printf '%s\tBLOCKED\troot-unavailable\n' "$name" >> "$status"
+    fi
+}
+capture identity id
+capture selinux "${plain[@]}" cat /proc/self/attr/current
+capture boot "${plain[@]}" cat /proc/sys/kernel/random/boot_id
+capture uptime "${plain[@]}" cat /proc/uptime
+capture home "${plain[@]}" cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
+# Installed bytes, for comparison with the hand-off hashes. Reads only.
+framework apk-identity 'for p in com.cbkii.ts18launcher com.tw.media; do for f in $(pm path "$p" | sed "s/^package://"); do sha256sum "$f"; done; done'
+framework launcher 'dumpsys package com.cbkii.ts18launcher'
+framework auxio 'dumpsys package com.tw.media'
+framework radio 'dumpsys package com.navimods.radio'
+framework media 'dumpsys media_session'
+framework listeners 'settings get secure enabled_notification_listeners'
+if [ "$root" -eq 1 ]; then
+    capture timeline "$su_bin" -c "export PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin; logcat -d -t 5000 -v threadtime TS18Startup:I TS18Perf:I TS18Nav:I TS18NavPerm:I TS18Media:I '*:S'"
     capture root-context "$su_bin" -c 'export PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin; id; cat /proc/self/attr/current; readlink /proc/self/ns/mnt'
     capture tasks "$su_bin" -c 'export PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin; dumpsys activity activities'
     capture windows "$su_bin" -c 'export PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin; dumpsys window displays'
 else
+    # An unprivileged logcat shows only this shell's own lines, which would read as an empty timeline.
+    printf 'timeline\tBLOCKED\troot-unavailable\n' >> "$status"
     printf 'root-only-sections\tBLOCKED\troot-unavailable\n' >> "$status"
 fi
 printf 'scenario=%s\nutc=%s\nfeature_results=NOT_RUN_by_collector\n' "$label" "$stamp" > "$work/CAMPAIGN.txt"

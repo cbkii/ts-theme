@@ -35,13 +35,16 @@ public class DirectStartContractTest {
     private ManualClock clock;
     private DirectSourceMediaBackend backend;
     private final List<MediaCommandResult> results = new ArrayList<>();
+    private final List<String> states = new ArrayList<>();
 
     @Before public void setUp() {
         source = new FakeSource();
         clock = new ManualClock();
         backend = new DirectSourceMediaBackend(source, clock, new DirectSourceMediaBackend.Host() {
             @Override public String appLabel(String packageName) { return packageName; }
-            @Override public void trace(String event, String detail) { }
+            @Override public void trace(String event, String detail) {
+                if ("state".equals(event)) states.add(detail);
+            }
         });
     }
 
@@ -101,5 +104,21 @@ public class DirectStartContractTest {
         backend.command(MediaSourceKey.RADIO, RADIO, MediaUserAction.PLAY_PAUSE, results::add);
 
         assertEquals(Collections.singletonList(DirectOperation.PAUSE), radio.dispatched);
+    }
+
+    @Test public void stateTraceRecordsWhatAPlayTapWouldMeetAndIgnoresMetadataChurn() {
+        FakeSession player = unloaded("m1", PLAYER);
+        backend.attach(MediaSourceKey.MUSIC, PLAYER);
+        assertEquals(Collections.singletonList(
+                "MUSIC avail=LIVE state=2 loaded=0 deadline=0 owned=0 startable=0 starting=0 preparing=0"), states);
+
+        player.deadlinePlay = true;
+        player.emit();
+        player.item("a", "First", "").emit();
+        player.item("b", "Second", "").emit();
+
+        assertEquals(3, states.size());
+        assertTrue(states.get(1).contains("loaded=0 deadline=1"));
+        assertTrue(states.get(2).contains("loaded=1 deadline=1"));
     }
 }
