@@ -24,6 +24,7 @@ final class ReadinessOverlayIpcProbe {
         boolean[] fixtureStarted = { false };
         try {
             test.runOnMainSync(() -> {
+                check(StartupMaskFocus.activeTitle.isEmpty(), "production mask is active; probe cannot take ownership");
                 FrameLayout root = home.findViewById(android.R.id.content);
                 int[] origin = new int[2]; root.getLocationOnScreen(origin);
                 area[0] = origin[0]; area[1] = origin[1]; area[2] = root.getWidth(); area[3] = root.getHeight();
