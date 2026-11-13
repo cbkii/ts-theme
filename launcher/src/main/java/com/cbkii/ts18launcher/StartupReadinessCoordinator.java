@@ -26,6 +26,8 @@ final class StartupReadinessCoordinator {
         default void cancelAutomaticColdStart() { }
         default void finishLoaderPresentation() { }
         default void yieldForMediaPreparation() { cancelAutomaticColdStart(); }
+        /** Masked media staging moved task focus/z-order: re-verify and re-present the map. */
+        default void restorePresentationAfterStaging() { }
     }
     interface LoaderUi {
         void render(String status, boolean homeVisible);
@@ -84,6 +86,10 @@ final class StartupReadinessCoordinator {
             }
         }
         if (waking) automaticMusicAttempted = false;
+        // Evidence that a refused source bind may now succeed. Never a launch on its own.
+        if (waking || trigger == Trigger.USER_UNLOCKED || trigger == Trigger.STORAGE_MOUNT
+                || trigger == Trigger.ACC_ON || trigger == Trigger.BOOT)
+            Ts18LauncherApplication.mediaFacade(context).prerequisitesChanged();
         if (!policy.acceptTrigger(trigger, now) && !waking) return;
         if (trigger == Trigger.HOME_RESUME) {
             journal.edit().remove("pending_boot_v1").apply();
@@ -225,6 +231,8 @@ final class StartupReadinessCoordinator {
         MaskedSourcePreparation transaction = new MaskedSourcePreparation(home, loaderUi, navigation,
                 () -> staging = null);
         staging = transaction;
+        // Automatic recovery never takes focus from a driver who is using the map right now.
+        transaction.automatic();
         transaction.begin(state.packageName, SystemClock.elapsedRealtime() + 12000L, ready -> {
             if (destroyed) return;
             long now = SystemClock.elapsedRealtime();

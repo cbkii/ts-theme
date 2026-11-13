@@ -179,6 +179,23 @@ public final class MediaFeatureFacade {
         command(key, packageName, action, false, Long.MAX_VALUE, callback);
     }
 
+    /**
+     * One driver tap with its single tap-anchored budget. Only the Direct engine honours finite
+     * budgets; a Legacy source receives the unbounded call it always did.
+     */
+    public void commandUntil(MediaSourceKey key, String packageName, MediaUserAction action,
+                             long deadlineElapsedMs, MediaBackend.ResultCallback callback) {
+        reconcile();
+        command(key, packageName, action, false,
+                engine(key) == MediaEngine.DIRECT ? deadlineElapsedMs : Long.MAX_VALUE, callback);
+    }
+
+    /** See MediaBackend.prerequisitesChanged; forwarded to the engine serving each source. */
+    public void prerequisitesChanged() {
+        reconcile();
+        if (direct != null) direct.prerequisitesChanged();
+    }
+
     /** Continue the original Play after Activity staging; never toggle an auto-resumed source. */
     public void resumePreparedSource(MediaSourceKey key, String packageName,
                                      MediaBackend.ResultCallback callback) {

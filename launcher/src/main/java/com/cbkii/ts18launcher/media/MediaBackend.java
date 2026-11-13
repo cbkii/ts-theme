@@ -62,6 +62,13 @@ public interface MediaBackend {
 
     void setStateListener(StateListener listener);
 
+    /**
+     * Something that can change whether a previously refused source start would now succeed has
+     * happened (user unlock, storage mount, wake, the source package changed). Engines without
+     * a start path ignore it.
+     */
+    default void prerequisitesChanged() { }
+
     /** Re-read live state now (for example when HOME returns). Engines without a pull path ignore it. */
     default void refresh() { }
 }

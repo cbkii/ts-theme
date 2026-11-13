@@ -36,6 +36,16 @@ public final class MediaCommandResult {
         return outcome == Outcome.ACKNOWLEDGED || outcome == Outcome.SENT_UNCONFIRMED;
     }
 
+    /**
+     * A Play was sent but the source never reported playing within its window. Settled without a
+     * launcher error, yet the driver must be told rather than left in silence. A Play superseded
+     * by the driver's own later intent (direction change, source switch) is not an expiry.
+     */
+    public boolean silentPlayExpiry() {
+        return outcome == Outcome.SENT_UNCONFIRMED && dispatched && !playingObserved
+                && (message.isEmpty() || "Play window expired".equals(message));
+    }
+
     @Override public String toString() {
         return outcome + (message.isEmpty() ? "" : "(" + message + ")")
                 + " playing=" + playingObserved + " dispatched=" + dispatched;

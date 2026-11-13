@@ -31,6 +31,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         ProcessMediaSessionMonitor.Observer {
     private static final int MAX_QUICK_SLOTS = 6;
     private static final long MEDIA_STATUS_MS = 1800L;
+    /** The single budget one Music/Radio tap may spend across every start method. */
+    static final long TAP_BUDGET_MS = 22000L;
+    private final DirectMetadataRetention musicRetention = new DirectMetadataRetention();
+    private final DirectMetadataRetention radioRetention = new DirectMetadataRetention();
+    private final Runnable retentionExpiry = this::applyEffectiveMediaState;
     private static final long MEDIA_READY_RECONCILE_DELAY_MS = 250L;
 
     private FrameLayout root;
@@ -124,6 +129,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             @Override public void yieldForMediaPreparation() { navigationWindowController.yieldForMediaPreparation(); }
             @Override public void deferAutomaticPresentation(boolean defer) {
                 navigationWindowController.deferAutomaticStartupPresentation(defer);
+            }
+            @Override public void restorePresentationAfterStaging() {
+                navigationWindowController.restorePresentationAfterStaging();
             }
         };
         StartupReadinessCoordinator.get(this).attachNavigationHook(startupHook);
@@ -284,6 +292,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         AppCatalog.get(this).unsubscribe(catalogChanged);
         appearanceController.stop();
         mediaRefreshHandler.removeCallbacks(mediaReadyReconcile);
+        mediaRefreshHandler.removeCallbacks(retentionExpiry);
         // A masked source transaction temporarily stops HOME but still owns its original Play.
         boolean maskedHandoff = readinessLoader != null && readinessLoader.ownsMask();
         if (!maskedHandoff) { mediaStatusGeneration++; mediaStatusActive = false; }
@@ -541,7 +550,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         String appLabel = AppResolver.labelFor(this, packageName, label);
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
                 ? "Preparing " + label + "…" : label, appLabel);
-        long deadline = android.os.SystemClock.elapsedRealtime() + 22000L;
+        // One tap-anchored budget for every method this tap may use (bind, Play, masked staging).
+        long deadline = android.os.SystemClock.elapsedRealtime() + TAP_BUDGET_MS;
         MediaSourceState state = mediaFacade().state(key);
         // A prior failed bind is evidence to change method, not spend another first tap on
         // the same rejected cold path. A healthy/live session is always controlled directly.
@@ -556,6 +566,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                                        long deadline, boolean staged) {
         // One entry point for every engine. The legacy engine receives exactly the call it always
         // did (same shared owner, label, package and command); only the routing is new.
+        boolean wantedPlay = command == MediaListenerService.Command.PLAY_PAUSE
+                && !mediaFacade().playing(key, packageName);
         com.cbkii.ts18launcher.media.MediaBackend.ResultCallback completion = result -> {
             if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
             ProcessMediaSessionMonitor.refresh(this);
@@ -563,6 +575,10 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             if (result.settledWithoutError()) {
                 mediaStatusActive = false;
                 updateLabels();
+                // A sent Play that never produced playback must not end in silence.
+                if (wantedPlay && result.silentPlayExpiry())
+                    showMediaCommandMessage(AppResolver.labelFor(this, packageName, label)
+                            + " didn't start in time · tap Play again");
             } else {
                 if (!staged && !result.dispatched && command == MediaListenerService.Command.PLAY_PAUSE
                         && result.outcome != com.cbkii.ts18launcher.media.MediaCommandResult.Outcome.UNSUPPORTED
@@ -574,7 +590,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             }
         };
         if (staged) mediaFacade().resumePreparedSource(key, packageName, deadline, completion);
-        else mediaFacade().command(key, packageName, LegacyMediaBackend.userAction(command), completion);
+        else mediaFacade().commandUntil(key, packageName, LegacyMediaBackend.userAction(command), deadline, completion);
     }
 
     private boolean prepareSourceForCommand(MediaSourceKey key, String label, String packageName,
@@ -598,17 +614,19 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (command == MediaListenerService.Command.PLAY_PAUSE)
             mediaSelection.reconcileAfterFailedSwitch(radioSnapshot.playing, genericSnapshot.playing);
         MediaEventTrace.record("command", "failed", packageName + " · " + message);
-        if (message != null && !message.isEmpty()) {
-            if (mediaCommandToast != null) mediaCommandToast.cancel();
-            mediaCommandToast = android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT);
-            mediaCommandToast.show();
-        }
+        if (message != null && !message.isEmpty()) showMediaCommandMessage(message);
         mediaRefreshHandler.postDelayed(() -> {
             if (generation != mediaStatusGeneration) return;
             mediaStatusActive = false;
             directFailureText = "";
             updateLabels();
         }, MEDIA_STATUS_MS);
+    }
+
+    private void showMediaCommandMessage(String message) {
+        if (mediaCommandToast != null) mediaCommandToast.cancel();
+        mediaCommandToast = android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT);
+        mediaCommandToast.show();
     }
 
     private void buildDate() {
@@ -794,6 +812,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     ? R.string.media_source_radio : R.string.media_source_music);
             if (!state.live()) {
                 String reason = DirectMediaPresentation.absentText(state);
+                boolean retained = retainingText(key);
                 // Startable shows Play, an attempt in progress shows connecting, and only a source
                 // that cannot be started from here shows unavailable.
                 int icon = state.starting ? R.drawable.ic_media_connecting
@@ -801,7 +820,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 button.setTag(icon);
                 button.setImageResource(icon);
                 button.setContentDescription(sourceName + ". " + reason);
-                if (key == displayedKey) {
+                if (key == displayedKey && !retained) {
                     status = state.packageName.isEmpty() ? sourceName
                             : AppResolver.labelFor(this, state.packageName, sourceName);
                     statusDetail = reason;
@@ -913,12 +932,20 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             boolean radioDirect = facade.engine(MediaSourceKey.RADIO) == MediaEngine.DIRECT;
             // Each source is rendered only from the engine selected for it; the other engine's
             // observation of that source is discarded here and never merged.
+            long now = android.os.SystemClock.elapsedRealtime();
+            MediaSourceState musicShown = musicDirect
+                    ? musicRetention.present(facade.state(MediaSourceKey.MUSIC), now) : null;
+            MediaSourceState radioShown = radioDirect
+                    ? radioRetention.present(facade.state(MediaSourceKey.RADIO), now) : null;
+            if (!musicDirect) musicRetention.clear();
+            if (!radioDirect) radioRetention.clear();
+            scheduleRetentionExpiry(now);
             genericSnapshot = musicDirect
-                    ? DirectMediaPresentation.snapshot(facade.state(MediaSourceKey.MUSIC))
+                    ? DirectMediaPresentation.snapshot(musicShown)
                     : mergeSessionSnapshot(
                     processGenericSnapshot, listenerGenericSnapshot, processSnapshotAuthoritative);
             radioSnapshot = radioDirect
-                    ? DirectMediaPresentation.snapshot(facade.state(MediaSourceKey.RADIO))
+                    ? DirectMediaPresentation.snapshot(radioShown)
                     : mergeSessionSnapshot(
                     processRadioSnapshot, listenerRadioSnapshot, processSnapshotAuthoritative);
             if ((musicDirect || processSnapshotAuthoritative) && (radioDirect || processSnapshotAuthoritative))
@@ -927,6 +954,19 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                                 || MediaCommandPolicy.usesPauseAction(genericSnapshot.state));
             updateLabels();
         });
+    }
+
+    private void scheduleRetentionExpiry(long now) {
+        mediaRefreshHandler.removeCallbacks(retentionExpiry);
+        long music = musicRetention.remainingMs(now), radio = radioRetention.remainingMs(now);
+        long next = music < 0L ? radio : radio < 0L ? music : Math.min(music, radio);
+        if (next >= 0L) mediaRefreshHandler.postDelayed(retentionExpiry, next + 1L);
+    }
+
+    /** A source is inside its bounded reconnect gap: keep its text, suppress the absence status. */
+    private boolean retainingText(MediaSourceKey key) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        return (key == MediaSourceKey.RADIO ? radioRetention : musicRetention).remainingMs(now) > 0L;
     }
 
     private static MediaListenerService.Snapshot normaliseSnapshot(MediaListenerService.Snapshot value) {

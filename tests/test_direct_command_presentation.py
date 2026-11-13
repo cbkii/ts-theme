@@ -28,7 +28,7 @@ public class Harness {
 MediaFeatureFacade facade=new MediaFeatureFacade();MediaFeatureFacade mediaFacade(){return facade;}
 MediaSelection mediaSelection=new MediaSelection();ImageButton radioPlayPause=new ImageButton(),playPause=new ImageButton(),radioPrevious=new ImageButton(),mediaPrevious=new ImageButton(),radioNext=new ImageButton(),mediaNext=new ImageButton();
 MediaSourceKey directFailureKey=MediaSourceKey.MUSIC;String directFailureText="Previous command refused";
-Metadata mediaText=new Metadata();String getString(int id){return "Music";}
+Metadata mediaText=new Metadata();String getString(int id){return "Music";}boolean retainingText(MediaSourceKey key){return false;}
 ''' + method(activity, 'private void applyDirectSourcePresentation()') + '''
 static void check(boolean b){if(!b)throw new AssertionError();}
 public static void main(String[] args){var h=new Harness();

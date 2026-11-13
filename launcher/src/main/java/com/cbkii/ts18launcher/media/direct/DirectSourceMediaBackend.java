@@ -68,6 +68,9 @@ public final class DirectSourceMediaBackend implements MediaBackend {
                         host.trace("start-withdrawn", packageName);
                         registry().withdraw(token);
                     }
+                    @Override public void onStartDiagnostic(String packageName, String detail) {
+                        host.trace("start-diagnostic", packageName + " " + detail);
+                    }
                     @Override public void onStartFailed(String packageName, String reason) {
                         host.trace("start-failed", packageName + " " + reason);
                         for (DirectSourceEngine engine : engines.values()) engine.onStartFailed(packageName, reason);
@@ -185,6 +188,12 @@ public final class DirectSourceMediaBackend implements MediaBackend {
     @Override public void afterActivityPreparation(MediaSourceKey key, String packageName) {
         DirectSourceEngine engine = engines.get(key);
         if (engine.attached() && engine.packageName().equals(packageName)) engine.reconnectPrepared();
+    }
+
+    @Override public void prerequisitesChanged() {
+        host.trace("prerequisites-changed", "");
+        for (DirectSourceEngine engine : engines.values()) engine.onPrerequisitesChanged();
+        traceStates();
     }
 
     @Override public void setStateListener(StateListener listener) { this.listener = listener; }

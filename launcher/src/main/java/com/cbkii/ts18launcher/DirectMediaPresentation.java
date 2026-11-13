@@ -39,6 +39,9 @@ final class DirectMediaPresentation {
         if (state == null) return "";
         if (state.starting) return "Starting…";
         if (state.preparing) return "Getting ready…";
+        // A failed bind is not readiness: say so, while a fresh explicit attempt stays possible.
+        if (state.availability == MediaSourceState.Availability.CONNECTION_FAILED)
+            return "Not responding · tap Play to retry";
         if (state.startable) return "Press Play to start";
         return unavailableText(state.availability);
     }

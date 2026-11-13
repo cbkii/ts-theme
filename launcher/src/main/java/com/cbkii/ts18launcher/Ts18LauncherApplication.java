@@ -131,6 +131,21 @@ public final class Ts18LauncherApplication extends Application
         }
     };
 
+    /** A configured media package was installed, replaced or re-enabled: a refused bind may now succeed. */
+    private final BroadcastReceiver mediaPackageReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            String changed = intent == null || intent.getData() == null ? "" : intent.getData().getSchemeSpecificPart();
+            if (changed == null || changed.isEmpty()) return;
+            for (com.cbkii.ts18launcher.media.MediaSourceKey key : com.cbkii.ts18launcher.media.MediaSourceKey.values()) {
+                if (changed.equals(MediaEngineSelector.configuredPackage(Ts18LauncherApplication.this, key))) {
+                    MediaEventTrace.record("media", "source-package-changed", changed);
+                    mediaFacade(Ts18LauncherApplication.this).prerequisitesChanged();
+                    return;
+                }
+            }
+        }
+    };
+
     private String catalogLocales = "";
 
     @Override public void onCreate() {
@@ -159,6 +174,11 @@ public final class Ts18LauncherApplication extends Application
         wake.addAction(Intent.ACTION_USER_PRESENT);
         wake.addAction(Intent.ACTION_USER_UNLOCKED);
         registerReceiver(wakeReceiver, wake);
+        IntentFilter packages = new IntentFilter(Intent.ACTION_PACKAGE_REPLACED);
+        packages.addAction(Intent.ACTION_PACKAGE_ADDED);
+        packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        packages.addDataScheme("package");
+        registerReceiver(mediaPackageReceiver, packages);
         MediaEventTrace.record("process", "created");
         MediaEventTrace.record("startup", "profile", TestingProfiles.summary(this));
         // Process (re)creation: classify against the persisted boot counter and reconcile.

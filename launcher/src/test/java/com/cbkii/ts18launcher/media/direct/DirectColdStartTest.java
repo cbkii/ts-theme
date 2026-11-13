@@ -343,13 +343,14 @@ public class DirectColdStartTest {
         assertEquals(1, joining.size());
     }
 
+    // A later deliberate tap is now a cancel (see DirectCancelAndBoundedPlayTest); the budget
+    // property is asserted here without one.
     @Test public void bindingConsumesTheOriginalDeadlineAndDoesNotResetPlayBudget() {
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
         clock.advanceTo(1000L + DirectSourceEngine.COLD_START_MS - 100L);
         FakeSession session = offer("bounded", PlaybackState.STATE_PAUSED);
         assertEquals(1000L + DirectSourceEngine.COLD_START_MS, session.dispatchedDeadline);
-        tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);
         assertEquals(1, session.dispatched.size());
         clock.advanceTo(1000L + DirectSourceEngine.COLD_START_MS - 1L);
         assertTrue(results.isEmpty());

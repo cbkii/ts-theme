@@ -37,7 +37,7 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
             "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         method = launcher.split("private void dispatchSourceCommand(", 1)[1].split(
             "private void settleSourceCommandFailure", 1)[0]
-        self.assertIn("mediaFacade().command(key, packageName, LegacyMediaBackend.userAction(command)", method)
+        self.assertIn("mediaFacade().commandUntil(key, packageName, LegacyMediaBackend.userAction(command), deadline", method)
         self.assertIn("if (result.settledWithoutError())", method)
         self.assertIn('"background-only-command-failed"', method)
         self.assertIn("settleSourceCommandFailure", method)

@@ -96,7 +96,7 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
                 });
             });
         }
-        if (!ready) throw new IllegalStateException("MEMBERSHIP_READ_PENDING");
+        if (!ready) throw new IllegalStateException(DirectSessionRegistry.MEMBERSHIP_READ_PENDING);
         if (readFailure != null) throw readFailure;
         return new ArrayList<>(snapshot);
     }

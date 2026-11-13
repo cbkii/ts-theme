@@ -67,6 +67,13 @@ public final class DirectSourceEngine {
     public static final long SKIP_OBSERVE_MS = 2000L;
     /** After PREPARE is sent, how long the source has to show a loaded item. */
     public static final long PREPARE_OBSERVE_MS = 5000L;
+    /** Primary taps closer than this are one physical press (bounce), not a new intent. */
+    public static final long REPEAT_TAP_MS = 400L;
+    /**
+     * After the source refused a bind, the same bind is not repeated passively, and only once
+     * explicitly, until a prerequisite changes (unlock, storage, wake, package) or this long passes.
+     */
+    public static final long REFUSED_RETRY_MS = 30000L;
 
     private static final class Pending {
         final long opId;
@@ -74,6 +81,7 @@ public final class DirectSourceEngine {
         final long generation;
         final DirectOperation operation;
         final String itemAtDispatch;
+        long createdMs;
         final List<MediaBackend.ResultCallback> callbacks = new ArrayList<>();
         Object timer;
         long deadlineElapsedMs;
@@ -108,6 +116,12 @@ public final class DirectSourceEngine {
     /** Whether the configured package publishes a startable media service; read on membership. */
     private boolean startCapable;
     private boolean connectionFailed;
+    /** The last failure was a refusal (not a timeout): repeating the same bind needs new evidence. */
+    private boolean refused;
+    private long refusedAtMs;
+    private long refusedPrerequisiteEpoch;
+    private int explicitRetriesSinceRefusal;
+    private long prerequisiteEpoch;
     private final List<Pending> pendingSkips = new ArrayList<>();
     /** Passive readiness in progress: token null while binding, the pinned token once sent. */
     private Pending pendingPrepare;
@@ -151,6 +165,8 @@ public final class DirectSourceEngine {
         pinnedToken = null; current = null; liveThisEpoch = false; published = null;
         startCapable = false;
         connectionFailed = false;
+        refused = false;
+        explicitRetriesSinceRefusal = 0;
         availability = next.isEmpty() ? MediaSourceState.Availability.UNCONFIGURED
                 : MediaSourceState.Availability.NO_SESSION;
     }
@@ -281,9 +297,24 @@ public final class DirectSourceEngine {
         callback = boundedCallback(callback, deadlineElapsedMs);
         // A deliberate tap supersedes passive readiness; nothing further is sent for it.
         cancelPrepare();
+        // A deliberate second primary tap while a cold Play is still owed is a cancel, not a join.
+        if (action == MediaUserAction.PLAY_PAUSE && pendingStart != null
+                && clock.nowMs() - pendingStart.createdMs > REPEAT_TAP_MS) {
+            endStart(MediaCommandResult.Outcome.FAILED, "Cancelled by a new tap");
+            deliver(callback, new MediaCommandResult(MediaCommandResult.Outcome.ACKNOWLEDGED, "", false, false));
+            return;
+        }
         MediaCommandResult unavailable = unavailableResult();
         if (unavailable != null) {
-            if ((action == MediaUserAction.PLAY_PAUSE || action == MediaUserAction.PLAY) && startable()) { requestStart(callback, deadlineElapsedMs); return; }
+            if ((action == MediaUserAction.PLAY_PAUSE || action == MediaUserAction.PLAY) && startable()) {
+                if (pendingStart == null && !bindRetryAdmitted(true)) {
+                    deliver(callback, failed(labels.appLabel(packageName)
+                            + " refused the media connection again · it will be retried after unlock, storage or wake"));
+                    return;
+                }
+                requestStart(callback, deadlineElapsedMs);
+                return;
+            }
             deliver(callback, unavailable);
             return;
         }
@@ -291,6 +322,10 @@ public final class DirectSourceEngine {
         DirectOperation operation = action == MediaUserAction.PLAY ? DirectOperation.PLAY
                 : action == MediaUserAction.NEXT ? DirectOperation.NEXT
                 : action == MediaUserAction.PREVIOUS ? DirectOperation.PREVIOUS
+                : pendingToggle != null && pendingToggle.operation == DirectOperation.PLAY
+                        && clock.nowMs() - pendingToggle.createdMs > REPEAT_TAP_MS
+                    // The owed Play has not been observed yet; the driver's intent is now stop.
+                    ? DirectOperation.PAUSE
                 : DirectOperation.resolvePlayPause(current.nativeState);
         if (operation.directional() && pendingToggle != null) {
             // Repeated requests for the same direction join the one dispatch. An opposite
@@ -318,6 +353,7 @@ public final class DirectSourceEngine {
 
         Object token = pinnedToken;
         Pending pending = new Pending(++nextOpId, token, generation, operation, itemIdentity(current));
+        pending.createdMs = clock.nowMs();
         if (callback != null) pending.callbacks.add(callback);
         long deadline = Math.min(deadlineElapsedMs, clock.nowMs() + PLAY_ACK_MS);
         if (!dispatch(token, operation, deadline)) {
@@ -357,7 +393,9 @@ public final class DirectSourceEngine {
     }
 
     private boolean dispatch(Object token, DirectOperation operation, long deadline) {
-        if (operation == DirectOperation.PLAY && !loaded(current) && current.deadlinePlay) {
+        // A source that advertises the bounded protocol receives every launcher Play through it,
+        // loaded or not, so no launcher Play can ever start audio after its window.
+        if (operation == DirectOperation.PLAY && current.deadlinePlay) {
             return deadline > clock.nowMs() && transport.dispatchDeadline(token, deadline);
         }
         if (operation == DirectOperation.PLAY && !loaded(current) && boundedSource()) return false;
@@ -397,6 +435,7 @@ public final class DirectSourceEngine {
         availability = next;
         if (session != null) {
             connectionFailed = false;
+            refused = false;
             liveThisEpoch = true;
             resolvePending(session);
             continueStart();
@@ -408,6 +447,37 @@ public final class DirectSourceEngine {
     /** The source's own service could not publish a session. Ends the waiting Play truthfully. */
     public void onStartFailed(String failedPackage, String reason) {
         if (!attached || !packageName.equals(failedPackage) || live()) return;
+        startFailed(reason, true);
+    }
+
+    /**
+     * Something that can make a refused bind succeed has changed (user unlock, storage mount,
+     * wake, package change). Re-read start capability and admit one fresh bind.
+     */
+    public void onPrerequisitesChanged() {
+        if (!attached || packageName.isEmpty()) return;
+        prerequisiteEpoch++;
+        explicitRetriesSinceRefusal = 0;
+        startCapable = starter != null && starter.canStart(packageName);
+        publish();
+    }
+
+    private boolean bindRetryAdmitted(boolean explicit) {
+        if (!refused || availability != MediaSourceState.Availability.CONNECTION_FAILED) return true;
+        if (prerequisiteEpoch != refusedPrerequisiteEpoch
+                || clock.nowMs() - refusedAtMs >= REFUSED_RETRY_MS) return true;
+        if (!explicit || explicitRetriesSinceRefusal > 0) return false;
+        explicitRetriesSinceRefusal++;
+        return true;
+    }
+
+    private void startFailed(String reason, boolean refusal) {
+        if (refusal) {
+            if (!refused || prerequisiteEpoch != refusedPrerequisiteEpoch) explicitRetriesSinceRefusal = 0;
+            refused = true;
+            refusedAtMs = clock.nowMs();
+            refusedPrerequisiteEpoch = prerequisiteEpoch;
+        } else refused = false;
         connectionFailed = true;
         cancelPrepare();
         availability = MediaSourceState.Availability.CONNECTION_FAILED;
@@ -433,6 +503,7 @@ public final class DirectSourceEngine {
             return;
         }
         Pending start = new Pending(++nextOpId, null, generation, DirectOperation.PLAY, "");
+        start.createdMs = clock.nowMs();
         if (callback != null) start.callbacks.add(callback);
         start.deadlineElapsedMs = Math.min(deadlineElapsedMs, clock.nowMs() + COLD_START_MS);
         pendingStart = start;
@@ -442,7 +513,7 @@ public final class DirectSourceEngine {
             // Tear down this owner's claim on the stalled connection so a later tap is a fresh,
             // bounded attempt rather than a wait on the same one.
             if (starter != null) starter.abandon(key, packageName);
-            if (!live()) onStartFailed(packageName, "media service did not answer in time");
+            if (!live()) startFailed("media service did not answer in time", false);
             else endStart(MediaCommandResult.Outcome.FAILED,
                     labels.appLabel(packageName) + " did not become ready in time");
         });
@@ -471,6 +542,7 @@ public final class DirectSourceEngine {
         }
         Pending play = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PLAY,
                 itemIdentity(current));
+        play.createdMs = start.createdMs;
         play.callbacks.addAll(start.callbacks);
         if (!dispatch(pinnedToken, DirectOperation.PLAY, deadline)) {
             deliverAll(play, new MediaCommandResult(MediaCommandResult.Outcome.SOURCE_LOST,
@@ -512,6 +584,8 @@ public final class DirectSourceEngine {
             return;
         }
         if (!startable() || starter == null || !starter.canPreparePassive(packageName)) return;
+        // A refused bind is not repeated passively until something relevant has changed.
+        if (!bindRetryAdmitted(false)) return;
         beginPrepareBind();
     }
 
@@ -529,7 +603,7 @@ public final class DirectSourceEngine {
             if (pendingPrepare != prepare) return;
             prepare.timer = null;
             if (pendingStart == null && starter != null) starter.abandon(key, packageName);
-            if (!live()) onStartFailed(packageName, "media service did not answer in time");
+            if (!live()) startFailed("media service did not answer in time", false);
             else endPrepare();
         });
         publish();

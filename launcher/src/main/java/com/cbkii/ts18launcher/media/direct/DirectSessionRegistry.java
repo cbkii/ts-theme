@@ -43,6 +43,9 @@ final class DirectSessionRegistry {
         void onSessionChanged(SessionObservation observation);
     }
 
+    /** Message of the IllegalStateException a Source throws while its first read is in flight. */
+    static final String MEMBERSHIP_READ_PENDING = "MEMBERSHIP_READ_PENDING";
+
     private final Source source;
     private final Sink sink;
     private final Map<Object, Session> watched = new LinkedHashMap<>();
@@ -103,6 +106,16 @@ final class DirectSessionRegistry {
                 // Listed as enabled but not yet effective: report it as missing, never guess.
                 granted = false;
                 listenerSnapshot = Collections.emptyList();
+            } catch (IllegalStateException pending) {
+                if (!MEMBERSHIP_READ_PENDING.equals(pending.getMessage())) {
+                    active = listenerSnapshot;
+                    unknown = true;
+                } else {
+                    // The first asynchronous read has not completed yet. That is not evidence that
+                    // discovery failed; keep the last reading (and any browser offers) and wait for
+                    // the read's own change notification instead of reporting "not answering".
+                    active = listenerSnapshot;
+                }
             } catch (RuntimeException unavailable) {
                 // Global discovery cannot veto a token delivered by the source itself.
                 // Retain the last successful listener reading, merge current browser offers,

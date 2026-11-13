@@ -61,8 +61,11 @@ class DirectMediaEngineContractTests(unittest.TestCase):
         self.assertIn("candidates.size() == 1 ? candidates.get(0) : null", starter)
         for marker in ("getTransportControls", ".play()", "Intent.ACTION_MAIN", "FLAG_ACTIVITY", "su "):
             self.assertNotIn(marker, starter)
-        # A start is requested only for a Play tap, and repeated taps join the one attempt.
-        self.assertIn("if ((action == MediaUserAction.PLAY_PAUSE || action == MediaUserAction.PLAY) && startable()) { requestStart(callback, deadlineElapsedMs); return; }", engine)
+        # A start is requested only for a Play tap; a refused bind needs new evidence before it
+        # is repeated (integration review F1), and a deliberate later tap cancels (F3).
+        self.assertIn("if ((action == MediaUserAction.PLAY_PAUSE || action == MediaUserAction.PLAY) && startable()) {", engine)
+        self.assertIn("if (pendingStart == null && !bindRetryAdmitted(true)) {", engine)
+        self.assertIn("if (!bindRetryAdmitted(false)) return;", engine)
         # Two owners may ask: a Play tap, and passive readiness (only while startable, once per epoch).
         self.assertEqual(2, engine.count("starter.start(key, packageName)"))
         passive = engine.split("private void tryPassivePrepare()", 1)[1].split("\n    }\n", 1)[0]
@@ -118,8 +121,11 @@ class DirectMediaEngineContractTests(unittest.TestCase):
 
     def test_home_renders_each_source_from_its_selected_engine_only(self):
         launcher = (MAIN / "LauncherActivity.java").read_text()
-        self.assertIn("? DirectMediaPresentation.snapshot(facade.state(MediaSourceKey.MUSIC))", launcher)
-        self.assertIn("? DirectMediaPresentation.snapshot(facade.state(MediaSourceKey.RADIO))", launcher)
+        # Each Direct source renders only its own engine state (with bounded same-package retention).
+        self.assertIn("musicRetention.present(facade.state(MediaSourceKey.MUSIC), now)", launcher)
+        self.assertIn("radioRetention.present(facade.state(MediaSourceKey.RADIO), now)", launcher)
+        self.assertIn("? DirectMediaPresentation.snapshot(musicShown)", launcher)
+        self.assertIn("? DirectMediaPresentation.snapshot(radioShown)", launcher)
         self.assertIn("mediaFacade().setStateListener(null);", launcher)
         self.assertIn("R.drawable.ic_media_unavailable", launcher)
 

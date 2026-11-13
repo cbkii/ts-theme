@@ -36,13 +36,24 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
         void onSessionOffered(String packageName, DirectSessionRegistry.Session session);
         void onSessionWithdrawn(String packageName, Object token);
         void onStartFailed(String packageName, String reason);
+        /** One diagnostic line per attempt outcome (timing/classification); never user-facing. */
+        default void onStartDiagnostic(String packageName, String detail) { }
     }
+
+    /**
+     * A framework connection failure that arrives within this long of connect() was posted by
+     * MediaBrowser itself after bindService() returned false; a later one is the service's own
+     * null root (or a late refusal). Used for diagnostics only, never for control decisions.
+     */
+    static final long BIND_REFUSAL_WINDOW_MS = 150L;
 
     /** The Android-facing edge, replaceable in tests. */
     interface Connector {
         /** One exported, enabled browser service of the package, or null with no guess made. */
         ComponentName resolve(String packageName);
         default boolean passiveSafe(String packageName) { return true; }
+        /** False before the user's credential storage is unlocked; ordinary sources cannot start. */
+        default boolean userUnlocked() { return true; }
         Connection connect(ComponentName service, ConnectionCallbacks callbacks);
     }
 
@@ -58,6 +69,7 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
     private static final class Attempt {
         final long id;
         final Set<Object> owners = new LinkedHashSet<>();
+        long startedMs;
         Connection connection;
         Object token;
         Attempt(long id) { this.id = id; }
@@ -66,6 +78,7 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
     private final Connector connector;
     private final Events events;
     private final Map<String, Attempt> attempts = new HashMap<>();
+    private final java.util.function.LongSupplier clock;
     private long nextAttemptId;
 
     BrowserSessionStarter(Context context, Handler handler, Events events) {
@@ -73,8 +86,13 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
     }
 
     BrowserSessionStarter(Connector connector, Events events) {
+        this(connector, events, android.os.SystemClock::elapsedRealtime);
+    }
+
+    BrowserSessionStarter(Connector connector, Events events, java.util.function.LongSupplier clock) {
         this.connector = connector;
         this.events = events;
+        this.clock = clock;
     }
 
     @Override public boolean canStart(String packageName) {
@@ -122,7 +140,15 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
     private void begin(String packageName, Set<Object> owners) {
         ComponentName service = connector.resolve(packageName);
         if (service == null) { events.onStartFailed(packageName, "has no single background media service"); return; }
+        if (!connector.userUnlocked()) {
+            // Neither the launcher nor an ordinary player is direct-boot aware: a bind now is
+            // refused by the platform. Report the real blocker; USER_UNLOCKED re-admits it.
+            events.onStartDiagnostic(packageName, "outcome=deferred reason=user-locked");
+            events.onStartFailed(packageName, "is waiting for the device to unlock");
+            return;
+        }
         Attempt attempt = new Attempt(++nextAttemptId);
+        attempt.startedMs = clock.getAsLong();
         attempt.owners.addAll(owners);
         attempts.put(packageName, attempt);
         try {
@@ -134,7 +160,12 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
                     if (current(packageName, attempt)) end(packageName, attempt, "stopped");
                 }
                 @Override public void onFailed() {
-                    if (current(packageName, attempt)) end(packageName, attempt, "media service connection failed");
+                    if (!current(packageName, attempt)) return;
+                    long elapsed = Math.max(0L, clock.getAsLong() - attempt.startedMs);
+                    events.onStartDiagnostic(packageName, "outcome=failed elapsedMs=" + elapsed
+                            + " class=" + (elapsed < BIND_REFUSAL_WINDOW_MS ? "bind-refused" : "root-null-or-late")
+                            + " unlocked=" + connector.userUnlocked());
+                    end(packageName, attempt, "media service connection failed");
                 }
             });
             // A connector can complete/fail synchronously. Never leak a returned connection
@@ -156,6 +187,8 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
             return;
         }
         attempt.token = session.token();
+        events.onStartDiagnostic(packageName, "outcome=connected elapsedMs="
+                + Math.max(0L, clock.getAsLong() - attempt.startedMs));
         events.onSessionOffered(packageName, session);
     }
 
@@ -193,7 +226,16 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
         @Override public boolean passiveSafe(String packageName) {
             // NavRadio service creation may select the hardware source: user demand only.
             return !"com.navimods.radio".equals(packageName)
-                    && resolve(packageName) != null;
+                    && userUnlocked() && resolve(packageName) != null;
+        }
+
+        @Override public boolean userUnlocked() {
+            try {
+                android.os.UserManager users = app.getSystemService(android.os.UserManager.class);
+                return users == null || users.isUserUnlocked();
+            } catch (RuntimeException unknown) {
+                return true;
+            }
         }
 
         @Override public ComponentName resolve(String packageName) {
