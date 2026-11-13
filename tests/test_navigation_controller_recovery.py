@@ -75,7 +75,7 @@ boolean surfaceMatches(int w,int h){return rendererReady;} static Snapshot unkno
 private final java.util.function.Consumer<Snapshot> callback;
 CompactStartupClient(android.app.Activity a,java.util.function.Consumer<Snapshot> c){callback=c;latest=this;}
 java.util.function.IntConsumer homeReturn;static void back(int task){latest.homeReturn.accept(task);}
-static void deliver(){if(next!=null)latest.callback.accept(next);}void setHomeReturnCallback(java.util.function.IntConsumer cb){homeReturn=cb;} void watch(){}void refresh(){}void close(){}
+static void deliver(){if(next!=null)latest.callback.accept(next);}void setHomeReturnCallback(java.util.function.IntConsumer cb){homeReturn=cb;} void watch(){}void refresh(){}void suspendPolling(){}void close(){}
 }
 class HomeNavigationSurfacePolicy {static final String NATIVE_WINDOW="native",FULLSCREEN="full";
 static String mode(android.app.Activity a){return NATIVE_WINDOW;}}
@@ -276,12 +276,15 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.presents=1;CompactStartupClient.next=new CompactStartupClient.Snapshot(true,false,true,42);p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
  check(RawFreeformTaskBackend.presents==1&&c.startupNavigationReady(),"opt-out blocked warm task adoption");c.destroy();
  check("N1".equals(NavigationHelperResult.parse("OK method=N1 naviName=foo_method=N2").method),"vendor metadata overrode exact method token");
- // Cancelling a pending renderer wait releases the startup lane and ignores late frames.
+ // HOME input while an already-presented task awaits renderer evidence releases the startup lane
+ // but keeps observing: the late frame verifies the map without any further task mutation.
  RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.first="HIDDEN";
  CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);p=new NativeNavigationPanel();c=start(p);
- c.cancelAutomaticColdStart();check(!c.startupNavigationBusy(),"cancelled renderer wait held the startup lane");
+ int presentsBeforeYield=RawFreeformTaskBackend.presents,resumesBeforeYield=RawFreeformTaskBackend.resumes;
+ c.cancelAutomaticColdStart();check(!c.startupNavigationBusy(),"renderer wait held the startup lane after HOME input");
  CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();
- check(!c.startupNavigationReady(),"late frame revived a cancelled compact request");c.destroy();
+ check(c.startupNavigationReady(),"late frame of an already-presented map was discarded after HOME input");
+ check(RawFreeformTaskBackend.presents==presentsBeforeYield&&RawFreeformTaskBackend.resumes==resumesBeforeYield,"accepting renderer evidence mutated the task");c.destroy();
  // Media preparation may release that wait without disabling compact Maps for this HOME.
  RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.first="HIDDEN";
  CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);p=new NativeNavigationPanel();c=start(p);

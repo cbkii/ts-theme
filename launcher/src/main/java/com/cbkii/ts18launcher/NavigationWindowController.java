@@ -109,6 +109,15 @@ final class NavigationWindowController {
             updateColdPolicy();
             return;
         }
+        // The task is already resumed into its compact bounds; only Maps' own renderer evidence
+        // is outstanding. Observing that evidence takes no focus, so HOME input must not discard
+        // it (TS18 capture 2026-11-14: a visible map stayed unverified for 25 s after one tap).
+        if (activeOperationId == 0 && pendingPeerResult != null && pendingPeerEpoch == presentationEpoch) {
+            normalBootstrapInFlight = false;
+            cancelRecovery();
+            updateColdPolicy();
+            return;
+        }
         desire(Presentation.BACKGROUND_FULLSCREEN);
         cancelRecovery();
         if (activeOperationId == 0) {
@@ -282,6 +291,11 @@ final class NavigationWindowController {
     void onHomeStopped() {
         if (state == State.DESTROYED) return;
         homeStopped = true; externalLaunchGeneration++;
+        // Nothing outstanding needs Maps' evidence while HOME is hidden; its own notifications
+        // still arrive. onHomeVisible's watch() resumes polling (TS18 capture: ~25 reads while
+        // another app was in front).
+        if (!normalBootstrapInFlight && activeOperationId == 0 && pendingPeerResult == null)
+            compactStartup.suspendPolling();
         if (overlayGate.isPending()) MediaEventTrace.record("external-launch", "cancelled-home-stopped");
         if (!normalBootstrapInFlight) cancelRecovery();
         uiState.onHomeStopped(); overlayGate.onStopped(); needsValidation = true; needsPresentation = true;
