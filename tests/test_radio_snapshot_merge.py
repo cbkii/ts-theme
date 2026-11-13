@@ -62,6 +62,15 @@ association.observe("another-token","Station B");check(!association.current(),"t
 association.observe("direct-token","Station A");association.notification("Station A");
 association.observe("direct-token","Station B");check(!association.current(),"direct A-to-B retained old notification generation");
 association.notification("Station B");check(association.current(),"direct station notification not admitted");
+// More transitions than a small history cache can retain must not resurrect old stations.
+association.observe("long-session","Station 0");association.notification("Station 0");
+for(int n=1;n<=12;n++){association.observe("long-session","");association.observe("long-session","Station "+n);association.notification("Station "+n);}
+association.observe("long-session","");association.notification("Station 0");check(!association.current(),"evicted old station resurrected during identity gap");
+// A notification received before its new station is observed is revalidated, not discarded.
+association.notification("Station 13");check(!association.current(),"notification alone filled a known station gap");
+association.observe("long-session","Station 13");check(association.current(),"matching pre-transition notification was lost");
+association.observe("new-session","Station 13");association.observe("new-session","Station 13");
+check(!association.current(),"second observation of new token resurrected an old-token notification");
 var fresh=snap("music","Track B","Artist B");var stale=snap("music","Track A","Artist A");
 var merged=mergeSessionSnapshot(fresh,stale,true);
 check(merged.title.equals("Track B")&&merged.artist.equals("Artist B"),"fresh Track B overwritten by stale Track A");

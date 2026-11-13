@@ -53,8 +53,8 @@ public final class NavigationFeatureFacade {
         return n3Enabled() && n3.snapshot().state.holdsDisplay() ? Engine.N3 : Engine.LEGACY;
     }
 
-    /** Guarded by this facade: the check and the launch admission are one atomic claim. */
-    private boolean legacyAutomaticInFlight;
+    /** Class-monitor admission; also read by the main-thread N3 host before display creation. */
+    private volatile boolean legacyAutomaticInFlight;
 
     /**
      * Atomically admit one bounded legacy automatic launch: refused when N3 owns a display.
@@ -63,7 +63,7 @@ public final class NavigationFeatureFacade {
      */
     public static synchronized boolean beginLegacyAutomaticLaunch(Context context) {
         NavigationFeatureFacade facade = get(context);
-        if (facade.engine() == Engine.N3) return false;
+        if (facade.legacyAutomaticInFlight || facade.engine() == Engine.N3) return false;
         facade.legacyAutomaticInFlight = true;
         return true;
     }
@@ -73,7 +73,7 @@ public final class NavigationFeatureFacade {
     }
 
     /** N3 display acquisition is refused for the bounded lifetime of a legacy automatic launch. */
-    public synchronized boolean n3MayAcquireDisplay() { return !legacyAutomaticInFlight; }
+    public boolean n3MayAcquireDisplay() { return !legacyAutomaticInFlight; }
 
     /** "Use legacy navigation": end N3 and turn it off. */
     public void useLegacy() { setN3Enabled(false); }

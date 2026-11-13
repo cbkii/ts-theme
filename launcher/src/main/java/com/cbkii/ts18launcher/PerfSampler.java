@@ -16,7 +16,7 @@ final class PerfSampler {
     static final class Frames {
         long last = -1L;
         int intervals, over32, over100;
-        void add(long nanos) {
+        synchronized void add(long nanos) {
             if (last >= 0L && nanos > last) {
                 long delta = nanos - last;
                 intervals++;
@@ -25,6 +25,7 @@ final class PerfSampler {
             }
             last = nanos;
         }
+        synchronized int[] snapshot() { return new int[] {intervals, over32, over100}; }
     }
 
     static synchronized boolean start() {
@@ -32,10 +33,12 @@ final class PerfSampler {
         running = true;
         Frames frames = new Frames();
         long cpuStart = Process.getElapsedCpuTime();
+        long startedAt = System.nanoTime();
+        java.util.concurrent.atomic.AtomicBoolean collecting = new java.util.concurrent.atomic.AtomicBoolean(true);
         Choreographer choreographer = Choreographer.getInstance();
         Choreographer.FrameCallback callback = new Choreographer.FrameCallback() {
             @Override public void doFrame(long nanos) {
-                if (!running) return;
+                if (!collecting.get()) return;
                 frames.add(nanos);
                 choreographer.postFrameCallback(this);
             }
@@ -45,16 +48,17 @@ final class PerfSampler {
         // its own thread; only the Choreographer cleanup is marshalled back to main.
         Thread stopper = new Thread(() -> {
             try { Thread.sleep(10000L); } catch (InterruptedException stopped) { return; }
+            collecting.set(false); // An older callback can never join a subsequent sample.
             long cpuMs = Process.getElapsedCpuTime() - cpuStart;
-            running = false; // Frame callbacks observe this and stop counting immediately.
-            new Handler(Looper.getMainLooper()).post(() -> {
-                choreographer.removeFrameCallback(callback);
-                // PSS can be slow; it is never collected on the HOME thread.
-                Thread report = new Thread(() -> Log.i("TS18Perf", "window_ms=10000 intervals=" + frames.intervals
-                        + " over32=" + frames.over32 + " over100=" + frames.over100
-                        + " cpu_ms=" + cpuMs + " pss_kb=" + Debug.getPss()), "ts18-perf-report");
-                report.setDaemon(true); report.start();
-            });
+            long windowMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+            int[] counts = frames.snapshot();
+            running = false;
+            new Handler(Looper.getMainLooper()).post(() -> choreographer.removeFrameCallback(callback));
+            // Report the frozen measurement here, even if HOME's main looper remains stalled.
+            Log.i("TS18Perf", "window_ms=" + windowMs + " intervals=" + counts[0]
+                    + " over32=" + counts[1] + " over100=" + counts[2] + " cpu_ms=" + cpuMs);
+            // PSS is a separate off-main sample and cannot delay the frame/CPU report.
+            Log.i("TS18Perf", "pss_kb=" + Debug.getPss());
         }, "ts18-perf-stop");
         stopper.setDaemon(true);
         stopper.start();
