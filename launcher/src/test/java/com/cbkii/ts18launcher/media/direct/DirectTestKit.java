@@ -60,6 +60,8 @@ final class DirectTestKit {
         FakeSession(String tokenName, String packageName) {
             this.token = tokenName;
             this.packageName = packageName;
+            // Current Auxio advertises the bounded contract even for cached paused items.
+            this.deadlinePlay = "com.tw.media".equals(packageName);
         }
 
         FakeSession state(int next) { state = next; return this; }

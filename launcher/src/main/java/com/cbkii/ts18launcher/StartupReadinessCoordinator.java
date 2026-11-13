@@ -201,7 +201,14 @@ final class StartupReadinessCoordinator {
         if (staging != null && staging.serves(pkg)) { staging.join(done); return true; }
         if (destroyed || screenOff || staging != null || loaderUi == null || !loaderUi.canMask()
                 || !("com.navimods.radio".equals(pkg)
-                    || "com.tw.media".equals(pkg) && AuxioPreparationContract.supported(context))) return false;
+                    || "com.tw.media".equals(pkg) && AuxioPreparationContract.supported(context))) {
+            MediaEventTrace.record("readiness", "staging-not-admitted", "package=" + pkg
+                    + " destroyed=" + destroyed + " screenOff=" + screenOff
+                    + " occupied=" + (staging != null) + " loader=" + (loaderUi != null)
+                    + " mask=" + (loaderUi != null && loaderUi.canMask())
+                    + " auxioPrepare=" + ("com.tw.media".equals(pkg) && AuxioPreparationContract.supported(context)));
+            return false;
+        }
         staging = new MaskedSourcePreparation(activity, loaderUi, navigation, () -> staging = null);
         staging.begin(pkg, deadline, done);
         return true;

@@ -369,6 +369,11 @@ public final class DirectSourceEngine {
                 () -> onDeadline(pending));
     }
 
+    /** Cancel only an undispatched user Play; keep healthy browser/session observation intact. */
+    public void cancelPendingStart() {
+        endStart(MediaCommandResult.Outcome.FAILED, "Superseded by another source");
+    }
+
     /** Source switch: pause once, only when this source is observed playing. */
     public void pauseForHandover() {
         if (!attached || !live() || current.nativeState != PlaybackState.STATE_PLAYING) return;
@@ -406,7 +411,7 @@ public final class DirectSourceEngine {
 
     private boolean canDispatchPlay() {
         return live() && (current.actions & DirectOperation.PLAY.supportingActions()) != 0L
-                && (!boundedSource() || loaded(current) || current.deadlinePlay);
+                && (!boundedSource() || current.deadlinePlay);
     }
 
     private void clearHandoverPause() {

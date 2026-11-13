@@ -177,6 +177,8 @@ public final class DirectSourceMediaBackend implements MediaBackend {
         traceStates();
     }
 
+    @Override public void cancelPendingStart(MediaSourceKey key) { engines.get(key).cancelPendingStart(); }
+
     @Override public void pauseForHandover(MediaSourceKey key) { engines.get(key).pauseForHandover(); }
 
     @Override public void preparePassive(MediaSourceKey key, String packageName, long epoch) {
