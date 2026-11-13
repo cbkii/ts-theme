@@ -47,6 +47,9 @@ public interface MediaBackend {
         command(key, packageName, action, callback);
     }
 
+    /** Supersede an undispatched user Play without detaching observation or pausing playback. */
+    default void cancelPendingStart(MediaSourceKey key) { }
+
     /** Pause this backend's attached source once, only if it is observed playing. */
     void pauseForHandover(MediaSourceKey key);
 

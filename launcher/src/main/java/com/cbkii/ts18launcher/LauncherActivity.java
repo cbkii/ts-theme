@@ -574,6 +574,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             }
         };
         if (staged) mediaFacade().resumePreparedSource(key, packageName, deadline, completion);
+        else if (mediaFacade().engine(key) == MediaEngine.DIRECT)
+            mediaFacade().commandUntil(key, packageName, LegacyMediaBackend.userAction(command), deadline, completion);
         else mediaFacade().command(key, packageName, LegacyMediaBackend.userAction(command), completion);
     }
 

@@ -179,6 +179,12 @@ public final class MediaFeatureFacade {
         command(key, packageName, action, false, Long.MAX_VALUE, callback);
     }
 
+    /** First admission of a finite user command; staging continues this same absolute window. */
+    public void commandUntil(MediaSourceKey key, String packageName, MediaUserAction action,
+                             long deadlineElapsedMs, MediaBackend.ResultCallback callback) {
+        command(key, packageName, action, false, deadlineElapsedMs, callback);
+    }
+
     /** Continue the original Play after Activity staging; never toggle an auto-resumed source. */
     public void resumePreparedSource(MediaSourceKey key, String packageName,
                                      MediaBackend.ResultCallback callback) {
@@ -198,7 +204,14 @@ public final class MediaFeatureFacade {
         MediaBackend requested = backend(key);
         MediaSourceKey oppositeKey = key.opposite();
         MediaBackend opposite = backend(oppositeKey);
-        boolean wantsPlay = resumeOnly || action == MediaUserAction.PLAY_PAUSE && !requested.playing(key, packageName);
+        boolean wantsPlay = resumeOnly || action == MediaUserAction.PLAY
+                || action == MediaUserAction.PLAY_PAUSE && !requested.playing(key, packageName);
+        // A newer source demand must not leave an older cold Play waiting to dispatch later.
+        // Detaching here would lose metadata/readiness and could disrupt current playback.
+        if (wantsPlay) {
+            pendingHandover.remove(oppositeKey);
+            opposite.cancelPendingStart(oppositeKey);
+        }
         boolean legacyOwnsHandover = requested == legacy && opposite == legacy;
         Handover handover = null;
         if (wantsPlay && !legacyOwnsHandover && opposite.attached(oppositeKey)) {
