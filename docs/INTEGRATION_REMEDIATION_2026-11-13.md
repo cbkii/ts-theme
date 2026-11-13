@@ -37,18 +37,21 @@ Scope: the three-repository TS18 integration review of ts-theme PR #44 head `768
 
 Collect all of these with `scripts/termux/collect-integration-evidence.sh` (see the [Termux README](../scripts/termux/README.md)).
 
-## TS18 validation capture (2026-11-14 AEDT, one cold boot)
+## Physical-capture follow-up (14 November 2026)
 
-Installed builds, identified from APK SHA-256 and trace strings:
-- Auxio TESTING `PR287-bc17429`: exact SHA-256 match.
-- Launcher: a PR #44 build older than `5e95806`. It still emits "Auxio refused the connection", and was installed before both current snapshots.
-- Organic Maps InCar from `master` of the same day.
+The uploaded run tested signed launcher `0054278` and Auxio `bc17429`, not the later repaired pair. Both source-owned bind failures and subsequent manual-Activity success are observed, but elapsed client callback time does not establish whether bind admission or root publication failed. The diagnostic now records an unknown bind/root classification plus exact component and timing for correlation with TS18Browser server logs.
 
-None of the launcher fixes above were installed.
+The stacked candidate also carries the base-branch deadline and cross-source cancellation corrections. All Auxio M2 Play requests require the bounded HOME contract, including cached paused items. Selecting a new source cancels undispatched commands in the selected old backend without detaching observations. Auxio PR #287 separately corrects PLAYING publication to require actual decoder progression.
+
+No Organic Maps source change is inferred from this upload. Task 9614 survives the observed switches; own-screen/renderer/foreground behaviour remains a separate contract. No audible, cold-power or ACC qualification is claimed from video or session state.
+
+### Capture detail and launcher follow-ups
+
+Identity cross-check: Auxio matches TESTING `PR287-bc17429` by SHA-256; the launcher still emits the pre-`5e95806` "Auxio refused the connection" wording, consistent with `0054278`. None of the launcher fixes above were installed.
 
 | Observation | Disposition |
 |---|---|
-| Music binds at 33.5 s (passive), 47.8 s and 51.9 s (taps) failed in 64–140 ms. The user was unlocked at 29.4 s. No ActivityManager line and no Auxio process start appeared. A bind at 61.7 s succeeded in 18 ms, after the user had opened Auxio itself (process started for its Activity at 55.8 s). | F2 cause narrowed: a bind cannot start a non-running Auxio on this ROM (OEM start control suspected), and binds to a running Auxio work. The prepare-only Activity path is the correct cold method. HOME return now re-admits a refused bind. The evidence script greps OEM start-control lines. |
+| Music binds at 33.5 s (passive), 47.8 s and 51.9 s (taps) failed 64–140 ms after connect. The user was unlocked at 29.4 s. No ActivityManager line named Auxio and no Auxio process started for them. A bind at 61.7 s succeeded in 18 ms, after the user had opened Auxio itself (process started for its Activity at 55.8 s). | Observed: binds failed while Auxio was not running and succeeded once it was. Whether bind admission or root publication failed is not established (see above); an OEM start control is a hypothesis. The prepare-only Activity path remains the cold method, HOME return now re-admits a refused bind, and the evidence script greps OEM start-control lines. |
 | A Music tap at 47.8 s landed while the just-resumed map awaited renderer evidence. The map rendered at 48.6 s but was verified only at 73.2 s. | Fixed: HOME input keeps a pending renderer-evidence wait for an already-presented task (`NavigationWindowController.cancelAutomaticColdStart`). |
 | 201 Maps evidence reads in about 90 s, including about 25 while another app was in front. 13 root consent reads in 8 s before Maps ran. 7 dropped peer notifications. | Fixed: consent-only answers back off (`CompactStartupPollPolicy`); polling is suspended while HOME is stopped with nothing outstanding; repeat notifications from an authenticated peer skip the trust worker. |
 | The notification listener never connected (its pre-unlock bind failed). 15 rebind requests were made while both sources were on M2. | Fixed: rebinds only while a source is on Legacy (`MediaNotificationAccessBootstrapper.ensureConnected`). |

@@ -15,7 +15,8 @@ import org.robolectric.annotation.Config;
 
 /**
  * Integration review F2: every start attempt reports how it ended and how long it took, so a
- * physical capture can tell a platform bind refusal from a source's own null root, and a bind is
+ * physical capture can correlate client timing with server admission; timing alone cannot identify
+ * bind refusal versus a null root. A bind is
  * never attempted before user unlock.
  */
 @RunWith(RobolectricTestRunner.class)
@@ -46,21 +47,21 @@ public class BrowserStartDiagnosticsTest {
         }, () -> now[0]);
     }
 
-    @Test public void immediateFrameworkFailureIsClassifiedAsBindRefusal() {
+    @Test public void immediateFrameworkFailureDoesNotInventBindRejection() {
         BrowserSessionStarter starter = starter();
         starter.start("MUSIC", AUXIO);
         now[0] += 20L;
         links.get(0).onFailed();
-        assertTrue(events.toString(), events.get(0).startsWith("diag outcome=failed elapsedMs=20 class=bind-refused"));
+        assertTrue(events.toString(), events.get(0).startsWith("diag outcome=failed elapsedMs=20 class=unknown-bind-or-root"));
         assertEquals("failed media service connection failed", events.get(1));
     }
 
-    @Test public void lateFailureIsClassifiedAsRootOrLate() {
+    @Test public void lateFailureDoesNotInventRootRejection() {
         BrowserSessionStarter starter = starter();
         starter.start("MUSIC", AUXIO);
         now[0] += 900L;
         links.get(0).onFailed();
-        assertTrue(events.toString(), events.get(0).contains("class=root-null-or-late"));
+        assertTrue(events.toString(), events.get(0).contains("class=unknown-bind-or-root"));
     }
 
     @Test public void noBindIsAttemptedBeforeUserUnlock() {
