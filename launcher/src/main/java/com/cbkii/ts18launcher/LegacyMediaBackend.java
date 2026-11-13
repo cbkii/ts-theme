@@ -22,6 +22,9 @@ import java.util.Map;
 final class LegacyMediaBackend implements MediaBackend {
     private final Context app;
     private final Map<MediaSourceKey, String> attached = new EnumMap<>(MediaSourceKey.class);
+    // The bootstrapper supersedes other-package commands on every new command. Keep its last
+    // target per source even if Auto's observed session changes without issuing a new command.
+    private final Map<MediaSourceKey, String> lastCommandPackage = new EnumMap<>(MediaSourceKey.class);
 
     LegacyMediaBackend(Context context) { app = context.getApplicationContext(); }
 
@@ -36,6 +39,7 @@ final class LegacyMediaBackend implements MediaBackend {
         // effective package different from the configured attachment.
         String configured = attached.get(key);
         String effective = controlPackage(key);
+        String commanded = lastCommandPackage.remove(key);
         attached.remove(key);
         MediaSourceBootstrapper owner = sources();
         if (configured != null && !configured.isEmpty()) {
@@ -43,6 +47,9 @@ final class LegacyMediaBackend implements MediaBackend {
         }
         if (!effective.isEmpty() && !effective.equals(configured)) {
             owner.cancelPendingFor(effective, "Source moved to another media engine");
+        }
+        if (commanded != null && !commanded.equals(configured) && !commanded.equals(effective)) {
+            owner.cancelPendingFor(commanded, "Source moved to another media engine");
         }
         MediaEventTrace.record("engine", "legacy-detached", key.name());
     }
@@ -99,6 +106,7 @@ final class LegacyMediaBackend implements MediaBackend {
             return;
         }
         MediaSourceBootstrapper owner = sources();
+        lastCommandPackage.put(key, packageName);
         owner.command(label(key), packageName, legacyCommand(action), (success, message) -> {
             if (callback == null) return;
             boolean playing = success && packageName != null && !packageName.isEmpty()
@@ -117,6 +125,7 @@ final class LegacyMediaBackend implements MediaBackend {
         if (!owner.isPlaying(packageName)) return;
         MediaEventTrace.record("switch", "facade-handover-pause", packageName);
         // Observed playing, so the legacy engine resolves this single action to PAUSE.
+        lastCommandPackage.put(key, packageName);
         owner.command(label(key), packageName, MediaListenerService.Command.PLAY_PAUSE,
                 (success, message) -> { });
     }
