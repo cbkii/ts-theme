@@ -221,17 +221,21 @@ class DeviceLock:
 # App evidence tags, the launcher's startup phases, and the framework's own launch timing. Framework
 # lines are narrowed after capture to Displayed/Fully drawn for the launcher and the navigator.
 LOG_TAGS = ['TS18Media:I', 'TS18Nav:I', 'TS18Launcher:I', 'TS18Startup:I', 'InCarCompactStartup:I',
-            'ActivityTaskManager:I', '*:S']
+            'TS18Browser:I', 'MediaBrowser:I', 'MediaBrowserService:I', 'MBServiceCompat:I',
+            'ActivityManager:I', 'ActivityTaskManager:I', '*:S']
+MEDIA_ADMISSION_KEEP = re.compile(r'\b(?:com\.tw\.media(?:\.debug)?|com\.cbkii\.ts18launcher)(?:[/}:\s]|$)')
 FRAMEWORK_KEEP = re.compile(r'\b(?:Displayed|Fully drawn) (?:com\.cbkii\.ts18launcher|app\.organicmaps\.incar)/')
 
 
 def narrow_framework(text):
-    """Keep only launch-timing lines from ActivityTaskManager; every other framework line is dropped."""
+    """Keep launch timing and exact Music/launcher admission; discard unrelated framework lines."""
     kept = []
     for line in text.splitlines():
         if ' ActivityTaskManager' in line or 'ActivityTaskManager:' in line:
             if not FRAMEWORK_KEEP.search(line):
                 continue
+        if (' ActivityManager' in line or 'ActivityManager:' in line) and not MEDIA_ADMISSION_KEEP.search(line):
+            continue
         kept.append(line)
     return '\n'.join(kept) + ('\n' if text.endswith('\n') else '')
 

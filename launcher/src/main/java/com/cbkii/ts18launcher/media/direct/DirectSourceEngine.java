@@ -442,7 +442,8 @@ public final class DirectSourceEngine {
             // Tear down this owner's claim on the stalled connection so a later tap is a fresh,
             // bounded attempt rather than a wait on the same one.
             if (starter != null) starter.abandon(key, packageName);
-            endStart(MediaCommandResult.Outcome.FAILED,
+            if (!live()) onStartFailed(packageName, "media service did not answer in time");
+            else endStart(MediaCommandResult.Outcome.FAILED,
                     labels.appLabel(packageName) + " did not become ready in time");
         });
         publish();
@@ -528,7 +529,8 @@ public final class DirectSourceEngine {
             if (pendingPrepare != prepare) return;
             prepare.timer = null;
             if (pendingStart == null && starter != null) starter.abandon(key, packageName);
-            endPrepare();
+            if (!live()) onStartFailed(packageName, "media service did not answer in time");
+            else endPrepare();
         });
         publish();
         starter.start(key, packageName);

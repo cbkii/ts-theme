@@ -634,6 +634,22 @@ class StartupEvidenceTest(unittest.TestCase):
         self.assertNotIn('com.other/.Secret', narrowed)
         self.assertIn('phase=home.first_draw', narrowed)
 
+    def test_auxio_browser_phases_and_exact_service_admission_are_retained(self):
+        self.assertIn('TS18Browser:I', campaign.LOG_TAGS)
+        self.assertIn('ActivityManager:I', campaign.LOG_TAGS)
+        log = '\n'.join([
+            '1 40 40 I TS18Browser: phase=bind service=com.tw.music.MusicService binder=true token=true',
+            '2 50 50 W ActivityManager: Unable to start service Intent {cmp=com.tw.media/com.tw.music.MusicService}',
+            '3 50 50 I ActivityManager: Start proc 71:com.unrelated.private/u0a1 for service',
+            '4 50 50 I ActivityTaskManager: START u0 {cmp=com.unrelated.private/.Screen}',
+            '5 50 50 I ActivityManager: Start proc 72:com.tw.media.other/u0a2 for service',
+        ])
+        result = campaign.narrow_framework(log)
+        self.assertIn('phase=bind', result)
+        self.assertIn('Unable to start service', result)
+        self.assertNotIn('com.unrelated.private', result)
+        self.assertNotIn('com.tw.media.other', result)
+
     def test_phases_are_grouped_per_process_and_missing_phases_are_explicit(self):
         parsed = campaign.parse_startup(campaign.narrow_framework(self.LOG))
         epochs = parsed['process_epochs']
