@@ -37,6 +37,9 @@ public final class N3MotionConverter {
             return cancelIfOwned(view);
         }
         if (action == MotionEvent.ACTION_DOWN) {
+            // A second down means the live gesture was interrupted: cancel it through the usual
+            // path and drop the replacement sequence rather than orphan a pressed pointer.
+            if (owned) return cancelIfOwned(view);
             owned = mapper.owns(view.getX(0), view.getY(0));
             if (!owned) return null;
         } else if (!owned) {
@@ -44,6 +47,12 @@ public final class N3MotionConverter {
         }
         MotionEvent copy = MotionEvent.obtain(view);
         copy.transform(toDisplay);
+        if (!finite(copy)) {
+            // A corrupt (NaN/Infinite) coordinate cannot be clamped truthfully: end the owned
+            // gesture with one cancel and stop forwarding this sequence.
+            copy.recycle();
+            return cancelIfOwned(view);
+        }
         if (!inBounds(copy)) {
             MotionEvent clamped = clamp(copy);
             copy.recycle();
@@ -71,6 +80,20 @@ public final class N3MotionConverter {
             }
         }
         return true;
+    }
+
+    private static boolean finite(MotionEvent e) {
+        for (int p = 0; p < e.getPointerCount(); p++) {
+            if (!finite(e.getX(p)) || !finite(e.getY(p))) return false;
+            for (int s = 0; s < e.getHistorySize(); s++) {
+                if (!finite(e.getHistoricalX(p, s)) || !finite(e.getHistoricalY(p, s))) return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean finite(float v) {
+        return !Float.isNaN(v) && !Float.isInfinite(v);
     }
 
     private static boolean within(float x, float y, float w, float h) {

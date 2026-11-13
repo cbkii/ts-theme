@@ -33,11 +33,12 @@ first HOME to the step that owns it.
 ## Capture
 
 ```sh
-logcat -d -v monotonic -s TS18Startup ActivityTaskManager | grep -E 'TS18Startup|Displayed|Fully drawn'
+logcat -d -v monotonic -s TS18Startup TS18Media ActivityTaskManager | grep -E 'TS18Startup|TS18Media|Displayed|Fully drawn'
 ```
 
 `ActivityTaskManager` contributes the framework's own `Displayed` and `Fully drawn` lines for the
-same launch. Keep these points in mind when reading a capture:
+same launch. `TS18Media` carries the local media event trace, including the startup-phase spans and
+their `slow-span` events, so it must be in the filter for those to appear. Keep these points in mind when reading a capture:
 
 - Match captures by `boot_id`.
 - Each phase is recorded at most once per process. Repeated HOME returns do not repeat an existing phase; a previously unobserved boundary can still appear later.

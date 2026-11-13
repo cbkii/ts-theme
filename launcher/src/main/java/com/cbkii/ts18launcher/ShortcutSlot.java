@@ -43,6 +43,9 @@ final class ShortcutSlot {
     static void bind(Context context, ImageButton button, String key) {
         String override = iconAppearance(context, key);
         if (!SlotIconCatalog.AUTO.equals(override)) {
+            // Invalidate any in-flight app-icon bind for this view before publishing a
+            // non-app icon, or the late delivery would restore the old app drawable.
+            button.setTag(R.id.catalog_icon_target, null);
             button.setImageResource(SlotIconCatalog.icon(override));
             button.setImageTintList(android.content.res.ColorStateList.valueOf(AutomotiveUi.color(context, R.color.ui_icon)));
             button.setContentDescription(label(context, key) + " · " + SlotIconCatalog.label(override) + " icon");
@@ -56,6 +59,7 @@ final class ShortcutSlot {
                     AutomotiveUi.dimen(context, R.dimen.ui_drawer_icon));
             button.setContentDescription("App: " + label(context, key));
         } else {
+            button.setTag(R.id.catalog_icon_target, null);
             button.setImageResource(RoleIconCatalog.icon(role(context, key)));
             button.setImageTintList(android.content.res.ColorStateList.valueOf(AutomotiveUi.color(context, R.color.ui_icon)));
             button.setContentDescription(RoleIconCatalog.label(role(context, key)));

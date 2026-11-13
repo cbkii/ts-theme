@@ -49,7 +49,10 @@ final class RootTaskSession {
     }
     NavigationHelperResult runCurrent(long deadline, String... fields) { return run(epoch, deadline, fields); }
     private void sendEpoch() throws java.io.IOException {
-        input.write("EPOCH\t" + epoch + "\n"); input.flush(); sentEpoch = epoch;
+        // Snapshot once: the wire value and sentEpoch must agree even if epoch advances mid-flush,
+        // otherwise the queued publication can be skipped and later requests fail STALE_PRESENTATION.
+        long value = epoch;
+        input.write("EPOCH\t" + value + "\n"); input.flush(); sentEpoch = value;
     }
     private boolean connect(long deadline) {
         if (process != null && process.isAlive()) return true;
@@ -94,6 +97,9 @@ final class RootTaskSession {
         try {
             synchronized (writes) {
                 if (requestEpoch != epoch) return NavigationHelperResult.failure("STALE_PRESENTATION", "before IPC");
+                // Epoch publication is asynchronous; admission must not outrun it. Publish
+                // synchronously here so the broker never sees a request for an unsent epoch.
+                if (sentEpoch != requestEpoch) sendEpoch();
                 input.write("REQUEST\t" + id + "\t" + deadline + "\t" + requestEpoch);
                 for (String field : fields) { input.write('\t'); input.write(field); }
                 String mask = StartupMaskFocus.activeTitle;

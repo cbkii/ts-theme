@@ -97,6 +97,9 @@ public final class MediaFeatureFacade {
             MediaBackend other = engine == MediaEngine.DIRECT ? legacy : direct;
             // Silence the deselected engine before the selected one may act.
             if (other != null && other.attached(key)) other.detach(key);
+            // A package change under the same engine re-attaches; detach first so pending work
+            // for the previous package is cancelled instead of dispatching to the old app.
+            if (selected.attached(key)) selected.detach(key);
             // A pending handover from or to this source refers to an owner that no longer exists.
             pendingHandover.remove(key);
             pendingHandover.remove(key.opposite());

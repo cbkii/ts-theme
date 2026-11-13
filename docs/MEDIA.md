@@ -1,6 +1,6 @@
 # Media control and readiness
 
-Music and Radio each have one selected engine through `MediaFeatureFacade`. M2 Direct is the TESTING default when no preference exists. Explicit `legacy` remains a compatibility rollback; malformed/future values refuse to Legacy. An unselected engine cannot command, prepare or publish for that source.
+Music and Radio each have one selected engine through `MediaFeatureFacade`. M2 Direct is the TESTING default when no preference exists. Explicit `legacy` remains a compatibility rollback; malformed or future stored values also resolve to Legacy, so a corrupted preference or a downgrade never strands a source on an unavailable engine. An unselected engine cannot command, prepare or publish for that source.
 
 The playback application owns its service, queue, MediaSession, notification and audio focus. The launcher never creates another player/session or writes the tuner.
 

@@ -83,6 +83,10 @@ public final class N3Activity extends Activity implements N3NavigationBackend.Li
     /** Exact launcher component of the configured navigator ("package/class"), or "" if none. */
     private String target() {
         String pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
+        // The same default the navigation window uses: an installed Organic Maps incar build.
+        if (pkg.isEmpty() && NavigationProvider.hasLauncherActivity(this, NavigationProvider.ORGANIC_MAPS_INCAR)) {
+            pkg = NavigationProvider.ORGANIC_MAPS_INCAR;
+        }
         if (pkg.isEmpty()) return "";
         try {
             Intent launch = getPackageManager().getLaunchIntentForPackage(pkg);
@@ -104,14 +108,17 @@ public final class N3Activity extends Activity implements N3NavigationBackend.Li
         backend.setExpanded(expanded);
     }
 
-    /** N0: an ordinary launch on the main screen. The N3 session is ended first; never both. */
+    /** N0: an ordinary launch on the main screen; only a dispatched launch ends the N3 session. */
     private void openNormally() {
-        backend.shutdown();
         ComponentName component = ComponentName.unflattenFromString(target());
-        if (component == null) return;
+        if (component == null) {
+            status.setText(R.string.n3_open_failed);
+            return;
+        }
         try {
             startActivity(new Intent(Intent.ACTION_MAIN).setComponent(component)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            backend.shutdown();
         } catch (RuntimeException unavailable) {
             status.setText(R.string.n3_open_failed);
         }

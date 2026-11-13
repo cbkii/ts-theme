@@ -165,6 +165,12 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
             ProcessMediaSessionMonitor.addObserver(getTargetContext(), observer);
             check(selected.await(3, TimeUnit.SECONDS) && current.get() != null, "BLOCKED no selected Auxio authority");
             MediaListenerService.Snapshot sample = MediaItemObservation.read(current.get(), generation.get(), android.os.SystemClock.uptimeMillis());
+            // A fallback read is not live observation: report the handover/Binder failure as
+            // blocked instead of OBSERVED/RESULT_OK.
+            check("com.tw.media".equals(sample.packageName),
+                    "BLOCKED unexpected sample package " + sample.packageName);
+            check(!"SESSION_ACCESS_UNKNOWN".equals(sample.itemEvidence),
+                    "BLOCKED controller read returned SESSION_ACCESS_UNKNOWN");
             String evidence = "OBSERVED uid=" + android.os.Process.myUid() + " " + sample.observationEvidence();
             android.util.Log.i(MediaEventTrace.LOG_TAG, evidence);
             result.putString("stream", evidence + "\nNo transport or audible qualification performed.\n");

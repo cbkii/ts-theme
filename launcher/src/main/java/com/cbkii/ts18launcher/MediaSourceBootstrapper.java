@@ -116,7 +116,10 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
 
         MediaSourceAdapter adapter = MediaSourceAdapter.resolve(context, packageName);
         if (adapter.kind == MediaSourceAdapter.Kind.SESSION_ONLY) {
-            mark(packageName, MediaCommandPolicy.Phase.BLOCKED, adapter.notReadyMessage("Source"));
+            // Only an authoritative read proving the session is absent may declare the source
+            // blocked; the initial publication after process start is still in flight otherwise.
+            if (startupSessionAbsent(packageName))
+                mark(packageName, MediaCommandPolicy.Phase.BLOCKED, adapter.notReadyMessage("Source"));
             return;
         }
         if (!adapter.passiveWarmSafe) {
@@ -173,8 +176,6 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
             new java.util.concurrent.SynchronousQueue<>(), r -> {
                 Thread t = new Thread(r, "ts18-media-observe"); t.setDaemon(true); return t;
             });
-    private Runnable startupObserver = () -> { };
-    void setStartupObserver(Runnable observer) { startupObserver = observer; }
     private int readinessGeneration;
     private boolean readinessBusy, readinessDirty, readinessAuthoritative;
 
@@ -250,7 +251,6 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
                         observedControllers.clear();
                         observedControllers.putAll(selected);
                     } else if (!MediaListenerService.hasNotificationAccess(context)) observedControllers.clear();
-                    startupObserver.run();
                 });
             });
         } catch (java.util.concurrent.RejectedExecutionException saturated) {
@@ -356,8 +356,12 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         } else if (adapter.kind == MediaSourceAdapter.Kind.EXPLICIT_SERVICE) {
             prepareExplicitService(adapter, pending);
         } else {
-            mark(packageName, MediaCommandPolicy.Phase.BLOCKED, adapter.notReadyMessage(sourceLabel));
-            finish(pending, false, adapter.notReadyMessage(sourceLabel));
+            // SESSION_ONLY: the first tap can arrive while the process monitor is still
+            // publishing its initial selection. Retain the request and poll the selected
+            // authority within the tap's original bounded deadline instead of failing silently.
+            mark(packageName, MediaCommandPolicy.Phase.STARTING, "Awaiting selected-session publication");
+            MediaEventTrace.record("command", "await-authority", packageName);
+            retryExact(pending);
         }
     }
 
@@ -802,7 +806,10 @@ final class MediaSourceBootstrapper implements ProcessMediaSessionMonitor.Observ
         if (now >= pending.deadlineMs) {
             mark(pending.packageName, MediaCommandPolicy.Phase.FAILED,
                     "Readiness deadline expired before command dispatch");
-            finish(pending, false, pending.sourceLabel + " did not become ready in time");
+            MediaSourceAdapter adapter = MediaSourceAdapter.resolve(context, pending.packageName);
+            finish(pending, false, adapter.kind == MediaSourceAdapter.Kind.SESSION_ONLY
+                    ? adapter.notReadyMessage(pending.sourceLabel)
+                    : pending.sourceLabel + " did not become ready in time");
             return;
         }
 

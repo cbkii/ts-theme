@@ -177,6 +177,12 @@ public final class MediaListenerService extends NotificationListenerService {
     private String radioNotificationTitle = "";
     private String radioNotificationText = "";
     private String radioNotificationStation = "";
+    // One notification retained while its media-session token is not yet observable (session
+    // transition race). Replayed from reconcile() once the matching controller is observable.
+    private String pendingRadioKey = "";
+    private String pendingRadioTitle = "";
+    private String pendingRadioText = "";
+    private Object pendingRadioToken;
     private final RadioStationAssociation radioAssociation = new RadioStationAssociation();
 
     private final MediaController.Callback callback = new MediaController.Callback() {
@@ -253,18 +259,44 @@ public final class MediaListenerService extends NotificationListenerService {
         if (title.isEmpty() && text.isEmpty()) return;
         Object notificationToken = extras.getParcelable(Notification.EXTRA_MEDIA_SESSION);
         Snapshot currentRadio = snapshotOf(findRadioController());
-        if (notificationToken != null && !notificationToken.equals(currentRadio.sessionIdentity)) return;
-        radioNotificationKey = sbn.getKey() == null ? "" : sbn.getKey();
+        if (notificationToken != null && !notificationToken.equals(currentRadio.sessionIdentity)) {
+            // Session transition: the notification's session is not observable yet. Retain the
+            // notification and replay it when reconciliation observes the matching controller,
+            // instead of dropping a legitimate new-station notification.
+            pendingRadioKey = sbn.getKey() == null ? "" : sbn.getKey();
+            pendingRadioTitle = title;
+            pendingRadioText = text;
+            pendingRadioToken = notificationToken;
+            MediaEventTrace.record("metadata", "radio-notification-deferred", sbn.getPackageName());
+            return;
+        }
+        adoptRadioNotification(sbn.getKey(), title, text, currentRadio);
+        refresh();
+    }
+
+    private void adoptRadioNotification(String key, String title, String text, Snapshot currentRadio) {
+        pendingRadioKey = "";
+        pendingRadioTitle = "";
+        pendingRadioText = "";
+        pendingRadioToken = null;
+        radioNotificationKey = key == null ? "" : key;
         radioNotificationTitle = title;
         radioNotificationText = text;
         radioAssociation.observe(currentRadio.sessionIdentity, meaningfulRadioTitle(currentRadio));
         radioNotificationStation = notificationStation(title, currentRadio);
         radioAssociation.notification(radioNotificationStation);
-        MediaEventTrace.record("metadata", "radio-notification", sbn.getPackageName());
-        refresh();
+        MediaEventTrace.record("metadata", "radio-notification",
+                RadioProvider.resolvePackage(this));
     }
 
     @Override public void onNotificationRemoved(StatusBarNotification sbn) {
+        if (sbn != null && sbn.getKey() != null && pendingRadioToken != null
+                && sbn.getKey().equals(pendingRadioKey)) {
+            pendingRadioKey = "";
+            pendingRadioTitle = "";
+            pendingRadioText = "";
+            pendingRadioToken = null;
+        }
         if (sbn == null || radioNotificationKey.isEmpty() || sbn.getKey() == null
                 || !radioNotificationKey.equals(sbn.getKey())) return;
         radioNotificationKey = "";
@@ -356,6 +388,16 @@ public final class MediaListenerService extends NotificationListenerService {
         Snapshot previousGeneric = lastGeneric;
         Snapshot previousRadio = lastRadio;
         Snapshot rawRadio = snapshotOf(radioController);
+        // Replay a notification retained during the session transition once its session token
+        // is observable; this reconcile consumes it in the same pass.
+        if (pendingRadioToken != null && pendingRadioToken.equals(rawRadio.sessionIdentity)) {
+            if (!pendingRadioTitle.isEmpty() || !pendingRadioText.isEmpty()) {
+                adoptRadioNotification(pendingRadioKey, pendingRadioTitle, pendingRadioText, rawRadio);
+            } else {
+                pendingRadioKey = pendingRadioTitle = pendingRadioText = "";
+                pendingRadioToken = null;
+            }
+        }
         boolean navRadio = "com.navimods.radio".equals(rawRadio.packageName);
         radioAssociation.observe(rawRadio.sessionIdentity, meaningfulRadioTitle(rawRadio));
         boolean notificationMatches = (!navRadio || radioAssociation.current())
@@ -726,6 +768,8 @@ public final class MediaListenerService extends NotificationListenerService {
         external.clear();
         externalCallbacks.clear();
         radioNotificationKey = radioNotificationTitle = radioNotificationText = radioNotificationStation = "";
+        pendingRadioKey = pendingRadioTitle = pendingRadioText = "";
+        pendingRadioToken = null;
         radioAssociation.observe(null, "");
     }
 

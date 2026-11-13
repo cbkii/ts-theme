@@ -45,10 +45,14 @@ final class MediaTickerPolicy {
             if (text.isEmpty() || "-".equals(text) || "--".equals(text)
                     || "unknown".equalsIgnoreCase(text) || "null".equalsIgnoreCase(text)) continue;
             String key = text.toLowerCase(java.util.Locale.ROOT);
-            boolean included = false;
+            boolean included = distinct.containsKey(key);
             for (String existing : distinct.keySet())
                 if ((" " + existing + " ").contains(" " + key + " ")) { included = true; break; }
-            if (!included) distinct.putIfAbsent(key, text);
+            if (included) continue;
+            // Symmetric overlap: an incoming value that already covers a shorter retained phrase
+            // replaces it instead of duplicating it in the joined text.
+            distinct.keySet().removeIf(existing -> (" " + key + " ").contains(" " + existing + " "));
+            distinct.put(key, text);
         }
         return String.join(" ", distinct.values());
     }

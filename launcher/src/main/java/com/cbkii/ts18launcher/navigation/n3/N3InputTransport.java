@@ -2,6 +2,7 @@ package com.cbkii.ts18launcher.navigation.n3;
 
 import android.os.SystemClock;
 import android.view.InputDevice;
+import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
@@ -17,7 +18,7 @@ public interface N3InputTransport {
     static KeyEvent[] backKeys() {
         long now = SystemClock.uptimeMillis();
         KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK, 0, 0,
-                KeyEvent.KEYCODE_UNKNOWN, 0, KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
+                KeyCharacterMap.VIRTUAL_KEYBOARD, 0, KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
         KeyEvent up = KeyEvent.changeAction(down, KeyEvent.ACTION_UP);
         return new KeyEvent[] {down, up};
     }

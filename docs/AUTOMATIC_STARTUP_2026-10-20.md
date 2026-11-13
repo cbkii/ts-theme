@@ -2,6 +2,8 @@
 
 > **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
 
+> **2026-11-12.** The PASS counts in the validation table below (for example the 393-test launcher Python suite and the 25 coldstart host tests) describe the recorded 20 October revision, not the current head; the coldstart suite has since changed. See the [documentation index](README.md) for current status.
+
 The selected profile is N2 + bridge + fullscreen departure + immediate root-assisted silent Music preparation. Retain and user profile comparisons are excluded. Around three seconds is a soft target: the mandatory objective is the fastest reliable measured outcome. Small timing overruns alone are not failures.
 
 This child is based on PR27 `11ec69a0c53f723cca0c046a255ddf0f4322b006`. Pair it with the Maps child of `07340fca1e5e603e0f40aa576204b1ec39342c14` and Auxio child of dev `21cd6f3fd84f3d163345fedfa1b5214fe68854d4`. The captured old Auxio APK's source is unknown; no source-attribution claim is made for it.

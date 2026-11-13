@@ -109,8 +109,15 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertIn("BUILD_INFO checksum mismatch", reconciler)
         self.assertIn("Release PATCH/read-back mismatch", reconciler)
         self.assertIn("workflow_dispatch:", repair)
-        self.assertIn("testing-only-draft-release-${{ github.repository }}", repair)
-        self.assertIn("reconcile_testing_release.py", repair)
+        # The dispatcher is fixed and delegates to the trusted default-branch implementation;
+        # the mutating logic, concurrency group and write scope live only there.
+        impl = (ROOT / ".github/workflows/testing-apk-reconcile-notes-impl.yml").read_text(encoding="utf-8")
+        self.assertIn("testing-apk-reconcile-notes-impl.yml@main", repair)
+        self.assertNotIn("reconcile_testing_release.py", repair)
+        self.assertIn("workflow_call:", impl)
+        self.assertIn("testing-only-draft-release-${{ github.repository }}", impl)
+        self.assertIn("reconcile_testing_release.py", impl)
+        self.assertIn("contents: write", impl)
 
 
     def test_validate_no_longer_duplicates_codex_branch_pushes(self):

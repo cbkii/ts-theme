@@ -23,11 +23,24 @@ class NotificationAccessBootstrapTest(unittest.TestCase):
         self.assertIn("UiPersonalizationPrefs.mediaListenerRootGrant(app)", early)
         self.assertIn("case WITHDRAW_CONSENT:", early)
         self.assertIn("UiPersonalizationPrefs.setMediaListenerRootGrant(app, false);", early)
-        # The only root call sits behind the policy decision, never directly in process start.
+        # The only root calls are the policy-gated grant and the consent-withdrawal undo of
+        # exactly our own listener; never directly in process start.
         self.assertNotIn("RootShell", early)
-        self.assertEqual(1, BOOT.count("RootShell.runMillis("))
+        self.assertEqual(2, BOOT.count("RootShell.runMillis("))
+        self.assertIn("cmd notification allow_listener", BOOT)
+        self.assertIn("cmd notification disallow_listener", BOOT)
         self.assertIn("if (!rootConsent) return Action.USE_SETTINGS;", policy)
         self.assertIn("if (grantApplied && !freshConsent) return Action.WITHDRAW_CONSENT;", policy)
+
+    def test_consent_withdrawal_cancels_in_flight_root_grant(self):
+        # Consent is re-checked before executing and again before committing; an opt-in recorded
+        # while access already existed counts as applied so later revocation withdraws consent.
+        grant = BOOT.split("private static void rootGrant(", 1)[1]
+        self.assertIn('UiPersonalizationPrefs.mediaListenerRootGrant(app)', grant)
+        self.assertIn("revokeOwnListener", grant)
+        request = BOOT.split("static void requestRootGrant(", 1)[1].split(
+            "private static void rootGrant", 1)[0]
+        self.assertIn("markMediaListenerRootGrantApplied(app);", request)
 
     def test_application_initializes_facade_early_and_gates_legacy_monitor(self):
         self.assertIn("MediaNotificationAccessBootstrapper.ensureEarly(this);", APP)

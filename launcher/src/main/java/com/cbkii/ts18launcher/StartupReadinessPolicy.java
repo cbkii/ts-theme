@@ -28,6 +28,8 @@ final class StartupReadinessPolicy {
         Method method = Method.NONE;
         int generation;
         int attempts;
+        /** Late-USB admissions are counted separately and remain bounded per boot. */
+        int storageAdmissions;
         long startedMs = -1L;
         long finishedMs = -1L;
         String firstFailingBoundary = "";
@@ -74,24 +76,26 @@ final class StartupReadinessPolicy {
     /** Whether this trigger may begin a new admission for the source. */
     boolean admit(Source source, Trigger trigger, long now) {
         Record r = records.get(source);
+        // Genuine late USB may re-admit Music beyond the startup attempt ledger, but repeated
+        // mount events stay bounded too: at most MAX_ATTEMPTS_PER_BOOT storage admissions/boot.
+        boolean lateUsb = source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT
+                && r.storageAdmissions < MAX_ATTEMPTS_PER_BOOT;
         switch (r.state) {
             case STARTING:
                 return false;
             case READY:
             case ACTIVE:
-                return source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT;
+                return lateUsb;
             case FAILED:
             case UNAVAILABLE:
             case BLOCKED:
-                if (r.attempts >= MAX_ATTEMPTS_PER_BOOT
-                        && !(source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT)) return false;
-                boolean lateUsb = source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT;
+                if (r.attempts >= MAX_ATTEMPTS_PER_BOOT && !lateUsb) return false;
                 if (r.state == State.FAILED && r.finishedMs >= 0L && !lateUsb
                         && now - r.finishedMs < FAILED_RETRY_SPACING_MS) return false;
                 return true;
             case UNCERTAIN:
                 // Session callbacks are observations, not proof a prior launch failed.
-                return source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT;
+                return lateUsb;
             default:
                 return false;
         }
@@ -104,6 +108,7 @@ final class StartupReadinessPolicy {
         r.trigger = trigger;
         r.generation = ++nextGeneration;
         r.attempts++;
+        if (trigger == Trigger.STORAGE_MOUNT) r.storageAdmissions++;
         r.startedMs = now;
         r.finishedMs = -1L;
         r.firstFailingBoundary = "";

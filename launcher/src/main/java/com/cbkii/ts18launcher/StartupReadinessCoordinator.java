@@ -225,7 +225,12 @@ final class StartupReadinessCoordinator {
         for (MediaSourceKey key : MediaSourceKey.values()) cancelRecovery(key);
         if (staging != null) staging.cancel();
     }
-    void noteUserInteraction() { StartupTimeline.mark("home.first_input"); }
+    void noteUserInteraction() {
+        // The user is interacting with HOME: an automatic Maps transaction must not take focus.
+        yielded = true;
+        if (navigation != null) navigation.cancelAutomaticColdStart();
+        StartupTimeline.mark("home.first_input");
+    }
     void noteExternalNavigation() {
         yielded = true;
         if (staging != null) staging.cancel();
@@ -242,7 +247,7 @@ final class StartupReadinessCoordinator {
     }
     Mode mode() { return Mode.AUTOMATIC_FALLBACK; }
     void attachLoader(LoaderUi ui) { loaderUi = ui; if (ui != null) ui.hide(); }
-    void detachLoader(LoaderUi ui) { if (loaderUi == ui) { if (staging != null) staging.cancel(); ui.hide(); loaderUi = null; } }
+    void detachLoader(LoaderUi ui) { if (ui != null && loaderUi == ui) { if (staging != null) staging.cancel(); ui.hide(); loaderUi = null; } }
     boolean dismissLoader() { if (staging != null) { staging.cancel(); return true; } if (loaderUi != null) loaderUi.hide(); return false; }
     void destroy() { if (staging != null) staging.cancel(); destroyed = true; navigation = null; main.removeCallbacksAndMessages(null); }
 }

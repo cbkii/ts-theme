@@ -67,6 +67,9 @@ final class MediaNotificationAccessBootstrapper {
         Context app = context.getApplicationContext();
         UiPersonalizationPrefs.setMediaListenerRootGrant(app, true);
         if (MediaListenerService.hasNotificationAccess(app)) {
+            // Access pre-existed this opt-in: record it, so a later disappearance is read as
+            // the owner's revocation and never triggers an automatic root grant.
+            UiPersonalizationPrefs.markMediaListenerRootGrantApplied(app);
             ensureConnected(app);
             deliver(callback, true, "Notification access is already granted");
             return;
@@ -79,10 +82,24 @@ final class MediaNotificationAccessBootstrapper {
         EXECUTOR.execute(() -> {
             int userId = AndroidUserId.current();
             String command = rootGrantCommand(listener, userId);
+            // Consent can be withdrawn while this request waited on the executor: re-check it
+            // before executing and again before committing the grant.
+            if (!UiPersonalizationPrefs.mediaListenerRootGrant(app)) {
+                MediaEventTrace.record("listener-access", "root-grant-withdrawn", "before request");
+                deliver(callback, false, "Root consent was withdrawn");
+                return;
+            }
             MediaEventTrace.record("listener-access", "root-grant-request",
                     "user=" + userId + " component=" + listener.flattenToShortString());
             RootShell.Result root = RootShell.runMillis(command, ROOT_TIMEOUT_MS);
             boolean granted = waitForGrant(app);
+            if (granted && !UiPersonalizationPrefs.mediaListenerRootGrant(app)) {
+                // The grant landed after consent was withdrawn: undo exactly our own grant.
+                revokeOwnListener(app, listener, userId);
+                MediaEventTrace.record("listener-access", "root-grant-withdrawn", "after landing");
+                deliver(callback, false, "Root consent was withdrawn; access removed");
+                return;
+            }
             if (!granted) {
                 MediaEventTrace.record("listener-access",
                         root.completed ? "root-grant-rejected" : "root-grant-unavailable",
@@ -150,6 +167,14 @@ final class MediaNotificationAccessBootstrapper {
         if (component == null || component.isEmpty()) return "exit 1";
         return "/system/bin/cmd notification allow_listener "
                 + shellQuote(component) + " " + userId;
+    }
+
+    /** Undo exactly one grant this launcher landed after consent was withdrawn; nothing else. */
+    private static void revokeOwnListener(Context app, ComponentName listener, int userId) {
+        String component = listener.flattenToString();
+        if (component == null || component.isEmpty()) return;
+        RootShell.runMillis("/system/bin/cmd notification disallow_listener "
+                + shellQuote(component) + " " + userId, ROOT_TIMEOUT_MS);
     }
 
     private static boolean waitForGrant(Context context) {

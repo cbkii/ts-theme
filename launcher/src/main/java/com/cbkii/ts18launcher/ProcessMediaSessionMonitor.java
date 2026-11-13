@@ -160,15 +160,18 @@ final class ProcessMediaSessionMonitor {
             }
         });
     }
-    /** Main-looper callers only. No readiness/browser cache can override this callback owner. */
+    /** Main-looper callers only. No readiness/browser cache can override this callback owner.
+     * While a re-read is pending the monitor is not authoritative: callers must not dispatch to
+     * the previous session, so the lookup reports absence until the next publish. */
     static MediaController selectedController(String pkg) {
         ProcessMediaSessionMonitor owner = instance;
-        Owner entry = owner == null ? null : owner.selected.get(pkg);
+        Owner entry = owner == null || !owner.authoritative ? null : owner.selected.get(pkg);
         return entry != null && entry.current() ? entry.controller : null;
     }
     static String selectedMusicPackage() {
         ProcessMediaSessionMonitor owner = instance;
-        Owner entry = owner == null ? null : owner.watched.get(owner.musicToken);
+        if (owner == null || !owner.authoritative) return "";
+        Owner entry = owner.watched.get(owner.musicToken);
         return entry != null && entry.current() && owner.selected.get(packageOf(entry.controller)) == entry
                 ? packageOf(entry.controller) : "";
     }
@@ -302,6 +305,10 @@ final class ProcessMediaSessionMonitor {
         }
     }
     private void publish(boolean available) {
+        MediaListenerService.Snapshot previousGeneric = lastGeneric;
+        MediaListenerService.Snapshot previousRadio = lastRadio;
+        boolean previousAuthoritative = authoritative;
+        Object previousMusic = musicToken, previousRadioToken = radioToken;
         for (Owner owner : watched.values()) {
             String evidence = owner.snapshot.observationEvidence();
             if (!evidence.equals(owner.tracedEvidence)) {
@@ -352,7 +359,21 @@ final class ProcessMediaSessionMonitor {
         }
         authoritative = available;
         if (!available) { selected.clear(); lastGeneric = empty(); lastRadio = empty(); }
-        notifyObservers();
+        // Notify only on a semantic change: the one-second verification tick must not start a
+        // full active-session/readiness scan in observers when nothing observed actually moved.
+        if (previousAuthoritative != authoritative
+                || !sameSnapshot(previousGeneric, lastGeneric)
+                || !sameSnapshot(previousRadio, lastRadio)
+                || !Objects.equals(previousMusic, musicToken)
+                || !Objects.equals(previousRadioToken, radioToken)) notifyObservers();
+    }
+    private static boolean sameSnapshot(MediaListenerService.Snapshot a, MediaListenerService.Snapshot b) {
+        if (a == b) return true;
+        return a.packageName.equals(b.packageName) && a.title.equals(b.title)
+                && a.artist.equals(b.artist) && a.state == b.state && a.actions == b.actions
+                && a.playing == b.playing && a.itemVerified == b.itemVerified
+                && a.mediaId.equals(b.mediaId) && a.queueItemId == b.queueItemId
+                && Objects.equals(a.sessionIdentity, b.sessionIdentity);
     }
     private static int rank(Owner owner) {
         int state = owner.snapshot.state;
@@ -370,8 +391,13 @@ final class ProcessMediaSessionMonitor {
                 && !"com.android.phone".equals(pkg);
     }
     private void invalidate() {
-        revision++; dirty = true; authoritative = false;
-        lastGeneric = empty(); lastRadio = empty(); notifyObservers();
+        revision++; dirty = true;
+        // Observers keep their last pushed state through a bounded re-read; notify only when
+        // the invalidation actually withdraws previously published state.
+        boolean withdrew = authoritative || !lastGeneric.isEmpty() || !lastRadio.isEmpty();
+        authoritative = false;
+        lastGeneric = empty(); lastRadio = empty();
+        if (withdrew) notifyObservers();
     }
     private static MediaListenerService.Snapshot empty() { return new MediaListenerService.Snapshot("", "", "", false); }
     private void notifyObservers() {

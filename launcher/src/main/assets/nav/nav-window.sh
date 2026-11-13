@@ -805,7 +805,7 @@ require_startup_window_focus() {
   window_owners="${WINDOW_OWNERS:-$WINDOWS.owners}"
   focus_started=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
   bounded dumpsys window displays >"$WINDOWS" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
-  focus_before=$(awk '/mCurrentFocus=/ {n++; sub(/^.*mCurrentFocus=/, ""); value=$0} END {if(n==1) print value}' "$WINDOWS")
+  focus_before=$(awk '/mCurrentFocus=/ {n++; v=$0; sub(/^.*mCurrentFocus=/, "", v); sub(/[[:space:]]+$/,"",v); sub(/:$/,"",v); value=v} END {if(n==1) print value}' "$WINDOWS")
   case "$focus_before" in Window\{*\}) ;; *) log_event 'focus reason=FOCUS_MISSING'; fail STARTUP_FOCUS_UNKNOWN ;; esac
   if [ "${TS18_REQUIRE_MASK:-0}" = 1 ]; then
     [ -n "$mask_uid" ] || fail STARTUP_MASK_REQUIRED
@@ -816,7 +816,7 @@ require_startup_window_focus() {
     bounded dumpsys window windows >"$window_owners" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
   fi
   bounded dumpsys window displays >"$focus_after" 2>/dev/null || fail STARTUP_FOCUS_UNKNOWN
-  focus_latest=$(awk '/mCurrentFocus=/ {n++; sub(/^.*mCurrentFocus=/, ""); value=$0} END {if(n==1) print value}' "$focus_after")
+  focus_latest=$(awk '/mCurrentFocus=/ {n++; v=$0; sub(/^.*mCurrentFocus=/, "", v); sub(/[[:space:]]+$/,"",v); sub(/:$/,"",v); value=v} END {if(n==1) print value}' "$focus_after")
   [ "$focus_before" = "$focus_latest" ] || { log_event 'focus reason=WINDOW_TOKEN_MISMATCH'; fail STARTUP_FOCUS_UNKNOWN; }
   focus_finished=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
   [ $((focus_finished - focus_started)) -le 2000 ] || { log_event 'focus reason=FOCUS_STALE'; fail STARTUP_FOCUS_UNKNOWN; }
@@ -831,8 +831,8 @@ require_startup_window_focus() {
       owned=0; block=$0; sub(/^.*Window\{/,"",block); sub(/ .*$/, "", block)
       if (uid!="" && index($0," u" user " " mask "}")) owned=1
     }
-    owned && index($0,"mOwnerUid=" uid " ") {owner[block]=1}
-    owned && /ty=(2038|APPLICATION_OVERLAY)[ }]/ {overlay[block]=1}
+    owned && $0 ~ ("mOwnerUid=" uid "([[:space:]]|$)") {owner[block]=1}
+    owned && $0 ~ ("ty=(2038|APPLICATION_OVERLAY)([[:space:]}]|$)") {overlay[block]=1}
     FILENAME==ARGV[1] && /mCurrentFocus=/ {
       if ($0 !~ (" u" user " ")) {bad=1; next}
       v=$0; sub(/^.* u[0-9]+ /,"",v); sub(/[}[:space:]].*$/,"",v)

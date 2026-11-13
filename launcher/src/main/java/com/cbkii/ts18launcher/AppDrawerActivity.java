@@ -148,7 +148,9 @@ public final class AppDrawerActivity extends Activity {
 
     @Override protected void onStart() {
         super.onStart(); appearanceController.start();
-        if (fullPage != null) { fullPage.refreshPreferences(); fullPage.showPanel(); }
+        // onCreate already showed the panel: re-showing here clears the user's search, replays
+        // the reveal animation and double-records first-draw on every resume.
+        if (fullPage != null) fullPage.refreshPreferences();
     }
     @Override protected void onDestroy() {
         if (fullPage != null) fullPage.destroy();

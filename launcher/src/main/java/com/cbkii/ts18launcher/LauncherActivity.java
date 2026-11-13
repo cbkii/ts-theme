@@ -907,7 +907,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             MediaListenerService.Snapshot core, MediaListenerService.Snapshot enriched,
             boolean coreAuthoritative) {
         MediaListenerService.Snapshot secondary = normaliseSnapshot(enriched);
-        if (!coreAuthoritative) return emptyMediaSnapshot();
+        // A non-authoritative process monitor has no current evidence; keep the listener's own
+        // observed snapshot rather than blanking the source until the re-read publishes.
+        if (!coreAuthoritative) return secondary;
         MediaListenerService.Snapshot primary = normaliseSnapshot(core);
         if (primary.packageName.isEmpty()) return primary;
         // Generic music has exactly one publisher; title equality cannot prove an item match.

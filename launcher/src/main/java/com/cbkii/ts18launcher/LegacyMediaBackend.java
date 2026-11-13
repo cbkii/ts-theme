@@ -32,9 +32,17 @@ final class LegacyMediaBackend implements MediaBackend {
     }
 
     @Override public void detach(MediaSourceKey key) {
-        String packageName = attached.remove(key);
-        if (packageName != null && !packageName.isEmpty()) {
-            sources().cancelPendingFor(packageName, "Source moved to another media engine");
+        // Capture both packages before removal: legacy Auto may have issued commands to an
+        // effective package different from the configured attachment.
+        String configured = attached.get(key);
+        String effective = controlPackage(key);
+        attached.remove(key);
+        MediaSourceBootstrapper owner = sources();
+        if (configured != null && !configured.isEmpty()) {
+            owner.cancelPendingFor(configured, "Source moved to another media engine");
+        }
+        if (!effective.isEmpty() && !effective.equals(configured)) {
+            owner.cancelPendingFor(effective, "Source moved to another media engine");
         }
         MediaEventTrace.record("engine", "legacy-detached", key.name());
     }
@@ -63,8 +71,16 @@ final class LegacyMediaBackend implements MediaBackend {
     }
 
     @Override public boolean playing(MediaSourceKey key, String packageName) {
-        return packageName != null && !packageName.isEmpty() && packageName.equals(attached.get(key))
-                && sources().isPlaying(packageName);
+        // Answer for the package this engine actually controls for the source: in legacy Auto
+        // mode that can differ from the configured attachment, and checking only the attachment
+        // would miss a playing source during cross-engine handover.
+        String effective = controlPackage(key);
+        if (effective.isEmpty()) return false;
+        if (packageName != null && !packageName.isEmpty()
+                && !packageName.equals(attached.get(key)) && !packageName.equals(effective)) {
+            return false;
+        }
+        return sources().isPlaying(effective);
     }
 
     @Override public void command(MediaSourceKey key, String packageName, MediaUserAction action,

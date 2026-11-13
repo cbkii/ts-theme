@@ -47,19 +47,32 @@ final class NavigationRootHelper {
     /** The live automatic-start admission check; replaceable only by tests. */
     java.util.function.Predicate<Context> admission = CompactStartupClient::automaticAllowed;
 
+    /** Held only while an automatic-policy dispatch executes; released on every exit. */
+    private boolean legacyLaunchClaimed;
+
     String dispatchColdPolicy() {
         String policy = coldPolicy;
-        if ("automatic".equals(policy)
-                && !com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.legacyMayAutoLaunch(context)) {
+        if (!"automatic".equals(policy)) return policy;
+        // The N3 check and the launch admission are one atomic claim: N3 display acquisition is
+        // refused for the bounded lifetime of this dispatch, not merely observed before it.
+        if (!com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.beginLegacyAutomaticLaunch(context)) {
             // N3 owns a display for navigation: legacy must not launch a competing task.
             MediaEventTrace.record("compact-startup", "dispatch-denied-n3-owner", "");
             return "deny";
         }
-        if ("automatic".equals(policy) && !admission.test(context)) {
+        if (!admission.test(context)) {
+            com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.endLegacyAutomaticLaunch(context);
             MediaEventTrace.record("compact-startup", "dispatch-readmission-denied", "");
             return "deny";
         }
+        legacyLaunchClaimed = true;
         return policy;
+    }
+
+    private void releaseLegacyLaunchClaim() {
+        if (!legacyLaunchClaimed) return;
+        legacyLaunchClaimed = false;
+        com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.endLegacyAutomaticLaunch(context);
     }
     void setDeadline(long elapsedDeadlineMs) { deadline = elapsedDeadlineMs; }
     private long remaining() {
@@ -115,7 +128,12 @@ final class NavigationRootHelper {
                 .append(' ').append(AndroidUserId.current());
         for (String arg : args) command.append(' ').append(singleQuote(arg));
         long phaseStart = android.os.SystemClock.elapsedRealtime();
-        ProcessResult result = executeRoot(command.toString(), budget);
+        ProcessResult result;
+        try {
+            result = executeRoot(command.toString(), budget);
+        } finally {
+            releaseLegacyLaunchClaim();
+        }
         android.util.Log.i("TS18Nav", "helper action=" + action + " deadline=" + deadline
                 + " method=" + TestingProfiles.summary(context) + " elapsedMs="
                 + (android.os.SystemClock.elapsedRealtime() - phaseStart) + " exit=" + result.exitCode);

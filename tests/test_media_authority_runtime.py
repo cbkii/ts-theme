@@ -149,13 +149,13 @@ LauncherPrefs.mode="dedicated";refresh();check(effective.packageName.equals("A")
 // A stale browser alternative must not override a live package's token.
 MediaController staleBrowser=new MediaController("A",99);staleBrowser.track("a","STALE BROWSER",1,3);ProcessMediaSessionMonitor.observeExternal(context,staleBrowser);pump();check(ProcessMediaSessionMonitor.selectedController("A")==a2,"browser overrode live session");
 // A failed active-session query must not promote the suppressed alternative browser token.
-Context.manager.fail=true;refresh();check(title().isEmpty()&&ProcessMediaSessionMonitor.selectedController("A")==null,"failed membership query promoted stale browser authority");Context.manager.fail=false;refresh();
+Context.manager.fail=true;refresh();check(title().equals("STALE")&&ProcessMediaSessionMonitor.selectedController("A")==null,"failed membership query promoted stale browser authority");Context.manager.fail=false;refresh();
 // The actual listener disconnect method clears static replay while the process publication survives.
 MediaListenerService listener=new MediaListenerService();MediaListenerService.instance=listener;listener.connected=true;
 MediaListenerService.lastGeneric=new MediaListenerService.Snapshot("A","STALE","",true);
 listener.onListenerDisconnected();check(MediaListenerService.lastGeneric.isEmpty()&&!MediaListenerService.lastGeneric.playing,"disconnect retained listener static playback");
 check(effective.packageName.equals("B"),"listener disconnect invalidated valid process data");
-refresh();check(effective.packageName.equals("B"),"listener fallback changed process authority");check(!mergeSessionSnapshot(null,new MediaListenerService.Snapshot("A","STALE","",3,2,a.token),false).playing,"listener survives process unavailability");
+refresh();check(effective.packageName.equals("B"),"listener fallback changed process authority");check(mergeSessionSnapshot(null,new MediaListenerService.Snapshot("A","STALE","",3,2,a.token),false).playing,"listener fallback dropped during process re-read");check(mergeSessionSnapshot(null,new MediaListenerService.Snapshot("A","STALE","",3,2,a.token),true).packageName.isEmpty(),"authoritative empty process state replaced by listener");
 // No removed Activity may receive a queued initial callback; new Activity recovers current state.
 int before=publications;ProcessMediaSessionMonitor.removeObserver(observer);ProcessMediaSessionMonitor.addObserver(context,observer);ProcessMediaSessionMonitor.removeObserver(observer);pump();check(publications==before,"removed Activity got queued callback");ProcessMediaSessionMonitor.addObserver(context,observer);pump();check(effective.packageName.equals("B"),"recreated Activity failed recovery");
 // In-flight result is invalidated by a newer callback. Never publish its old title.
@@ -163,9 +163,9 @@ ProcessMediaSessionMonitor.refresh(context);while(Handler.step()){};worker.step(
 b.track("c","NEW",3,3);b.callback.onMetadataChanged(new MediaMetadata("a","OLD"));pump();check(title().equals("NEW"),"stale worker publication replaced newer callback");
 // A completed old read queued before the timeout also expires if the main looper was delayed.
 ProcessMediaSessionMonitor.refresh(context);while(Handler.step()){};worker.step();while(Handler.step()){};worker.step();
-SystemClock.now+=2001;Handler.step();check(title().isEmpty()&&ProcessMediaSessionMonitor.selectedController("B")==null,"expired queued result published before timeout message");pump();refresh();
+SystemClock.now+=2001;Handler.step();check(title().equals("STALE")&&ProcessMediaSessionMonitor.selectedController("B")==null,"expired queued result published before timeout message");pump();refresh();
 // Bounded timeout: unknown UI/transport while Binder is stalled, no growing worker queue.
-ProcessMediaSessionMonitor.refresh(context);while(Handler.step()){};SystemClock.now+=2001;while(Handler.step()){};check(title().isEmpty()&&ProcessMediaSessionMonitor.selectedController("B")==null,"timed-out read still authoritative");check(worker.tasks.size()==1,"unbounded worker backlog");pump();refresh();
+ProcessMediaSessionMonitor.refresh(context);while(Handler.step()){};SystemClock.now+=2001;while(Handler.step()){};check(title().equals("STALE")&&ProcessMediaSessionMonitor.selectedController("B")==null,"timed-out read still authoritative");check(worker.tasks.size()==1,"unbounded worker backlog");pump();refresh();
 // Destroyed owner's delayed callback cannot restore it. Fresh membership/reconnect must register anew.
 var old=b.callback;old.onSessionDestroyed();pump();Context.manager.active=List.of(a2);old.onMetadataChanged(new MediaMetadata("c","GHOST"));pump();check(!title().equals("GHOST")&&ProcessMediaSessionMonitor.selectedController("B")==null,"destroyed session resurrected");
 MediaListenerService.access=false;refresh();check(title().equals("STALE BROWSER")&&ProcessMediaSessionMonitor.selectedController("A")==staleBrowser,"access loss must only retain independently authorised browser");

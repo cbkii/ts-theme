@@ -38,14 +38,20 @@ final class NavCompactConsent {
     /** One lstat result; only the fields the contract needs. */
     static final class Entry {
         final int uid; final int mode; final long size; final long modified;
-        Entry(int uid, int mode, long size, long modified) {
+        /** Inode/device identity; -1 when the source cannot supply it (tests). A rename-replaced
+         * file keeps neither, so identity comparison defeats second-resolution mtime collisions. */
+        final long ino; final long dev;
+        Entry(int uid, int mode, long size, long modified) { this(uid, mode, size, modified, -1L, -1L); }
+        Entry(int uid, int mode, long size, long modified, long ino, long dev) {
             this.uid = uid; this.mode = mode; this.size = size; this.modified = modified;
+            this.ino = ino; this.dev = dev;
         }
         boolean directory() { return (mode & S_IFMT) == S_IFDIR; }
         boolean regular() { return (mode & S_IFMT) == S_IFREG; }
         boolean sameAs(Entry other) {
             return other != null && uid == other.uid && mode == other.mode
-                    && size == other.size && modified == other.modified;
+                    && size == other.size && modified == other.modified
+                    && ino == other.ino && dev == other.dev;
         }
     }
 
@@ -101,7 +107,15 @@ final class NavCompactConsent {
         requireAbsent(fs, file + ".bak");
         if (!before.sameAs(after) || bytes.length != before.size)
             throw new IllegalStateException("CONSENT_FILE_UNSTABLE");
-        return parse(new String(bytes, StandardCharsets.UTF_8));
+        boolean enabled = parse(new String(bytes, StandardCharsets.UTF_8));
+        // Validate identity and content once more after parsing: a rewrite or replacement that
+        // kept owner, mode, size and second-resolution mtime must not authorise from stale bytes.
+        byte[] verified = fs.read(file, LIMIT);
+        Entry settled = present(fs, file, "CONSENT_FILE_UNSTABLE");
+        requireAbsent(fs, file + ".bak");
+        if (!before.sameAs(settled) || !java.util.Arrays.equals(bytes, verified))
+            throw new IllegalStateException("CONSENT_FILE_UNSTABLE");
+        return enabled;
     }
 
     private static Entry present(Fs fs, String path, String absentCode) {
@@ -138,7 +152,8 @@ final class NavCompactConsent {
             try {
                 Class<?> type = stat.getClass();
                 return new Entry(type.getField("st_uid").getInt(stat), type.getField("st_mode").getInt(stat),
-                        type.getField("st_size").getLong(stat), type.getField("st_mtime").getLong(stat));
+                        type.getField("st_size").getLong(stat), type.getField("st_mtime").getLong(stat),
+                        type.getField("st_ino").getLong(stat), type.getField("st_dev").getLong(stat));
             } catch (ReflectiveOperationException unavailable) {
                 throw new IllegalStateException("CONSENT_FILE_UNREADABLE");
             }

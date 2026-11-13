@@ -31,10 +31,26 @@ final class ConfigurationStore {
     }
     static synchronized boolean replace(Context context, Map<String, Object> values) {
         Map<String, Object> previous = read(context);
+        Map<String, Boolean> consent = consentSnapshot(context);
         if (edit(context, values).commit()) return true;
         // commit() changes in-memory preferences even if storage fails: restore that snapshot too.
+        // The rollback must also restore the device-local consent keys a failed import cleared.
         edit(context, previous).commit();
+        restoreConsent(context, consent);
         return false;
+    }
+    private static Map<String, Boolean> consentSnapshot(Context context) {
+        SharedPreferences prefs = LauncherPrefs.prefs(context);
+        Map<String, Boolean> consent = new LinkedHashMap<>();
+        for (String key : ConfigurationCodec.DEVICE_CONSENT_KEYS)
+            if (prefs.contains(key)) consent.put(key, prefs.getBoolean(key, false));
+        return consent;
+    }
+    private static void restoreConsent(Context context, Map<String, Boolean> consent) {
+        SharedPreferences.Editor editor = LauncherPrefs.prefs(context).edit();
+        for (Map.Entry<String, Boolean> entry : consent.entrySet())
+            editor.putBoolean(entry.getKey(), entry.getValue());
+        editor.commit();
     }
     private static SharedPreferences.Editor edit(Context context, Map<String, Object> values) {
         SharedPreferences.Editor editor = LauncherPrefs.prefs(context).edit();

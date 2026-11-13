@@ -73,4 +73,23 @@ public class N3MotionConverterTest {
         assertEquals(MotionEvent.ACTION_CANCEL, converter.convert(hover).getActionMasked());
         assertNull(converter.convert(MotionEvent.obtain(0L, 6L, MotionEvent.ACTION_MOVE, 10f, 10f, 0)));
     }
+
+    @Test public void secondDownCancelsTheOwnedGestureAndIsNotForwarded() {
+        converter.convert(MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 10f, 10f, 0));
+        MotionEvent second = converter.convert(MotionEvent.obtain(5L, 5L, MotionEvent.ACTION_DOWN, 20f, 20f, 0));
+        assertEquals(MotionEvent.ACTION_CANCEL, second.getActionMasked());
+        assertNull(converter.convert(MotionEvent.obtain(5L, 10L, MotionEvent.ACTION_MOVE, 30f, 30f, 0)));
+        assertNotNull(converter.convert(MotionEvent.obtain(20L, 20L, MotionEvent.ACTION_DOWN, 20f, 20f, 0)));
+    }
+
+    @Test public void nonFiniteCoordinatesCancelTheOwnedGesture() {
+        converter.convert(MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 10f, 10f, 0));
+        MotionEvent nan = converter.convert(MotionEvent.obtain(0L, 10L, MotionEvent.ACTION_MOVE, Float.NaN, 10f, 0));
+        assertEquals(MotionEvent.ACTION_CANCEL, nan.getActionMasked());
+        assertNull(converter.convert(MotionEvent.obtain(0L, 15L, MotionEvent.ACTION_MOVE, 10f, 10f, 0)));
+        converter.convert(MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 10f, 10f, 0));
+        MotionEvent infinite = converter.convert(
+                MotionEvent.obtain(0L, 10L, MotionEvent.ACTION_MOVE, Float.POSITIVE_INFINITY, 10f, 0));
+        assertEquals(MotionEvent.ACTION_CANCEL, infinite.getActionMasked());
+    }
 }

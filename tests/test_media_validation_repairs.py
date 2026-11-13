@@ -43,9 +43,9 @@ if(++count>200)throw new AssertionError("unbounded");jobs.remove(j);SystemClock.
             "android/media/session/PlaybackState.java": '''package android.media.session; public class PlaybackState {
 public static final int STATE_NONE=0,STATE_STOPPED=1,STATE_PAUSED=2,STATE_PLAYING=3,STATE_BUFFERING=6,STATE_ERROR=7,STATE_CONNECTING=8;
 public static final long ACTION_PLAY=1,ACTION_PAUSE=2,ACTION_PLAY_PAUSE=4,ACTION_PREPARE=8,ACTION_SKIP_TO_PREVIOUS=16,ACTION_SKIP_TO_NEXT=32;
-public int state=STATE_PAUSED;public int getState(){return state;}public long getActions(){return 63;}}
+public int state=STATE_PAUSED;public long activeId=-1;public int getState(){return state;}public long getActions(){return 63;}public long getActiveQueueItemId(){return activeId;}}
 ''',
-            "android/media/session/MediaSession.java": "package android.media.session; public class MediaSession {public static class Token{}public static class QueueItem{}}",
+            "android/media/session/MediaSession.java": "package android.media.session; public class MediaSession {public static class Token{}public static class QueueItem{public static final long UNKNOWN_ID=-1;public long id=-1;public long getQueueId(){return id;}}}",
             "android/media/MediaMetadata.java": "package android.media;public class MediaMetadata {public static String METADATA_KEY_MEDIA_ID=\"id\",METADATA_KEY_TITLE=\"title\",METADATA_KEY_DISPLAY_TITLE=\"display\";public String text;public String getString(String s){return text;}}",
             "android/media/session/MediaController.java": '''package android.media.session;
 public class MediaController {public String pkg;public PlaybackState state=new PlaybackState();public int plays,pauses,customPlays,ordinaryPlays,skips;public long lastDeadline;public boolean buffer,ignorePause;public long playDelay,pauseDelay;

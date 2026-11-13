@@ -62,11 +62,14 @@ is exact. Confidence labels describe evidence categories, not probabilities.
 
 No additional permission, permission prompt, active GPS request, foreground
 service, wake lock, root access, network request or polling loop is introduced.
-Only visible HOME with selected NavRadio and no explicit frequency reuses a
-fresh in-process location previously observed by the experimental `MapPanel`,
-when fine-location permission is already granted. It does not query providers
-or register a second listener. Native Organic Maps does not populate that
-snapshot; default-region ranking is therefore expected when no fix is available.
+Only visible HOME with selected NavRadio and no explicit frequency reads a
+fresh location, and only when fine-location permission is already granted. The
+resolver reads Android's system-cached last-known locations directly —
+`LocationManager.getLastKnownLocation` over the PASSIVE, GPS and NETWORK
+providers, keeping the newest usable fix. It never requests location updates,
+starts a provider or registers a listener. Any application that recently
+obtained a fix may have populated that cache; default-region ranking is
+therefore expected when no usable fix is cached.
 A fix must be at most 15 minutes old, have finite valid coordinates and reported
 accuracy <=10 km. State clears on detach/source switching/hidden HOME and a
 single expiry callback revokes old regional ranking.

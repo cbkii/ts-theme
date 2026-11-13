@@ -18,10 +18,8 @@ final class TestingProfiles {
         for (String item : allowed) if (item.equals(value)) return value;
         return fallback;
     }
-    static void set(Context c, String key, String value) {
-        prefs(c).edit().putString(key, value).apply();
-        MediaEventTrace.record("testing", "profile", key + "=" + value);
-    }
+    // No setter: the navigation/transition/startup/departure/Auxio profile is fixed by design;
+    // the retired N0/N1 validation modes are unreachable rather than silently ignorable.
     static String summary(Context c) {
         return "nav=" + navigation(c) + " transition=" + transition(c)
                 + " departure=" + (retainCompact(c) ? "retain" : "fullscreen")

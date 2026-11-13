@@ -77,6 +77,10 @@ public final class N3InputMapper {
         int count = ids.length;
         if (count == 0 || count > MAX_POINTERS || xs.length != count || ys.length != count) return drop();
         if (action == ACTION_DOWN) {
+            // A second down means the previous sequence was interrupted: end the owned gesture
+            // through the cancel path instead of orphaning its pressed pointer on the display.
+            // The replacement sequence is not accepted; the next down after it starts fresh.
+            if (gestureOwned) return drop();
             gestureOwned = inside(xs[0], ys[0]);
             if (!gestureOwned) return null;
         } else if (!gestureOwned) {

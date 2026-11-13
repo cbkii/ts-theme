@@ -21,7 +21,7 @@ with the stage that decided it:
 | `radio.navradio.session` | NavRadio+ installed; controlled through its own MediaSession |
 | `radio.topway.session` | stock radio installed; session-only, never started or bound by the launcher |
 | `radio.topway.native` | always `BLOCKED`, because no native tuner command is qualified |
-| `illumination` | `UNKNOWN`: no verified read-only light signal, so appearance stays manual or scheduled. GTS-Launcher's TWUtil `write(516, 255)` request was rejected, and CleanDash's passive `com.zjinnova.zlink.action.OUT_DARK_START/STOP` broadcast is a lead not yet observed on the TS18 (see `docs/REFERENCE_ADOPTION.md`) |
+| `illumination` | `UNKNOWN`: no verified read-only light signal, so appearance stays manual or scheduled. GTS-Launcher's TWUtil `write(516, 255)` path was not adopted — its caller authority is unproven and it has not run on a TS18 device — and CleanDash's passive `com.zjinnova.zlink.action.OUT_DARK_START/STOP` broadcast is a lead not yet observed on the TS18 (see `docs/REFERENCE_ADOPTION.md`) |
 
 `AVAILABLE` means "observed from this app". It never means "authorised to change".
 

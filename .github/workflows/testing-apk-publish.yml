@@ -201,9 +201,13 @@ jobs:
             fi
           fi
           if [[ ! -s "$changes" ]]; then
-            gh api "repos/$GITHUB_REPOSITORY/commits/$source_sha" \
+            # Optional provenance only: an unreachable commit or a GitHub failure must not
+            # abort publication of an otherwise valid retained artifact under set -e.
+            if ! gh api "repos/$GITHUB_REPOSITORY/commits/$source_sha" \
               --jq '.commit.message | split("\n")[0] | gsub("[\r\n=]"; " ") | .[0:180]' \
-              > "$changes"
+              > "$changes" 2>/dev/null; then
+              : > "$changes"
+            fi
           fi
           awk 'NF { printf "change_%d=%s\n", ++n, $0; if (n == 6) exit }' \
             "$changes" >> "outgoing/$info_name"

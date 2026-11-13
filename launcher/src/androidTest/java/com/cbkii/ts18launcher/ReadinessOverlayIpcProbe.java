@@ -58,8 +58,16 @@ final class ReadinessOverlayIpcProbe {
         } finally {
             try {
                 if (fixtureStarted[0]) {
-                    // Test APK only: remove the fixture even after a failed assertion, then verify HOME.
+                    // Test APK only: remove the fixture even after a failed assertion, then verify
+                    // the fixture task is gone and HOME resumes. The broadcast fast path is a
+                    // no-op after fixture process death, so start the fixture's finish contract
+                    // directly from the shell and confirm removal.
+                    android.content.ComponentName fixture = new android.content.ComponentName(
+                            "com.cbkii.ts18launcher.test", MaskFixtureActivity.class.getName());
                     shell(test, "am broadcast -a " + MaskFixtureActivity.FINISH + " -p com.cbkii.ts18launcher.test");
+                    shell(test, "am start -f 0x10008000 -n " + fixture.flattenToString()
+                            + " --ez " + MaskFixtureActivity.EXTRA_FINISH_NOW + " true", 3000L);
+                    verifyRemoved(test, fixture);
                     startAndVerify(test, new android.content.ComponentName(test.getTargetContext(), LauncherActivity.class));
                 }
             } finally { test.runOnMainSync(() -> { if (loader[0] != null) loader[0].destroy(); }); }
@@ -91,6 +99,17 @@ final class ReadinessOverlayIpcProbe {
             if (relevant.length() < 4000) relevant.append(line).append('\n');
         }
         throw new AssertionError("Expected Activity is not resumed: " + target.flattenToString() + "\n" + relevant);
+    }
+
+    /** The fixture task must actually be gone; a silent cleanup failure contaminates later tests. */
+    private static void verifyRemoved(Instrumentation test, android.content.ComponentName target) throws Exception {
+        long until = SystemClock.elapsedRealtime() + 4000L;
+        while (SystemClock.elapsedRealtime() < until) {
+            String state = shell(test, "dumpsys activity activities", until - SystemClock.elapsedRealtime());
+            if (!state.contains(target.getClassName())) return;
+            SystemClock.sleep(Math.min(150L, Math.max(0L, until - SystemClock.elapsedRealtime())));
+        }
+        throw new AssertionError("fixture task was not removed: " + target.flattenToString());
     }
 
     private static void saveText(File file, String text) throws Exception {

@@ -82,7 +82,9 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         merge = launcher.split("private static MediaListenerService.Snapshot mergeSessionSnapshot", 1)[1].split(
             "private static MediaListenerService.Snapshot emptyMediaSnapshot", 1
         )[0]
-        self.assertIn("if (!coreAuthoritative) return emptyMediaSnapshot();", merge)
+        # A non-authoritative process monitor keeps the listener's own observed snapshot as the
+        # fallback instead of blanking the source during the bounded re-read.
+        self.assertIn("if (!coreAuthoritative) return secondary;", merge)
         self.assertIn("if (primary.packageName.isEmpty()) return primary;", merge)
         self.assertIn("primary.sessionIdentity", merge)
         self.assertIn("secondary.sessionIdentity", merge)

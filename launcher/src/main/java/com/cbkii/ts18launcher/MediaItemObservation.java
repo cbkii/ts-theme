@@ -31,13 +31,21 @@ final class MediaItemObservation {
             long queueId = queueId(after);
             String id = text(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID);
             boolean sameToken = Objects.equals(token, controller.getSessionToken());
+            // Compare every rendered field, including the fallbacks below: a change visible only
+            // in DISPLAY_TITLE/ALBUM_ARTIST/DISPLAY_SUBTITLE must not publish as a torn read.
             boolean coherent = sameToken && queueId(before) == queueId
                     && state(before) == state(after)
                     && Objects.equals(id, text(afterMetadata, MediaMetadata.METADATA_KEY_MEDIA_ID))
                     && Objects.equals(text(metadata, MediaMetadata.METADATA_KEY_TITLE),
                             text(afterMetadata, MediaMetadata.METADATA_KEY_TITLE))
                     && Objects.equals(text(metadata, MediaMetadata.METADATA_KEY_ARTIST),
-                            text(afterMetadata, MediaMetadata.METADATA_KEY_ARTIST));
+                            text(afterMetadata, MediaMetadata.METADATA_KEY_ARTIST))
+                    && Objects.equals(text(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
+                            text(afterMetadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE))
+                    && Objects.equals(text(metadata, MediaMetadata.METADATA_KEY_ALBUM_ARTIST),
+                            text(afterMetadata, MediaMetadata.METADATA_KEY_ALBUM_ARTIST))
+                    && Objects.equals(text(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),
+                            text(afterMetadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE));
             boolean verified = coherent && !id.isEmpty();
             String evidence = !sameToken ? "TOKEN_CHANGED" : !coherent ? "TORN_READ"
                     : id.isEmpty() ? "NO_ITEM_ID" : "NO_QUEUE_WITH_VALID_SESSION_METADATA";

@@ -194,11 +194,13 @@ final class AutomotiveUi {
         attachFeedback(button);
     }
 
-    static void styleRailButton(Context context, ImageButton button) { styleRailButton(context, button, true); }
+    static void styleRailButton(Context context, ImageButton button) { styleRailButton(context, button, false); }
 
+    /** endpoint=true marks the fixed rail endpoints (Apps, Navigation): they keep the selected
+     * accent. Quick-slot and drawer buttons pass false and stay plain ui_icon. */
     static void styleRailButton(Context context, ImageButton button, boolean endpoint) {
         button.setBackground(transparentActionBackground(context));
-        button.setImageTintList(ColorStateList.valueOf(endpoint ? color(context, R.color.ui_icon) : accentForeground(context)));
+        button.setImageTintList(ColorStateList.valueOf(endpoint ? accentForeground(context) : color(context, R.color.ui_icon)));
         int pad = dimen(context, R.dimen.driver_gap_large);
         button.setPadding(pad, pad, pad, pad);
         button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);

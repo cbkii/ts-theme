@@ -20,10 +20,20 @@ final class StartupMediaObservation {
             boolean playable = MediaCommandPolicy.controllerReadyForPlay(value, state == null ? 0L : state.getActions());
             java.util.List<android.media.session.MediaSession.QueueItem> queue = controller.getQueue();
             MediaMetadata metadata = controller.getMetadata();
-            boolean content = queue != null && !queue.isEmpty();
-            if (metadata != null) content |= meaningful(pkg, metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID))
+            // A non-empty queue alone is not usable content: it may have no current item or only
+            // placeholder metadata (e.g. Auxio before its cold preparation restores a selection).
+            boolean content = false;
+            if (metadata != null) content = meaningful(pkg, metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID))
                     || meaningful(pkg, metadata.getString(MediaMetadata.METADATA_KEY_TITLE))
                     || meaningful(pkg, metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE));
+            if (!content && queue != null && !queue.isEmpty() && state != null) {
+                long activeId = state.getActiveQueueItemId();
+                if (activeId != android.media.session.MediaSession.QueueItem.UNKNOWN_ID) {
+                    for (android.media.session.MediaSession.QueueItem item : queue) {
+                        if (item != null && item.getQueueId() == activeId) { content = true; break; }
+                    }
+                }
+            }
             return new StartupMediaObservation(true, playable && content, playing);
         } catch (RuntimeException unavailable) { return UNKNOWN; }
     }

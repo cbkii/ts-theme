@@ -557,6 +557,9 @@ final class NavigationWindowController {
     }
 
     private void startResume(String pkg, String component, NavigationWindowBounds target, int taskId) {
+        // The bootstrap exception is load-bearing: the cold transaction's own launch covers HOME
+        // transiently, and its bounded continuation (status poll to resume) must proceed. It is
+        // not a licence for non-bootstrap work: those paths stay HOME-presentable-gated.
         if (!uiState.canPresentNavigation() && !normalBootstrapInFlight) { needsPresentation = true; drainPendingWork(); return; }
         int operation = beginOperation(); if (operation == 0) return;
         state = State.PRESENTING;

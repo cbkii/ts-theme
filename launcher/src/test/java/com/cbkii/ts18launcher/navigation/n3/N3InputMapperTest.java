@@ -66,6 +66,14 @@ public class N3InputMapperTest {
                 mapper.map(N3InputMapper.ACTION_MOVE, id(0), f(Float.NaN), f(1f)).action);
     }
 
+    @Test public void replacementDownCancelsTheInterruptedGestureAndIsNotAccepted() {
+        assertNotNull(mapper.map(N3InputMapper.ACTION_DOWN, id(0), f(100f), f(300f)));
+        N3InputMapper.Mapped cancel = mapper.map(N3InputMapper.ACTION_DOWN, id(0), f(200f), f(300f));
+        assertEquals(N3InputMapper.ACTION_CANCEL, cancel.action);
+        assertNull(mapper.map(N3InputMapper.ACTION_MOVE, id(0), f(200f), f(300f)));
+        assertNotNull(mapper.map(N3InputMapper.ACTION_DOWN, id(0), f(200f), f(300f)));
+    }
+
     @Test public void invalidGeometryDropsEverything() {
         N3InputMapper bad = new N3InputMapper(100, 100, 60, 0, 60, 0, 1280, 720);
         assertFalse(bad.valid());

@@ -35,6 +35,8 @@ final class StartupMaskFocus {
         java.util.regex.Matcher focus = java.util.regex.Pattern.compile("mCurrentFocus=([^\\r\\n]+)").matcher(displays);
         if (!focus.find()) return "";
         String window = focus.group(1).trim();
+        // Some builds write the focused window header with a trailing colon; both forms are valid.
+        if (window.endsWith(":")) window = window.substring(0, window.length() - 1).trim();
         return !focus.find() && window.startsWith("Window{") && window.endsWith("}") ? window : "";
     }
 

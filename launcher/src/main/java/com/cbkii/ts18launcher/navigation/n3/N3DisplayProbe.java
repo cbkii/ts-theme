@@ -14,7 +14,8 @@ import android.media.ImageReader;
  * Read-only N3 feasibility probe for the API 29 public path.
  *
  * It creates one private, launcher-owned virtual display backed by an off-screen ImageReader,
- * asks the platform whether the selected navigation Activity may start on it, and releases the
+ * asks the platform the same admission question the real path asks — may this launcher's
+ * trampoline Activity start on the display to reach the selected navigator — and releases the
  * display. It launches nothing, injects no input, uses no root and needs no permission. The
  * answer is the discriminating fact for N3 on this unit; it is not a claim of pixels or touch.
  */
@@ -47,8 +48,12 @@ public final class N3DisplayProbe {
             // Flags 0: a private display only this app owns. Public displays need privileges.
             display = displays.createVirtualDisplay("ts18-n3-probe", 320, 180, 160, reader.getSurface(), 0);
             if (display == null) return new N3Feasibility.Observation(true, true, true, false, null, "");
-            Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                    .setComponent(target);
+            // The real path admits through this launcher's trampoline: the launcher may always
+            // start its own Activity on its own display, and the trampoline, once present there,
+            // asks about the target. Ask the same first question; nothing is launched.
+            Intent intent = new Intent(app, N3TrampolineActivity.class)
+                    .putExtra(N3TrampolineActivity.EXTRA_TARGET, target.flattenToString())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
             ActivityManager activities = (ActivityManager) app.getSystemService(Context.ACTIVITY_SERVICE);
             if (activities == null) return new N3Feasibility.Observation(true, true, true, true, null, "activity service");
             boolean allowed = activities.isActivityStartAllowedOnDisplay(

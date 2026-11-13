@@ -145,6 +145,12 @@ public final class N3NavigationBackend implements N3Session.Host {
             main.post(() -> session.onFailure(generation, "N3 presenter is not on screen"));
             return;
         }
+        // A legacy automatic launch admitted under the shared facade claim owns the navigator
+        // for its bounded dispatch; N3 must not acquire a display concurrently.
+        if (!com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.get(app).n3MayAcquireDisplay()) {
+            main.post(() -> session.onFailure(generation, "Legacy navigation launch in progress"));
+            return;
+        }
         path.create(generation, surface, width, height, dpi, callback);
     }
 

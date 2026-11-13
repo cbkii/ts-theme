@@ -85,8 +85,6 @@ public final class NavTaskBridge {
         final long id, deadline, epoch;
         final String[] fields;
         final String maskTitle;
-        String windowComponent;
-        long windowAt;
         Request(String[] line) {
             id = Long.parseLong(line[1]); deadline = Long.parseLong(line[2]); epoch = Long.parseLong(line[3]);
             String tail = line[line.length - 1];
@@ -261,7 +259,6 @@ public final class NavTaskBridge {
                         + " launched=0 method=N2 phase=park-verified visible=unknown drawn=unknown";
             }
             if (sourceReturn) {
-                request.windowComponent = null;
                 requireHome(resolve(stacks.invoke(service), "com.cbkii.ts18launcher", user, homeId));
                 Task after = resolve(stacks.invoke(service), pkg, user, taskId);
                 if (after == null || !task.component.equals(after.component) || after.display != 0
@@ -292,13 +289,21 @@ public final class NavTaskBridge {
                 resize.invoke(service, taskId, target, 0);
             }
             if (wasFullscreen) {
-                request.windowComponent = null;
                 foreground(request, focused.invoke(service), taskId, homeId, user, false);
                 focus.invoke(service, homeId);
             }
-            request.windowComponent = null;
             foreground(request, focused.invoke(service), taskId, homeId, user, false);
             focus.invoke(service, taskId);
+            // setFocusedTask is void: a rejected or racing focus must not return RESUMED_NATIVE
+            // while HOME remains foreground. Re-read the focused stack and require the map task.
+            Object verified = focused.invoke(service);
+            if (verified == null || verified.getClass().getField("displayId").getInt(verified) != 0)
+                throw new IllegalStateException("FOREGROUND_CHANGED");
+            int[] focusedIds = (int[]) verified.getClass().getField("taskIds").get(verified);
+            int[] focusedUsers = (int[]) verified.getClass().getField("taskUserIds").get(verified);
+            if (focusedIds == null || focusedUsers == null || focusedIds.length != 1
+                    || focusedUsers.length != 1 || focusedUsers[0] != user || focusedIds[0] != taskId)
+                throw new IllegalStateException("FOREGROUND_CHANGED");
         }
         task = resolve(stacks.invoke(service), pkg, user, taskId);
         requireMap(task);
@@ -343,9 +348,8 @@ public final class NavTaskBridge {
                 || (departure ? ids[0] == task || ids[0] == home : ids[0] != task && ids[0] != home))
             throw new IllegalStateException("FOREGROUND_CHANGED");
         String activity = top.flattenToString();
-        if (activity.equals(request.windowComponent) && android.os.SystemClock.elapsedRealtime() - request.windowAt < 150L) {
-            request.current(); return;
-        }
+        // No cached ownership: every privileged mutation re-reads the focused window. A racing
+        // focus change inside a request is exactly when verification must not be skipped.
         // Display focus and window ownership are distinct OEM dump surfaces.
         // Correlate the exact focused token before/after the bounded owner read.
         long focusAt = android.os.SystemClock.elapsedRealtime();
@@ -361,8 +365,6 @@ public final class NavTaskBridge {
             throw focusUnknown("FOCUS_STALE");
         request.current();
         if (StartupMaskFocus.ownsFocusedWindow(displays, owners, request.maskTitle, user)) {
-            request.windowComponent = activity;
-            request.windowAt = android.os.SystemClock.elapsedRealtime();
             return;
         }
         if (!owners.isEmpty()) throw focusUnknown("MASK_OWNER_MISMATCH");
@@ -374,8 +376,6 @@ public final class NavTaskBridge {
         String component = window == null ? "" : window.flattenToString();
         if (!(component.equals(activity) || homeComponent(component) && homeComponent(activity)) || matcher.find())
             throw new IllegalStateException("FOREGROUND_CHANGED");
-        request.windowComponent = activity;
-        request.windowAt = android.os.SystemClock.elapsedRealtime();
         request.current();
     }
 

@@ -34,7 +34,7 @@ public static IActivityManager getService(){return new Service();}}
             'android/system/ErrnoException.java': '''package android.system;public class ErrnoException extends Exception {public final int errno;public ErrnoException(String f,int e){super(f);errno=e;}}''',
             'android/system/OsConstants.java': '''package android.system;public class OsConstants {public static final int ENOENT=2,EACCES=13;}''',
             'android/system/Os.java': '''package android.system;public class Os {public static int owner=10209;public static String deny="";
-public static class Stat {public int st_uid=owner;public int st_mode;public long st_size;public long st_mtime;}
+public static class Stat {public int st_uid=owner;public int st_mode;public long st_size;public long st_mtime;public long st_ino=7;public long st_dev=3;}
 public static Stat stat(String path){return new Stat();}
 public static Stat lstat(String path)throws ErrnoException{
  if(!deny.isEmpty()&&path.equals(deny))throw new ErrnoException("lstat",OsConstants.EACCES);

@@ -53,7 +53,13 @@ final class RadioMetadataResolver {
                     LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
                     if (manager != null) for (String provider : new String[] {
                             LocationManager.PASSIVE_PROVIDER, LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
-                        Location candidate = manager.getLastKnownLocation(provider);
+                        final Location candidate;
+                        try {
+                            candidate = manager.getLastKnownLocation(provider);
+                        } catch (RuntimeException unavailableProvider) {
+                            // A missing/disabled provider must not hide another provider's fix.
+                            continue;
+                        }
                         if (usable(candidate) && (cached == null || candidate.getElapsedRealtimeNanos() > cached.getElapsedRealtimeNanos()))
                             cached = new Location(candidate);
                     }
