@@ -35,8 +35,11 @@ final class ConfigurationStore {
         if (edit(context, values).commit()) return true;
         // commit() changes in-memory preferences even if storage fails: restore that snapshot too.
         // The rollback must also restore the device-local consent keys a failed import cleared.
-        edit(context, previous).commit();
-        restoreConsent(context, consent);
+        SharedPreferences.Editor rollback = edit(context, previous);
+        for (Map.Entry<String, Boolean> entry : consent.entrySet())
+            rollback.putBoolean(entry.getKey(), entry.getValue());
+        if (!rollback.commit())
+            MediaEventTrace.record("configuration", "rollback-storage-unavailable");
         return false;
     }
     private static Map<String, Boolean> consentSnapshot(Context context) {
@@ -45,12 +48,6 @@ final class ConfigurationStore {
         for (String key : ConfigurationCodec.DEVICE_CONSENT_KEYS)
             if (prefs.contains(key)) consent.put(key, prefs.getBoolean(key, false));
         return consent;
-    }
-    private static void restoreConsent(Context context, Map<String, Boolean> consent) {
-        SharedPreferences.Editor editor = LauncherPrefs.prefs(context).edit();
-        for (Map.Entry<String, Boolean> entry : consent.entrySet())
-            editor.putBoolean(entry.getKey(), entry.getValue());
-        editor.commit();
     }
     private static SharedPreferences.Editor edit(Context context, Map<String, Object> values) {
         SharedPreferences.Editor editor = LauncherPrefs.prefs(context).edit();

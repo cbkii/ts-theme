@@ -171,6 +171,11 @@ ProcessMediaSessionMonitor.refresh(context);while(Handler.step()){};worker.step(
 SystemClock.now+=2001;Handler.step();check(title().equals("STALE")&&ProcessMediaSessionMonitor.selectedController("B")==null,"expired queued result published before timeout message");pump();refresh();
 // Bounded timeout: unknown UI/transport while Binder is stalled, no growing worker queue.
 ProcessMediaSessionMonitor.refresh(context);while(Handler.step()){};SystemClock.now+=2001;while(Handler.step()){};check(title().equals("STALE")&&ProcessMediaSessionMonitor.selectedController("B")==null,"timed-out read still authoritative");check(worker.tasks.size()==1,"unbounded worker backlog");pump();refresh();
+// Repeated invalidations cannot slide the display deadline while a Binder read is stuck.
+b.callback.onPlaybackStateChanged(b.state);while(Handler.step()){};
+SystemClock.now+=1000;b.callback.onMetadataChanged(b.metadata);while(Handler.step()){};
+SystemClock.now+=1001;while(Handler.step()){};
+check(title().equals("STALE")&&ProcessMediaSessionMonitor.selectedController("B")==null,"callback burst retained an expired item");pump();refresh();
 // Destroyed owner's delayed callback cannot restore it. Fresh membership/reconnect must register anew.
 var old=b.callback;old.onSessionDestroyed();pump();Context.manager.active=List.of(a2);old.onMetadataChanged(new MediaMetadata("c","GHOST"));pump();check(!title().equals("GHOST")&&ProcessMediaSessionMonitor.selectedController("B")==null,"destroyed session resurrected");
 MediaListenerService.access=false;refresh();check(title().equals("STALE BROWSER")&&ProcessMediaSessionMonitor.selectedController("A")==staleBrowser,"access loss must only retain independently authorised browser");

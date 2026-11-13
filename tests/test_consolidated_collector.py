@@ -91,6 +91,7 @@ class ConsolidatedCollectorTests(unittest.TestCase):
         self.assertEqual(1, done.returncode)
         self.assertRegex(lines[0], r'^com\.cbkii\.ts18launcher [0-9a-f]{64} .*/base\.apk$')
         self.assertEqual('com.tw.media NOT_INSTALLED', lines[1])
+        self.assertEqual('app.organicmaps.incar NOT_INSTALLED', lines[2])
 
     def test_other_application_logs_are_never_read_unprivileged(self):
         text = SCRIPT.read_text()

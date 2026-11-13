@@ -24,6 +24,8 @@ final class ForwarderInputTransport implements N3InputTransport {
         this.reason = reason;
     }
 
+    // Isolated, default-off legacy experiment. API/permission refusal returns view-only.
+    @android.annotation.SuppressLint("PrivateApi")
     static N3InputTransport open(int displayId) {
         if (displayId <= 0) return new ForwarderInputTransport(null, null, "No owned display");
         try {

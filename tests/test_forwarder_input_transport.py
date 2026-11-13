@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class ForwarderTransportTests(unittest.TestCase):
     def test_interface_lookup_and_failed_send_withdraw_capability(self):
         files = {
+            "android/annotation/SuppressLint.java": "package android.annotation; public @interface SuppressLint {String[] value();}",
             "android/view/InputEvent.java": "package android.view; public class InputEvent {}",
             "android/view/MotionEvent.java": "package android.view; public class MotionEvent extends InputEvent {}",
             "android/view/KeyEvent.java": "package android.view; public class KeyEvent extends InputEvent {}",

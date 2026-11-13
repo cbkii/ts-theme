@@ -8,7 +8,7 @@ for required in timeout mktemp tar date head wc sha256sum mkdir mv rm env grep s
 done
 work=$(mktemp -d "${TMPDIR:-/data/data/com.termux/files/usr/tmp}/ts18-qualified.XXXXXXXX") || exit 2
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-export_dir=/storage/emulated/0/Download/TS18/qualification
+export_dir=/storage/emulated/0/Download/ts-theme/qualification
 partial=
 cleanup() { [ -z "$partial" ] || rm -f -- "$partial"; rm -rf -- "$work"; }
 trap cleanup EXIT
@@ -93,7 +93,7 @@ capture home "${plain[@]}" cmd package resolve-activity --brief -a android.inten
 # The loop is expanded by the capturing shell, not this one.
 # shellcheck disable=SC2016
 framework apk-identity 'rc=0
-for p in com.cbkii.ts18launcher com.tw.media; do
+for p in com.cbkii.ts18launcher com.tw.media app.organicmaps.incar; do
   paths=$(pm path "$p" | sed "s/^package://")
   if [ -z "$paths" ]; then echo "$p NOT_INSTALLED"; rc=1; continue; fi
   for f in $paths; do
@@ -103,14 +103,17 @@ done
 exit $rc'
 framework launcher 'dumpsys package com.cbkii.ts18launcher'
 framework auxio 'dumpsys package com.tw.media'
+framework maps 'dumpsys package app.organicmaps.incar'
+framework audio 'dumpsys audio'
 framework radio 'dumpsys package com.navimods.radio'
 framework media 'dumpsys media_session'
 framework listeners 'settings get secure enabled_notification_listeners'
 if [ "$root" -eq 1 ]; then
-    root_capture timeline "logcat -d -t 5000 -v threadtime TS18Startup:I TS18Perf:I TS18Nav:I TS18NavPerm:I TS18Media:I '*:S'"
+    root_capture timeline "logcat -d -t 5000 -v threadtime TS18Startup:I TS18Perf:I TS18Nav:I TS18NavPerm:I TS18Media:I TS18Browser:I MediaBrowser:I MediaBrowserService:I AudioService:I AudioManager:I AndroidRuntime:E '*:S'"
     root_capture root-context 'id; cat /proc/self/attr/current; readlink /proc/self/ns/mnt'
     root_capture tasks 'dumpsys activity activities'
     root_capture windows 'dumpsys window displays'
+    root_capture window-owners 'dumpsys window windows'
 else
     # An unprivileged logcat shows only this shell's own lines, which would read as an empty timeline.
     printf 'timeline\tBLOCKED\troot-unavailable\n' >> "$status"

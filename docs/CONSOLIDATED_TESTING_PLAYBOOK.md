@@ -1,10 +1,20 @@
 # Consolidated TESTING candidate: physical acceptance
 
-Use only the signed final-head TESTING launcher and its companion Auxio build listed in the handoff. Compare BUILD_INFO source/built/head SHA, signer and APK SHA-256 before installation. Keep the previous signed APK for rollback. DoFun stays installed/enabled; do not clear any app data or replace stock software.
+Use only the signed final-head TESTING launcher and its companion Auxio and Organic Maps builds listed in the handoff. Compare BUILD_INFO source/built/head SHA, signer and APK SHA-256 before installation. Keep the previous signed APK for rollback. DoFun stays installed/enabled; do not clear any app data or replace stock software.
 
-Install the two application updates, retaining settings. Music and Radio default to M2 when unset; an explicit Legacy setting remains available for rollback. Confirm the existing HOME selection, app choices and local permissions. Complete real Organic Maps permission/settings screens normally.
+Install Organic Maps, Auxio, then the launcher as application updates, retaining settings. Music and Radio default to M2 when unset; an explicit Legacy setting remains available for rollback. Confirm the existing HOME selection, app choices and local permissions. Complete real Organic Maps permission/settings screens normally.
 
-Before the first scenario run the collector once (command below) and compare `apk-identity.txt` with the hand-off SHA-256 values. Each line reads `package sha256 path`; match the `com.cbkii.ts18launcher` and `com.tw.media` lines by package name, not by position. A hash mismatch or a `NOT_INSTALLED` line means the campaign is not testing the delivered pair; stop and reinstall. If the `apk-identity` section itself is BLOCKED or WARN in `STATUS.tsv` (for example without root), stop the campaign and obtain a successful hash/signer check before continuing: app-detail versions cannot establish the delivered signer or APK bytes, so a stale or mixed install could be accepted as the TESTING pair. BLOCKED sections elsewhere are collector limits and do not stop the campaign.
+Before the first scenario run the collector once (command below) and compare `apk-identity.txt` with the hand-off SHA-256 values. Each line reads `package sha256 path`; match the `com.cbkii.ts18launcher` and `com.tw.media` and `app.organicmaps.incar` lines by package name, not by position. A hash mismatch or a `NOT_INSTALLED` line means the campaign is not testing the delivered combination; stop and reinstall. If the `apk-identity` section itself is BLOCKED or WARN in `STATUS.tsv` (for example without root), stop the campaign and obtain a successful hash/signer check before continuing: app-detail versions cannot establish the delivered signer or APK bytes, so a stale or mixed install could be accepted as the TESTING pair. BLOCKED sections elsewhere are collector limits and do not stop the campaign.
+
+## Regression checks for this candidate
+
+The owner physically observed three failures on the previous TESTING combination. Automated replacements remain **PHYSICAL RE-TEST REQUIRED**.
+
+1. Film first HOME without pressing Retry. Record the complete wording and time of any “Audio refused…” message, including whether it says “Auxio”. Do not treat a browser refusal as proof of failed audio focus. The collector now includes source-browser and audio diagnostics.
+2. Start one source, then use launcher Pause/Play/Previous/Next once each. The correct item/station must remain visible. Repeat with external playback keys against the same source; record any difference and the first disappearing title.
+3. After the first visible Maps frame, wait at least 45 seconds, pan the map and return HOME. It must stay usable; no delayed BOOTSTRAP PENDING/unavailable state or repeated resize/launch is acceptable. Complete genuine permission/settings screens normally.
+
+On failure preserve evidence before tapping Retry, opening the source app or rebooting. A successful command/session state does not prove audible output; task bounds do not prove map pixels or touch. N2 remains default. Settings → Startup diagnostics → Navigation method also offers explicit N1 and N0 fallback; report a fallback result separately.
 
 For each row below, record PASS/FAIL/NOT_RUN and a short timestamped observation. Do not repeat a visibly failing scenario many times: capture its earliest failure first.
 
@@ -49,6 +59,21 @@ Extract the delivered `TS18-testing-qualification` folder into `Download`, keepi
 bash /storage/emulated/0/Download/TS18-testing-qualification/qualify-consolidated-candidate.sh smoke
 ```
 
-Replace `smoke` with `restart`, `reboot`, `coldboot` or `acc-wake` as appropriate. It does not launch, stop, tap, Play, grant permissions or change settings. Evidence is exported under `Download/TS18/qualification/`. Framework dumps and the launcher timeline need root; if root is unavailable those sections are BLOCKED in `STATUS.tsv` (a collector limit, not an application result) and the remaining captures still seal. Add your audible/visual observations to the accompanying campaign notes; a collector exit code is not a feature PASS.
+Replace `smoke` with `restart`, `reboot`, `coldboot` or `acc-wake` as appropriate. It does not launch, stop, tap, Play, grant permissions or change settings. Evidence is exported under `Download/ts-theme/qualification/`. Framework dumps and the launcher timeline need root; if root is unavailable those sections are BLOCKED in `STATUS.tsv` (a collector limit, not an application result) and the remaining captures still seal. Add your audible/visual observations to the accompanying campaign notes; a collector exit code is not a feature PASS.
 
 No physical TS18 acceptance is claimed until this campaign is actually performed. NavRadio cold activation and OEM map visibility/touch remain explicit exact-device questions.
+
+## Optional synchronised video, up to five runs
+
+Reuse `scripts/diagnostics/campaign/campaign.py` and its [existing guide](../scripts/diagnostics/campaign/START-HERE.md) for a failure that needs a live timeline/video. It uses the current caller, never starts apps or changes HOME, and needs the existing Termux Python and authorised root for local screen recording. Keep the script in private Termux storage; use the original `$PREFIX/bin/su` as that guide describes.
+
+From the same authorised caller, run (replace `/absolute/private/path/campaign.py` with its real private location):
+
+```sh
+/data/data/com.termux/files/usr/bin/python /absolute/private/path/campaign.py capture \
+  --transport local --campaign rc-regressions --trial 1 --lifecycle home_resume \
+  --duration 300 --state-root /data/ts18-campaign \
+  --out /storage/emulated/0/Download/ts-theme/campaign
+```
+
+Use trial numbers 1–5 and the actual lifecycle label `home_resume`, `process_restart`, `reboot`, `cold_boot` or `acc_wake`. Start it before the actions being analysed. Recording is 1280×720 at 2 Mbit/s in segments of at most 150 seconds, with clock anchors, hashes and cleanup status; Android 10 offers no FPS control here. Add `--no-video` for the low-load comparison. Screen recording captures no speaker/radio audio and adds load: use phone video with sound for the primary cold-start/audibility result. A pre-reboot process cannot capture the next boot; film it or use the existing coldstart kit, with its separate bounds and evidence labels. Nothing is uploaded automatically.

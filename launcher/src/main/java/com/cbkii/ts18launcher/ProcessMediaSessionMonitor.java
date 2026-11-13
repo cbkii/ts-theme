@@ -72,7 +72,12 @@ final class ProcessMediaSessionMonitor {
             // Old callback payloads, including late artwork, never become state. Gate commands
             // immediately, but keep the last displayed item until the bounded fresh read settles.
             // A callback is not source loss; timeout, revocation and destruction still withdraw it.
-            revision++; dirty = true; authoritative = false;
+            revision++; dirty = true;
+            if (authoritative) {
+                main.removeCallbacks(snapshotExpiry);
+                main.postDelayed(snapshotExpiry, READ_TIMEOUT_MS);
+            }
+            authoritative = false;
             requestRefresh();
         }
         void detach() { try { controller.unregisterCallback(callback); } catch (RuntimeException gone) { } }
@@ -81,6 +86,11 @@ final class ProcessMediaSessionMonitor {
     private final MediaSessionManager.OnActiveSessionsChangedListener membership = ignored -> main.post(() -> {
         if (!destroyed && registered) { invalidate(); requestRefresh(); }
     });
+    // A burst of callbacks may invalidate in-flight reads. Their old ticket must not make
+    // the last displayed item live forever when Binder stalls; this deadline never slides.
+    private final Runnable snapshotExpiry = () -> {
+        if (!destroyed && !authoritative) { selected.clear(); invalidate(); }
+    };
     private final Runnable refreshRunnable = () -> { refreshPosted = false; refreshInternal(); };
     private final Runnable visibleTick = new Runnable() {
         @Override public void run() {
@@ -308,6 +318,7 @@ final class ProcessMediaSessionMonitor {
         }
     }
     private void publish(boolean available) {
+        main.removeCallbacks(snapshotExpiry);
         MediaListenerService.Snapshot previousGeneric = lastGeneric;
         MediaListenerService.Snapshot previousRadio = lastRadio;
         boolean previousAuthoritative = authoritative;
@@ -394,6 +405,7 @@ final class ProcessMediaSessionMonitor {
                 && !"com.android.phone".equals(pkg);
     }
     private void invalidate() {
+        main.removeCallbacks(snapshotExpiry);
         revision++; dirty = true;
         // Observers keep their last pushed state through a bounded re-read; notify only when
         // the invalidation actually withdraws previously published state.
