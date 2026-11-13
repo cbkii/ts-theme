@@ -197,7 +197,8 @@ public static void main(String[] args)throws Exception{
  int yieldedPresents=RawFreeformTaskBackend.presents;c.onHomeVisible();CompactStartupClient.deliver();android.view.View.drain();
  check(RawFreeformTaskBackend.presents==yieldedPresents,"HOME/peer callback replayed yielded admission");c.destroy();
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();check(p.configured>0,"initial warm task missing");
- c.cancelAutomaticColdStart();c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
+ c.cancelAutomaticColdStart();check(c.startupNavigationReady(),"HOME input revoked an already presented healthy map");
+ c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
  check(c.startupNavigationReady(),"user yield prevented healthy warm-task HOME reuse");c.destroy();
  // Yielded N2 completion must release bootstrap ownership and adopt the accepted task.
  RawFreeformTaskBackend.reset();TestingProfiles.nav="N2";RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);

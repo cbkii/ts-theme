@@ -73,6 +73,7 @@ class AppearanceOwnerTest(unittest.TestCase):
             'com/cbkii/ts18launcher/RoleIconCatalog.java': '''package com.cbkii.ts18launcher; class RoleIconCatalog {
                 static boolean isKnown(String r){return true;} static String defaultQuickRole(int i){return "role";}
                 static String defaultDrawerRole(int i){return "role";} }''',
+            'com/cbkii/ts18launcher/MediaEventTrace.java': 'package com.cbkii.ts18launcher; class MediaEventTrace {static void record(String... values) {}}',
             'com/cbkii/ts18launcher/MediaSelection.java': '''package com.cbkii.ts18launcher; class MediaSelection {
                 static final String RADIO="radio",MUSIC="music"; }''',
             'com/cbkii/ts18launcher/ConfigurationCodec.java': '''package com.cbkii.ts18launcher; import java.util.*;

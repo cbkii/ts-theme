@@ -101,8 +101,15 @@ final class NavigationWindowController {
 
     void cancelAutomaticColdStart() {
         if (state == State.DESTROYED) return;
-        desire(Presentation.BACKGROUND_FULLSCREEN);
         automaticColdYielded = true;
+        // HOME input yields an unfinished automatic launch, not the healthy map already shown.
+        // Keep its task, presentation and readiness while blocking any new automatic cold start.
+        if (state == State.WINDOWED && activeOperationId == 0 && !normalBootstrapInFlight) {
+            cancelRecovery();
+            updateColdPolicy();
+            return;
+        }
+        desire(Presentation.BACKGROUND_FULLSCREEN);
         cancelRecovery();
         if (activeOperationId == 0) {
             // A renderer wait has no remaining task mutation to own the foreground lane.
