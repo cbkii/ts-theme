@@ -182,6 +182,11 @@ public final class DirectSourceMediaBackend implements MediaBackend {
         traceStates();
     }
 
+    @Override public void afterActivityPreparation(MediaSourceKey key, String packageName) {
+        DirectSourceEngine engine = engines.get(key);
+        if (engine.attached() && engine.packageName().equals(packageName)) engine.reconnectPrepared();
+    }
+
     @Override public void setStateListener(StateListener listener) { this.listener = listener; }
 
     /** Re-read membership now, for example when HOME returns. No effect while nothing is attached. */

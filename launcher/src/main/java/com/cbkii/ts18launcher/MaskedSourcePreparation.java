@@ -25,6 +25,7 @@ final class MaskedSourcePreparation {
     });
     private final java.util.List<Consumer<Boolean>> completions = new java.util.ArrayList<>();
     private String pkg, launchEntry, resumedEntry;
+    private MediaSourceKey key;
     private long deadline;
     private int sourceTask;
     private volatile boolean ended, cancelRequested;
@@ -38,17 +39,24 @@ final class MaskedSourcePreparation {
     void begin(String packageName, long until, Consumer<Boolean> done) {
         completions.add(done); pkg = packageName;
         deadline = Math.min(until, SystemClock.elapsedRealtime() + 12000L);
-        if (!"com.navimods.radio".equals(pkg) || home.isFinishing() || home.isDestroyed()
+        boolean music = "com.tw.media".equals(pkg);
+        key = music ? MediaSourceKey.MUSIC : MediaSourceKey.RADIO;
+        if ((!music && !"com.navimods.radio".equals(pkg)) || home.isFinishing() || home.isDestroyed()
                 || !CompactStartupClient.automaticAllowed(home) || !loader.canMask()
                 || deadline - SystemClock.elapsedRealtime() < 2000L) { finish(false); return; }
         try {
-            Intent entry = home.getPackageManager().getLaunchIntentForPackage(pkg);
-            ComponentName component = entry == null ? null : entry.getComponent();
+            // Auxio's ordinary launcher alias may autoplay. Only its capability-checked,
+            // non-exported prepare-only entry is safe for this root-owned transaction.
+            if (music && !AuxioPreparationContract.supported(home)) { finish(false); return; }
+            Intent entry = music ? null : home.getPackageManager().getLaunchIntentForPackage(pkg);
+            ComponentName component = music ? ComponentName.unflattenFromString(AuxioPreparationContract.COMPONENT)
+                    : entry == null ? null : entry.getComponent();
             if (component == null) { finish(false); return; }
             ActivityInfo info = home.getPackageManager().getActivityInfo(component, 0);
-            if (!info.enabled || !info.exported || !pkg.equals(info.packageName)) { finish(false); return; }
+            if (!info.enabled || (!music && !info.exported) || !pkg.equals(info.packageName)) { finish(false); return; }
             launchEntry = component.flattenToString();
-            resumedEntry = new ComponentName(pkg, info.targetActivity == null ? info.name : info.targetActivity).flattenToString();
+            resumedEntry = music ? pkg + "/org.oxycblt.auxio.MainActivity"
+                    : new ComponentName(pkg, info.targetActivity == null ? info.name : info.targetActivity).flattenToString();
         } catch (android.content.pm.PackageManager.NameNotFoundException | RuntimeException unavailable) {
             finish(false); return;
         }
@@ -63,7 +71,8 @@ final class MaskedSourcePreparation {
         if (navigation != null && navigation.busy()) {
             main.postDelayed(this::awaitNavigation, 250L); return;
         }
-        loader.render(home.getString(R.string.startup_radio_preparing), true);
+        loader.render(key == MediaSourceKey.MUSIC ? "Preparing Music…"
+                : home.getString(R.string.startup_radio_preparing), true);
         loader.mask(true);
         loader.whenMaskDrawn(() -> {
             if (ended || !loader.ownsMask() || !loader.canMask()) { finish(false); return; }
@@ -96,6 +105,7 @@ final class MaskedSourcePreparation {
                     dispatched = launch.success || "STARTUP_SOURCE_UNCERTAIN".equals(launch.code)
                             || "PHASE_TIMEOUT".equals(launch.code);
                     if (!launch.success || cancelRequested) { cleanupAfterLaunch(); return; }
+                    Ts18LauncherApplication.mediaFacade(home).afterActivityPreparation(key, pkg);
                     observeSource();
                 });
             });
@@ -105,7 +115,7 @@ final class MaskedSourcePreparation {
     private void observeSource() {
         if (ended || restoring) return;
         if (home.isFinishing() || home.isDestroyed() || !loader.ownsMask() || !loader.canMask()
-                || !pkg.equals(MediaEngineSelector.configuredPackage(home, MediaSourceKey.RADIO))) {
+                || !pkg.equals(MediaEngineSelector.configuredPackage(home, key))) {
             cancel(); return;
         }
         Ts18LauncherApplication.mediaFacade(home).refresh();
@@ -115,15 +125,23 @@ final class MaskedSourcePreparation {
                 if (ended || cancelRequested || restoring) return;
                 if (valid(foreground)) {
                     boolean stillHome = foreground.taskId == home.getTaskId() && homeComponent(foreground.component);
+                    if (key == MediaSourceKey.MUSIC && launchEntry.equals(foreground.component)) {
+                        // The one-use preparation entry immediately hands off to MainActivity.
+                        // Observe that owned transition; it is not a foreign permission screen.
+                        if (SystemClock.elapsedRealtime() >= deadline) cancel();
+                        else main.postDelayed(this::observeSource, 100L);
+                        return;
+                    }
                     if (!stillHome && !resumedEntry.equals(foreground.component)) {
                         // Preserve login/settings/permission flows instead of hiding or dismissing them.
                         finish(false); return;
                     }
                     if (!stillHome) sourceTask = foreground.taskId;
-                    MediaSourceState source = Ts18LauncherApplication.mediaFacade(home).state(MediaSourceKey.RADIO);
+                    MediaSourceState source = Ts18LauncherApplication.mediaFacade(home).state(key);
                     if (!stillHome && source.live() && pkg.equals(source.packageName)
-                            && (source.playing() || (source.actions & (android.media.session.PlaybackState.ACTION_PLAY
-                                | android.media.session.PlaybackState.ACTION_PLAY_PAUSE)) != 0L)) {
+                            && (key == MediaSourceKey.MUSIC ? StartupReadinessCoordinator.ready(source)
+                                : source.playing() || (source.actions & (android.media.session.PlaybackState.ACTION_PLAY
+                                    | android.media.session.PlaybackState.ACTION_PLAY_PAUSE)) != 0L)) {
                         restoreHome(source); return;
                     }
                 }
@@ -140,7 +158,7 @@ final class MaskedSourcePreparation {
             NavigationHelperResult focused = returned != null && returned.success ? observe(deadline) : null;
             main.postDelayed(() -> {
                 if (ended) return;
-                MediaSourceState after = Ts18LauncherApplication.mediaFacade(home).state(MediaSourceKey.RADIO);
+                MediaSourceState after = Ts18LauncherApplication.mediaFacade(home).state(key);
                 boolean survived = after.live() && pkg.equals(after.packageName)
                         && source.sessionIdentity != null && source.sessionIdentity.equals(after.sessionIdentity);
                 finish(!cancelRequested && survived && valid(focused) && focused.taskId == home.getTaskId()
@@ -148,6 +166,8 @@ final class MaskedSourcePreparation {
             }, 300L); // Observe onStop/session teardown after the verified task handoff.
         });
     }
+
+    boolean launchAdmittedOrUncertain() { return dispatched; }
 
     boolean serves(String packageName) { return !ended && packageName.equals(pkg); }
     void join(Consumer<Boolean> callback) { if (!ended) completions.add(callback); }

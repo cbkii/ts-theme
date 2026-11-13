@@ -66,6 +66,26 @@ public class BrowserSessionStarterTest {
         });
     }
 
+    @Test public void synchronousFailureDisconnectsTheReturnedConnection() {
+        Link[] returned = new Link[1];
+        BrowserSessionStarter immediate = new BrowserSessionStarter(new BrowserSessionStarter.Connector() {
+            @Override public ComponentName resolve(String pkg) { return services.get(pkg); }
+            @Override public BrowserSessionStarter.Connection connect(ComponentName service,
+                    BrowserSessionStarter.ConnectionCallbacks callbacks) {
+                returned[0] = new Link(callbacks);
+                callbacks.onFailed();
+                return returned[0];
+            }
+        }, new BrowserSessionStarter.Events() {
+            public void onSessionOffered(String p, DirectSessionRegistry.Session session) { }
+            public void onSessionWithdrawn(String p, Object token) { }
+            public void onStartFailed(String p, String reason) { }
+        });
+        immediate.start(MUSIC, AUXIO);
+        assertTrue(returned[0].disconnected);
+        assertEquals(0, immediate.attemptCount());
+    }
+
     private Link last() { return links.get(links.size() - 1); }
 
     @Test public void startableOnlyWithExactlyOneExportedBrowserService() {
@@ -114,7 +134,7 @@ public class BrowserSessionStarterTest {
         Link rejected = last();
         rejected.callbacks.onFailed();
         assertTrue(rejected.disconnected);
-        assertEquals(Arrays.asList("failed refused the connection"), events);
+        assertEquals(Arrays.asList("failed media service connection failed"), events);
 
         starter.start(MUSIC, AUXIO);
         Link live = last();

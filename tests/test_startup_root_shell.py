@@ -6,7 +6,7 @@ import test_navigation_lifecycle as nav
 
 
 class StartupRootShellTests(unittest.TestCase):
-    def run_root(self, action, package='com.navimods.radio', **changes):
+    def run_root(self, action, package='com.navimods.radio', entry=None, **changes):
         source = nav.ANDROID.replace("        print('mCurrentFocus=Window{fake u0 ' + focus_component + '}')\n", "").replace("if a[0] == 'window':", '''if a[0] == 'window':
         focused = s.get('startup_focus', (s.get('nav_component','com.navimods.radio/.RadioActivity') if s['focus']==42 else 'com.cbkii.ts18launcher/.HomeAlias'))
         if s.get('owned_mask') and 'startup_focus' not in s:
@@ -19,7 +19,7 @@ class StartupRootShellTests(unittest.TestCase):
         options = dict(nav_package=package, nav_component=package+'/.RadioActivity',
                        mode=1, owned_mask=action=='startup-source', focus=7 if action=='startup-source' else 42)
         options.update(changes)
-        args=[action,'0',package,package+'/.RadioActivity']
+        args=[action,'0',package,entry or package+'/.RadioActivity']
         if action=='startup-home': args+=['42']
         args+=['com.cbkii.ts18launcher','7']
         with patch.object(nav, 'ANDROID', source), patch.dict(os.environ, {'TS18_MASK_TITLE': 'TS18Ready_10211_' + 'a' * 32}):
@@ -76,3 +76,18 @@ class StartupRootShellTests(unittest.TestCase):
         r,s=self.run_root('startup-source',package='com.tw.radio')
         self.assertIn('STARTUP_PACKAGE_BLOCKED',r.stdout)
         self.assertEqual(s['start_dispatches'],0)
+
+    def test_auxio_ordinary_alias_cannot_be_root_bootstrapped(self):
+        result, state = self.run_root('startup-source', package='com.tw.media')
+        self.assertIn('UNSAFE_MUSIC_ENTRY', result.stdout)
+        self.assertEqual(state['start_dispatches'], 0)
+
+    def test_auxio_prepare_entry_carries_the_original_deadline(self):
+        with patch.dict(os.environ, {'TS18_STAGE_UNTIL': '999999999999'}):
+            result, state = self.run_root('startup-source', package='com.tw.media',
+                entry='com.tw.media/org.oxycblt.auxio.headunit.LauncherPreparationActivity')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(state['start_dispatches'], 1)
+        launch = state['commands'][0]
+        self.assertIn('org.oxycblt.auxio.extra.PREPARE_UNTIL', launch)
+        self.assertIn('999999999999', launch)

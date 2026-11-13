@@ -126,7 +126,7 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
         attempt.owners.addAll(owners);
         attempts.put(packageName, attempt);
         try {
-            attempt.connection = connector.connect(service, new ConnectionCallbacks() {
+            Connection connected = connector.connect(service, new ConnectionCallbacks() {
                 @Override public void onConnected(String sessionPackage, DirectSessionRegistry.Session session) {
                     connected(packageName, attempt, sessionPackage, session);
                 }
@@ -134,9 +134,13 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
                     if (current(packageName, attempt)) end(packageName, attempt, "stopped");
                 }
                 @Override public void onFailed() {
-                    if (current(packageName, attempt)) end(packageName, attempt, "refused the connection");
+                    if (current(packageName, attempt)) end(packageName, attempt, "media service connection failed");
                 }
             });
+            // A connector can complete/fail synchronously. Never leak a returned connection
+            // after its callback has already removed/replaced this attempt.
+            if (current(packageName, attempt)) attempt.connection = connected;
+            else if (connected != null) connected.disconnect();
         } catch (RuntimeException refused) {
             if (current(packageName, attempt)) end(packageName, attempt, "could not be reached");
         }

@@ -142,6 +142,11 @@ public final class MediaFeatureFacade {
         if (pkg != null && !pkg.isEmpty()) backend(key).preparePassive(key, pkg, epoch);
     }
 
+    public void afterActivityPreparation(MediaSourceKey key, String packageName) {
+        reconcile();
+        if (packageName.equals(packages.get(key))) backend(key).afterActivityPreparation(key, packageName);
+    }
+
     /** Ask the engines that currently serve a source to re-read live state. */
     public void refresh() {
         reconcile();

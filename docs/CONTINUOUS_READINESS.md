@@ -12,13 +12,15 @@ M2 Direct service discovery accepts one unambiguous, exported, enabled and acces
 
 NavRadio service creation can activate the tuner. Passive creation is therefore gated until evidence from the installed API29 build proves that it is silent and preserves current audio. A user Radio request first tries its supported session/service path. A non-dispatched failure can automatically enter one masked Activity transaction. This is the supported on-demand recovery path; the user need not manually open and return from Radio. Dispatched/unconfirmed transport commands never trigger another method.
 
-## Masked Radio transaction
+After an observed Auxio browser failure, M2 can use the installed, capability-verified prepare-only Activity contract under the same drawn mask. Automatic Music recovery is admitted once per awake/configuration cycle; explicit non-dispatched Play can join or initiate recovery without a second tap. It never uses the ordinary Auxio launcher alias. See [the causal integration review](AUXIO_INTEGRATION_REVIEW_2026-11-13.md) for findings, changed ownership boundaries and qualification limits.
 
-Only the configured `com.navimods.radio` launch component is admitted. The device must be unlocked, interactive, API29, with ts-theme as default HOME, normal audio mode, overlay permission and known HOME/task authority. No guessed tuner, protected package or private vendor command is used.
+## Masked source transaction
+
+Only the configured `com.navimods.radio` launch component or the capability-verified Auxio prepare-only entry is admitted. The device must be unlocked, interactive, API29, with ts-theme as default HOME, normal audio mode, overlay permission and known HOME/task authority. No guessed tuner, protected package or private vendor command is used.
 
 1. Wait boundedly for an already accepted navigation transaction; defer new automatic presentation.
 2. Attach the opaque full-display application overlay beneath SystemUI and wait for its real draw barrier. Its dark underlay covers app-drawn status-bar backgrounds; controls remain padded into the measured safe area. SystemUI retains its higher window/input authority. Root dispatch rechecks the exact mask title, owner UID and window type against the focused window.
-3. Launch the assigned exported component once. Accepted/uncertain outcomes are observed, never replayed.
+3. Launch the assigned component once (Auxio uses its non-exported prepare-only entry through the existing root owner). Accepted/uncertain outcomes are observed, never replayed.
 4. Observe the intended Activity and source-owned session/actions. Foreign permission/setup/login Activities yield visibly; nothing auto-accepts or dismisses them.
 5. Focus the existing HOME task through the broker, retaining the source task. Verify HOME and the same session token surviving backgrounding before completion.
 6. Remove the mask, release navigation and resume the original Play direction. If the source already plays, acknowledge that state without toggling Pause; commit any opposite-source handover only after replacement playback is observed.

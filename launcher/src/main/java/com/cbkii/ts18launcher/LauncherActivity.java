@@ -73,6 +73,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     private boolean launchedAsHome;
     private boolean redirectingToHome;
     private boolean mediaStatusActive;
+    private android.widget.Toast mediaCommandToast;
     private int mediaStatusGeneration;
     private String mediaRadioPackage = "";
     private String mediaMusicPackage = "";
@@ -302,6 +303,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
     }
 
     @Override protected void onDestroy() {
+        if (mediaCommandToast != null) mediaCommandToast.cancel();
         StartupReadinessCoordinator.get(this).detachLoader(loaderUi);
         if (readinessLoader != null) readinessLoader.destroy();
         StartupReadinessCoordinator.get(this).detachNavigationHook(startupHook);
@@ -539,8 +541,14 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         String appLabel = AppResolver.labelFor(this, packageName, label);
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
                 ? "Preparing " + label + "…" : label, appLabel);
-        dispatchSourceCommand(key, label, packageName, command, generation,
-                android.os.SystemClock.elapsedRealtime() + 22000L, false);
+        long deadline = android.os.SystemClock.elapsedRealtime() + 22000L;
+        MediaSourceState state = mediaFacade().state(key);
+        // A prior failed bind is evidence to change method, not spend another first tap on
+        // the same rejected cold path. A healthy/live session is always controlled directly.
+        if (key == MediaSourceKey.MUSIC && command == MediaListenerService.Command.PLAY_PAUSE
+                && state.availability == MediaSourceState.Availability.CONNECTION_FAILED
+                && prepareSourceForCommand(key, label, packageName, command, generation, deadline)) return;
+        dispatchSourceCommand(key, label, packageName, command, generation, deadline, false);
     }
 
     private void dispatchSourceCommand(MediaSourceKey key, String label, String packageName,
@@ -559,20 +567,25 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                 if (!staged && !result.dispatched && command == MediaListenerService.Command.PLAY_PAUSE
                         && result.outcome != com.cbkii.ts18launcher.media.MediaCommandResult.Outcome.UNSUPPORTED
                         && mediaFacade().engine(key) == MediaEngine.DIRECT
-                        && !result.playingObserved && key == MediaSourceKey.RADIO
-                        && StartupReadinessCoordinator.get(this).prepareInteractively(this, packageName, deadline, ready -> {
-                            if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
-                            if (ready && android.os.SystemClock.elapsedRealtime() < deadline)
-                                dispatchSourceCommand(key, label, packageName, command, generation, deadline, true);
-                            else settleSourceCommandFailure(key, label, packageName, command, generation,
-                                    "Radio could not become ready · check setup permissions");
-                        })) return;
+                        && !result.playingObserved && (key == MediaSourceKey.RADIO || key == MediaSourceKey.MUSIC)
+                        && prepareSourceForCommand(key, label, packageName, command, generation, deadline)) return;
                 MediaEventTrace.record("readiness", "background-only-command-failed", packageName);
                 settleSourceCommandFailure(key, label, packageName, command, generation, result.message);
             }
         };
         if (staged) mediaFacade().resumePreparedSource(key, packageName, deadline, completion);
         else mediaFacade().command(key, packageName, LegacyMediaBackend.userAction(command), completion);
+    }
+
+    private boolean prepareSourceForCommand(MediaSourceKey key, String label, String packageName,
+            MediaListenerService.Command command, int generation, long deadline) {
+        return StartupReadinessCoordinator.get(this).prepareInteractively(this, packageName, deadline, ready -> {
+            if (isFinishing() || isDestroyed() || generation != mediaStatusGeneration) return;
+            if (ready && android.os.SystemClock.elapsedRealtime() < deadline)
+                dispatchSourceCommand(key, label, packageName, command, generation, deadline, true);
+            else settleSourceCommandFailure(key, label, packageName, command, generation,
+                    label + " could not become ready · check setup permissions");
+        });
     }
 
     private void settleSourceCommandFailure(MediaSourceKey key, String label, String packageName,
@@ -585,7 +598,11 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         if (command == MediaListenerService.Command.PLAY_PAUSE)
             mediaSelection.reconcileAfterFailedSwitch(radioSnapshot.playing, genericSnapshot.playing);
         MediaEventTrace.record("command", "failed", packageName + " · " + message);
-        mediaText.setMetadata(label, message);
+        if (message != null && !message.isEmpty()) {
+            if (mediaCommandToast != null) mediaCommandToast.cancel();
+            mediaCommandToast = android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT);
+            mediaCommandToast.show();
+        }
         mediaRefreshHandler.postDelayed(() -> {
             if (generation != mediaStatusGeneration) return;
             mediaStatusActive = false;
@@ -762,6 +779,17 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
             if (facade.engine(key) != MediaEngine.DIRECT) continue;
             MediaSourceState state = facade.state(key);
             ImageButton button = key == MediaSourceKey.RADIO ? radioPlayPause : playPause;
+            ImageButton previous = key == MediaSourceKey.RADIO ? radioPrevious : mediaPrevious;
+            ImageButton next = key == MediaSourceKey.RADIO ? radioNext : mediaNext;
+            previous.setEnabled(DirectMediaPresentation.skipEnabled(state, false));
+            next.setEnabled(DirectMediaPresentation.skipEnabled(state, true));
+            button.setEnabled(DirectMediaPresentation.playPauseEnabled(state));
+            if (state.live() && state.nativeState == android.media.session.PlaybackState.STATE_NONE
+                    && (state.actions & (android.media.session.PlaybackState.ACTION_PLAY
+                        | android.media.session.PlaybackState.ACTION_PLAY_PAUSE)) != 0L) {
+                button.setTag(R.drawable.ic_play);
+                button.setImageResource(R.drawable.ic_play);
+            }
             String sourceName = getString(key == MediaSourceKey.RADIO
                     ? R.string.media_source_radio : R.string.media_source_music);
             if (!state.live()) {

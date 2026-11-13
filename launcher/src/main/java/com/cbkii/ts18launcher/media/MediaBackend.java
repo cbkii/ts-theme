@@ -57,6 +57,9 @@ public interface MediaBackend {
      */
     default void preparePassive(MediaSourceKey key, String packageName, long epoch) { }
 
+    /** Reconnect the same source after an independently admitted Activity preparation. No Play. */
+    default void afterActivityPreparation(MediaSourceKey key, String packageName) { refresh(); }
+
     void setStateListener(StateListener listener);
 
     /** Re-read live state now (for example when HOME returns). Engines without a pull path ignore it. */

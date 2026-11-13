@@ -48,6 +48,8 @@ final class DirectSessionRegistry {
     private final Map<Object, Session> watched = new LinkedHashMap<>();
     /** Sessions published to this launcher directly by a source's own service. */
     private final Map<Object, Session> offered = new LinkedHashMap<>();
+    /** Last successful listener reading. A failed read is not an empty reading. */
+    private List<Session> listenerSnapshot = Collections.emptyList();
     private boolean started;
     private boolean access;
 
@@ -67,6 +69,7 @@ final class DirectSessionRegistry {
         started = false;
         source.setChangeListener(null);
         offered.clear();
+        listenerSnapshot = Collections.emptyList();
         release();
     }
 
@@ -90,19 +93,25 @@ final class DirectSessionRegistry {
         if (!started) return;
         List<Session> active = Collections.emptyList();
         boolean granted = source.accessGranted();
+        boolean unknown = false;
         if (granted) {
             try {
                 List<Session> reported = source.activeSessions();
                 if (reported != null) active = reported;
+                listenerSnapshot = new ArrayList<>(active);
             } catch (SecurityException notEffective) {
                 // Listed as enabled but not yet effective: report it as missing, never guess.
                 granted = false;
+                listenerSnapshot = Collections.emptyList();
             } catch (RuntimeException unavailable) {
-                // A failed read is not an empty one. Keep what is watched and say it is unknown.
-                sink.onMembershipUnknown();
-                return;
+                // Global discovery cannot veto a token delivered by the source itself.
+                // Retain the last successful listener reading, merge current browser offers,
+                // then mark only still-unobserved sources unknown.
+                active = listenerSnapshot;
+                unknown = true;
             }
         }
+        if (!granted) listenerSnapshot = Collections.emptyList();
         access = granted;
         // Browser tokens carry their own source-owned authority, independent of listener access.
         Map<Object, Session> next = new LinkedHashMap<>();
@@ -128,6 +137,7 @@ final class DirectSessionRegistry {
         watched.clear();
         watched.putAll(next);
         publish();
+        if (unknown) sink.onMembershipUnknown();
     }
 
     /** Forward one operation to one session. False when that session is no longer watched. */
@@ -163,6 +173,8 @@ final class DirectSessionRegistry {
     }
 
     private void ended(Object token) {
+        listenerSnapshot = new ArrayList<>(listenerSnapshot);
+        listenerSnapshot.removeIf(session -> token.equals(session.token()));
         offered.remove(token);
         Session session = watched.remove(token);
         if (session == null) return;

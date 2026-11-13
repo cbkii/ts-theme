@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
  * Run: adb shell am instrument -w com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation
  */
 public final class MediaSessionApi29Instrumentation extends Instrumentation {
+    private String auxioBrowserPackage;
     private boolean observeLive, coldConsent, m2Browser, m2Media3, n3Path, readinessOverlay;
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
@@ -27,9 +28,12 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
         n3Path = arguments != null && "1".equals(arguments.getString("n3_path"));
         m2Media3 = arguments != null && "1".equals(arguments.getString("m2_media3"));
         readinessOverlay = arguments != null && "1".equals(arguments.getString("readiness_overlay"));
+        if (arguments != null && "1".equals(arguments.getString("auxio_browser")))
+            auxioBrowserPackage = arguments.getString("auxio_package", "com.tw.media");
         start();
     }
     @Override public void onStart() {
+        if (auxioBrowserPackage != null) { exerciseActualAuxioBrowser(); return; }
         if (coldConsent) { rejectUntrustedColdConsent(); return; }
         if (readinessOverlay) { exerciseReadinessOverlay(); return; }
         if (m2Media3) { exerciseM2Media3(); return; }
@@ -118,6 +122,18 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
             finish(Activity.RESULT_OK, result);
         } catch (Exception | AssertionError error) {
             result.putString("stream", "FAIL " + error + "\n"); finish(Activity.RESULT_CANCELED, result);
+        }
+    }
+
+    private void exerciseActualAuxioBrowser() {
+        Bundle result = new Bundle();
+        try {
+            result.putString("stream", com.cbkii.ts18launcher.media.direct.BrowserStarterIpcProbe.runAuxio(
+                    this, auxioBrowserPackage) + "\n");
+            finish(Activity.RESULT_OK, result);
+        } catch (Exception | AssertionError error) {
+            result.putString("stream", "FAIL actual Auxio browser " + error + "\n");
+            finish(Activity.RESULT_CANCELED, result);
         }
     }
 

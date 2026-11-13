@@ -15,6 +15,8 @@ public final class MediaSourceState {
         PERMISSION_NEEDED,
         /** The configured package has no live session. */
         NO_SESSION,
+        /** A source-owned browser attempt failed before it offered a session. */
+        CONNECTION_FAILED,
         /** Several sessions of the configured package exist and none can be chosen safely. */
         AMBIGUOUS_SOURCE,
         /** The session that was being controlled has gone. */
@@ -71,7 +73,8 @@ public final class MediaSourceState {
         this.title = clean(availability == Availability.LIVE ? title : "");
         this.subtitle = clean(availability == Availability.LIVE ? subtitle : "");
         this.generation = generation;
-        boolean absent = availability == Availability.NO_SESSION || availability == Availability.SOURCE_LOST;
+        boolean absent = availability == Availability.NO_SESSION || availability == Availability.SOURCE_LOST
+                || availability == Availability.CONNECTION_FAILED || availability == Availability.SERVICE_UNAVAILABLE;
         this.startable = absent && startable;
         this.starting = (absent || availability == Availability.LIVE) && starting;
         this.preparing = (absent || availability == Availability.LIVE) && preparing && !this.starting;

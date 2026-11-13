@@ -1152,6 +1152,9 @@ case "$action" in
   startup-source)
     PKG="${3:-}"; startup_entry="${4:-}"; HOME_PKG="${5:-}"; home_task="${6:-0}"
     validate_startup_source
+    if [ "$PKG" = com.tw.media ]; then
+      [ "$startup_entry" = com.tw.media/org.oxycblt.auxio.headunit.LauncherPreparationActivity ] || fail UNSAFE_MUSIC_ENTRY
+    fi
     require_startup_home
     require_handoff_foreground "$home_task" "$home_task"
     TS18_REQUIRE_MASK=1

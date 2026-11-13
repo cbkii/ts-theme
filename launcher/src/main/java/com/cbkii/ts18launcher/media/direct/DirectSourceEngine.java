@@ -107,6 +107,7 @@ public final class DirectSourceEngine {
     private long handoverPauseGeneration;
     /** Whether the configured package publishes a startable media service; read on membership. */
     private boolean startCapable;
+    private boolean connectionFailed;
     private final List<Pending> pendingSkips = new ArrayList<>();
     /** Passive readiness in progress: token null while binding, the pinned token once sent. */
     private Pending pendingPrepare;
@@ -149,6 +150,7 @@ public final class DirectSourceEngine {
         clearHandoverPause();
         pinnedToken = null; current = null; liveThisEpoch = false; published = null;
         startCapable = false;
+        connectionFailed = false;
         availability = next.isEmpty() ? MediaSourceState.Availability.UNCONFIGURED
                 : MediaSourceState.Availability.NO_SESSION;
     }
@@ -172,8 +174,9 @@ public final class DirectSourceEngine {
      * session keeps working through its own callbacks; otherwise the source is reported unknown.
      */
     public void onMembershipUnknown() {
-        if (!attached || packageName.isEmpty() || live()) return;
+        if (!attached || packageName.isEmpty() || live() || connectionFailed) return;
         settle(MediaSourceState.Availability.SERVICE_UNAVAILABLE, null);
+        tryPassivePrepare();
         publish();
     }
 
@@ -201,7 +204,8 @@ public final class DirectSourceEngine {
                 settle(MediaSourceState.Availability.AMBIGUOUS_SOURCE, null);
                 break;
             default:
-                settle(!accessGranted && !startCapable ? MediaSourceState.Availability.PERMISSION_NEEDED
+                settle(connectionFailed ? MediaSourceState.Availability.CONNECTION_FAILED
+                        : !accessGranted && !startCapable ? MediaSourceState.Availability.PERMISSION_NEEDED
                         : liveThisEpoch ? MediaSourceState.Availability.SOURCE_LOST
                         : MediaSourceState.Availability.NO_SESSION, null);
         }
@@ -289,9 +293,14 @@ public final class DirectSourceEngine {
                 : action == MediaUserAction.PREVIOUS ? DirectOperation.PREVIOUS
                 : DirectOperation.resolvePlayPause(current.nativeState);
         if (operation.directional() && pendingToggle != null) {
-            // A second tap before the first is confirmed joins it; it is never a second dispatch.
-            if (callback != null) pendingToggle.callbacks.add(callback);
-            return;
+            // Repeated requests for the same direction join the one dispatch. An opposite
+            // direction is a new user intent and must not be swallowed by the old ack window.
+            if (pendingToggle.operation == operation) {
+                if (callback != null) pendingToggle.callbacks.add(callback);
+                return;
+            }
+            finish(pendingToggle, new MediaCommandResult(MediaCommandResult.Outcome.SENT_UNCONFIRMED,
+                    "Superseded by a new playback direction", false, true));
         }
         if (operation == DirectOperation.PLAY && (pendingStart != null
                 || !canDispatchPlay())) {
@@ -387,6 +396,7 @@ public final class DirectSourceEngine {
         current = session;
         availability = next;
         if (session != null) {
+            connectionFailed = false;
             liveThisEpoch = true;
             resolvePending(session);
             continueStart();
@@ -397,8 +407,12 @@ public final class DirectSourceEngine {
 
     /** The source's own service could not publish a session. Ends the waiting Play truthfully. */
     public void onStartFailed(String failedPackage, String reason) {
-        if (!attached || !packageName.equals(failedPackage)) return;
+        if (!attached || !packageName.equals(failedPackage) || live()) return;
+        connectionFailed = true;
+        cancelPrepare();
+        availability = MediaSourceState.Availability.CONNECTION_FAILED;
         endStart(MediaCommandResult.Outcome.FAILED, labels.appLabel(packageName) + " " + reason);
+        publish();
     }
 
     /** True while a Play tap is waiting for the source to publish a session. */
@@ -407,7 +421,9 @@ public final class DirectSourceEngine {
     private boolean startable() {
         return startCapable
                 && (availability == MediaSourceState.Availability.NO_SESSION
-                        || availability == MediaSourceState.Availability.SOURCE_LOST);
+                        || availability == MediaSourceState.Availability.SOURCE_LOST
+                        || availability == MediaSourceState.Availability.CONNECTION_FAILED
+                        || availability == MediaSourceState.Availability.SERVICE_UNAVAILABLE);
     }
 
     private void requestStart(MediaBackend.ResultCallback callback, long deadlineElapsedMs) {
@@ -482,7 +498,7 @@ public final class DirectSourceEngine {
         if (!access && !startCapable) return;
         if (pendingStart != null || pendingPrepare != null || pendingToggle != null) return;
         if (availability == MediaSourceState.Availability.AMBIGUOUS_SOURCE
-                || availability == MediaSourceState.Availability.SERVICE_UNAVAILABLE) return;
+                || availability == MediaSourceState.Availability.SERVICE_UNAVAILABLE && !startCapable) return;
         decidedPrepareEpoch = epoch;
         // A live Radio token does not make PREPARE's tuner/focus side effects safe.
         if ("com.navimods.radio".equals(packageName)
@@ -495,6 +511,17 @@ public final class DirectSourceEngine {
             return;
         }
         if (!startable() || starter == null || !starter.canPreparePassive(packageName)) return;
+        beginPrepareBind();
+    }
+
+    /** A different, admitted preparation method has started this app. Retry its browser once. */
+    public void reconnectPrepared() {
+        if (!attached || live() || starter == null || !startCapable
+                || pendingStart != null || pendingPrepare != null) return;
+        beginPrepareBind();
+    }
+
+    private void beginPrepareBind() {
         Pending prepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");
         pendingPrepare = prepare;
         prepare.timer = clock.schedule(COLD_START_MS, () -> {
@@ -511,6 +538,9 @@ public final class DirectSourceEngine {
     private void continuePrepare() {
         Pending prepare = pendingPrepare;
         if (prepare == null || !live() || prepare.token != null) return;
+        // Radio was explicitly Activity-prepared; reconnecting may observe it but must not
+        // issue PREPARE, which can select the hardware source on this player.
+        if ("com.navimods.radio".equals(packageName)) { endPrepare(); return; }
         if (loaded(current)) { endPrepare(); return; }
         // Preserve the original timer while a newly published session initialises its actions.
         if (!advertisesPrepare(current) || !current.itemId.isEmpty()
@@ -659,6 +689,8 @@ public final class DirectSourceEngine {
                 return failed("Notification access needed");
             case AMBIGUOUS_SOURCE:
                 return failed(app + " has several sessions · open it to choose");
+            case CONNECTION_FAILED:
+                return failed(app + " media service connection failed");
             case SOURCE_LOST:
                 return new MediaCommandResult(MediaCommandResult.Outcome.SOURCE_LOST,
                         app + " playback service stopped", false, false);

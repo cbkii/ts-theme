@@ -14,19 +14,19 @@ class DirectCommandPresentationTest(unittest.TestCase):
         activity = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java").read_text()
         harness = '''
 enum MediaSourceKey {MUSIC,RADIO} enum MediaEngine {DIRECT,LEGACY}
-class MediaSourceState {boolean available,starting,preparing,startable;String packageName="com.tw.media";boolean live(){return available;}}
+class MediaSourceState {int nativeState=2;long actions=4;boolean available,starting,preparing,startable;String packageName="com.tw.media";boolean live(){return available;}}
 class MediaFeatureFacade {MediaSourceState music=new MediaSourceState(),radio=new MediaSourceState();
 MediaEngine engine(MediaSourceKey k){return MediaEngine.DIRECT;}MediaSourceState state(MediaSourceKey k){return k==MediaSourceKey.MUSIC?music:radio;}}
 class MediaSelection {String displayed(){return "music";}}
 class MediaEngineSelector {static MediaSourceKey keyFor(String s){return MediaSourceKey.MUSIC;}}
-class DirectMediaPresentation {static String absentText(MediaSourceState s){return "Source unavailable";}}
+class DirectMediaPresentation {static boolean skipEnabled(MediaSourceState s,boolean n){return s.available;}static boolean playPauseEnabled(MediaSourceState s){return s.available;}static String absentText(MediaSourceState s){return "Source unavailable";}}
 class AppResolver {static String labelFor(Object c,String p,String s){return s;}}
-class ImageButton {void setTag(int n){}void setImageResource(int n){}void setContentDescription(String s){}}
+class ImageButton {void setEnabled(boolean b){}void setTag(int n){}void setImageResource(int n){}void setContentDescription(String s){}}
 class R {static class drawable{static int ic_media_connecting,ic_play,ic_media_unavailable;}static class string{static int media_source_radio,media_source_music;}}
 class Metadata {String status="";void setStatus(String p,String s){status=p;}}
 public class Harness {
 MediaFeatureFacade facade=new MediaFeatureFacade();MediaFeatureFacade mediaFacade(){return facade;}
-MediaSelection mediaSelection=new MediaSelection();ImageButton radioPlayPause=new ImageButton(),playPause=new ImageButton();
+MediaSelection mediaSelection=new MediaSelection();ImageButton radioPlayPause=new ImageButton(),playPause=new ImageButton(),radioPrevious=new ImageButton(),mediaPrevious=new ImageButton(),radioNext=new ImageButton(),mediaNext=new ImageButton();
 MediaSourceKey directFailureKey=MediaSourceKey.MUSIC;String directFailureText="Previous command refused";
 Metadata mediaText=new Metadata();String getString(int id){return "Music";}
 ''' + method(activity, 'private void applyDirectSourcePresentation()') + '''
@@ -40,6 +40,9 @@ System.out.println("PASS actual Activity: live metadata survives old command err
 '''
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            android = root / 'android/media/session/PlaybackState.java'
+            android.parent.mkdir(parents=True,exist_ok=True)
+            android.write_text('package android.media.session;public class PlaybackState {public static int STATE_NONE=0;public static long ACTION_PLAY=4,ACTION_PLAY_PAUSE=512;}')
             (root / 'Harness.java').write_text(harness)
-            subprocess.run(['java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-d', str(root), str(root / 'Harness.java')], check=True, timeout=30)
+            subprocess.run(['java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-d', str(root), str(root / 'Harness.java'), str(android)], check=True, timeout=30)
             subprocess.run(['java', '-cp', str(root), 'Harness'], check=True, timeout=10)

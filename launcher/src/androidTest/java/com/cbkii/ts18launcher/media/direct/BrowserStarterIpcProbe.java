@@ -147,6 +147,33 @@ public final class BrowserStarterIpcProbe {
         return "PASS API29 real Media3-only service legacy browser / source token / decoder PREPARE / one Play";
     }
 
+    /** Actual paired Auxio APK, cross-UID. No fixture session or launcher-owned player. */
+    public static String runAuxio(Instrumentation instrumentation, String packageName) throws Exception {
+        check("com.tw.media".equals(packageName) || "com.tw.media.debug".equals(packageName),
+                "not a maintained Auxio package");
+        Context app = instrumentation.getTargetContext();
+        int sourceUid = app.getPackageManager().getApplicationInfo(packageName, 0).uid;
+        check(sourceUid != android.os.Process.myUid(), "same-UID test does not qualify paired IPC");
+        Handler main = new Handler(Looper.getMainLooper());
+        BrowserSessionStarter.FrameworkConnector connector = new BrowserSessionStarter.FrameworkConnector(app, main);
+        ComponentName service = connector.resolve(packageName);
+        check(service != null && "com.tw.music.MusicService".equals(service.getClassName()),
+                "canonical Auxio browser not resolved: " + service);
+        AttemptResult first = connect(instrumentation, connector, service);
+        try {
+            check(packageName.equals(first.sessionPackage), "foreign Auxio session owner");
+            SessionObservation observed = first.session.read();
+            check(observed.deadlinePlay, "actual Auxio does not advertise HOME_PLAY_V1");
+            check((observed.actions & PlaybackState.ACTION_PREPARE) != 0L, "actual Auxio lacks PREPARE");
+            // This test qualifies handshake/capabilities only. A saved queue and audible decoder
+            // require their own test; do not manufacture them from an empty installation.
+        } finally { instrumentation.runOnMainSync(first.connection::disconnect); }
+        AttemptResult second = connect(instrumentation, connector, service);
+        try { check(packageName.equals(second.sessionPackage), "Auxio reconnect lost its owner"); }
+        finally { instrumentation.runOnMainSync(second.connection::disconnect); }
+        return "PASS API29 actual Auxio cross-UID framework browser / source token / HOME_PLAY_V1 / reconnect";
+    }
+
     private static AttemptResult connect(Instrumentation instrumentation,
                                          BrowserSessionStarter.FrameworkConnector connector,
                                          ComponentName service) throws Exception {

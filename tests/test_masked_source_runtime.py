@@ -21,7 +21,7 @@ public int getTaskId(){return 10;} public String getPackageName(){return "com.cb
 public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}}
 ''',
             'android/content/ComponentName.java': '''package android.content;public class ComponentName {
-String p,n;public ComponentName(String p,String n){this.p=p;this.n=n;}public String flattenToString(){return p+"/"+n;}}
+public String p,n;public ComponentName(String p,String n){this.p=p;this.n=n;}public String flattenToString(){return p+"/"+n;}public static ComponentName unflattenFromString(String s){String[] a=s.split("/");return new ComponentName(a[0],a[1]);}}
 ''',
             'android/content/Intent.java': '''package android.content;public class Intent {
 public ComponentName getComponent(){return new ComponentName("com.navimods.radio","com.navimods.radio.Main");}}
@@ -31,7 +31,7 @@ public boolean enabled=true,exported=true;public String packageName="com.navimod
 ''',
             'android/content/pm/PackageManager.java': '''package android.content.pm;public class PackageManager {
 public static class NameNotFoundException extends Exception {} public android.content.Intent getLaunchIntentForPackage(String p){return new android.content.Intent();}
-public ActivityInfo getActivityInfo(android.content.ComponentName c,int f)throws NameNotFoundException{return new ActivityInfo();}}
+public ActivityInfo getActivityInfo(android.content.ComponentName c,int f)throws NameNotFoundException{ActivityInfo i=new ActivityInfo();i.packageName=c.p;i.name=c.n;if(c.p.equals("com.tw.media"))i.exported=false;return i;}}
 ''',
             'android/os/Looper.java': 'package android.os;public class Looper {public static Looper getMainLooper(){return new Looper();}}',
             'android/os/SystemClock.java': '''package android.os;public class SystemClock {
@@ -47,15 +47,16 @@ public static void pump() {List<Runnable> due=new ArrayList<>();synchronized(pen
             'android/media/session/PlaybackState.java': 'package android.media.session;public class PlaybackState {public static long ACTION_PLAY=4,ACTION_PLAY_PAUSE=512;}',
             'com/cbkii/ts18launcher/Doubles.java': '''package com.cbkii.ts18launcher;
 import com.cbkii.ts18launcher.media.*;
-class StartupReadinessCoordinator {interface LoaderUi {boolean canMask();boolean ownsMask();void render(String s,boolean b);void mask(boolean b);void whenMaskDrawn(Runnable r);void hide();}interface NavigationHook {boolean busy();void deferAutomaticPresentation(boolean b);int taskId();}}
+class AuxioPreparationContract {static final String COMPONENT="com.tw.media/org.oxycblt.auxio.headunit.LauncherPreparationActivity";static boolean capability=true;static boolean supported(android.app.Activity a){return capability;}}
+class StartupReadinessCoordinator {static boolean ready(com.cbkii.ts18launcher.media.MediaSourceState s){return s.live()&&s.nativeState==2&&!s.itemId.isEmpty()&&(s.actions&4)!=0;}interface LoaderUi {boolean canMask();boolean ownsMask();void render(String s,boolean b);void mask(boolean b);void whenMaskDrawn(Runnable r);void hide();}interface NavigationHook {boolean busy();void deferAutomaticPresentation(boolean b);int taskId();}}
 class CompactStartupClient {static boolean automaticAllowed(android.app.Activity a){return true;}}
 class AndroidUserId {static int current(){return 0;}}
 class StartupMaskFocus {static String activeTitle="mask";static boolean validTitle(String t){return !t.isEmpty();}}
-class MediaEngineSelector {static String configuredPackage(android.app.Activity a,MediaSourceKey k){return "com.navimods.radio";}}
+class MediaEngineSelector {static String configuredPackage(android.app.Activity a,MediaSourceKey k){return k==MediaSourceKey.MUSIC?"com.tw.media":"com.navimods.radio";}}
 class R {static class string {static int startup_radio_preparing=1;}}
 class MediaEventTrace {static void record(String a,String b,String c){}}
 class Ts18LauncherApplication {static Facade facade=new Facade();static Facade mediaFacade(android.app.Activity a){return facade;}}
-class Facade {volatile boolean live=true;long actions=4;String item="station";void refresh(){}MediaSourceState state(MediaSourceKey k){return live?new MediaSourceState(k,MediaEngine.DIRECT,"com.navimods.radio",MediaSourceState.Availability.LIVE,2,actions,"token",item,"FM","",1):MediaSourceState.unavailable(k,MediaEngine.DIRECT,"com.navimods.radio",MediaSourceState.Availability.NO_SESSION,1);}}
+class Facade {void afterActivityPreparation(MediaSourceKey k,String p){}volatile boolean live=true;long actions=4;String item="station";void refresh(){}MediaSourceState state(MediaSourceKey k){return live?new MediaSourceState(k,MediaEngine.DIRECT,k==MediaSourceKey.MUSIC?"com.tw.media":"com.navimods.radio",MediaSourceState.Availability.LIVE,2,actions,"token",item,"FM","",1):MediaSourceState.unavailable(k,MediaEngine.DIRECT,"com.navimods.radio",MediaSourceState.Availability.NO_SESSION,1);}}
 class RootTaskSession {
 static RootTaskSession one=new RootTaskSession();static volatile int task=10,pendingFocus;static volatile String component="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity";static int parks,mapParks;static volatile boolean blockHome,homeEntered,dropAfterPark,blockObservation,observationEntered;static java.util.List<String> events=new java.util.concurrent.CopyOnWriteArrayList<>();
 static RootTaskSession get(android.app.Activity a){return one;}
@@ -65,9 +66,9 @@ if(f[0].equals("observe")&&NavigationRootHelper.entered){if(blockObservation){ob
 if(f[0].equals("return-home")){mapParks++;task=10;component="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity";}
 if(f[0].equals("startup-home")){homeEntered=true;waitGate(()->blockHome);if(d<=android.os.SystemClock.elapsedRealtime())return NavigationHelperResult.parse("FAIL code=PHASE_TIMEOUT");parks++;task=10;component="com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity";if(dropAfterPark)Ts18LauncherApplication.facade.live=false;}
 return NavigationHelperResult.parse("OK code=FOREGROUND user=0 task="+task+" component="+component);}}
-class NavigationRootHelper {static int launches;static volatile boolean block,entered;static boolean permission;static int outcome;
+class NavigationRootHelper {static int launches;static volatile boolean block,entered;static boolean permission;static String launchedEntry;static int outcome;
 long deadline;NavigationRootHelper(android.app.Activity a){}void setDeadline(long d){deadline=d;}
-NavigationHelperResult run(String... f){if(deadline<=android.os.SystemClock.elapsedRealtime())return NavigationHelperResult.parse("FAIL code=PHASE_TIMEOUT");if(RootTaskSession.task!=10)throw new AssertionError("Maps not parked before launch");RootTaskSession.events.add("launch");launches++;entered=true;if(outcome==1)return NavigationHelperResult.parse("FAIL code=STARTUP_SOURCE_REJECTED");if(RootTaskSession.pendingFocus==0){RootTaskSession.task=20;RootTaskSession.component=permission?"com.android.permissioncontroller/GrantPermissionsActivity":"com.navimods.radio/com.navimods.radio.Main";}RootTaskSession.waitGate(()->block);return NavigationHelperResult.parse(deadline<=android.os.SystemClock.elapsedRealtime()?"FAIL code=PHASE_TIMEOUT":outcome==2?"FAIL code=STARTUP_SOURCE_UNCERTAIN":"OK code=STARTUP_SOURCE user=0 task=20");}}
+NavigationHelperResult run(String... f){if(deadline<=android.os.SystemClock.elapsedRealtime())return NavigationHelperResult.parse("FAIL code=PHASE_TIMEOUT");if(RootTaskSession.task!=10)throw new AssertionError("Maps not parked before launch");launchedEntry=f.length>2?f[2]:"";RootTaskSession.events.add("launch");launches++;entered=true;if(outcome==1)return NavigationHelperResult.parse("FAIL code=STARTUP_SOURCE_REJECTED");if(RootTaskSession.pendingFocus==0){RootTaskSession.task=20;RootTaskSession.component=permission?"com.android.permissioncontroller/GrantPermissionsActivity":f.length>1&&f[1].equals("com.tw.media")?"com.tw.media/org.oxycblt.auxio.MainActivity":"com.navimods.radio/com.navimods.radio.Main";}RootTaskSession.waitGate(()->block);return NavigationHelperResult.parse(deadline<=android.os.SystemClock.elapsedRealtime()?"FAIL code=PHASE_TIMEOUT":outcome==2?"FAIL code=STARTUP_SOURCE_UNCERTAIN":"OK code=STARTUP_SOURCE user=0 task=20");}}
 
 ''',
             'com/cbkii/ts18launcher/Harness.java': '''package com.cbkii.ts18launcher;
@@ -110,7 +111,8 @@ if(kind==10)check(RootTaskSession.parks==0,"rejected launch repaired unrelated H
 if(kind==5)check(RootTaskSession.parks==1&&!Ts18LauncherApplication.facade.live,"source death after park not observed");
 if(kind==6)check(RootTaskSession.mapParks==1&&RootTaskSession.events.indexOf("return-home")<RootTaskSession.events.indexOf("launch"),"valid Maps task was not parked first");
 t.cancel();check(callbacks[0]==1,"double cleanup");}
-public static void main(String[] a)throws Exception{for(int i=0;i<15;i++)scenario(i);reset();long expired=android.os.SystemClock.elapsedRealtime();check(!RootTaskSession.one.runCurrent(expired,"startup-home").success&&RootTaskSession.parks==0,"expired park mutated task");var helper=new NavigationRootHelper(new android.app.Activity());helper.setDeadline(expired);check(!helper.run("startup-source").success&&NavigationRootHelper.launches==0,"expired launch mutated source");System.out.println("PASS opaque barrier / exact task / permission yield / in-flight cancellation / session loss");}}
+static void music()throws Exception{reset();Loader l=new Loader();Nav n=new Nav();boolean[] ended={false},ready={false};var t=new MaskedSourcePreparation(new android.app.Activity(),l,n,()->ended[0]=true);t.begin("com.tw.media",android.os.SystemClock.elapsedRealtime()+3000,r->ready[0]=r);check(l.visible&&NavigationRootHelper.launches==0,"Music launched without drawn mask");l.draw.run();until(()->ended[0]);check(ready[0]&&RootTaskSession.parks==1,"Music not ready after source-owned preparation and return");check(NavigationRootHelper.launchedEntry.equals(AuxioPreparationContract.COMPONENT),"autoplay alias used for preparation");reset();AuxioPreparationContract.capability=false;l=new Loader();boolean[] stopped={false};var denied=new MaskedSourcePreparation(new android.app.Activity(),l,new Nav(),()->stopped[0]=true);denied.begin("com.tw.media",android.os.SystemClock.elapsedRealtime()+3000,r->{});check(stopped[0]&&NavigationRootHelper.launches==0,"old Auxio launched without prepare contract");AuxioPreparationContract.capability=true;}
+public static void main(String[] a)throws Exception{music();for(int i=0;i<15;i++)scenario(i);reset();long expired=android.os.SystemClock.elapsedRealtime();check(!RootTaskSession.one.runCurrent(expired,"startup-home").success&&RootTaskSession.parks==0,"expired park mutated task");var helper=new NavigationRootHelper(new android.app.Activity());helper.setDeadline(expired);check(!helper.run("startup-source").success&&NavigationRootHelper.launches==0,"expired launch mutated source");System.out.println("PASS opaque barrier / exact task / permission yield / in-flight cancellation / session loss");}}
 ''',
         }
         with tempfile.TemporaryDirectory() as tmp:

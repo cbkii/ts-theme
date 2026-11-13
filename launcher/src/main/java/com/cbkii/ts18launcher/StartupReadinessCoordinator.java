@@ -56,6 +56,9 @@ final class StartupReadinessCoordinator {
     private boolean initialGraceUsed;
     private Runnable initialAdmission;
     private MaskedSourcePreparation staging;
+    private java.lang.ref.WeakReference<Activity> homeHost = new java.lang.ref.WeakReference<>(null);
+    private boolean automaticMusicAttempted;
+    private String automaticMusicIdentity = "";
     private String navigationBoundary = "not observed";
 
     private StartupReadinessCoordinator(Context context) { this.context = context; }
@@ -80,6 +83,7 @@ final class StartupReadinessCoordinator {
                 for (MediaSourceKey key : MediaSourceKey.values()) policy.configurationChanged(source(key));
             }
         }
+        if (waking) automaticMusicAttempted = false;
         if (!policy.acceptTrigger(trigger, now) && !waking) return;
         if (trigger == Trigger.HOME_RESUME) {
             journal.edit().remove("pending_boot_v1").apply();
@@ -110,6 +114,7 @@ final class StartupReadinessCoordinator {
         }
         // Every source has independent admission/recovery. A boot journal is never a success receipt.
         for (MediaSourceKey key : MediaSourceKey.values()) reconcileSource(key, trigger, now);
+        tryAutomaticMusicRecovery();
     }
 
     private static Source source(MediaSourceKey key) { return key == MediaSourceKey.MUSIC ? Source.MUSIC : Source.RADIO; }
@@ -177,6 +182,7 @@ final class StartupReadinessCoordinator {
                 policy.sessionLost(source(state.key));
                 reconcileSource(state.key, Trigger.SESSION_LOST, SystemClock.elapsedRealtime());
             }
+            tryAutomaticMusicRecovery();
         });
     }
 
@@ -188,10 +194,45 @@ final class StartupReadinessCoordinator {
     boolean prepareInteractively(Activity activity, String pkg, long deadline, java.util.function.Consumer<Boolean> done) {
         if (staging != null && staging.serves(pkg)) { staging.join(done); return true; }
         if (destroyed || screenOff || staging != null || loaderUi == null || !loaderUi.canMask()
-                || !"com.navimods.radio".equals(pkg)) return false;
+                || !("com.navimods.radio".equals(pkg)
+                    || "com.tw.media".equals(pkg) && AuxioPreparationContract.supported(context))) return false;
         staging = new MaskedSourcePreparation(activity, loaderUi, navigation, () -> staging = null);
         staging.begin(pkg, deadline, done);
         return true;
+    }
+
+    /** One alternate method after an observed failed browser admission; never a blind boot launch. */
+    private void tryAutomaticMusicRecovery() {
+        if (destroyed || screenOff || !homeResumed || yielded || staging != null
+                || loaderUi == null || !loaderUi.canMask()
+                || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
+        Activity home = homeHost.get();
+        if (home == null || home.isFinishing() || home.isDestroyed()) return;
+        MediaSourceState state = Ts18LauncherApplication.mediaFacade(context).state(MediaSourceKey.MUSIC);
+        String identity = state.packageName + ":" + state.engine;
+        if (!identity.equals(automaticMusicIdentity)) {
+            automaticMusicIdentity = identity;
+            automaticMusicAttempted = false;
+        }
+        if (automaticMusicAttempted || state.engine != com.cbkii.ts18launcher.media.MediaEngine.DIRECT
+                || !"com.tw.media".equals(state.packageName)
+                || state.availability != MediaSourceState.Availability.CONNECTION_FAILED
+                || !AuxioPreparationContract.supported(context)) return;
+        automaticMusicAttempted = true;
+        cancelRecovery(MediaSourceKey.MUSIC);
+        int generation = policy.record(Source.MUSIC).generation;
+        policy.changeMethod(Source.MUSIC, Method.ACTIVITY_BOOTSTRAP);
+        MaskedSourcePreparation transaction = new MaskedSourcePreparation(home, loaderUi, navigation,
+                () -> staging = null);
+        staging = transaction;
+        transaction.begin(state.packageName, SystemClock.elapsedRealtime() + 12000L, ready -> {
+            if (destroyed) return;
+            long now = SystemClock.elapsedRealtime();
+            if (ready) policy.ready(Source.MUSIC, generation, now);
+            else if (transaction.launchAdmittedOrUncertain())
+                policy.uncertain(Source.MUSIC, generation, "Activity admitted; readiness not observed", now);
+            else policy.block(Source.MUSIC, generation, "Prepare-only Activity admission blocked", now);
+        });
     }
 
     static boolean directPrepareTrigger(Trigger trigger) {
@@ -213,6 +254,7 @@ final class StartupReadinessCoordinator {
     void attachNavigationHook(NavigationHook hook) { navigation = hook; }
     void detachNavigationHook(NavigationHook hook) { if (navigation == hook) navigation = null; }
     void onHomeResumed(Activity activity) {
+        homeHost = new java.lang.ref.WeakReference<>(activity);
         homeResumed = true;
         if (initialAdmission != null) { main.removeCallbacks(initialAdmission); initialAdmission = null; }
         onTrigger(Trigger.HOME_RESUME);
@@ -246,8 +288,11 @@ final class StartupReadinessCoordinator {
                 + " / " + Ts18LauncherApplication.mediaFacade(context).state(MediaSourceKey.RADIO).availability;
     }
     Mode mode() { return Mode.AUTOMATIC_FALLBACK; }
-    void attachLoader(LoaderUi ui) { loaderUi = ui; if (ui != null) ui.hide(); }
+    void attachLoader(LoaderUi ui) {
+        loaderUi = ui;
+        if (ui != null) { ui.hide(); main.post(this::tryAutomaticMusicRecovery); }
+    }
     void detachLoader(LoaderUi ui) { if (ui != null && loaderUi == ui) { if (staging != null) staging.cancel(); ui.hide(); loaderUi = null; } }
     boolean dismissLoader() { if (staging != null) { staging.cancel(); return true; } if (loaderUi != null) loaderUi.hide(); return false; }
-    void destroy() { if (staging != null) staging.cancel(); destroyed = true; navigation = null; main.removeCallbacksAndMessages(null); }
+    void destroy() { if (staging != null) staging.cancel(); destroyed = true; homeHost.clear(); navigation = null; main.removeCallbacksAndMessages(null); }
 }
