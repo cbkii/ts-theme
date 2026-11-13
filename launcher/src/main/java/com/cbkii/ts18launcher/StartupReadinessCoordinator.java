@@ -87,8 +87,10 @@ final class StartupReadinessCoordinator {
         }
         if (waking) automaticMusicAttempted = false;
         // Evidence that a refused source bind may now succeed. Never a launch on its own.
+        // HOME_RESUME is included: TS18 capture 2026-11-14 showed binds refused while Auxio's
+        // process was absent and accepted in 18 ms after the driver had opened Auxio and returned.
         if (waking || trigger == Trigger.USER_UNLOCKED || trigger == Trigger.STORAGE_MOUNT
-                || trigger == Trigger.ACC_ON || trigger == Trigger.BOOT)
+                || trigger == Trigger.ACC_ON || trigger == Trigger.BOOT || trigger == Trigger.HOME_RESUME)
             Ts18LauncherApplication.mediaFacade(context).prerequisitesChanged();
         if (!policy.acceptTrigger(trigger, now) && !waking) return;
         if (trigger == Trigger.HOME_RESUME) {

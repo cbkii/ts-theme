@@ -136,6 +136,10 @@ final class MediaNotificationAccessBootstrapper {
     static void ensureConnected(Context context) {
         Context app = context.getApplicationContext();
         MAIN.post(() -> {
+            // Only the Legacy engine consumes the listener connection; Direct (M2) reads sessions
+            // through the approved component without it. TS18 capture 2026-11-14: with both
+            // sources on M2, 15 rebind requests in 130 s produced no connection and no use.
+            if (!MediaListenerService.legacyDemanded()) return;
             if (MediaListenerService.isConnected() || connectionPending
                     || !MediaListenerService.hasNotificationAccess(app)) return;
             connectionPending = true;

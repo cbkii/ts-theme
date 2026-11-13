@@ -24,7 +24,7 @@ public Context getApplicationContext(){return this;}public Object getSystemServi
             'android/content/ComponentName.java': 'package android.content;public class ComponentName {public ComponentName(Context c,Class<?> s){}public String flattenToString(){return "launcher/.Listener";}public String flattenToShortString(){return flattenToString();}}',
             'android/service/notification/NotificationListenerService.java': 'package android.service.notification;public class NotificationListenerService {public static int requests;public static void requestRebind(android.content.ComponentName c){requests++;}}',
             'com/cbkii/ts18launcher/Doubles.java': '''package com.cbkii.ts18launcher;
-class MediaListenerService {static boolean granted=true,connected;static boolean hasNotificationAccess(android.content.Context c){return granted;}static boolean isConnected(){return connected;}static void refreshActiveSessions(){}}
+class MediaListenerService {static boolean granted=true,connected,legacy=true;static boolean legacyDemanded(){return legacy;}static boolean hasNotificationAccess(android.content.Context c){return granted;}static boolean isConnected(){return connected;}static void refreshActiveSessions(){}}
 class ProcessMediaSessionMonitor {static int refreshes;static void refresh(android.content.Context c){refreshes++;}}
 class AndroidUserId {static int current(){return 0;}}
 class UiPersonalizationPrefs {static boolean consent,applied;static boolean mediaListenerRootGrant(android.content.Context c){return consent;}
@@ -49,6 +49,7 @@ MediaListenerService.granted=false;Handler.until(300000);check(NotificationListe
 MediaListenerService.granted=true;KeyguardManager.locked=true;MediaNotificationAccessBootstrapper.ensureConnected(c);Handler.until(300000);check(NotificationListenerService.requests==before,"locked user retried");
 KeyguardManager.locked=false;MediaNotificationAccessBootstrapper.ensureConnected(c);Handler.until(300000);check(NotificationListenerService.requests==before+1,"unlock did not retry");
 PowerManager.awake=false;Handler.until(400000);check(NotificationListenerService.requests==before+1,"sleep retried");
+PowerManager.awake=true;MediaListenerService.legacy=false;int m2Only=NotificationListenerService.requests;MediaNotificationAccessBootstrapper.ensureConnected(c);Handler.until(500000);check(NotificationListenerService.requests==m2Only,"listener rebind requested with no Legacy source (TS18 capture: 15 futile rebinds)");MediaListenerService.legacy=true;
 System.out.println("PASS production listener granted/disconnected/bounded/connected/revoked/unlock/sleep");}}
 '''
         }

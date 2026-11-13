@@ -49,7 +49,13 @@ final class CompactStartupClient {
     private final android.os.Messenger messenger;
     private java.util.function.IntConsumer homeReturn = task -> { };
     void setHomeReturnCallback(java.util.function.IntConsumer callback) { homeReturn = callback; }
-    private boolean busy, closed, dirty;
+    private boolean busy, closed, dirty, suspended;
+    /**
+     * UID whose last notification was authenticated. A repeat notification from it only schedules
+     * the single-flight refresh, which re-authenticates the peer and provider before reading, so
+     * bursts no longer saturate the trust workers (TS18 capture: 7 dropped peer notifications).
+     */
+    private volatile int trustedPeerUid = -1;
     private int failures;
     private String lastQueryFailure = "";
     private int request;
@@ -58,7 +64,7 @@ final class CompactStartupClient {
     private Snapshot lastSnapshot = Snapshot.unknown();
     private final Runnable poll = this::pollEvidence;
     private void pollEvidence() {
-        if (closed) return;
+        if (closed || suspended) return;
         if (SystemClock.elapsedRealtime() < until) refresh();
         else { lastSnapshot = lastSnapshot.ended(); callback.accept(lastSnapshot); }
     }
@@ -94,9 +100,11 @@ final class CompactStartupClient {
 
     private void refreshFromPeer(int uid) {
         if (closed) return;
+        if (uid >= 0 && uid == trustedPeerUid) { refresh(); return; }
         try {
             worker.execute(() -> {
                 boolean trusted = CompactStartupPeer.trusted(context, uid);
+                trustedPeerUid = trusted ? uid : -1;
                 if (trusted) main.post(() -> { if (!closed) refresh(); });
             });
         } catch (java.util.concurrent.RejectedExecutionException full) {
@@ -118,6 +126,7 @@ final class CompactStartupClient {
 
     void watch() {
         if (closed) return;
+        suspended = false;
         // Coalesce overlapping HOME/boot/unlock edges without moving the deadline.
         if (SystemClock.elapsedRealtime() >= until) {
             until = SystemClock.elapsedRealtime() + 45000L;
@@ -150,7 +159,9 @@ final class CompactStartupClient {
             try {
                 int uid = context.getPackageManager().getApplicationInfo(CompactStartupPeer.PACKAGE, 0).uid;
                 int boot = Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
-                if (CompactStartupPeer.trusted(context, uid) && boot >= 0
+                boolean peerTrusted = CompactStartupPeer.trusted(context, uid);
+                if (!peerTrusted) trustedPeerUid = -1;
+                if (peerTrusted && boot >= 0
                         && CompactStartupPeer.ownsProvider(context, "app.organicmaps.incar.compact.startup")) {
                     Uri uri = URI.buildUpon().appendQueryParameter("v", "1")
                             .appendQueryParameter("boot", Integer.toString(boot)).build();
@@ -195,7 +206,8 @@ final class CompactStartupClient {
                 Boolean consent = CompactStartupConsent.read(context);
                 if (consent != null) result = Snapshot.consent(consent);
             }
-            if (result.compatible) lastQueryFailure = "";
+            // Only a serving peer ends a failure episode; a consent-only answer repeats it.
+            if (result.compatible && !result.consentOnly) lastQueryFailure = "";
             final Snapshot snapshot = signal.isCanceled() ? Snapshot.unknown() : result;
             main.post(() -> {
                 main.removeCallbacks(timeout);
@@ -216,14 +228,24 @@ final class CompactStartupClient {
     }
     private void scheduleNext(Snapshot snapshot) {
         main.removeCallbacks(poll);
-        failures = snapshot.compatible ? 0 : failures + 1;
+        // A consent-only answer means the Maps provider is not serving yet: back off like a
+        // failure instead of re-reading consent every 500 ms (TS18 capture: 13 root reads in 8 s).
+        failures = snapshot.compatible && !snapshot.consentOnly ? 0 : failures + 1;
+        long delay = CompactStartupPollPolicy.delayMs(snapshot.compatible, snapshot.consentOnly, snapshot.rendererReady, failures);
         // The time limit bounds automatic polling. Authenticated lifecycle/preference
         // invalidations remain live after it so disabling startup or losing a surface is seen.
         if (dirty) main.post(this::refresh);
-        else if (SystemClock.elapsedRealtime() < until
-                && (snapshot.compatible && !snapshot.rendererReady || failures > 0))
-            main.postDelayed(poll, Math.min(until - SystemClock.elapsedRealtime(),
-                    snapshot.compatible ? 500L : Math.min(3000L, 500L * failures)));
+        else if (!suspended && delay >= 0L && SystemClock.elapsedRealtime() < until)
+            main.postDelayed(poll, Math.min(until - SystemClock.elapsedRealtime(), delay));
+    }
+
+    /**
+     * HOME is stopped and the navigation owner has nothing outstanding: stop periodic reads.
+     * Authenticated peer notifications and explicit refreshes still run; watch() resumes polling.
+     */
+    void suspendPolling() {
+        suspended = true;
+        main.removeCallbacks(poll);
     }
     // Cancellation may itself cross Binder; do not block HOME's main thread.
     private void workerCancel(CancellationSignal signal) {

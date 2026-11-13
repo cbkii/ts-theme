@@ -120,6 +120,7 @@ System.out.println("PASS actual client timeout/replacement/saturation/off-main-a
 ''',
         }
         files['CompactStartupClient.java'] = (ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher/CompactStartupClient.java').read_text()
+        files['CompactStartupPollPolicy.java'] = (ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher/CompactStartupPollPolicy.java').read_text()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name, source in files.items():

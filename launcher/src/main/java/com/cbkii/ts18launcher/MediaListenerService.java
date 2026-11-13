@@ -341,6 +341,9 @@ public final class MediaListenerService extends NotificationListenerService {
         }
     }
 
+    /** True while some source is served by the Legacy engine, the only consumer of this connection. */
+    static boolean legacyDemanded() { return legacyDemand; }
+
     static void setDemand(boolean demanded) {
         if (legacyDemand == demanded) return;
         legacyDemand = demanded;

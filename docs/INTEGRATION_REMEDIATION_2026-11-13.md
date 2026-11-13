@@ -6,7 +6,7 @@ Scope: the three-repository TS18 integration review of ts-theme PR #44 head `768
 
 | Finding | Change | Owner symbol |
 |---|---|---|
-| F1: a failed bind showed "Press Play to start" and the next tap repeated the same bind | `CONNECTION_FAILED` renders "Not responding · tap Play to retry". A refused bind is not repeated passively. One explicit retry is admitted. Further retries wait for a prerequisite change (user unlock, storage mount, wake, the source package installed/replaced/changed) or 30 s. A timed-out bind is not a refusal and stays retryable. | `DirectSourceEngine.bindRetryAdmitted`, `onPrerequisitesChanged`; `MediaFeatureFacade.prerequisitesChanged`; `StartupReadinessCoordinator.onTrigger`; `Ts18LauncherApplication.mediaPackageReceiver`; `DirectMediaPresentation.absentText` |
+| F1: a failed bind showed "Press Play to start" and the next tap repeated the same bind | `CONNECTION_FAILED` renders "Not responding · tap Play to retry". A refused bind is not repeated passively. One explicit retry is admitted. Further retries wait for a prerequisite change (user unlock, storage mount, wake, HOME return, the source package installed/replaced/changed) or 30 s. A timed-out bind is not a refusal and stays retryable. | `DirectSourceEngine.bindRetryAdmitted`, `onPrerequisitesChanged`; `MediaFeatureFacade.prerequisitesChanged`; `StartupReadinessCoordinator.onTrigger`; `Ts18LauncherApplication.mediaPackageReceiver`; `DirectMediaPresentation.absentText` |
 | F2: the bind failure cause was unobserved | Each browser attempt logs `start-diagnostic outcome=… elapsedMs=… class=bind-refused\|root-null-or-late unlocked=…` (`TS18Media`). No bind is attempted before user unlock; the source reports "waiting for the device to unlock" and `USER_UNLOCKED` re-admits it. | `BrowserSessionStarter` |
 | F3: a second tap could not cancel an owed cold Play | Taps within 400 ms coalesce. A later primary tap while a cold start is pending ends it without dispatch. A later tap after an unconfirmed Play sends Pause, which Auxio already treats as cancellation of its HOME gate. | `DirectSourceEngine.commandUntil`, `REPEAT_TAP_MS` |
 | F4: a loaded Auxio received unbounded Play | Every Play to a session advertising `HOME_PLAY_V1` uses it, loaded or not. | `DirectSourceEngine.dispatch` |
@@ -36,3 +36,27 @@ Scope: the three-repository TS18 integration review of ts-theme PR #44 head `768
 - **Multi-resume:** whether Maps stays resumed while HOME has focus.
 
 Collect all of these with `scripts/termux/collect-integration-evidence.sh` (see the [Termux README](../scripts/termux/README.md)).
+
+## TS18 validation capture (2026-11-14 AEDT, one cold boot)
+
+Installed builds, identified from APK SHA-256 and trace strings:
+- Auxio TESTING `PR287-bc17429`: exact SHA-256 match.
+- Launcher: a PR #44 build older than `5e95806`. It still emits "Auxio refused the connection", and was installed before both current snapshots.
+- Organic Maps InCar from `master` of the same day.
+
+None of the launcher fixes above were installed.
+
+| Observation | Disposition |
+|---|---|
+| Music binds at 33.5 s (passive), 47.8 s and 51.9 s (taps) failed in 64–140 ms. The user was unlocked at 29.4 s. No ActivityManager line and no Auxio process start appeared. A bind at 61.7 s succeeded in 18 ms, after the user had opened Auxio itself (process started for its Activity at 55.8 s). | F2 cause narrowed: a bind cannot start a non-running Auxio on this ROM (OEM start control suspected), and binds to a running Auxio work. The prepare-only Activity path is the correct cold method. HOME return now re-admits a refused bind. The evidence script greps OEM start-control lines. |
+| A Music tap at 47.8 s landed while the just-resumed map awaited renderer evidence. The map rendered at 48.6 s but was verified only at 73.2 s. | Fixed: HOME input keeps a pending renderer-evidence wait for an already-presented task (`NavigationWindowController.cancelAutomaticColdStart`). |
+| 201 Maps evidence reads in about 90 s, including about 25 while another app was in front. 13 root consent reads in 8 s before Maps ran. 7 dropped peer notifications. | Fixed: consent-only answers back off (`CompactStartupPollPolicy`); polling is suspended while HOME is stopped with nothing outstanding; repeat notifications from an authenticated peer skip the trust worker. |
+| The notification listener never connected (its pre-unlock bind failed). 15 rebind requests were made while both sources were on M2. | Fixed: rebinds only while a source is on Legacy (`MediaNotificationAccessBootstrapper.ensureConnected`). |
+| Cold Maps bootstrap reported `BOOTSTRAP_PENDING` on `DownloadResourcesActivity` and then resumed. Five warm Next/Previous commands were acknowledged in 70–735 ms. | Confirms the F6 classifier and warm transport. |
+| HOME departure returned `GEOMETRY_NOT_VERIFIED` once (60.2 s). The task was retained and re-presented on HOME return. | Deferred: the result lacks the observed bounds. Collect again before changing departure verification. |
+| Playback started at 67.8 s with no launcher Play. | Auxio's own autoplay-on-launch preference after the user opened Auxio; not a launcher defect. |
+
+Collector-side items (the external campaign collector, not in these repositories):
+- help probes printed valid output with rc=255;
+- `ps | head` returned rc=141;
+- the second screen recording ran 45 s against a 25 s cap and was incomplete.

@@ -110,7 +110,9 @@ phase_bind() {
   pause "Tap the HOME Music Play button ONCE, then wait ~20 seconds (do not tap again)" 40
   logcat_filtered "$OUT/bind-after-tap.log"
   bounded 10 "$OUT/bind-services-after.txt" dumpsys activity services $MUSIC
-  grep -E "start-diagnostic|start-failed|start-offered|TS18Browser|onConnectFailed|Failed binding|Unable to start service|not found|bringUpService|process is bad" \
+  # Capture 2026-11-14: binds were refused with no ActivityManager line while Auxio was not
+  # running; look for OEM/Unisoc start-control lines that name the package.
+  grep -E "start-diagnostic|start-failed|start-offered|TS18Browser|onConnectFailed|Failed binding|Unable to start service|not found|bringUpService|process is bad|[Aa]uto[Ss]tart|associat|PowerController|forbid|restrict|denied|not allowed" \
     "$OUT/bind-after-tap.log" > "$OUT/bind-summary.txt" 2>/dev/null
 }
 

@@ -66,6 +66,8 @@ public final class Ts18LauncherApplication extends Application
                         == com.cbkii.ts18launcher.media.MediaEngine.LEGACY;
         ProcessMediaSessionMonitor.setDemand(app, legacy);
         MediaListenerService.setDemand(legacy);
+        // Switching a source back to Legacy re-arms the listener connection it depends on.
+        if (legacy) MediaNotificationAccessBootstrapper.ensureConnected(app);
         if (!legacy && app.mediaBootstrapper != null) {
             app.mediaBootstrapper.destroy(); app.mediaBootstrapper = null; app.mediaConfiguration = "";
         }
