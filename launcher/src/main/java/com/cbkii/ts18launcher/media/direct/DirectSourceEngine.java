@@ -309,7 +309,7 @@ public final class DirectSourceEngine {
             if ((action == MediaUserAction.PLAY_PAUSE || action == MediaUserAction.PLAY) && startable()) {
                 if (pendingStart == null && !bindRetryAdmitted(true)) {
                     deliver(callback, failed(labels.appLabel(packageName)
-                            + " refused the media connection again · it will be retried after unlock, storage or wake"));
+                            + " media connection is still unavailable · it will be retried after unlock, storage, wake or HOME return"));
                     return;
                 }
                 requestStart(callback, deadlineElapsedMs);

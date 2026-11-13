@@ -885,10 +885,6 @@ public final class MediaListenerService extends NotificationListenerService {
         return mergedControllers(active);
     }
 
-    private MediaController findGenericController() {
-        return selectGenericController(activeAndExternalControllers());
-    }
-
     private MediaController findRadioController() {
         return pickExactPackage(activeAndExternalControllers(), RadioProvider.resolvePackage(this));
     }

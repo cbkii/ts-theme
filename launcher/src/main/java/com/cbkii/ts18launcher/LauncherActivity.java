@@ -533,13 +533,6 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         return configuredMusicPackage();
     }
 
-    private boolean snapshotSupports(String packageName, MediaListenerService.Command command) {
-        return packageName != null && ((!genericSnapshot.packageName.isEmpty()
-                && packageName.equals(genericSnapshot.packageName) && genericSnapshot.supports(command))
-                || (!radioSnapshot.packageName.isEmpty()
-                && packageName.equals(radioSnapshot.packageName) && radioSnapshot.supports(command)));
-    }
-
     private void runSourceCommand(MediaSourceKey key, String label, String packageName,
                                   MediaListenerService.Command command) {
         StartupReadinessCoordinator.get(this).onExplicitSource(packageName);
