@@ -108,9 +108,14 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertIn("<!-- testing-apk-notes:end -->", reconciler)
         self.assertIn("BUILD_INFO checksum mismatch", reconciler)
         self.assertIn("Release PATCH/read-back mismatch", reconciler)
-        self.assertIn("workflow_dispatch:", repair)
-        # The dispatcher is fixed and delegates to the trusted default-branch implementation;
-        # the mutating logic, concurrency group and write scope live only there.
+        # A branch-selected manual workflow can replace its own guard or jobs. The comment
+        # event instead selects the default-branch definition and checks maintainer authority.
+        self.assertNotIn("\n  workflow_dispatch:", repair)
+        self.assertIn("issue_comment:", repair)
+        self.assertIn("github.event.issue.pull_request", repair)
+        self.assertIn("github.event.comment.body == '/testing-notes'", repair)
+        self.assertIn("github.event.comment.author_association", repair)
+        self.assertIn('["OWNER", "MEMBER", "COLLABORATOR"]', repair)
         impl = (ROOT / ".github/workflows/testing-apk-reconcile-notes-impl.yml").read_text(encoding="utf-8")
         self.assertIn("testing-apk-reconcile-notes-impl.yml@main", repair)
         self.assertNotIn("reconcile_testing_release.py", repair)

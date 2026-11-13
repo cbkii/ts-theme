@@ -1,15 +1,21 @@
 name: Reconcile TESTING Release Notes
 
-# Fixed dispatcher only. The mutating reconciler is the pinned default-branch reusable
-# workflow; a copy of this file dispatched from any other ref cannot alter its definition.
+# issue_comment runs the default-branch definition. A branch-selected workflow_dispatch
+# copy cannot establish trust merely by pinning a reusable workflow; remove that entry point.
+# After this reaches main, an authorised maintainer can comment /testing-notes on a PR.
 on:
-  workflow_dispatch:
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
 
 jobs:
   reconcile:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/testing-notes' &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     uses: cbkii/ts-theme/.github/workflows/testing-apk-reconcile-notes-impl.yml@main
     permissions:
       contents: write

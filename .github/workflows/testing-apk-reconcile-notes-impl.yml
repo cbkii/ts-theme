@@ -1,8 +1,7 @@
 name: Reconcile TESTING Release Notes (implementation)
 
-# Trusted reconciler. Only reachable through the fixed dispatcher, which pins this
-# definition at the protected default branch; a branch-selected workflow_dispatch copy
-# can therefore never replace the checkout, guard or token scope of the mutating logic.
+# Trusted reconciler, called by the authorised default-branch issue-comment dispatcher.
+# This definition is not independently dispatchable from a candidate branch.
 on:
   workflow_call:
 
