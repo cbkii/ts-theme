@@ -148,3 +148,13 @@ For startup/performance capture, installed splits/UIDs, memory and system-caller
 attribution use [diagnostics 1.3](../diagnostics/README.md). It preserves PR14
 collectors and background-only media/task contracts. See its explicit native-root
 entry and reversible installer; never run multiple boot collectors together.
+
+## Integration evidence (review 2026-11-13)
+
+One guided, read-only, bounded run for the items the integration review deferred to physical evidence (Music bind refusal cause, cold Play timing, map visibility around Music staging, multi-resume, Maps own-screen hold). Run the `bind` phase first after a fresh boot.
+
+```bash
+su -c 'sh scripts/termux/collect-integration-evidence.sh'
+```
+
+Output goes to `/storage/emulated/0/Download/ts18-integration-evidence/<UTC time>/` with `MANIFEST.sha256`. See [the remediation note](../../docs/INTEGRATION_REMEDIATION_2026-11-13.md).

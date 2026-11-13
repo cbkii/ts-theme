@@ -44,6 +44,7 @@ Reviewed on 13 November 2026 against integration source `801abd2b8f779faced243a6
 | [DECISIONS.md](DECISIONS.md) | Current durable architecture decisions |
 | [WP_LEDGER.md](WP_LEDGER.md) | Implementation versus remaining qualification; no live CI/provenance guarantee |
 | [CONSOLIDATED_TESTING_PLAYBOOK.md](CONSOLIDATED_TESTING_PLAYBOOK.md) | Default final owner-operated campaign and read-only collector |
+| [INTEGRATION_REMEDIATION_2026-11-13.md](INTEGRATION_REMEDIATION_2026-11-13.md) | Review remediation: refused-bind rule, cancel/bounded Play, tap budget, Maps own-screen hold, visibility, staging re-present; deferred evidence |
 
 ## Historical investigations and superseded procedures
 

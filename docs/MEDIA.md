@@ -31,3 +31,7 @@ The available NavRadio reference is minSdk32 and does not establish the installe
 Behavioural JVM/Robolectric tests cover token ownership, listener revocation, unsupported cold sources, original-budget accounting, cancellation, handover and no duplicate transport. The API29 IPC fixture checks a real framework browser/controller connection, silent PREPARE, deadline-action advertisement/delivery, expired refusal, reconnect and process death. It is a fixture, not Auxio or NavRadio.
 
 Canonical CI, exact signed artefact identity, installation, audible output, USB, cold boot and ACC remain separate qualification levels. The owner deferred physical TS18 acceptance to the consolidated TESTING campaign; it does not block implementation. See [architecture](ARCHITECTURE.md), [private-contract review](PRIVATE_CONTRACT_REVIEW_2026-11-12.md) and [physical playbook](CONSOLIDATED_TESTING_PLAYBOOK.md).
+
+## Legacy (M1) freeze
+
+From the 2026-11-13 integration remediation, M1 Legacy receives no new behaviour. It remains an explicit, install-time rollback until M2 passes physical qualification, then it is removed. Direct (M2) changes and their tests are listed in [the remediation note](INTEGRATION_REMEDIATION_2026-11-13.md).
