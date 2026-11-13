@@ -657,11 +657,6 @@ final class NavigationWindowController {
         Log.i(TAG, "navigation task shows its own screen; held without repair task=" + activeTaskId);
     }
 
-    /** True while a verified compact map is the presented surface. */
-    boolean presentingHealthyMap() {
-        return state == State.WINDOWED && !needsPresentation && hasManagedNativeTask();
-    }
-
     /**
      * Another owner (masked media staging) changed task focus/z-order. The controller treats its
      * presentation as unproven and re-presents it now, instead of trusting the old WINDOWED state.
