@@ -54,8 +54,8 @@ pause() {
   # $1 prompt, $2 max seconds (the step continues automatically when it elapses)
   note "STEP: $1"
   printf '%s\n> Press Enter when done (auto-continues in %ss): ' "$1" "$2"
-  if command -v timeout >/dev/null 2>&1; then timeout "$2" sh -c 'read _' </dev/tty 2>/dev/null
-  else read _ </dev/tty 2>/dev/null; fi
+  if command -v timeout >/dev/null 2>&1; then timeout "$2" sh -c 'read -r _' </dev/tty 2>/dev/null
+  else read -r _ </dev/tty 2>/dev/null; fi
   echo
 }
 
@@ -123,7 +123,7 @@ phase_play() {
   grep -E "deadline-dispatch|dispatch |result MUSIC|state MUSIC|HOME_PLAY|first-audio|MediaSession transport|didn't start in time" \
     "$OUT/play.log" > "$OUT/play-summary.txt" 2>/dev/null
   printf 'Audible? (y/n/unsure) and roughly how many seconds after the tap: '
-  read answer </dev/tty 2>/dev/null; echo "audible_report=$answer" >> "$OUT/play-summary.txt"
+  read -r answer </dev/tty 2>/dev/null; echo "audible_report=$answer" >> "$OUT/play-summary.txt"
 }
 
 phase_maps() {
@@ -138,7 +138,7 @@ phase_maps() {
   grep -E "TS18Nav|re-present-after-staging|user-activity-held|stack not visible|startup-loader|navigation" \
     "$OUT/maps.log" > "$OUT/maps-summary.txt" 2>/dev/null
   printf 'Was the map visible in the HOME panel after Music started? (y/n): '
-  read answer </dev/tty 2>/dev/null; echo "map_visible_report=$answer" >> "$OUT/maps-summary.txt"
+  read -r answer </dev/tty 2>/dev/null; echo "map_visible_report=$answer" >> "$OUT/maps-summary.txt"
 }
 
 phase_settings() {
@@ -153,7 +153,7 @@ phase_settings() {
   grep -E "TS18Nav|USER_ACTIVITY|BOOTSTRAP_PENDING|native navigation failed|user-activity-held|recovery code" \
     "$OUT/settings.log" > "$OUT/settings-summary.txt" 2>/dev/null
   printf 'Did HOME ever show "Navigation unavailable"? (y/n): '
-  read answer </dev/tty 2>/dev/null; echo "unavailable_report=$answer" >> "$OUT/settings-summary.txt"
+  read -r answer </dev/tty 2>/dev/null; echo "unavailable_report=$answer" >> "$OUT/settings-summary.txt"
 }
 
 phase_identity
@@ -167,7 +167,8 @@ case "$PHASE" in
   *) echo "Unknown phase: $PHASE" >&2; exit 4 ;;
 esac
 
-( cd "$OUT" && find . -type f ! -name MANIFEST.sha256 -exec sha256sum {} + > MANIFEST.sha256 )
+MANIFEST_TMP="$OUT.manifest.$$"
+( cd "$OUT" && find . -type f -exec sha256sum {} + ) > "$MANIFEST_TMP" && mv "$MANIFEST_TMP" "$OUT/MANIFEST.sha256"
 [ -s "$STATUS" ] || echo "PASS collection completed" > "$STATUS"
 note "done"
 echo "Evidence: $OUT"
