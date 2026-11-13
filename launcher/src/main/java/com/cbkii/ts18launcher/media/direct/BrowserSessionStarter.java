@@ -40,13 +40,6 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
         default void onStartDiagnostic(String packageName, String detail) { }
     }
 
-    /**
-     * A framework connection failure that arrives within this long of connect() was posted by
-     * MediaBrowser itself after bindService() returned false; a later one is the service's own
-     * null root (or a late refusal). Used for diagnostics only, never for control decisions.
-     */
-    static final long BIND_REFUSAL_WINDOW_MS = 150L;
-
     /** The Android-facing edge, replaceable in tests. */
     interface Connector {
         /** One exported, enabled browser service of the package, or null with no guess made. */
@@ -163,7 +156,7 @@ final class BrowserSessionStarter implements DirectSourceEngine.Starter {
                     if (!current(packageName, attempt)) return;
                     long elapsed = Math.max(0L, clock.getAsLong() - attempt.startedMs);
                     events.onStartDiagnostic(packageName, "outcome=failed elapsedMs=" + elapsed
-                            + " class=" + (elapsed < BIND_REFUSAL_WINDOW_MS ? "bind-refused" : "root-null-or-late")
+                            + " class=unknown-bind-or-root component=" + service.flattenToString()
                             + " unlocked=" + connector.userUnlocked());
                     end(packageName, attempt, "media service connection failed");
                 }

@@ -117,6 +117,15 @@ final class LegacyMediaBackend implements MediaBackend {
         });
     }
 
+    @Override public void cancelPendingStart(MediaSourceKey key) {
+        if (!attached.containsKey(key)) return;
+        String commanded = lastCommandPackage.get(key);
+        String effective = controlPackage(key);
+        sources().cancelPendingFor(effective, "Superseded by another source");
+        if (commanded != null && !commanded.equals(effective))
+            sources().cancelPendingFor(commanded, "Superseded by another source");
+    }
+
     @Override public void pauseForHandover(MediaSourceKey key) {
         if (!attached.containsKey(key)) return;
         String packageName = controlPackage(key);

@@ -36,3 +36,11 @@ Scope: the three-repository TS18 integration review of ts-theme PR #44 head `768
 - **Multi-resume:** whether Maps stays resumed while HOME has focus.
 
 Collect all of these with `scripts/termux/collect-integration-evidence.sh` (see the [Termux README](../scripts/termux/README.md)).
+
+## Physical-capture follow-up (14 November 2026)
+
+The uploaded run tested signed launcher `0054278` and Auxio `bc17429`, not the later repaired pair. Both source-owned bind failures and subsequent manual-Activity success are observed, but elapsed client callback time does not establish whether bind admission or root publication failed. The diagnostic now records an unknown bind/root classification plus exact component and timing for correlation with TS18Browser server logs.
+
+The stacked candidate also carries the base-branch deadline and cross-source cancellation corrections. All Auxio M2 Play requests require the bounded HOME contract, including cached paused items. Selecting a new source cancels undispatched commands in the selected old backend without detaching observations. Auxio PR #287 separately corrects PLAYING publication to require actual decoder progression.
+
+No Organic Maps source change is inferred from this upload. Task 9614 survives the observed switches; own-screen/renderer/foreground behaviour remains a separate contract. No audible, cold-power or ACC qualification is claimed from video or session state.
