@@ -47,6 +47,8 @@ final class NavigationRecoveryPolicy {
     static boolean ordinaryFullscreenAllowed(String code) {
         return "ROOT_UNAVAILABLE".equals(code) || "ROOT_REQUIRED".equals(code)
                 || "INSTALL_TIMEOUT".equals(code) || "FREEFORM_LAUNCH_UNSUPPORTED".equals(code)
-                || "FULLSCREEN_LAUNCH_UNSUPPORTED".equals(code);
+                || "FULLSCREEN_LAUNCH_UNSUPPORTED".equals(code)
+                // The driver is in one of Maps' own screens: open Maps normally, never latch.
+                || "USER_ACTIVITY".equals(code);
     }
 }

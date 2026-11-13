@@ -28,13 +28,17 @@ final class MaskedSourcePreparation {
     private MediaSourceKey key;
     private long deadline;
     private int sourceTask;
-    private volatile boolean ended, cancelRequested;
+    private volatile boolean ended, cancelRequested, mapParked;
+    private boolean automatic;
     private boolean dispatched, restoring, launchInFlight, presentationLeased;
 
     MaskedSourcePreparation(Activity home, StartupReadinessCoordinator.LoaderUi loader,
             StartupReadinessCoordinator.NavigationHook navigation, Runnable released) {
         this.home = home; this.loader = loader; this.navigation = navigation; this.released = released;
     }
+
+    /** An automatic (not user-requested) transaction: it must not take focus from a focused map. */
+    void automatic() { automatic = true; }
 
     void begin(String packageName, long until, Consumer<Boolean> done) {
         completions.add(done); pkg = packageName;
@@ -86,10 +90,13 @@ final class MaskedSourcePreparation {
                             || !before.component.equals("app.organicmaps.incar/app.organicmaps.MwmActivity")) {
                         postLaunchFailed(); return;
                     }
+                    // The driver is using the map: automatic preparation waits for a later epoch.
+                    if (automatic) { postLaunchFailed(); return; }
                     NavigationHelperResult parked = RootTaskSession.get(home).runCurrent(deadline,
                             "return-home", user(), "app.organicmaps.incar", Integer.toString(before.taskId),
                             home.getPackageName(), Integer.toString(home.getTaskId()));
                     if (parked == null || !parked.success) { postLaunchFailed(); return; }
+                    mapParked = true;
                 } else if (!homeComponent(before.component)) { postLaunchFailed(); return; }
                 if (ended || cancelRequested || !StartupMaskFocus.validTitle(StartupMaskFocus.activeTitle)) {
                     postLaunchFailed(); return;
@@ -226,6 +233,9 @@ final class MaskedSourcePreparation {
         main.removeCallbacksAndMessages(null);
         loader.hide();
         if (navigation != null && presentationLeased) navigation.deferAutomaticPresentation(false);
+        // This transaction changed task focus/z-order (parked the map and/or started a source
+        // Activity). The navigation owner re-verifies and re-presents; WINDOWED is no longer proof.
+        if (navigation != null && (mapParked || dispatched)) navigation.restorePresentationAfterStaging();
         io.shutdown();
         released.run();
         MediaEventTrace.record("startup-loader", ready ? "background-ready" : "released", pkg);

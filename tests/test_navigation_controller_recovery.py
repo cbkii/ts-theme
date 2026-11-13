@@ -55,7 +55,8 @@ public ActivityInfo getActivityInfo(android.content.ComponentName c,int f)throws
                 file = root / path; file.parent.mkdir(parents=True, exist_ok=True); file.write_text(content)
             package = root / 'com/cbkii/ts18launcher'; package.mkdir(parents=True)
             for name in ('NavigationWindowController', 'NavigationRecoveryPolicy', 'NavigationHelperResult',
-                         'NavigationSurfaceBackend', 'NavigationWindowUiState', 'NavigationOverlayGate'):
+                         'NavigationSurfaceBackend', 'NavigationWindowUiState', 'NavigationOverlayGate',
+                         'NavigationTaskStage'):
                 shutil.copyfile(SRC / (name + '.java'), package / (name + '.java'))
             (package / 'Doubles.java').write_text(r'''package com.cbkii.ts18launcher;
 class NavigationWindowBounds {public int left=0,top=100,right=1100,bottom=700;public String toString(){return "0,100,1100,700";}
@@ -89,7 +90,7 @@ static boolean hasLauncherActivity(android.app.Activity a,String p){return true;
 static boolean open(android.app.Activity a,String p,android.location.Location l){launches++;return true;}}
 class RawFreeformTaskBackend implements NavigationSurfaceBackend {
 static String coldPolicy="";public void setColdLaunchPolicy(String p){coldPolicy=p;}
-static int presents,resumes,verifies,fullscreens,statuses,departures,suspends,homeReturns,returnedTask;static long deadline;static boolean delayed,holdFullscreen,peerResume,peerVerify;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss,bootstrapMode,statusAbsentOnce;
+static int presents,resumes,verifies,fullscreens,statuses,departures,suspends,homeReturns,returnedTask;static long deadline;static boolean delayed,holdFullscreen,peerResume,peerVerify;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss,bootstrapMode,statusAbsentOnce,resumeUserActivity,verifyHidden;static String statusTop;
 RawFreeformTaskBackend(android.app.Activity a){}public void setDeadline(long d){deadline=d;}public String label(){return "fake";}
 static NavigationHelperResult good(){return NavigationHelperResult.parse("OK code=RESUMED_NATIVE user=0 task=42 stack=4 package=app.organicmaps.incar component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 windowingMode=5 bounds=0,100,1100,700 visible=1 drawn=1");}
 public void present(String p,String c,NavigationWindowBounds b,int t,int id,Callback cb){presents++;if(delayed){held=cb;return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);
@@ -98,15 +99,15 @@ if(alwaysMiss||presents==1){
  else if("HIDDEN".equals(first))cb.onResult(NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown")));
  else cb.onResult(NavigationHelperResult.failure(first,""));
 }else cb.onResult(good());}
-public void verify(String p,NavigationWindowBounds b,int t,Callback cb){verifies++;cb.onResult(bootstrapMode?NavigationHelperResult.withCode(good(),"WINDOWING_MODE_MISMATCH",""):peerVerify?NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown method=N2 phase=task-observation")):good());}
-public void resume(String p,NavigationWindowBounds b,int t,String h,int ht,Callback cb){resumes++;
+public void verify(String p,NavigationWindowBounds b,int t,Callback cb){verifies++;if(verifyHidden){cb.onResult(NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=0 drawn=unknown")));return;}cb.onResult(bootstrapMode?NavigationHelperResult.withCode(good(),"WINDOWING_MODE_MISMATCH",""):peerVerify?NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown method=N2 phase=task-observation")):good());}
+public void resume(String p,NavigationWindowBounds b,int t,String h,int ht,Callback cb){resumes++;if(resumeUserActivity){cb.onResult(NavigationHelperResult.failure("USER_ACTIVITY",""));return;}
 if(resumeMiss){resumeMiss=false;cb.onResult(NavigationHelperResult.failure("FOREGROUND_CHANGED",""));}else cb.onResult(peerResume?NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown phase=peer-surface")):good());}
-public void status(String p,int t,Callback cb){statuses++;if(presents==0){cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}if(statusAbsentOnce){statusAbsentOnce=false;cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);cb.onResult(alwaysMiss?NavigationHelperResult.failure(first,""):bootstrapMode?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","bounds=0,0,0,0")):good());}
+public void status(String p,int t,Callback cb){statuses++;if(presents==0){cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}if(statusAbsentOnce){statusAbsentOnce=false;cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);if(statusTop!=null&&!alwaysMiss&&!bootstrapMode){cb.onResult(NavigationHelperResult.parse(good().raw.replace("app.organicmaps.incar/app.organicmaps.MwmActivity",statusTop)));return;}cb.onResult(alwaysMiss?NavigationHelperResult.failure(first,""):bootstrapMode?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","bounds=0,0,0,0")):good());}
 public void fullscreen(String p,String c,int t,Callback cb){fullscreens++;if(holdFullscreen){held=cb;return;}cb.onResult(("SUCCESS".equals(fullscreenCode)||"BAD_BOUNDS".equals(fullscreenCode))?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","BAD_BOUNDS".equals(fullscreenCode)?"bounds=0,100,1100,700":"bounds=0,0,0,0")):NavigationHelperResult.failure(fullscreenCode,""));}
 public void returnHome(String p,int task,String h,int ht,Callback cb){homeReturns++;returnedTask=task;cb.onResult(NavigationHelperResult.failure("RETURN_HOME_REFUSED","platform boundary"));}
 public void backgroundFullscreen(String p,int t,String h,int ht,boolean e,Callback cb){departures++;cb.onResult(good());}
 public void suspend(String p,int t,String h,int ht,Callback cb){suspends++;cb.onResult(good());}public void destroy(){}
-static void reset(){CompactStartupClient.next=CompactStartupClient.Snapshot.known();coldPolicy="";presents=resumes=verifies=fullscreens=statuses=departures=suspends=homeReturns=returnedTask=0;delayed=holdFullscreen=peerResume=peerVerify=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=bootstrapMode=statusAbsentOnce=false;first="TASK_OBSERVATION_UNCERTAIN";
+static void reset(){CompactStartupClient.next=CompactStartupClient.Snapshot.known();coldPolicy="";presents=resumes=verifies=fullscreens=statuses=departures=suspends=homeReturns=returnedTask=0;delayed=holdFullscreen=peerResume=peerVerify=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=bootstrapMode=statusAbsentOnce=resumeUserActivity=verifyHidden=false;statusTop=null;first="TASK_OBSERVATION_UNCERTAIN";
 NavigationProvider.launches=0;workMs=0;android.os.SystemClock.now=1000;android.view.View.jobs.clear();}}
 ''')
             (package / 'Harness.java').write_text(r'''package com.cbkii.ts18launcher;
@@ -312,6 +313,22 @@ public static void main(String[] args)throws Exception{
  if(!peerFirst){CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();}
  android.view.View.drain();check(RawFreeformTaskBackend.presents==1&&c.startupNavigationReady(),"first HOME needed re-entry after loader expiry / media release");c.destroy();
  }
+ // Review F6: Maps' own Settings on top of a healthy task is held, never repaired or latched.
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();check(p.configured==1,"baseline compact map");
+ RawFreeformTaskBackend.statusTop="app.organicmaps.incar/app.organicmaps.settings.SettingsActivity";RawFreeformTaskBackend.resumeUserActivity=true;
+ CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);CompactStartupClient.deliver();
+ for(int i=0;i<40;i++){android.os.SystemClock.now+=5000;android.view.View.drain();c.onHomeVisible();}
+ check(!p.error.contains("Navigation unavailable")&&!p.error.contains("BOOTSTRAP_PENDING"),"Maps settings latched navigation failure: "+p.error);
+ check(RawFreeformTaskBackend.presents==1,"Maps settings caused a relaunch/repair");
+ RawFreeformTaskBackend.statusTop=null;RawFreeformTaskBackend.resumeUserActivity=false;
+ CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();android.view.View.drain();
+ check(p.configured>=2&&RawFreeformTaskBackend.presents==1,"returning to the map did not restore it");c.destroy();
+ // Review F7: verified geometry with a stack the platform reports not visible is re-presented.
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ int resumesBefore=RawFreeformTaskBackend.resumes;RawFreeformTaskBackend.verifyHidden=true;
+ c.restorePresentationAfterStaging();android.view.View.drain();
+ check(RawFreeformTaskBackend.resumes>resumesBefore&&RawFreeformTaskBackend.presents==1,"hidden/staged map was not re-presented");
+ RawFreeformTaskBackend.verifyHidden=false;c.destroy();
  System.out.println("PASS controller acquisition/bootstrap/focus/visibility/budget/lifecycle/fallback");
 }}
 ''')

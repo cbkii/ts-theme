@@ -728,7 +728,11 @@ require_bootstrap_ready() {
   [ "$TASK_COMPONENT" != unknown ] || fail COMPONENT_UNKNOWN
   case "$PKG:$TASK_COMPONENT" in
     app.organicmaps.incar:app.organicmaps.incar/app.organicmaps.MwmActivity) ;;
-    app.organicmaps.incar:*) PHASE=bootstrap; fail BOOTSTRAP_PENDING ;;
+    app.organicmaps.incar:app.organicmaps.incar/app.organicmaps.SplashActivity|\
+    app.organicmaps.incar:app.organicmaps.incar/app.organicmaps.DownloadResources*) PHASE=bootstrap; fail BOOTSTRAP_PENDING ;;
+    # Any other Organic Maps screen (settings, downloader, bookmarks, ...) is the driver
+    # using a healthy task: report it distinctly so it is never repaired or latched.
+    app.organicmaps.incar:*) PHASE=user-activity; fail USER_ACTIVITY ;;
   esac
   # Every supported package resolves its accepted-launch claim on validated task
   # identity; Organic Maps must additionally have advanced past bootstrap.

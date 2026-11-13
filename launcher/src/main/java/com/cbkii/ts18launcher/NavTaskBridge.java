@@ -188,7 +188,7 @@ public final class NavTaskBridge {
                     + " component=" + task.component + " display=" + task.display + " windowingMode=" + task.mode
                     + " bounds=" + (task.bounds == null ? "unknown" : task.bounds.left + "," + task.bounds.top
                         + "," + task.bounds.right + "," + task.bounds.bottom)
-                    + " launched=0 method=N2 phase=task-observation visible=unknown drawn=unknown";
+                    + " launched=0 method=N2 phase=task-observation visible=" + task.visibility() + " drawn=unknown";
         }
         if (a.length < 6) throw new IllegalArgumentException("BAD_ARGUMENT");
         String action = a[0], pkg = a[2];
@@ -256,7 +256,7 @@ public final class NavTaskBridge {
                 return "OK code=SUSPENDED user=" + user + " package=" + pkg + " task=" + task.id
                         + " stack=" + task.stack + " component=" + task.component + " display=0 windowingMode=5 bounds="
                         + task.bounds.left + "," + task.bounds.top + "," + task.bounds.right + "," + task.bounds.bottom
-                        + " launched=0 method=N2 phase=park-verified visible=unknown drawn=unknown";
+                        + " launched=0 method=N2 phase=park-verified visible=" + task.visibility() + " drawn=unknown";
             }
             if (sourceReturn) {
                 requireHome(resolve(stacks.invoke(service), "com.cbkii.ts18launcher", user, homeId));
@@ -314,14 +314,16 @@ public final class NavTaskBridge {
                 + " user=" + user + " package=" + pkg + " task=" + taskId + " stack=" + task.stack
                 + " component=" + task.component
                 + " display=0 windowingMode=" + task.mode + " bounds=" + bounds
-                + " launched=0 method=N2 phase=peer-surface visible=unknown drawn=unknown";
+                + " launched=0 method=N2 phase=peer-surface visible=" + task.visibility() + " drawn=unknown";
     }
 
     private static void requireMap(Task task) {
         requireParkable(task);
-        if (!"app.organicmaps.incar/app.organicmaps.MwmActivity".equals(task.component))
-            throw new IllegalStateException("BOOTSTRAP_PENDING");
+        String stage = mapStage(task.component);
+        if (!"MAP".equals(stage)) throw new IllegalStateException(stage);
     }
+
+    static String mapStage(String component) { return NavigationTaskStage.of(component); }
     private static void requireParkable(Task task) {
         if (task == null) throw new IllegalStateException("TASK_NOT_FOUND");
         if (task.foreignTop) throw new IllegalStateException("LEGITIMATE_FOREIGN_ACTIVITY");
@@ -434,6 +436,10 @@ public final class NavTaskBridge {
                 // ownership separately; never mistake the launch alias for bootstrap readiness.
                 found.component = ids.length == 1 && top != null ? top.flattenToString() : "unknown";
                 found.bounds = bounds != null && i < bounds.length ? bounds[i] : null;
+                // ActivityManager.StackInfo.visible (hidden, API 29): whether the stack should be
+                // visible now. Absent or unreadable stays unknown and never fails the request.
+                try { found.visible = type.getField("visible").getBoolean(stack) ? 1 : 0; }
+                catch (ReflectiveOperationException | RuntimeException unknown) { found.visible = -1; }
             }
         }
         return found;
@@ -443,7 +449,9 @@ public final class NavTaskBridge {
         int id, stack, display, mode, activityType, taskCount;
         String component;
         boolean foreignTop;
+        int visible = -1;
         Rect bounds;
+        String visibility() { return visible < 0 ? "unknown" : Integer.toString(visible); }
         String record() {
             String rectangle = bounds == null ? "unknown"
                     : bounds.left + "," + bounds.top + "," + bounds.right + "," + bounds.bottom;

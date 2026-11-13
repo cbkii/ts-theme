@@ -509,6 +509,10 @@ final class NavigationWindowController {
                 else reconcile(false);
                 return;
             }
+            if (acceptIdentity(result, pkg, 0) && NavigationProvider.ORGANIC_MAPS_INCAR.equals(pkg)
+                    && NavigationTaskStage.USER_ACTIVITY.equals(NavigationTaskStage.of(result.component))) {
+                holdForUserActivity(pkg, result.taskId); drainPendingWork(); return;
+            }
             if (!acceptIdentity(result, pkg, 0) || (NavigationProvider.ORGANIC_MAPS_INCAR.equals(pkg)
                     && !result.component.endsWith("/app.organicmaps.MwmActivity"))) {
                 scheduleRecovery(pkg, result.success ? "BOOTSTRAP_PENDING" : result.code);
@@ -525,7 +529,13 @@ final class NavigationWindowController {
                 NavigationWindowBounds target = bounds;
                 backend.verify(pkg, target, result.taskId, verified -> {
                     if (!finishOperation(verifyOperation, verified, pkg)) return;
-                    if (acceptWindowedResult(verified, pkg, target, result.taskId))
+                    if (acceptWindowedResult(verified, pkg, target, result.taskId) && verified.windowVisible == 0) {
+                        // Geometry is intact but the platform reports the stack not visible:
+                        // present it again rather than re-declaring a hidden map healthy.
+                        observationOnly = false; repairedObservation = ""; needsPresentation = true;
+                        Log.i(TAG, "verified geometry but stack not visible; re-presenting task=" + result.taskId);
+                        reconcile(false);
+                    } else if (acceptWindowedResult(verified, pkg, target, result.taskId))
                         completeCompactPresentation(verified, pkg, target);
                     else scheduleRecovery(pkg, "PRESENTATION_UNCONFIRMED");
                     drainPendingWork();
@@ -553,6 +563,11 @@ final class NavigationWindowController {
             if (!finishOperation(operation, result, pkg)) return; retainObservedTask(result, pkg);
             if (deferUncertainTaskObservation(result, pkg, "verify")) { drainPendingWork(); return; }
             if (acceptWindowedResult(result, pkg, target, taskId)) {
+                // A verified-geometry stack that the platform reports not visible is not presented.
+                if (result.windowVisible == 0) {
+                    needsPresentation = true;
+                    Log.i(TAG, "verified geometry but stack not visible; resuming task=" + taskId);
+                }
                 if (needsPresentation) startResume(pkg, component, target, taskId);
                 else {
                     completeCompactPresentation(result, pkg, target);
@@ -575,6 +590,7 @@ final class NavigationWindowController {
         state = State.PRESENTING;
         backend.resume(pkg, target, taskId, activity.getPackageName(), activity.getTaskId(), result -> {
             if (!finishOperation(operation, result, pkg)) return;
+            if ("USER_ACTIVITY".equals(result.code)) { holdForUserActivity(pkg, taskId); drainPendingWork(); return; }
             retainObservedTask(result, pkg);
             if ("RESUMED_NATIVE".equals(result.code)
                     && acceptWindowedResult(result, pkg, target, taskId)) {
@@ -605,6 +621,7 @@ final class NavigationWindowController {
         consumeExplicitDispatch(operation);
         backend.present(pkg, component, target, taskHint, operation, result -> {
             if (!finishOperation(operation, result, pkg)) return;
+            if ("USER_ACTIVITY".equals(result.code) && taskHint > 0) { holdForUserActivity(pkg, taskHint); drainPendingWork(); return; }
             if ("N2".equals(result.method) && (result.launched == 1 || "BOOTSTRAP_PENDING".equals(result.code)))
                 normalBootstrapInFlight = true;
             logCapabilityEvidence(result); retainObservedTask(result, pkg);
@@ -621,6 +638,40 @@ final class NavigationWindowController {
             else scheduleRecovery(pkg, result.code);
             drainPendingWork();
         });
+    }
+
+    /**
+     * The managed task is healthy but the driver has opened one of the navigation app's own
+     * screens (settings, downloader, bookmarks, ...). Observe only: no repair, no recovery budget,
+     * no failure latch. The next peer/HOME event re-verifies; returning to the map re-presents it.
+     */
+    private void holdForUserActivity(String pkg, int taskId) {
+        cancelRecovery(); recovery.reset(); clearFailureLatch();
+        observationOnly = false; repairedObservation = ""; normalBootstrapInFlight = false; lastHelperCode = "";
+        if (taskId > 0) { activePackage = pkg; activeTaskId = taskId; }
+        needsValidation = true; needsPresentation = true; state = State.SUSPENDED;
+        if (uiState.canPresentNavigation())
+            panel.showStarting(label(pkg), "Open in Maps · return to the map to show it here");
+        finishPresentationCallback(true);
+        MediaEventTrace.record("navigation", "user-activity-held", "task=" + activeTaskId);
+        Log.i(TAG, "navigation task shows its own screen; held without repair task=" + activeTaskId);
+    }
+
+    /** True while a verified compact map is the presented surface. */
+    boolean presentingHealthyMap() {
+        return state == State.WINDOWED && !needsPresentation && hasManagedNativeTask();
+    }
+
+    /**
+     * Another owner (masked media staging) changed task focus/z-order. The controller treats its
+     * presentation as unproven and re-presents it now, instead of trusting the old WINDOWED state.
+     */
+    void restorePresentationAfterStaging() {
+        if (state == State.DESTROYED || !hasManagedNativeTask()) return;
+        needsValidation = true; needsPresentation = true;
+        if (state == State.WINDOWED) state = State.SUSPENDED;
+        MediaEventTrace.record("navigation", "re-present-after-staging", "task=" + activeTaskId);
+        if (uiState.canPresentNavigation()) reconcile(false);
     }
 
     private void beginReacquisitionGeneration() { authorityGeneration++; recovery.reset(); observationOnly = false; repairedObservation = ""; cancelRecovery(); clearFailureLatch(); needsValidation = true; needsPresentation = true; }

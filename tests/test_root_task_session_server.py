@@ -52,6 +52,7 @@ if("bootstrap".equals(System.getenv("CASE")))focused=42;
 if("foreign".equals(System.getenv("CASE")))focused=99;
 if("shared".equals(System.getenv("CASE"))){map.taskIds=new int[]{42,43};map.taskUserIds=new int[]{0,0};map.taskNames=new String[]{map.taskNames[0],"other.app/.Main"};}
 if(System.getenv("CASE").startsWith("park")){map.configuration.windowConfiguration.mode=5;map.taskBounds=new Rect[]{new Rect(0,141,1131,702)};focused=42;}
+if("user-settings".equals(System.getenv("CASE"))){map.configuration.windowConfiguration.mode=5;map.taskBounds=new Rect[]{new Rect(0,141,1131,702)};map.topActivity=ComponentName.unflattenFromString("app.organicmaps.incar/app.organicmaps.settings.SettingsActivity");}
 if("park-settings".equals(System.getenv("CASE")))map.topActivity=ComponentName.unflattenFromString("app.organicmaps.incar/app.organicmaps.settings.SettingsActivity");
 if("park-permission".equals(System.getenv("CASE")))map.topActivity=ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
 writeFocus();}
@@ -83,6 +84,7 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
         stubs["NavWindowProbe.java"] = SOURCE.with_name("NavWindowProbe.java").read_text()
         stubs["NavCompactConsent.java"] = SOURCE.with_name("NavCompactConsent.java").read_text()
         stubs["StartupMaskFocus.java"] = SOURCE.with_name("StartupMaskFocus.java").read_text()
+        stubs["NavigationTaskStage.java"] = SOURCE.with_name("NavigationTaskStage.java").read_text()
         for name, text in stubs.items():
             p = cls.root / name
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -149,6 +151,19 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
         self.assertIn("OK code=SUSPENDED", result[-1])
         self.assertIn("FOCUS 7", result)
         self.assertFalse(any(x.startswith(("MODE", "RESIZE")) for x in result))
+        self.finish(child)
+
+    def test_maps_own_screen_is_user_activity_not_bootstrap(self):
+        child = self.launch("user-settings")
+        status = self.request(child, ["status", 0, "app.organicmaps.incar", 42])
+        self.assertIn("OK code=STATUS", status[-1])
+        self.assertIn("settings.SettingsActivity", status[-1])
+        resumed = self.request(child, ["resume-windowed", 0, "app.organicmaps.incar", 0, 141, 1131, 702, 42,
+                                       "com.cbkii.ts18launcher", 7], 2)
+        self.assertIn("FAIL code=USER_ACTIVITY", resumed[-1])
+        self.assertFalse(any(x.startswith(("MODE", "RESIZE", "FOCUS")) for x in resumed))
+        verified = self.request(child, ["verify-native", 0, "app.organicmaps.incar", 0, 141, 1131, 702, 42], 3)
+        self.assertIn("OK code=VERIFIED_NATIVE", verified[-1])
         self.finish(child)
 
     def test_parking_refuses_foreign_permissions_and_rechecks_after_home_focus(self):
