@@ -51,7 +51,8 @@ public final class N3PathIpcProbe {
                 @Override public void failed(long gen, String reason) { failure.set(reason); failed.countDown(); }
             };
             instrumentation.runOnMainSync(() -> path.create(1L, presenter.getSurface(), 640, 360, 160, callback));
-            check(created.await(5, TimeUnit.SECONDS) && display.get() > 0, "private display not created: " + failure.get());
+            awaitPhase(created, failed, failure, 5L, "private display not created");
+            check(display.get() > 0, "private display identity missing");
             String input = path.input().unavailableReason();
 
             CountDownLatch launched = new CountDownLatch(1);
@@ -64,9 +65,9 @@ public final class N3PathIpcProbe {
             };
             instrumentation.runOnMainSync(() -> path.launch(1L,
                     fixturePackage + "/com.cbkii.ts18launcher.navigation.n3.N3FixtureActivity", launchCallback));
-            check(launched.await(10, TimeUnit.SECONDS), "embeddable fixture not launched: " + failure.get());
-            check(framed.await(10, TimeUnit.SECONDS), "no pixels from the launched fixture on the N3 display");
-            check(fixtureFrame.await(10, TimeUnit.SECONDS),
+            awaitPhase(launched, failed, failure, 10L, "embeddable fixture not launched");
+            awaitPhase(framed, failed, failure, 10L, "no pixels from the launched fixture on the N3 display");
+            awaitPhase(fixtureFrame, failed, failure, 10L,
                     "frames on the N3 display were not the fixture's known frame");
 
             // A non-embeddable system Activity is refused for an ordinary caller.
@@ -97,6 +98,18 @@ public final class N3PathIpcProbe {
             }
             presenter.close();
         }
+    }
+
+    /** Stop on the actual failure signal rather than waiting out unrelated phase budgets. */
+    static void awaitPhase(CountDownLatch ready, CountDownLatch failed,
+            AtomicReference<String> failure, long seconds, String boundary) throws InterruptedException {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+        while (failed.getCount() != 0L && ready.getCount() != 0L) {
+            long remaining = until - System.nanoTime();
+            if (remaining <= 0L) break;
+            ready.await(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(25L)), TimeUnit.NANOSECONDS);
+        }
+        check(failed.getCount() != 0L && ready.getCount() == 0L, boundary + ": " + failure.get());
     }
 
     /** The fixture draws one solid colour (N3FixtureActivity); match several sampled points. */
