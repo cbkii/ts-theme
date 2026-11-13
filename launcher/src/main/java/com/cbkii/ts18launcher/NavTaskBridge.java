@@ -312,6 +312,7 @@ public final class NavTaskBridge {
         String bounds = departure ? "0,0,0,0" : target.left + "," + target.top + "," + target.right + "," + target.bottom;
         return "OK code=" + (departure ? "BACKGROUND_FULLSCREEN" : "RESUMED_NATIVE")
                 + " user=" + user + " package=" + pkg + " task=" + taskId + " stack=" + task.stack
+                + " component=" + task.component
                 + " display=0 windowingMode=" + task.mode + " bounds=" + bounds
                 + " launched=0 method=N2 phase=peer-surface visible=unknown drawn=unknown";
     }

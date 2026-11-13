@@ -30,3 +30,5 @@ Task geometry, renderer evidence, visible map pixels, touch, GNSS fixes and acti
 The inert `n3host` APK, Binder protocol, client and admission skeleton are **retired**. Old optional-host preferences are inert; no host installation is a current acceptance step. A new privileged host is not an approved substitute for N2 reliability.
 
 Classifications distinguish STATIC_POC_READY, BLOCKED_NO_AUTHORITY, RENDER_OBSERVED_VIEW_ONLY and RENDER_AND_INPUT_PATH_OBSERVED. None equals exact-device feasibility. N3 needs observed map pixels, usable touch/Back, safe focus/HOME return and a demonstrated advantage before it can be considered for a product surface. Latest TS18 N3 remains NOT_RUN; see [private-contract evidence](PRIVATE_CONTRACT_REVIEW_2026-11-12.md).
+
+N2 remains the default. Settings → Startup diagnostics → Navigation method retains explicit N1 direct-window and N0 fullscreen rollback choices. The chosen method is local to the device and not imported from a configuration backup.

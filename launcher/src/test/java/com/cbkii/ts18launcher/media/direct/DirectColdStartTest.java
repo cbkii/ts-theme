@@ -207,6 +207,41 @@ public class DirectColdStartTest {
         assertEquals(0, clock.scheduled.size());
     }
 
+    @Test public void facadePackageChangeCancelsThePreviousPackagesPendingColdPlay() {
+        String[] configured = { AUXIO };
+        com.cbkii.ts18launcher.media.MediaBackend unused = new com.cbkii.ts18launcher.media.MediaBackend() {
+            public com.cbkii.ts18launcher.media.MediaEngine engine() { return com.cbkii.ts18launcher.media.MediaEngine.LEGACY; }
+            public void attach(MediaSourceKey key, String pkg) { }
+            public void detach(MediaSourceKey key) { }
+            public boolean attached(MediaSourceKey key) { return false; }
+            public com.cbkii.ts18launcher.media.MediaSourceState state(MediaSourceKey key) { return null; }
+            public boolean playing(MediaSourceKey key, String pkg) { return false; }
+            public void command(MediaSourceKey key, String pkg, MediaUserAction action, ResultCallback callback) { }
+            public void pauseForHandover(MediaSourceKey key) { }
+            public void setStateListener(StateListener listener) { }
+        };
+        com.cbkii.ts18launcher.media.MediaFeatureFacade facade = new com.cbkii.ts18launcher.media.MediaFeatureFacade(
+                new com.cbkii.ts18launcher.media.MediaFeatureFacade.Configuration() {
+                    public com.cbkii.ts18launcher.media.MediaEngine requestedEngine(MediaSourceKey key) {
+                        return com.cbkii.ts18launcher.media.MediaEngine.DIRECT;
+                    }
+                    public String configuredPackage(MediaSourceKey key) {
+                        return key == MediaSourceKey.MUSIC ? configured[0] : "";
+                    }
+                }, unused, backend);
+        facade.reconcile();
+        facade.command(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE, results::add);
+        assertTrue(backend.state(MediaSourceKey.MUSIC).starting);
+        configured[0] = "com.example.player";
+        facade.reconcile();
+        assertEquals(Outcome.FAILED, lastResult().outcome);
+        assertFalse(backend.state(MediaSourceKey.MUSIC).starting);
+        FakeSession late = offer("old-token", PlaybackState.STATE_PAUSED);
+        clock.expireAll();
+        assertTrue(late.dispatched.isEmpty());
+        assertEquals("com.example.player", facade.state(MediaSourceKey.MUSIC).packageName);
+    }
+
     @Test public void withdrawnSessionIsLostAndTheNextPlayStartsAgain() {
         backend.attach(MediaSourceKey.MUSIC, AUXIO);
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.PLAY_PAUSE);

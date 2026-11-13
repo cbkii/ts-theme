@@ -99,6 +99,7 @@ public final class Ts18LauncherApplication extends Application
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
             if (Intent.ACTION_USER_UNLOCKED.equals(intent.getAction())) {
+                MediaNotificationAccessBootstrapper.ensureConnected(Ts18LauncherApplication.this);
                 StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
                         .onTrigger(StartupReadinessPolicy.Trigger.USER_UNLOCKED); return;
             }

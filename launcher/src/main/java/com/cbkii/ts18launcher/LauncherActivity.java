@@ -533,6 +533,8 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                                   MediaListenerService.Command command) {
         StartupReadinessCoordinator.get(this).onExplicitSource(packageName);
         int generation = ++mediaStatusGeneration;
+        directFailureKey = null;
+        directFailureText = "";
         mediaStatusActive = true;
         String appLabel = AppResolver.labelFor(this, packageName, label);
         mediaText.setMetadata(command == MediaListenerService.Command.PLAY_PAUSE
@@ -777,7 +779,7 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
                     statusDetail = reason;
                 }
             }
-            if (key == displayedKey && key == directFailureKey && !directFailureText.isEmpty()) {
+            if (!state.live() && key == displayedKey && key == directFailureKey && !directFailureText.isEmpty()) {
                 status = directFailureText;
                 statusDetail = "";
             }

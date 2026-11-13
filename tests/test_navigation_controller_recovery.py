@@ -89,7 +89,7 @@ static boolean hasLauncherActivity(android.app.Activity a,String p){return true;
 static boolean open(android.app.Activity a,String p,android.location.Location l){launches++;return true;}}
 class RawFreeformTaskBackend implements NavigationSurfaceBackend {
 static String coldPolicy="";public void setColdLaunchPolicy(String p){coldPolicy=p;}
-static int presents,resumes,verifies,fullscreens,statuses,departures,suspends,homeReturns,returnedTask;static long deadline;static boolean delayed,holdFullscreen,peerResume;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss,bootstrapMode,statusAbsentOnce;
+static int presents,resumes,verifies,fullscreens,statuses,departures,suspends,homeReturns,returnedTask;static long deadline;static boolean delayed,holdFullscreen,peerResume,peerVerify;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss,bootstrapMode,statusAbsentOnce;
 RawFreeformTaskBackend(android.app.Activity a){}public void setDeadline(long d){deadline=d;}public String label(){return "fake";}
 static NavigationHelperResult good(){return NavigationHelperResult.parse("OK code=RESUMED_NATIVE user=0 task=42 stack=4 package=app.organicmaps.incar component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 windowingMode=5 bounds=0,100,1100,700 visible=1 drawn=1");}
 public void present(String p,String c,NavigationWindowBounds b,int t,int id,Callback cb){presents++;if(delayed){held=cb;return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);
@@ -98,7 +98,7 @@ if(alwaysMiss||presents==1){
  else if("HIDDEN".equals(first))cb.onResult(NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown")));
  else cb.onResult(NavigationHelperResult.failure(first,""));
 }else cb.onResult(good());}
-public void verify(String p,NavigationWindowBounds b,int t,Callback cb){verifies++;cb.onResult(bootstrapMode?NavigationHelperResult.withCode(good(),"WINDOWING_MODE_MISMATCH",""):good());}
+public void verify(String p,NavigationWindowBounds b,int t,Callback cb){verifies++;cb.onResult(bootstrapMode?NavigationHelperResult.withCode(good(),"WINDOWING_MODE_MISMATCH",""):peerVerify?NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown method=N2 phase=task-observation")):good());}
 public void resume(String p,NavigationWindowBounds b,int t,String h,int ht,Callback cb){resumes++;
 if(resumeMiss){resumeMiss=false;cb.onResult(NavigationHelperResult.failure("FOREGROUND_CHANGED",""));}else cb.onResult(peerResume?NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown phase=peer-surface")):good());}
 public void status(String p,int t,Callback cb){statuses++;if(presents==0){cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}if(statusAbsentOnce){statusAbsentOnce=false;cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);cb.onResult(alwaysMiss?NavigationHelperResult.failure(first,""):bootstrapMode?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","bounds=0,0,0,0")):good());}
@@ -106,7 +106,7 @@ public void fullscreen(String p,String c,int t,Callback cb){fullscreens++;if(hol
 public void returnHome(String p,int task,String h,int ht,Callback cb){homeReturns++;returnedTask=task;cb.onResult(NavigationHelperResult.failure("RETURN_HOME_REFUSED","platform boundary"));}
 public void backgroundFullscreen(String p,int t,String h,int ht,boolean e,Callback cb){departures++;cb.onResult(good());}
 public void suspend(String p,int t,String h,int ht,Callback cb){suspends++;cb.onResult(good());}public void destroy(){}
-static void reset(){CompactStartupClient.next=CompactStartupClient.Snapshot.known();coldPolicy="";presents=resumes=verifies=fullscreens=statuses=departures=suspends=homeReturns=returnedTask=0;delayed=holdFullscreen=peerResume=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=bootstrapMode=statusAbsentOnce=false;first="TASK_OBSERVATION_UNCERTAIN";
+static void reset(){CompactStartupClient.next=CompactStartupClient.Snapshot.known();coldPolicy="";presents=resumes=verifies=fullscreens=statuses=departures=suspends=homeReturns=returnedTask=0;delayed=holdFullscreen=peerResume=peerVerify=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=bootstrapMode=statusAbsentOnce=false;first="TASK_OBSERVATION_UNCERTAIN";
 NavigationProvider.launches=0;workMs=0;android.os.SystemClock.now=1000;android.view.View.jobs.clear();}}
 ''')
             (package / 'Harness.java').write_text(r'''package com.cbkii.ts18launcher;
@@ -244,6 +244,15 @@ public static void main(String[] args)throws Exception{
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();boolean[] ready={false};c=new NavigationWindowController(new android.app.Activity(),p);c.setStartupListener((ok,why)->ready[0]=ok);c.onHomeVisible();CompactStartupClient.deliver();android.view.View.drain();
  check(ready[0],"known renderer not ready");CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);CompactStartupClient.deliver();
  check(!ready[0]&&!c.startupNavigationReady(),"renderer readiness loss was not reported");c.destroy();
+ // P0: initial pixels then a transient renderer gap must recover through read-only
+ // N2 task verification plus fresh peer pixels, without another resize/focus/launch.
+ RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ RawFreeformTaskBackend.peerVerify=true;
+ int renderedPresents=RawFreeformTaskBackend.presents,renderedResumes=RawFreeformTaskBackend.resumes;
+ CompactStartupClient.next=new CompactStartupClient.Snapshot(true,true,false,42);CompactStartupClient.deliver();
+ CompactStartupClient.next=CompactStartupClient.Snapshot.known();CompactStartupClient.deliver();android.view.View.drain();
+ check(c.startupNavigationReady(),"fresh peer pixels rejected after successful map presentation");
+ check(RawFreeformTaskBackend.presents==renderedPresents&&RawFreeformTaskBackend.resumes==renderedResumes,"renderer observation gap mutated a healthy task");c.destroy();
  // A manually recreated Maps task is offered to the root verifier despite stale cache.
  RawFreeformTaskBackend.reset();p=new NativeNavigationPanel();c=start(p);android.view.View.drain();c.onHomeStopped();
  CompactStartupClient.back(43);check(RawFreeformTaskBackend.homeReturns==1&&RawFreeformTaskBackend.returnedTask==43,"stale task cache swallowed authenticated BACK");

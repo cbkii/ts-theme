@@ -39,13 +39,14 @@ class StartupReadinessTests(unittest.TestCase):
     def test_background_media_layer_still_has_no_activity_launch(self):
         self.assertNotIn("startActivity", read("MediaSourceBootstrapper.java"))
 
-    def test_startup_profile_is_fixed_without_rejected_comparators(self):
+    def test_n2_default_preserves_explicit_n0_n1_fallbacks(self):
         settings = read("SettingsActivity.java")
         profiles = read("TestingProfiles.java")
         self.assertIn("N2 task reuse / fullscreen recovery", settings)
         self.assertNotIn('chooseTesting("departure"', settings)
         self.assertNotIn('chooseTesting("navigation"', settings)
-        self.assertIn('static String navigation(Context c) { return "N2"; }', profiles)
+        self.assertIn('choice(c, "navigation", "N2", "N0", "N1", "N2")', profiles)
+        self.assertIn('TestingProfiles.setNavigation(this, value)', settings)
         self.assertIn('static boolean retainCompact(Context c) { return false; }', profiles)
 
     def test_navigation_ready_requires_verified_presentation(self):

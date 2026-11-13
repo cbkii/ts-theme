@@ -132,7 +132,7 @@ public class MediaFeatureFacadeTest {
         MediaFeatureFacade facade = facade();
         packages.put(MediaSourceKey.MUSIC, "org.example.player");
         facade.reconcile();
-        assertEquals("[LEGACY.attach MUSIC org.example.player]", log.toString());
+        assertEquals("[LEGACY.detach MUSIC, LEGACY.attach MUSIC org.example.player]", log.toString());
     }
 
     @Test public void missingDirectEngineResolvesAStoredDirectRequestToLegacy() {

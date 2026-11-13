@@ -132,6 +132,7 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
         self.assertFalse(any(x.startswith(("MODE", "RESIZE", "FOCUS")) for x in observed))
         presented = self.request(child, ["resume-windowed", 0, "app.organicmaps.incar", 0, 141, 1131, 702, 42, "com.cbkii.ts18launcher", 7], 2)
         self.assertIn("OK code=RESUMED_NATIVE", presented[-1])
+        self.assertIn("component=app.organicmaps.incar/app.organicmaps.MwmActivity", presented[-1])
         verified = self.request(child, ["verify-native", 0, "app.organicmaps.incar", 0, 141, 1131, 702, 42], 3)
         self.assertIn("OK code=VERIFIED_NATIVE", verified[-1])
         parked = self.request(child, ["park-windowed", 0, "app.organicmaps.incar", 42, "com.cbkii.ts18launcher", 7], 4)

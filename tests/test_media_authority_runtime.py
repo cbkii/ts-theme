@@ -128,6 +128,11 @@ a.track("a","Track A",1,3);refresh();
 // Same session automatically advances; B's metadata has not arrived. A must disappear.
 a.track(null,"",2,3);a.callback.onPlaybackStateChanged(a.state);pump();check(title().isEmpty(),"A masquerades as B during blank metadata");
 a.track("b","Track B",2,3);a.callback.onMetadataChanged(a.metadata);pump();check(title().equals("Track B")&&effective.mediaId.equals("b")&&effective.queueItemId==2,"B not published through UI");check(effective.observationGeneration==generation,"item change mistaken for session change");
+// P0: callback invalidation gates transport but does not erase the displayed item
+// before the bounded worker read. External keys and launcher transport share this callback.
+int beforeCallback=publications;a.callback.onPlaybackStateChanged(a.state);
+check(ProcessMediaSessionMonitor.selectedController("A")==null,"dirty authority still dispatchable");
+check(publications==beforeCallback&&title().equals("Track B"),"callback erased valid metadata before fresh observation");pump();
 // Callback payload from A arrives late, then a publisher actually exposes A while queue still says B.
 a.callback.onMetadataChanged(new MediaMetadata("a","OLD ART"));pump();check(title().equals("Track B"),"callback payload resurrected A");
 a.metadata=new MediaMetadata("a","OLD ART");a.callback.onMetadataChanged(a.metadata);pump();check(title().isEmpty(),"old artwork metadata crossed queue identity");

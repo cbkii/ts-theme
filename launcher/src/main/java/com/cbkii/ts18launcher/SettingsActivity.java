@@ -405,6 +405,11 @@ public final class SettingsActivity extends Activity {
                         + "Use the matching Auxio prepare-only build. Complete any real permission/setup screens. "
                         + "The guided kit records actual map/audio readiness and return reliability. "
                         + "About three seconds is the speed target; small overruns are not automatic failures.")
+                .setNegativeButton("Navigation method", (dialog, which) -> choose("Navigation method",
+                        new String[] {"N2 · task reuse (default)", "N1 · direct window fallback", "N0 · fullscreen only"},
+                        new String[] {"N2", "N1", "N0"}, TestingProfiles.navigation(this), value -> {
+                            TestingProfiles.setNavigation(this, value); recreate();
+                        }))
                 .setNeutralButton("Sample 10s", (dialog, which) -> {
                     boolean started = PerfSampler.start();
                     Toast.makeText(this, started ? "Local frame/CPU sample started for 10 seconds"

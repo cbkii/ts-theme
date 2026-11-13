@@ -69,8 +69,11 @@ final class ProcessMediaSessionMonitor {
         boolean current() { return !destroyed && watched.get(token) == this; }
         void changed() {
             if (!current()) return;
-            // Old callback payloads, including late artwork, never become state.
-            invalidate(); requestRefresh();
+            // Old callback payloads, including late artwork, never become state. Gate commands
+            // immediately, but keep the last displayed item until the bounded fresh read settles.
+            // A callback is not source loss; timeout, revocation and destruction still withdraw it.
+            revision++; dirty = true; authoritative = false;
+            requestRefresh();
         }
         void detach() { try { controller.unregisterCallback(callback); } catch (RuntimeException gone) { } }
     }

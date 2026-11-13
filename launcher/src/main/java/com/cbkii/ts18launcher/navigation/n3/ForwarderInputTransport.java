@@ -7,17 +7,16 @@ import android.view.MotionEvent;
 import java.lang.reflect.Method;
 
 /**
- * Android 10's display-owner input path (the one the platform's own ActivityView uses): the
- * activity manager hands the owner of a virtual display a forwarder that injects only into that
- * display. The platform itself checks that the caller owns the display; no injection permission
- * is involved and nothing can reach any other display. It is not public SDK, so it is reached by
- * one reflective lookup that fails closed: any refusal (hidden-API policy, security, missing
- * method) leaves N3 view-only and says so.
+ * Optional legacy display-owner forwarder. Some platform builds expose an activity-manager
+ * contract handing a virtual-display owner a forwarder that injects only into that
+ * display on platform builds that expose this legacy contract. It is not a public SDK or a
+ * guarantee of authority: missing APIs, hidden-API policy and permission refusals leave N3
+ * view-only. Nothing falls back to global injection or changes device permissions.
  */
 final class ForwarderInputTransport implements N3InputTransport {
     private final Object forwarder;
     private final Method forward;
-    private final String reason;
+    private String reason;
 
     private ForwarderInputTransport(Object forwarder, Method forward, String reason) {
         this.forwarder = forwarder;
@@ -29,9 +28,10 @@ final class ForwarderInputTransport implements N3InputTransport {
         if (displayId <= 0) return new ForwarderInputTransport(null, null, "No owned display");
         try {
             Object am = Class.forName("android.app.ActivityManager").getMethod("getService").invoke(null);
-            Object forwarder = am.getClass().getMethod("createInputForwarder", int.class).invoke(am, displayId);
+            Object forwarder = Class.forName("android.app.IActivityManager")
+                    .getMethod("createInputForwarder", int.class).invoke(am, displayId);
             if (forwarder == null) return new ForwarderInputTransport(null, null, "Forwarder refused");
-            Method forward = forwarder.getClass().getMethod("forwardEvent", InputEvent.class);
+            Method forward = Class.forName("android.app.IInputForwarder").getMethod("forwardEvent", InputEvent.class);
             return new ForwarderInputTransport(forwarder, forward, "");
         } catch (Throwable refused) {
             Throwable cause = refused.getCause() != null ? refused.getCause() : refused;
@@ -52,14 +52,17 @@ final class ForwarderInputTransport implements N3InputTransport {
     }
 
     private boolean send(InputEvent event) {
-        if (forwarder == null || event == null) return false;
+        if (forwarder == null || event == null || !reason.isEmpty()) return false;
         try {
             Object ok = forward.invoke(forwarder, event);
-            return !(ok instanceof Boolean) || (Boolean) ok;
+            if (ok instanceof Boolean && (Boolean) ok) return true;
+            reason = "Input event refused";
         } catch (Throwable failed) {
-            return false;
+            Throwable cause = failed.getCause() != null ? failed.getCause() : failed;
+            reason = "Input path failed (" + cause.getClass().getSimpleName() + ")";
         }
+        return false;
     }
 
-    @Override public void close() { }
+    @Override public void close() { reason = "Input path closed"; }
 }

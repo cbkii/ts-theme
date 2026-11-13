@@ -231,8 +231,12 @@ final class NavigationWindowController {
                 needsValidation = true; needsPresentation = true;
                 // Pause/resize or an unknown observation is not evidence of task death.
                 reportStartupReadiness("renderer-or-task-evidence-lost");
-                if (uiState.canPresentNavigation())
+                if (uiState.canPresentNavigation()) {
                     scheduleRecovery(activePackage, "PRESENTATION_UNCONFIRMED");
+                    // Lost renderer evidence is not lost task geometry or focus. First re-read
+                    // the existing task; only a verified mismatch may authorise a repair.
+                    needsPresentation = false;
+                }
             }
             if (state != State.DESTROYED && uiState.canPresentNavigation() && state != State.WINDOWED)
                 reconcile(false);
@@ -514,8 +518,8 @@ final class NavigationWindowController {
                 NavigationWindowBounds target = bounds;
                 backend.verify(pkg, target, result.taskId, verified -> {
                     if (!finishOperation(verifyOperation, verified, pkg)) return;
-                    if (acceptWindowedResult(verified, pkg, target, result.taskId) && verified.presentationConfirmed())
-                        markWindowed(verified, pkg, target);
+                    if (acceptWindowedResult(verified, pkg, target, result.taskId))
+                        completeCompactPresentation(verified, pkg, target);
                     else scheduleRecovery(pkg, "PRESENTATION_UNCONFIRMED");
                     drainPendingWork();
                 });
@@ -544,8 +548,7 @@ final class NavigationWindowController {
             if (acceptWindowedResult(result, pkg, target, taskId)) {
                 if (needsPresentation) startResume(pkg, component, target, taskId);
                 else {
-                    if (result.presentationConfirmed()) markWindowed(result, pkg, target);
-                    else scheduleRecovery(pkg, "PRESENTATION_UNCONFIRMED");
+                    completeCompactPresentation(result, pkg, target);
                     drainPendingWork();
                 }
                 return;
