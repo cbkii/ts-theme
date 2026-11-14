@@ -118,7 +118,9 @@ public class DirectCancelAndBoundedPlayTest {
         tap();
         assertEquals("a second identical refusal is not retried at once", 1, starter.log.size());
         assertFalse(results.get(results.size() - 1).dispatched);
-        assertTrue(results.get(results.size() - 1).message.contains("refused"));
+        assertTrue(results.get(results.size() - 1).message.contains("unavailable"));
+        assertFalse("callback failure cannot establish source rejection",
+                results.get(results.size() - 1).message.contains("refused"));
         backend.prerequisitesChanged();
         tap();
         assertEquals("unlock/storage/wake/package evidence re-admits the bind", 2, starter.log.size());
