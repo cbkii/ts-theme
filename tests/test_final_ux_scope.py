@@ -20,28 +20,20 @@ class FinalUxScopeTests(unittest.TestCase):
         self.assertIn("if (radioPlaying == musicPlaying) displayed = explicit", selection)
         self.assertIn("KEY_LAST_MUSIC", prefs)
 
-    def test_home_reentry_and_map_recovery_are_bounded(self):
+    def test_home_reentry_restores_dashboard_root(self):
         activity = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
-        panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
-        recovery = self.read("launcher/src/main/java/com/cbkii/ts18launcher/RendererRecovery.java")
         self.assertIn("onNewIntent(Intent intent)", activity)
         self.assertIn("restoreDashboardRoot()", activity)
         self.assertIn("clearFocus()", activity)
-        self.assertIn("onRenderProcessGone", panel)
-        self.assertIn("recovery.failed()", panel)
-        self.assertIn("retry.setText(\"Retry map\")", panel)
-        self.assertIn("One automatic recreation per map lifecycle", recovery)
 
     def test_offline_and_configuration_boundaries_are_explicit(self):
-        tile = self.read("launcher/src/main/java/com/cbkii/ts18launcher/TileBroker.java")
-        state = self.read("launcher/src/main/java/com/cbkii/ts18launcher/TileState.java")
         codec = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ConfigurationCodec.java")
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
         readme = self.read("README.md")
-        self.assertIn("definitelyOffline", tile)
-        self.assertIn("offlineResponse", tile)
-        for kind in ("NETWORK_OK", "CACHE_FRESH", "CACHE_STALE", "FAILED"):
-            self.assertIn(kind, state)
+        manifest = self.read("launcher/src/main/AndroidManifest.xml")
+        # Core HOME is offline: the launcher itself declares no network permission.
+        self.assertNotIn("android.permission.INTERNET", manifest)
+        self.assertNotIn("android.permission.ACCESS_NETWORK_STATE", manifest)
         self.assertIn("MAX_BYTES = 64 * 1024", codec)
         self.assertIn("ACTION_CREATE_DOCUMENT", settings)
         self.assertIn("ACTION_OPEN_DOCUMENT", settings)

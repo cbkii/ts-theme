@@ -7,12 +7,15 @@ import android.content.pm.PackageManager;
 final class RadioProvider {
     static final String NAVRADIO_PLUS_PACKAGE = "com.navimods.radio";
 
+    private static volatile Boolean navRadioInstalled;
+    static void invalidate() { navRadioInstalled = null; }
     private RadioProvider() {}
 
     static String resolvePackage(Context context) {
         String configured = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_RADIO);
         if (!configured.isEmpty()) return configured;
-        return isInstalled(context, NAVRADIO_PLUS_PACKAGE) ? NAVRADIO_PLUS_PACKAGE : "";
+        if (navRadioInstalled == null) navRadioInstalled = isInstalled(context, NAVRADIO_PLUS_PACKAGE);
+        return navRadioInstalled ? NAVRADIO_PLUS_PACKAGE : "";
     }
 
     static boolean isAutoDetectedNavRadio(Context context) {

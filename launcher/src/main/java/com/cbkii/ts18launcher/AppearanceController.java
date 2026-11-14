@@ -1,123 +1,107 @@
 package com.cbkii.ts18launcher;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
 
-final class AppearanceController implements SensorEventListener {
+/** Foreground subscriptions to one process-owned, cached appearance snapshot. No sensor on TS18. */
+final class AppearanceController {
     interface Callback { void onAppearanceChanged(String mode); }
-
-    private static final long SENSOR_STALE_MS = 5 * 60_000L;
-    private static volatile float lastLux = Float.NaN;
-    private static volatile long lastLuxElapsedRealtime;
-
-    private final Context context;
+    // Engine retains only the application context; Activity subscriptions are removed onStop.
+    @android.annotation.SuppressLint("StaticFieldLeak")
+    private static Engine engine;
+    private final Engine owner;
     private final Callback callback;
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable scheduleTick = this::reevaluateAndSchedule;
-    private SensorManager sensorManager;
-    private Sensor lightSensor;
     private String deliveredMode;
-    private boolean started;
 
     AppearanceController(Context context, Callback callback) {
-        this.context = context.getApplicationContext();
+        owner = engine(context);
         this.callback = callback;
-        // Capture the mode used by the Activity while it is being constructed. If Settings
-        // changes the effective mode while HOME is stopped, start() updates colours in place.
-        deliveredMode = resolvedMode(this.context);
+        deliveredMode = resolvedMode(context);
     }
 
-    void start() {
-        if (started) return;
-        started = true;
-
-        String currentMode = resolvedMode(context);
-        if (!currentMode.equals(deliveredMode)) {
-            deliveredMode = currentMode;
-            if (callback != null) callback.onAppearanceChanged(currentMode);
-        }
-
-        if (LauncherPrefs.APPEARANCE_AUTO.equals(LauncherPrefs.appearanceMode(context))
-                && LauncherPrefs.AUTO_SOURCE_SENSOR.equals(LauncherPrefs.appearanceAutoSource(context))) {
-            sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
-            lightSensor = sensorManager == null ? null : sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
-            if (lightSensor != null) {
-                sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
-            }
-        }
-        handler.post(scheduleTick);
+    private static Engine engine(Context context) {
+        if (engine == null) engine = new Engine(context.getApplicationContext());
+        return engine;
     }
 
-    void stop() {
-        started = false;
-        handler.removeCallbacks(scheduleTick);
-        if (sensorManager != null) sensorManager.unregisterListener(this);
-        sensorManager = null;
-        lightSensor = null;
-    }
+    void start() { owner.add(this); }
+    void stop() { owner.remove(this); }
 
     static String resolvedMode(Context context) {
+        Engine owner = engine(context);
+        return owner.observers.isEmpty() ? resolve(context) : owner.mode;
+    }
+
+    private static String resolve(Context context) {
         String configured = LauncherPrefs.appearanceMode(context);
         if (!LauncherPrefs.APPEARANCE_AUTO.equals(configured)) return configured;
+        Calendar calendar = Calendar.getInstance();
+        return AppearanceSchedule.resolve(calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE),
+                LauncherPrefs.appearanceDayStartMinutes(context), LauncherPrefs.appearanceNightStartMinutes(context));
+    }
 
-        if (LauncherPrefs.AUTO_SOURCE_SENSOR.equals(LauncherPrefs.appearanceAutoSource(context))
-                && sensorSampleUsable()) {
-            if (lastLux >= 12000f) return LauncherPrefs.APPEARANCE_HIGH_CONTRAST;
-            if (lastLux <= 15f) return LauncherPrefs.APPEARANCE_NIGHT;
-            if (lastLux <= 250f) return LauncherPrefs.APPEARANCE_DIM;
-            return LauncherPrefs.APPEARANCE_DAY;
+    private void deliver(String mode) {
+        if (mode.equals(deliveredMode)) return;
+        deliveredMode = mode;
+        if (callback != null) callback.onAppearanceChanged(mode);
+    }
+
+    private static final class Engine {
+        final Context context;
+        final List<AppearanceController> observers = new ArrayList<>();
+        final Handler handler = new Handler(Looper.getMainLooper());
+        String mode;
+        final Runnable tick = this::refresh;
+        final SharedPreferences.OnSharedPreferenceChangeListener preferences = (prefs, key) -> {
+            if (key != null && !key.startsWith("ui.appearance.")) return;
+            // Imports may notify off-main. Coalesce them and read the complete preference transaction.
+            handler.removeCallbacks(tick);
+            handler.post(tick);
+        };
+        final BroadcastReceiver time = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) { refresh(); }
+        };
+
+        Engine(Context context) { this.context = context; mode = resolve(context); }
+
+        void add(AppearanceController observer) {
+            if (observers.contains(observer)) return;
+            boolean first = observers.isEmpty();
+            observers.add(observer);
+            if (first) {
+                LauncherPrefs.prefs(context).registerOnSharedPreferenceChangeListener(preferences);
+                IntentFilter filter = new IntentFilter(Intent.ACTION_TIME_CHANGED);
+                filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+                filter.addAction(Intent.ACTION_SCREEN_ON);
+                context.registerReceiver(time, filter);
+            }
+            refresh();
+            observer.deliver(mode);
         }
 
-        Calendar calendar = Calendar.getInstance();
-        int minute = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE);
-        return AppearanceSchedule.resolve(minute,
-                LauncherPrefs.appearanceDayStartMinutes(context),
-                LauncherPrefs.appearanceNightStartMinutes(context));
-    }
+        void remove(AppearanceController observer) {
+            if (!observers.remove(observer) || !observers.isEmpty()) return;
+            handler.removeCallbacks(tick);
+            LauncherPrefs.prefs(context).unregisterOnSharedPreferenceChangeListener(preferences);
+            context.unregisterReceiver(time);
+        }
 
-    static boolean sensorAvailable(Context context) {
-        SensorManager manager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
-        return manager != null && manager.getDefaultSensor(Sensor.TYPE_LIGHT) != null;
-    }
-
-    private static boolean sensorSampleUsable() {
-        if (Float.isNaN(lastLux) || lastLuxElapsedRealtime <= 0L) return false;
-        return SystemClock.elapsedRealtime() - lastLuxElapsedRealtime <= SENSOR_STALE_MS;
-    }
-
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-        if (event == null || event.values == null || event.values.length == 0) return;
-        float sample = Math.max(0f, event.values[0]);
-        lastLux = Float.isNaN(lastLux) ? sample : (lastLux * 0.75f + sample * 0.25f);
-        lastLuxElapsedRealtime = SystemClock.elapsedRealtime();
-        // Sensor callbacks are not guaranteed to run on the UI thread; keep the
-        // appearance callback (which recolours HOME views in place) main-thread bound.
-        handler.post(this::reevaluate);
-    }
-
-    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
-
-    private void reevaluateAndSchedule() {
-        if (!started) return;
-        reevaluate();
-        handler.postDelayed(scheduleTick, 60_000L);
-    }
-
-    private void reevaluate() {
-        if (!started) return;
-        String mode = resolvedMode(context);
-        if (!mode.equals(deliveredMode)) {
-            deliveredMode = mode;
-            if (callback != null) callback.onAppearanceChanged(mode);
+        void refresh() {
+            handler.removeCallbacks(tick);
+            if (observers.isEmpty()) return;
+            mode = resolve(context);
+            for (AppearanceController observer : new ArrayList<>(observers)) observer.deliver(mode);
+            if (LauncherPrefs.APPEARANCE_AUTO.equals(LauncherPrefs.appearanceMode(context)))
+                handler.postDelayed(tick, 60_000L - System.currentTimeMillis() % 60_000L);
         }
     }
 }

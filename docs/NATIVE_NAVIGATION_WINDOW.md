@@ -7,8 +7,9 @@ The standalone launcher does not copy or mirror another application's map. It pr
 The normal HOME choices are:
 
 - `native_window` - primary TESTING path: display 0, Android freeform `windowingMode=5`, exact live `NativeNavigationPanel` bounds;
-- `fullscreen` - explicit safe fallback;
-- `leaflet` - legacy online-only last-resort fallback, never automatic.
+- `fullscreen` - explicit safe fallback.
+
+Leaflet/WebView is retired. Stored/imported `leaflet` and the old enabled-map choice resolve to Fullscreen; they cannot restore the removed implementation.
 
 Historical `raw_freeform` preferences migrate to `native_window`. Standard Android PiP is no longer a selectable or automatic navigation path.
 
@@ -24,7 +25,7 @@ Physical TESTING attempt 2 stopped before mode 5: the exact OEM `am help` output
 
 `NativeNavigationPanel` owns the target rectangle in physical screen coordinates. Java resolves the configured package's ordinary exported launcher Activity and passes package, component, display 0, bounds and transaction ID to the narrow root helper.
 
-The helper owns one bounded `present-native` transaction:
+The cold shell compatibility path owns a bounded `present-native` transaction. Warm task observation, verification, resume, parking and HOME return prefer the persistent `RootTaskSession` broker where its contract covers the operation; `nav-window.sh` retains cold claims/bootstrap and Android10 fullscreen compatibility:
 
 1. inspect same-package tasks;
 2. adopt exactly one existing task without creating another task;
@@ -45,7 +46,7 @@ The helper follows the real hierarchy:
 
 It reads the top component directly from the exact physical `Hist #0: ActivityRecord{... package/component ...}` line, with or without the optional leading `*`, and uses its following `mActivityComponent=` only as a fallback. Only the genuine top-level `* TaskRecord{...}` after `Task id` establishes task identity. Nested Activity `task=TaskRecord{...}` references cannot reinitialise the selected task. Shorthand same-package components are normalised, and nested Activity configuration bounds never override task/root-task bounds.
 
-An unobservable component is `unknown`, not `COMPONENT_MISMATCH`. Package plus exact task ID is sufficient for task-only resize and verification. A positively observed foreign top component fails closed.
+An unobservable component is `unknown`, not `COMPONENT_MISMATCH`. Preserve the distinctions between task ownership and its actual top Activity: guarded mutations need the evidence required by that verb, and a positively observed foreign top component fails closed. Unknown focus/component never authorises speculative relaunch or permission-flow dismissal.
 
 ## Lifecycle and failure rules
 
@@ -53,11 +54,11 @@ Only one helper operation may be in flight. Bounds and lifecycle callbacks coale
 
 HOME return validates the same authorised task first. Genuine task disappearance starts a new bounded reacquisition generation. App drawer, Settings and unrelated tasks never become navigation authority.
 
-The 2026-09-20 captures establish bounded rendering on PR11-5aea8bc. They also expose a suspension bug (HOME component validated against the map package) and failed warm resizing. Both task authorities are now checked before suspension; each component is checked against the package being inspected. The drawer is delivered only after suspension completes and HOME is visible. HOME quick/source Activity launches use the same barrier, and repeated requests cannot schedule a late second suspension after the app launch. Explicit HOME/fullscreen cancels an unshown drawer request. Once this package is default HOME, ordinary app entry redirects to HomeAlias before creating a second controller.
+The 2026-09-20 captures establish bounded rendering on PR11-5aea8bc. They also expose a suspension bug (HOME component validated against the map package) and failed warm resizing. Both task authorities are now checked before suspension; each component is checked against the package being inspected. HOME app/drawer handoffs use bounded navigation ownership barriers; a failed/slow Maps operation must not swallow an unrelated launch. Repeated requests cannot schedule a late second suspension after the app launch. Explicit HOME/fullscreen cancels an unshown drawer request. Once this package is default HOME, ordinary app entry redirects to HomeAlias before creating a second controller.
 
 The helper retains bounded failed-command output in its response/log. The probe uses Android-side deadlines and completion sentinels, clears Termux loader variables, captures rolling lifecycle logs, and records the timestamp of any last-valid final sample. These mechanisms have host behavioural tests; exact TS18 lifecycle and touch qualification remains required. No cache clearing or force-stop is a recovery strategy.
 
-Failure is latched for the current package/mode/generation. HOME remains usable and does not automatically launch navigation again. The user receives separate **Retry** and **Open fullscreen** actions. Retry starts one new generation; fullscreen is always explicit.
+Recovery is bounded to the current package/mode/generation and relevant lifecycle evidence. Confirmed source/task loss can rearm acquisition; transient missing-task/focus reads cannot authorise a restart. HOME/drawer/settings remain usable. **Retry** and **Open fullscreen** remain explicit escape paths; manual Retry is not the normal readiness contract. Preserve accepted/uncertain cold claims and legitimate permission/bootstrap tasks. See [compact startup](COMPACT_STARTUP_PROTOCOL.md) and [continuous readiness](CONTINUOUS_READINESS.md).
 
 Fullscreen handoff uses the same task and its observed same-package top component where available. HOME return reapplies mode 5 and current bounds to that task. The helper never force-stops the navigator and no persistent root daemon is installed.
 

@@ -1,0 +1,21 @@
+Australian radio reference data
+
+au-stations.tsv: derived from Wikipedia contributors, List of radio stations in
+Australia, revision 1378942509, retrieved 19 October 2026.
+https://en.wikipedia.org/w/index.php?title=List_of_radio_stations_in_Australia&oldid=1378942509
+Contributors/history: https://en.wikipedia.org/w/index.php?title=List_of_radio_stations_in_Australia&action=history
+Licence: CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/
+Changes: table/list extraction, markup removal, kHz conversion, state association,
+sorting and deduplication. This data licence is separate from repository code.
+
+au-state-rings.tsv.gz: derived from Australian Bureau of Statistics,
+ASGS Edition 4 (2026), State and Territory digital boundaries.
+https://geo.abs.gov.au/arcgis/rest/services/ASGS2026/STE/MapServer/0
+Copyright Commonwealth of Australia. Licence: CC BY 4.0,
+https://creativecommons.org/licenses/by/4.0/
+Changes: WGS84 export, geometry simplification/rounding, field extraction and gzip.
+Not an official ABS product or a legal boundary. Reference matching is inferred,
+not authoritative tuned-frequency or signal-coverage evidence.
+
+Provenance, capture hashes and importer:
+https://github.com/cbkii/ts-theme/blob/feature/top-rail-radio-metadata/docs/RADIO_METADATA.md

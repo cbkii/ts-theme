@@ -1,5 +1,7 @@
 package com.cbkii.ts18launcher;
 
+import com.cbkii.ts18launcher.AppCatalog.Entry;
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ComponentName;
@@ -41,19 +43,35 @@ public final class AppDrawerActivity extends Activity {
     private final List<Entry> visibleEntries = new ArrayList<>();
     private final AppsAdapter adapter = new AppsAdapter();
     private String pickKey;
+    private AppDrawerPanel fullPage;
     private EditText search;
+    private LinearLayout root;
+    private LinearLayout searchRow;
+    private TextView header;
+    private ImageView searchIcon;
+    private ImageButton voice;
+    private Button clear;
+    private AppearanceController appearanceController;
 
     @Override protected void onCreate(Bundle state) {
+        setTheme(AutomotiveUi.activityTheme(this));
         super.onCreate(state);
         pickKey = getIntent().getStringExtra(EXTRA_PICK_KEY);
-        LinearLayout root = new LinearLayout(this);
+        appearanceController = new AppearanceController(this, mode -> applyAppearance());
+        if (pickKey == null || pickKey.isEmpty()) {
+            fullPage = new AppDrawerPanel(this, this::finish);
+            Ts18SafeArea.setContent(this, fullPage);
+            fullPage.showPanel();
+            return;
+        }
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         int gap = AutomotiveUi.dimen(this, R.dimen.driver_gap);
         int target = AutomotiveUi.dimen(this, R.dimen.driver_target_min);
         root.setPadding(gap, gap, gap, gap);
 
-        TextView header = new TextView(this);
+        header = new TextView(this);
         header.setText(pickKey == null ? "Apps" : "Choose app");
         header.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
         header.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
@@ -66,7 +84,7 @@ public final class AppDrawerActivity extends Activity {
                 AutomotiveUi.dimen(this, R.dimen.ui_drawer_header_height)));
 
         if (pickKey != null && !pickKey.isEmpty()) {
-            Button clear = new Button(this);
+            clear = new Button(this);
             clear.setText(RoleIconCatalog.hasDefault(ShortcutSlot.role(this, pickKey))
                     ? "Use role default" : "Clear assignment");
             clear.setOnClickListener(v -> {
@@ -77,10 +95,10 @@ public final class AppDrawerActivity extends Activity {
             root.addView(clear, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, target));
         }
 
-        LinearLayout searchRow = new LinearLayout(this);
+        searchRow = new LinearLayout(this);
         searchRow.setGravity(Gravity.CENTER_VERTICAL);
         searchRow.setBackground(AutomotiveUi.cardBackground(this));
-        ImageView searchIcon = new ImageView(this);
+        searchIcon = new ImageView(this);
         searchIcon.setImageResource(R.drawable.ic_search);
         searchIcon.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
         searchIcon.setPadding(gap, gap, gap, gap);
@@ -102,7 +120,7 @@ public final class AppDrawerActivity extends Activity {
             @Override public void afterTextChanged(Editable s) {}
         });
         searchRow.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        ImageButton voice = new ImageButton(this);
+        voice = new ImageButton(this);
         voice.setImageResource(R.drawable.ic_mic);
         boolean voiceAvailable = VoiceSearch.available(this);
         voice.setContentDescription(voiceAvailable ? "Voice search" : "Voice search unavailable");
@@ -125,12 +143,44 @@ public final class AppDrawerActivity extends Activity {
         Ts18SafeArea.setContent(this, root);
         loadEntries();
         filter("");
+        applyAppearance();
+    }
+
+    @Override protected void onStart() {
+        super.onStart(); appearanceController.start();
+        // onCreate already showed the panel: re-showing here clears the user's search, replays
+        // the reveal animation and double-records first-draw on every resume.
+        if (fullPage != null) fullPage.refreshPreferences();
+    }
+    @Override protected void onDestroy() {
+        if (fullPage != null) fullPage.destroy();
+        AppCatalog.get(this).unsubscribe(catalogChanged);
+        super.onDestroy();
+    }
+    @Override public void onBackPressed() { finish(); }
+    @Override protected void onStop() { appearanceController.stop(); super.onStop(); }
+
+    private void applyAppearance() {
+        if (fullPage != null) { fullPage.applyAppearance(); return; }
+        root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
+        header.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+        searchRow.setBackground(AutomotiveUi.cardBackground(this));
+        searchIcon.setColorFilter(AutomotiveUi.color(this, R.color.ui_icon));
+        search.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+        search.setHintTextColor(AutomotiveUi.color(this, R.color.ui_text_secondary));
+        AutomotiveUi.styleRailButton(this, voice);
+        if (clear != null) {
+            clear.setTextColor(AutomotiveUi.color(this, R.color.ui_text));
+            clear.setBackground(AutomotiveUi.interactiveBackground(this, false));
+        }
+        adapter.notifyDataSetChanged();
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == VoiceSearch.REQUEST_CODE && resultCode == RESULT_OK) {
             String spoken = VoiceSearch.firstResult(data);
+            if (fullPage != null) { fullPage.applyVoiceSearch(spoken); return; }
             if (!spoken.isEmpty()) {
                 search.setText(spoken);
                 search.setSelection(search.length());
@@ -138,26 +188,13 @@ public final class AppDrawerActivity extends Activity {
         }
     }
 
-    private void loadEntries() {
-        allEntries.clear();
-        PackageManager pm = getPackageManager();
-        Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        List<ResolveInfo> resolved = pm.queryIntentActivities(query, PackageManager.MATCH_ALL);
-        Set<String> seenPackages = new HashSet<>();
-        for (ResolveInfo info : resolved) {
-            if (info.activityInfo == null) continue;
-            String packageName = info.activityInfo.packageName;
-            if (getPackageName().equals(packageName) || seenPackages.contains(packageName)) continue;
-            Intent canonical = pm.getLaunchIntentForPackage(packageName);
-            ComponentName component = canonical == null ? null : canonical.getComponent();
-            if (component == null) continue;
-            seenPackages.add(packageName);
-            CharSequence label = info.activityInfo.applicationInfo.loadLabel(pm);
-            allEntries.add(new Entry(packageName, component.getClassName(),
-                    label == null ? packageName : label.toString()));
-        }
-        Collections.sort(allEntries, Comparator.comparing(e -> e.label.toLowerCase(Locale.ROOT)));
-    }
+    private final java.util.function.Consumer<List<Entry>> catalogChanged = entries -> {
+        if (isFinishing() || isDestroyed()) return;
+        allEntries.clear(); allEntries.addAll(entries);
+        filter(search == null || search.getText() == null ? "" : search.getText().toString());
+    };
+
+    private void loadEntries() { AppCatalog.get(this).subscribe(catalogChanged); }
 
     private void filter(String query) {
         String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
@@ -171,7 +208,8 @@ public final class AppDrawerActivity extends Activity {
 
     private void onEntry(Entry entry) {
         if (pickKey != null && !pickKey.isEmpty()) {
-            LauncherPrefs.setPackage(this, pickKey, entry.packageName);
+            LauncherPrefs.setPackage(this, pickKey,
+                    ShortcutSlot.isSlotKey(pickKey) ? entry.target() : entry.packageName);
             if (LauncherPrefs.KEY_NAV.equals(pickKey)
                     && UiPersonalizationPrefs.navigationRootPermissionGrant(this)) {
                 NavigationPermissionBootstrapper.ensureEarly(this);
@@ -187,16 +225,6 @@ public final class AppDrawerActivity extends Activity {
         }
         if (!AppResolver.launchComponent(this, entry.packageName, entry.activityName)) {
             Toast.makeText(this, "App unavailable", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    private static final class Entry {
-        final String packageName;
-        final String activityName;
-        final String label;
-        Drawable icon;
-        Entry(String packageName, String activityName, String label) {
-            this.packageName = packageName; this.activityName = activityName; this.label = label;
         }
     }
 
@@ -230,15 +258,9 @@ public final class AppDrawerActivity extends Activity {
                 cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 46));
             }
             Entry entry = visibleEntries.get(position);
-            if (entry.icon == null) {
-                PackageManager pm = getPackageManager();
-                try { entry.icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName)); }
-                catch (PackageManager.NameNotFoundException ignored) {
-                    try { entry.icon = pm.getApplicationIcon(entry.packageName); }
-                    catch (PackageManager.NameNotFoundException ignoredAgain) { entry.icon = getDrawable(R.drawable.ic_launcher); }
-                }
-            }
-            icon.setImageDrawable(entry.icon);
+            AppCatalog.get(AppDrawerActivity.this).bindIcon(icon, entry.target(),
+                    AutomotiveUi.dimen(AppDrawerActivity.this, R.dimen.ui_drawer_icon));
+            label.setTextColor(AutomotiveUi.color(AppDrawerActivity.this, R.color.ui_text));
             label.setText(entry.label);
             cell.setMinimumHeight(116);
             return cell;

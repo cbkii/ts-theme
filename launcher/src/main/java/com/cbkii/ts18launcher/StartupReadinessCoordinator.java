@@ -1,431 +1,315 @@
 package com.cbkii.ts18launcher;
 
 import android.app.Activity;
-import android.app.KeyguardManager;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
-import android.media.AudioManager;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.PowerManager;
 import android.os.SystemClock;
+import android.media.session.PlaybackState;
 import android.provider.Settings;
 import com.cbkii.ts18launcher.StartupReadinessPolicy.*;
-import com.cbkii.ts18launcher.platform.TopwayAdapter;
-import java.lang.ref.WeakReference;
-import java.util.ArrayDeque;
+import com.cbkii.ts18launcher.media.MediaSourceKey;
+import com.cbkii.ts18launcher.media.MediaSourceState;
 
-/** One startup ledger; media commands and Maps launch/task authority remain in their existing owners. */
-final class StartupReadinessCoordinator implements ProcessMediaSessionMonitor.Observer {
+/** Application readiness owner. Maps is admitted first; media progresses independently.
+ * Retries are bounded, and only the operator-authorised closed-app fallback leases the mask. */
+final class StartupReadinessCoordinator {
     interface NavigationHook {
         boolean ready();
         boolean busy();
         void reconcile();
         default void deferAutomaticPresentation(boolean defer) { }
+        default int taskId() { return -1; }
+        default void refreshEvidence() { }
+        default void watchEvidence() { refreshEvidence(); }
+        default void cancelAutomaticColdStart() { }
+        default void finishLoaderPresentation() { }
+        default void yieldForMediaPreparation() { cancelAutomaticColdStart(); }
+        /** Masked media staging moved task focus/z-order: re-verify and re-present the map. */
+        default void restorePresentationAfterStaging() { }
     }
+    interface LoaderUi {
+        void render(String status, boolean homeVisible);
+        void mask(boolean show);
+        void hide();
+        default boolean canMask() { return false; }
+        default boolean ownsMask() { return false; }
+        default void whenMaskDrawn(Runnable ready) { }
+        default void incomplete() { }
+    }
+
+    @android.annotation.SuppressLint("StaticFieldLeak") // Application context only.
     private static StartupReadinessCoordinator instance;
     static synchronized StartupReadinessCoordinator get(Context context) {
         if (instance == null) instance = new StartupReadinessCoordinator(context.getApplicationContext());
         return instance;
     }
     private final Context context;
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Handler main = new Handler(Looper.getMainLooper());
     private final StartupReadinessPolicy policy = new StartupReadinessPolicy();
-    private final ArrayDeque<Source> foregroundQueue = new ArrayDeque<>();
-    private final java.util.concurrent.ExecutorService observer =
-            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "ts18-startup-observe"); t.setDaemon(true); return t;
-            });
-    private final String[] packages = new String[Source.values().length];
-    private WeakReference<Activity> home = new WeakReference<>(null);
     private NavigationHook navigation;
-    private boolean homeResumed, foregroundBusy, yielded, destroyed;
-    private int foregroundToken;
-    private Source foregroundSource;
-    private int stagedTask = -1;
-    private String stagedEntry = "";
-    private int homeTask = -1;
-    private long stagedCommands;
-    private boolean pauseSent;
-    private int navigationWaitGeneration = -1;
-    private java.util.concurrent.atomic.AtomicBoolean stageLease = new java.util.concurrent.atomic.AtomicBoolean(false);
-    private final StartupRootFallback rootFallback;
+    private LoaderUi loaderUi;
+    private long epoch;
+    private boolean homeResumed, yielded, destroyed;
+    private final java.util.Map<MediaSourceKey, String> configured = new java.util.EnumMap<>(MediaSourceKey.class);
+    private final java.util.Map<MediaSourceKey, Runnable> recovery = new java.util.EnumMap<>(MediaSourceKey.class);
+    private boolean screenOff;
+    private boolean initialGraceUsed;
+    private Runnable initialAdmission;
+    private MaskedSourcePreparation staging;
+    private java.lang.ref.WeakReference<Activity> homeHost = new java.lang.ref.WeakReference<>(null);
+    private boolean automaticMusicAttempted;
+    private String automaticMusicIdentity = "";
+    private String navigationBoundary = "not observed";
 
-    private StartupReadinessCoordinator(Context context) {
-        this.context = context.getApplicationContext();
-        rootFallback = new StartupRootFallback(this.context);
-        ProcessMediaSessionMonitor.addObserver(this.context, this);
-    }
-    private MediaSourceBootstrapper media() { return Ts18LauncherApplication.mediaSources(context); }
+    private StartupReadinessCoordinator(Context context) { this.context = context; }
 
     void onTrigger(Trigger trigger) {
-        if (Looper.myLooper() != Looper.getMainLooper()) { handler.post(() -> onTrigger(trigger)); return; }
+        if (Looper.myLooper() != Looper.getMainLooper()) { main.post(() -> onTrigger(trigger)); return; }
         if (destroyed) return;
-        long now = SystemClock.uptimeMillis(), boot = bootCount();
-        SharedPreferences prefs = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
-        long seen = prefs.getLong("boot_count", -1L);
+        long now = SystemClock.elapsedRealtime();
+        long boot = bootCount();
+        SharedPreferences journal = context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE);
+        long seen = journal.getLong("boot_count", -1L);
         Kind kind = StartupReadinessPolicy.classify(trigger, boot, seen);
-        // BOOT_COMPLETED can arrive after process/HOME startup: never reset active admissions twice.
-        if (boot >= 0 && boot != seen) {
-            cancelForeground("new-boot"); policy.resetForBoot(); yielded = false;
-            prefs.edit().putLong("boot_count", boot).apply();
+        if (boot >= 0L && boot != seen) {
+            policy.resetForBoot(); journal.edit().putLong("boot_count", boot).apply();
         }
-        if (!policy.acceptTrigger(trigger, now)) return;
-        if (trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON) yielded = false;
-        MediaEventTrace.record("startup", "trigger", trigger + " kind=" + kind + " mode=" + mode()
-                + (trigger == Trigger.SCREEN_ON ? " acc=unverified" : ""));
-        if (!UiPersonalizationPrefs.mediaStartupWarmup(context)) {
-            cancelForeground("disabled-by-preference"); return;
-        }
-        for (Source source : Source.values()) {
-            String pkg = packageFor(source);
-            int index = source.ordinal();
-            if (!pkg.equals(packages[index])) {
-                if (foregroundSource == source) cancelForeground("source-changed");
-                foregroundQueue.remove(source); policy.configurationChanged(source); packages[index] = pkg;
-            }
-            if (pkg.isEmpty()) continue;
-            if (foregroundSource == source) continue;
-            if (ready(source, pkg)) { policy.observedReady(source, now); continue; }
-            State state = policy.record(source).state;
-            if (state == State.READY || state == State.ACTIVE) {
-                // Metadata/queue churn is not session death and must not trigger Activity replay.
-                if (source != Source.NAVIGATION && media().hasSessionIdentity(pkg)) continue;
-                policy.sessionLost(source);
-            }
-            if (!policy.admit(source, trigger, now)) continue;
-            int g = policy.begin(source, trigger, source == Source.NAVIGATION ? Method.TASK_ADOPTION : Method.SESSION, now);
-            if (source == Source.NAVIGATION) {
-                // No second launch, fixed Splash dwell, or parallel root command. N0/N1/N2 remain comparators.
-                // Start its observation deadline only after media foreground admission settles.
-                // Otherwise the compact Maps task takes focus and starves media staging.
-            } else {
-                if (source == Source.MUSIC) { policy.changeMethod(source, Method.BROWSER); media().warm(pkg); }
-                await(source, g, pkg, now + (source == Source.MUSIC ? 9000L : 2500L));
+        boolean waking = screenOff && (trigger == Trigger.HOME_RESUME || trigger == Trigger.SCREEN_ON
+                || trigger == Trigger.ACC_ON);
+        if (trigger == Trigger.HOME_RESUME || trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON) {
+            yielded = false;
+            if (screenOff) {
+                screenOff = false;
+                for (MediaSourceKey key : MediaSourceKey.values()) policy.configurationChanged(source(key));
             }
         }
-        updateNavigationAdmission();
-        runForegroundSoon();
+        if (waking) automaticMusicAttempted = false;
+        // Evidence that a refused source bind may now succeed. Never a launch on its own.
+        // HOME_RESUME is included: TS18 capture 2026-11-14 showed binds refused while Auxio's
+        // process was absent and accepted in 18 ms after the driver had opened Auxio and returned.
+        if (waking || trigger == Trigger.USER_UNLOCKED || trigger == Trigger.STORAGE_MOUNT
+                || trigger == Trigger.ACC_ON || trigger == Trigger.BOOT || trigger == Trigger.HOME_RESUME)
+            Ts18LauncherApplication.mediaFacade(context).prerequisitesChanged();
+        if (!policy.acceptTrigger(trigger, now) && !waking) return;
+        if (trigger == Trigger.HOME_RESUME) {
+            journal.edit().remove("pending_boot_v1").apply();
+        }
+        StartupTimeline.mark("startup.kind", "trigger=" + trigger + " kind=" + kind);
+        // A media failure cannot reserve a focus lane or delay Maps.
+        if (navigation != null && homeResumed && !yielded && staging == null) {
+            navigation.deferAutomaticPresentation(false);
+            navigation.watchEvidence();
+            if (!navigation.busy()) navigation.reconcile();
+        }
+        if ((!directPrepareTrigger(trigger) && trigger != Trigger.SESSION_LOST
+                && trigger != Trigger.READINESS_CHANGED) || screenOff
+                || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
+        // Application.onCreate precedes the Maps Activity host. Give its first frame a bounded
+        // admission grace; an unavailable host must not indefinitely block safe media readiness.
+        if (initialAdmission != null) return;
+        if (!initialGraceUsed && navigation == null
+                && (trigger == Trigger.RESTART || trigger == Trigger.BOOT)) {
+            initialGraceUsed = true;
+            initialAdmission = () -> {
+                initialAdmission = null;
+                for (MediaSourceKey key : MediaSourceKey.values())
+                    reconcileSource(key, trigger, SystemClock.elapsedRealtime());
+            };
+            main.postDelayed(initialAdmission, 750L);
+            return;
+        }
+        // Every source has independent admission/recovery. A boot journal is never a success receipt.
+        for (MediaSourceKey key : MediaSourceKey.values()) reconcileSource(key, trigger, now);
+        tryAutomaticMusicRecovery();
     }
 
-    private void updateNavigationAdmission() {
-        if (navigation == null) return;
-        boolean mediaPending = foregroundBusy || !foregroundQueue.isEmpty()
-                || policy.record(Source.MUSIC).state == State.STARTING
-                || policy.record(Source.RADIO).state == State.STARTING;
-        boolean defer = foregroundAllowed() && mediaPending;
-        navigation.deferAutomaticPresentation(defer);
-        StartupReadinessPolicy.Record r = policy.record(Source.NAVIGATION);
-        if (!defer && !yielded && r.state == State.STARTING && navigationWaitGeneration != r.generation) {
-            navigationWaitGeneration = r.generation;
-            navigation.reconcile();
-            await(Source.NAVIGATION, r.generation, packageFor(Source.NAVIGATION), SystemClock.uptimeMillis() + 18000L);
+    private static Source source(MediaSourceKey key) { return key == MediaSourceKey.MUSIC ? Source.MUSIC : Source.RADIO; }
+
+    private void reconcileSource(MediaSourceKey key, Trigger trigger, long now) {
+        if (destroyed || screenOff || initialAdmission != null
+                || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
+        String pkg = MediaEngineSelector.configuredPackage(context, key);
+        if (pkg == null || pkg.isEmpty()) return;
+        MediaSourceState state = Ts18LauncherApplication.mediaFacade(context).state(key);
+        String identity = pkg + ":" + state.engine;
+        if (!identity.equals(configured.put(key, identity))) policy.configurationChanged(source(key));
+        if (ready(state)) {
+            cancelRecovery(key);
+            policy.observedReady(source(key), now);
+            if (state.playing()) policy.active(source(key), now);
+            return;
         }
+        StartupReadinessPolicy.Record record = policy.record(source(key));
+        if (record.state == State.READY || record.state == State.ACTIVE) policy.sessionLost(source(key));
+        if (!policy.admit(source(key), trigger, now)) return;
+        int generation = policy.begin(source(key), trigger, Method.BROWSER, now);
+        if (Ts18LauncherApplication.legacyMediaEngineOwns(context, key == MediaSourceKey.RADIO))
+            Ts18LauncherApplication.mediaSources(context).warm(pkg);
+        else Ts18LauncherApplication.prepareDirectSource(context, key, ++epoch);
+        cancelRecovery(key);
+        Runnable check = () -> {
+            recovery.remove(key);
+            if (destroyed || screenOff || policy.record(source(key)).generation != generation) return;
+            MediaSourceState latest = Ts18LauncherApplication.mediaFacade(context).state(key);
+            if (ready(latest)) { policy.observedReady(source(key), SystemClock.elapsedRealtime()); return; }
+            policy.fail(source(key), generation, "readiness not observed", SystemClock.elapsedRealtime());
+            // At most three attempts in this session. Later wake/config/source recovery rearms it.
+            if (policy.record(source(key)).attempts < StartupReadinessPolicy.MAX_ATTEMPTS_PER_BOOT) {
+                Runnable retry = () -> { recovery.remove(key); reconcileSource(key, Trigger.READINESS_CHANGED, SystemClock.elapsedRealtime()); };
+                recovery.put(key, retry);
+                main.postDelayed(retry, StartupReadinessPolicy.FAILED_RETRY_SPACING_MS);
+            }
+        };
+        recovery.put(key, check);
+        main.postDelayed(check, 14000L);
+        MediaEventTrace.record("startup", "prepare", key + " epoch=" + epoch + " generation=" + generation);
     }
 
-    void attachNavigationHook(NavigationHook hook) { navigation = hook; updateNavigationAdmission(); }
-    void detachNavigationHook(NavigationHook hook) { if (navigation == hook) navigation = null; }
-    void onHomeResumed(Activity activity) {
-        home = new WeakReference<>(activity); homeResumed = true; onTrigger(Trigger.HOME_RESUME);
-    }
-    void onHomePaused() { homeResumed = false; }
-    void onScreenOff() { yielded = true; cancelForeground("screen-off"); }
-    void noteUserInteraction() { yielded = true; cancelForeground("user-interaction"); }
-    void reportNavigation(boolean success, String boundary) {
-        recordResultNavigation(success, boundary);
-    }
-    private void recordResultNavigation(boolean success, String boundary) {
-        StartupReadinessPolicy.Record r = policy.record(Source.NAVIGATION);
-        if (success) policy.observedReady(Source.NAVIGATION, SystemClock.uptimeMillis());
-        else {
-            policy.block(Source.NAVIGATION, r.generation, boundary, SystemClock.uptimeMillis());
-            if (r.state == State.READY) policy.sessionLost(Source.NAVIGATION);
-        }
-        MediaEventTrace.record("startup", "navigation", summary());
-    }
-    String summary() { return policy.summary(SystemClock.uptimeMillis()); }
-    Mode mode() { return StartupReadinessPolicy.parseMode(TestingProfiles.startup(context)); }
-
-    @Override public void onProcessMediaStateChanged(MediaListenerService.Snapshot music,
-            MediaListenerService.Snapshot radio, boolean authoritative) {
-        if (!destroyed && authoritative) onTrigger(Trigger.SESSION_LOST);
+    static boolean ready(MediaSourceState state) {
+        return state != null && state.live() && !state.preparing && !state.starting
+                && (state.playing() || state.nativeState == PlaybackState.STATE_PAUSED && !state.itemId.isEmpty()
+                    && (state.actions & (PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PLAY_PAUSE)) != 0L);
     }
 
-    private boolean ready(Source source, String pkg) {
-        if (source == Source.NAVIGATION) return navigation != null && navigation.ready();
-        // Queue/station content and Play capability, never a token alone or audible-output claim.
-        return media().hasUsableQueue(pkg);
-    }
-    private void await(Source source, int g, String pkg, long deadline) {
-        handler.postDelayed(new Runnable() {
-            @Override public void run() {
-                StartupReadinessPolicy.Record r = policy.record(source);
-                if (destroyed || r.generation != g || r.state != State.STARTING || !pkg.equals(packageFor(source))) return;
-                long now = SystemClock.uptimeMillis();
-                if (ready(source, pkg)) {
-                    policy.ready(source, g, now);
-                    MediaEventTrace.record("startup", "ready", summary()); updateNavigationAdmission(); return;
-                }
-                if (now < deadline) { handler.postDelayed(this, 500L); return; }
-                if (source == Source.NAVIGATION) {
-                    policy.uncertain(source, g, "compact-task-not-verified", now); return;
-                }
-                boolean qualifiedPackage = MediaSourceAdapter.AUXIO_PACKAGE.equals(pkg)
-                        || MediaSourceAdapter.NAVRADIO_PACKAGE.equals(pkg);
-                if (foregroundAllowed() && qualifiedPackage && !r.activityLaunchAccepted) {
-                    policy.changeMethod(source, Method.ACTIVITY_BOOTSTRAP);
-                    foregroundQueue.add(source); runForegroundSoon();
-                    handler.postDelayed(() -> {
-                        if (policy.record(source).generation == g && foregroundQueue.remove(source)) policy.block(source, g, "foreground-admission-expired", SystemClock.uptimeMillis());
-                        updateNavigationAdmission();
-                    }, 20000L);
-                } else {
-                    policy.block(source, g, "background-not-ready-or-staging-yielded", now);
-                    updateNavigationAdmission();
-                }
+    void onMediaStateChanged(MediaSourceState state) {
+        // Publisher callbacks may be synchronous during facade construction or reconciliation.
+        main.post(() -> {
+            if (destroyed || screenOff) return;
+            MediaSourceState latest = state == null ? null : Ts18LauncherApplication.mediaFacade(context).state(state.key);
+            if (state != null && !(latest.packageName + ":" + latest.engine).equals(configured.get(state.key))) {
+                reconcileSource(state.key, Trigger.READINESS_CHANGED, SystemClock.elapsedRealtime()); return;
             }
-        }, 500L);
-    }
-
-    private boolean foregroundAllowed() {
-        return StartupReadinessPolicy.foregroundAllowed(mode()) && !yielded
-                && UiPersonalizationPrefs.mediaStartupWarmup(context);
-    }
-    private void runForegroundSoon() { handler.postDelayed(this::runForeground, 1200L); }
-    private void runForeground() {
-        if (destroyed || foregroundBusy || foregroundQueue.isEmpty() || !homeResumed) return;
-        Activity activity = home.get();
-        if (!foregroundAllowed() || !safeScreen() || activity == null || activity.isFinishing()
-                || !activity.hasWindowFocus() || !HomeMode.isDefaultHome(context)) return;
-        if (navigation != null && navigation.busy()) { runForegroundSoon(); return; }
-        Source source = foregroundQueue.poll();
-        StartupReadinessPolicy.Record r = policy.record(source);
-        if (r.state != State.STARTING) { updateNavigationAdmission(); runForegroundSoon(); return; }
-        String pkg = packageFor(source);
-        if (ready(source, pkg)) { policy.ready(source, r.generation, SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return; }
-        String opposite = packageFor(source == Source.MUSIC ? Source.RADIO : Source.MUSIC);
-        if (source == Source.RADIO && !MediaListenerService.hasNotificationAccess(context)) {
-            policy.block(source, r.generation, "notification-access-required", SystemClock.uptimeMillis());
-            updateNavigationAdmission(); runForegroundSoon(); return;
-        }
-        if (media().isPlaying(pkg) || media().isPlaying(opposite)) {
-            policy.block(source, r.generation, "playing-source-protected", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
-        }
-        final Intent entry;
-        try { entry = context.getPackageManager().getLaunchIntentForPackage(pkg); }
-        catch (RuntimeException unknown) {
-            policy.block(source, r.generation, "entry-lookup-unavailable", SystemClock.uptimeMillis());
-            updateNavigationAdmission(); runForegroundSoon(); return;
-        }
-        if (entry == null || entry.getComponent() == null) {
-            policy.block(source, r.generation, "entry-unavailable", SystemClock.uptimeMillis()); updateNavigationAdmission(); runForegroundSoon(); return;
-        }
-        foregroundBusy = true; foregroundSource = source;
-        stageLease = new java.util.concurrent.atomic.AtomicBoolean(true);
-        int token = ++foregroundToken, g = r.generation;
-        homeTask = activity.getTaskId(); stagedTask = -1;
-        stagedEntry = entry.getComponent().flattenToShortString(); stagedCommands = media().userCommandGeneration(); pauseSent = false;
-        observe(token, top -> {
-            if (!homeResumed || !foregroundAllowed() || !safeScreen() || top == null
-                    || !(top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.LauncherActivity")
-                            || top.matches(AndroidUserId.current(), homeTask, context.getPackageName() + "/.HomeAlias"))) {
-                yieldStage(source, g, "home-ownership-unconfirmed"); return;
+            if (state != null && ready(latest)) {
+                cancelRecovery(state.key);
+                policy.observedReady(source(state.key), SystemClock.elapsedRealtime());
+            } else if (state != null && (latest.availability == MediaSourceState.Availability.SOURCE_LOST
+                    || policy.record(source(state.key)).state == State.READY
+                    || policy.record(source(state.key)).state == State.ACTIVE)) {
+                policy.sessionLost(source(state.key));
+                reconcileSource(state.key, Trigger.SESSION_LOST, SystemClock.elapsedRealtime());
             }
-            if (source == Source.RADIO && !MediaListenerService.hasNotificationAccess(context)) {
-                yieldStage(source, g, "notification-access-lost"); return;
-            }
-            if (media().isPlaying(pkg) || media().isPlaying(opposite)) {
-                yieldStage(source, g, "playing-source-arrived"); return;
-            }
-            if (!policy.markActivityLaunch(source)) { yieldStage(source, g, "launch-already-accepted"); return; }
-            MediaEventTrace.record("startup", "foreground-launch", source + " " + stagedEntry);
-            if (mode() == Mode.AGGRESSIVE) startWithRoot(source, g, pkg, token, true);
-            else startNormally(source, g, pkg, token, true);
+            tryAutomaticMusicRecovery();
         });
     }
-    private void startNormally(Source source, int g, String pkg, int token, boolean allowRoot) {
-        if (!validStage(token) || !homeResumed) { yieldStage(source, g, "normal-admission-cancelled"); return; }
-        AppResolver.LaunchOutcome outcome = AppResolver.launchForStartup(context, pkg);
-        MediaEventTrace.record("startup", "normal-admission", source + " " + outcome);
-        if (outcome == AppResolver.LaunchOutcome.ACCEPTED) observeSourceAfterLaunch(source, g, pkg, token);
-        else if (outcome == AppResolver.LaunchOutcome.REJECTED && allowRoot) startWithRoot(source, g, pkg, token, false);
-        else yieldStage(source, g, "normal-launch-" + outcome);
-    }
-    private void startWithRoot(Source source, int g, String pkg, int token, boolean allowNormal) {
-        final java.util.concurrent.atomic.AtomicBoolean lease = stageLease;
-        final String entry = stagedEntry;
-        final int targetHome = homeTask;
-        observer.execute(() -> {
-            if (!lease.get()) return;
-            NavigationHelperResult result = rootFallback.launch(pkg, entry, targetHome);
-            handler.post(() -> {
-                if (token != foregroundToken || !lease.get()) return;
-                MediaEventTrace.record("startup", "root-admission", source + " " + result.code);
-                if (result.success && "STARTUP_SOURCE_DISPATCHED".equals(result.code))
-                    observeSourceAfterLaunch(source, g, pkg, token);
-                else if (allowNormal && StartupRootFallback.definitelyNotStarted(result) && validStage(token)) {
-                    // A different caller is safe only after proof that no root Activity was admitted.
-                    observe(token, top -> {
-                        if (!homeResumed || top == null || !top.matches(AndroidUserId.current(), targetHome,
-                                context.getPackageName() + "/.LauncherActivity")) {
-                            yieldStage(source, g, "normal-fallback-owner-changed"); return;
-                        }
-                        startNormally(source, g, pkg, token, false);
-                    });
-                } else yieldStage(source, g, "root-launch-" + result.code);
-            });
-        });
-    }
-    private void observeSourceAfterLaunch(Source source, int g, String pkg, int token) {
-        handler.postDelayed(() -> observe(token, owner -> {
-            if (!validStage(token) || owner == null || !owner.isEntry(AndroidUserId.current(), stagedEntry)) {
-                yieldStage(source, g, "source-entry-not-foreground"); return;
-            }
-            stagedTask = owner.task;
-            awaitStage(source, g, pkg, token, SystemClock.uptimeMillis() + 8000L);
-        }), 1000L);
-    }
-    private boolean validStage(int token) {
-        return token == foregroundToken && foregroundAllowed() && safeScreen()
-                && foregroundSource != null
-                && (foregroundSource != Source.RADIO || MediaListenerService.hasNotificationAccess(context))
-                && packageFor(foregroundSource).equals(packages[foregroundSource.ordinal()])
-                && media().userCommandGeneration() == stagedCommands;
-    }
-    private void awaitStage(Source source, int g, String pkg, int token, long deadline) {
-        if (token != foregroundToken) return;
-        if (!validStage(token)) { yieldStage(source, g, "user-or-system-interruption"); return; }
-        // Do not pause a newly observed player without rechecking foreground ownership first.
-        if (ready(source, pkg) || media().isPlaying(pkg) || SystemClock.uptimeMillis() >= deadline) {
-            observe(token, top -> {
-                if (!validStage(token) || top == null || !top.matches(AndroidUserId.current(), stagedTask, stagedEntry)) {
-                    yieldStage(source, g, "foreground-owner-changed"); return;
-                }
-                if (!pauseSent && media().isPlaying(pkg)) {
-                    pauseSent = media().pauseUnrequestedPlayback(pkg, stagedCommands);
-                    awaitSilence(source, g, pkg, token, SystemClock.uptimeMillis() + 1600L);
-                } else finishStage(source, g, pkg, token);
-            });
-        } else handler.postDelayed(() -> awaitStage(source, g, pkg, token, deadline), 500L);
-    }
-    private void awaitSilence(Source source, int g, String pkg, int token, long deadline) {
-        if (token != foregroundToken) return;
-        if (!validStage(token)) { yieldStage(source, g, "silence-check-interrupted"); return; }
-        if (media().isPlaying(pkg) && SystemClock.uptimeMillis() < deadline) {
-            handler.postDelayed(() -> awaitSilence(source, g, pkg, token, deadline), 250L);
-        } else finishStage(source, g, pkg, token);
-    }
-    private void finishStage(Source source, int g, String pkg, int token) {
-        if (token != foregroundToken) return;
-        // A pause dispatch is not proof of silence. Leave uncertain rather than recording READY.
-        observe(token, top -> {
-            if (!validStage(token) || top == null || !top.matches(AndroidUserId.current(), stagedTask, stagedEntry)) {
-                yieldStage(source, g, "home-return-owner-changed"); return;
-            }
-            // Restore the exact existing HOME task. No root am-start or component relaunch.
-            Activity activity = home.get();
-            if (activity == null || activity.getTaskId() != homeTask || activity.isFinishing()) {
-                yieldStage(source, g, "home-task-gone"); return;
-            }
-            try {
-                android.app.ActivityManager manager = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-                manager.moveTaskToFront(homeTask, 0);
-            } catch (SecurityException rejected) {
-                restoreHomeWithRoot(source, g, pkg, token); return;
-            } catch (RuntimeException uncertain) { yieldStage(source, g, "home-return-outcome-unconfirmed"); return; }
-            verifyHomeReturn(source, g, token);
 
-        });
+    private void cancelRecovery(MediaSourceKey key) {
+        Runnable pending = recovery.remove(key);
+        if (pending != null) main.removeCallbacks(pending);
     }
-    private void restoreHomeWithRoot(Source source, int g, String pkg, int token) {
-        final java.util.concurrent.atomic.AtomicBoolean lease = stageLease;
-        final String entry = stagedEntry;
-        final int sourceTask = stagedTask, targetHome = homeTask;
-        observer.execute(() -> {
-            if (!lease.get()) return;
-            NavigationHelperResult result = rootFallback.restoreHome(pkg, entry, sourceTask, targetHome);
-            handler.post(() -> {
-                if (token != foregroundToken || !lease.get()) return;
-                MediaEventTrace.record("startup", "root-home", result.code);
-                if (result.success && "STARTUP_HOME_RESTORED".equals(result.code)) verifyHomeReturn(source, g, token);
-                else yieldStage(source, g, "root-home-" + result.code);
-            });
-        });
-    }
-    private void verifyHomeReturn(Source source, int g, int token) {
-        handler.postDelayed(() -> {
-            if (token != foregroundToken) return;
-            Activity activity = home.get();
-            if (!homeResumed || activity == null || activity.getTaskId() != homeTask || !activity.hasWindowFocus()) {
-                yieldStage(source, g, "home-return-unconfirmed"); return;
-            }
-            String pkg = packageFor(source);
-            if (ready(source, pkg) && !media().isPlaying(pkg)) policy.ready(source, g, SystemClock.uptimeMillis());
-            else policy.uncertain(source, g, "content-or-silence-unconfirmed", SystemClock.uptimeMillis());
-            stageLease.set(false);
-            foregroundBusy = false; foregroundSource = null; updateNavigationAdmission(); runForegroundSoon();
-        }, 1200L);
-    }
-    private interface Observation { void accept(StartupForegroundPolicy top); }
-    private void observe(int token, Observation callback) { observe(token, callback, 2); }
-    private void observe(int token, Observation callback, int attempts) {
-        observer.execute(() -> {
-            RootShell.Result result = RootShell.runWithin(
-                    "dumpsys activity activities | /system/bin/toybox grep 'mResumedActivity:'; "
-                    + "dumpsys window windows | /system/bin/toybox grep 'mCurrentFocus='", 1800L);
-            StartupForegroundPolicy top = result.success() ? StartupForegroundPolicy.parse(result.output) : null;
-            handler.post(() -> {
-                if (token != foregroundToken || destroyed) return;
-                if (top == null && attempts > 1) handler.postDelayed(() -> observe(token, callback, attempts - 1), 200L);
-                else callback.accept(top);
-            });
-        });
-    }
-    private void yieldStage(Source source, int g, String boundary) {
-        policy.uncertain(source, g, boundary, SystemClock.uptimeMillis());
-        yielded = true; cancelForeground(boundary);
-    }
-    private void cancelForeground(String boundary) {
-        stageLease.set(false);
-        foregroundToken++; foregroundBusy = false;
-        long now = SystemClock.uptimeMillis();
-        if (foregroundSource != null) {
-            StartupReadinessPolicy.Record r = policy.record(foregroundSource);
-            policy.uncertain(foregroundSource, r.generation, boundary, now);
+
+    boolean prepareInteractively(Activity activity, String pkg, long deadline, java.util.function.Consumer<Boolean> done) {
+        if (staging != null && staging.serves(pkg)) { staging.join(done); return true; }
+        if (destroyed || screenOff || staging != null || loaderUi == null || !loaderUi.canMask()
+                || !("com.navimods.radio".equals(pkg)
+                    || "com.tw.media".equals(pkg) && AuxioPreparationContract.supported(context))) {
+            MediaEventTrace.record("readiness", "staging-not-admitted", "package=" + pkg
+                    + " destroyed=" + destroyed + " screenOff=" + screenOff
+                    + " occupied=" + (staging != null) + " loader=" + (loaderUi != null)
+                    + " mask=" + (loaderUi != null && loaderUi.canMask())
+                    + " auxioPrepare=" + ("com.tw.media".equals(pkg) && AuxioPreparationContract.supported(context)));
+            return false;
         }
-        foregroundSource = null;
-        while (!foregroundQueue.isEmpty()) {
-            Source s = foregroundQueue.poll(); policy.block(s, policy.record(s).generation, boundary, now);
-        }
-        updateNavigationAdmission();
-        MediaEventTrace.record("startup", "yield", boundary);
+        staging = new MaskedSourcePreparation(activity, loaderUi, navigation, () -> staging = null);
+        staging.begin(pkg, deadline, done);
+        return true;
     }
-    private boolean safeScreen() {
-        try {
-            PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-            KeyguardManager keyguard = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
-            AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-            return power != null && power.isInteractive() && keyguard != null && !keyguard.isKeyguardLocked()
-                    && audio != null && audio.getMode() == AudioManager.MODE_NORMAL;
-        } catch (RuntimeException ignored) { return false; }
+
+    /** One alternate method after an observed failed browser admission; never a blind boot launch. */
+    private void tryAutomaticMusicRecovery() {
+        if (destroyed || screenOff || !homeResumed || yielded || staging != null
+                || loaderUi == null || !loaderUi.canMask()
+                || !UiPersonalizationPrefs.mediaStartupWarmup(context)) return;
+        Activity home = homeHost.get();
+        if (home == null || home.isFinishing() || home.isDestroyed()) return;
+        MediaSourceState state = Ts18LauncherApplication.mediaFacade(context).state(MediaSourceKey.MUSIC);
+        String identity = state.packageName + ":" + state.engine;
+        if (!identity.equals(automaticMusicIdentity)) {
+            automaticMusicIdentity = identity;
+            automaticMusicAttempted = false;
+        }
+        if (automaticMusicAttempted || state.engine != com.cbkii.ts18launcher.media.MediaEngine.DIRECT
+                || !"com.tw.media".equals(state.packageName)
+                || state.availability != MediaSourceState.Availability.CONNECTION_FAILED
+                || !AuxioPreparationContract.supported(context)) return;
+        automaticMusicAttempted = true;
+        cancelRecovery(MediaSourceKey.MUSIC);
+        int generation = policy.record(Source.MUSIC).generation;
+        policy.changeMethod(Source.MUSIC, Method.ACTIVITY_BOOTSTRAP);
+        MaskedSourcePreparation transaction = new MaskedSourcePreparation(home, loaderUi, navigation,
+                () -> staging = null);
+        staging = transaction;
+        // Automatic recovery never takes focus from a driver who is using the map right now.
+        transaction.automatic();
+        transaction.begin(state.packageName, SystemClock.elapsedRealtime() + 12000L, ready -> {
+            if (destroyed) return;
+            long now = SystemClock.elapsedRealtime();
+            if (ready) policy.ready(Source.MUSIC, generation, now);
+            else if (transaction.launchAdmittedOrUncertain())
+                policy.uncertain(Source.MUSIC, generation, "Activity admitted; readiness not observed", now);
+            else policy.block(Source.MUSIC, generation, "Prepare-only Activity admission blocked", now);
+        });
+    }
+
+    static boolean directPrepareTrigger(Trigger trigger) {
+        return trigger == Trigger.BOOT || trigger == Trigger.RESTART || trigger == Trigger.USER_UNLOCKED
+                || trigger == Trigger.SCREEN_ON || trigger == Trigger.ACC_ON || trigger == Trigger.HOME_RESUME
+                || trigger == Trigger.STORAGE_MOUNT;
     }
     private long bootCount() {
         try { return Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT, -1); }
-        catch (RuntimeException ignored) { return -1L; }
+        catch (RuntimeException unavailable) { return -1L; }
     }
-    private String packageFor(Source source) {
-        if (source == Source.MUSIC) {
-            String pkg = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_MUSIC);
-            return pkg.isEmpty() ? TopwayAdapter.defaultMusicPackage(context) : pkg;
-        }
-        if (source == Source.RADIO) return RadioProvider.resolvePackage(context);
-        String pkg = LauncherPrefs.packageFor(context, LauncherPrefs.KEY_NAV);
-        return pkg.isEmpty() && NavigationProvider.hasLauncherActivity(context, NavigationProvider.ORGANIC_MAPS_INCAR)
-                ? NavigationProvider.ORGANIC_MAPS_INCAR : pkg;
+    // Legacy command fallback remains background-only and keeps its original caller deadline.
+    void prepareForPlay(String pkg, long deadlineElapsedMs) {
+        if (!destroyed && deadlineElapsedMs > SystemClock.elapsedRealtime()
+                && pkg.equals(MediaEngineSelector.configuredPackage(context, MediaSourceKey.MUSIC)))
+            Ts18LauncherApplication.mediaSources(context).warm(pkg);
     }
-    void destroy() {
-        destroyed = true; cancelForeground("destroyed"); handler.removeCallbacksAndMessages(null);
-        ProcessMediaSessionMonitor.removeObserver(this); observer.shutdownNow();
+    void onExplicitSource(String pkg) { if (staging != null && !staging.serves(pkg)) staging.cancel(); }
+    void attachNavigationHook(NavigationHook hook) { navigation = hook; }
+    void detachNavigationHook(NavigationHook hook) { if (navigation == hook) navigation = null; }
+    void onHomeResumed(Activity activity) {
+        homeHost = new java.lang.ref.WeakReference<>(activity);
+        homeResumed = true;
+        if (initialAdmission != null) { main.removeCallbacks(initialAdmission); initialAdmission = null; }
+        onTrigger(Trigger.HOME_RESUME);
     }
+    void onHomePaused() { homeResumed = false; }
+    void onHomeFocusChanged() { }
+    void onScreenOff() {
+        yielded = true; screenOff = true;
+        if (initialAdmission != null) { main.removeCallbacks(initialAdmission); initialAdmission = null; }
+        for (MediaSourceKey key : MediaSourceKey.values()) cancelRecovery(key);
+        if (staging != null) staging.cancel();
+    }
+    void noteUserInteraction() {
+        // The user is interacting with HOME: an automatic Maps transaction must not take focus.
+        yielded = true;
+        if (navigation != null) navigation.cancelAutomaticColdStart();
+        StartupTimeline.mark("home.first_input");
+    }
+    void noteExternalNavigation() {
+        yielded = true;
+        if (staging != null) staging.cancel();
+        if (navigation != null) navigation.cancelAutomaticColdStart();
+    }
+    void reportNavigation(boolean success, String boundary) {
+        navigationBoundary = boundary;
+        if (success) StartupTimeline.mark("nav.window.verified", boundary);
+    }
+    String summary() {
+        return "Background startup epoch=" + epoch + " navigation=" + navigationBoundary
+                + "\n" + Ts18LauncherApplication.mediaFacade(context).state(MediaSourceKey.MUSIC).availability
+                + " / " + Ts18LauncherApplication.mediaFacade(context).state(MediaSourceKey.RADIO).availability;
+    }
+    Mode mode() { return Mode.AUTOMATIC_FALLBACK; }
+    void attachLoader(LoaderUi ui) {
+        loaderUi = ui;
+        if (ui != null) { ui.hide(); main.post(this::tryAutomaticMusicRecovery); }
+    }
+    void detachLoader(LoaderUi ui) { if (ui != null && loaderUi == ui) { if (staging != null) staging.cancel(); ui.hide(); loaderUi = null; } }
+    boolean dismissLoader() { if (staging != null) { staging.cancel(); return true; } if (loaderUi != null) loaderUi.hide(); return false; }
+    void destroy() { if (staging != null) staging.cancel(); destroyed = true; homeHost.clear(); navigation = null; main.removeCallbacksAndMessages(null); }
 }

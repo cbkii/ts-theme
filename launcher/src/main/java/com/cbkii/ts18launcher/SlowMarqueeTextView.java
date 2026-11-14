@@ -64,6 +64,9 @@ final class SlowMarqueeTextView extends TextView {
         if (handler != null) scheduleFromStart();
     }
 
+    /** Item identity may change while its displayed title stays identical. */
+    void restartForItem() { scheduleFromStart(); }
+
     private void scheduleFromStart() {
         cancelMarquee();
         scrollTo(0, 0);

@@ -1,5 +1,7 @@
 # TS18 LSPosed roadmap playbook
 
+> **Specialist DoFun diagnostic procedure.** This targets the protected OEM host/legacy activation investigation, not normal standalone-launcher startup or release qualification. Do not install its persistent collector or perform theme experiments as a launcher prerequisite. Use only for the corresponding diagnostic task, with current identity/recovery evidence. The launcher campaign is [here](CONSOLIDATED_TESTING_PLAYBOOK.md).
+
 This playbook is for CB's exact Android 10/API 29 Topway TS18 running DoFun `com.dofun.variety`. Its purpose is to collect the current-device evidence needed to decide whether `ts-theme` should add any LSPosed/Xposed support, and if so, what the smallest safe next step should be.
 
 The first phase is **diagnostic only**. Do not change LSPosed scope, install a new hook, edit DoFun private state, modify `p.l`, replace a donor, change SELinux, or clear DoFun data while collecting this evidence.

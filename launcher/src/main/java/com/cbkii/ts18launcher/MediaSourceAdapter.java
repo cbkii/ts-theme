@@ -110,8 +110,8 @@ final class MediaSourceAdapter {
     }
 
     boolean maskedFallbackQualified() {
-        // Readiness and transport are background-only under the current product contract.
-        // This retained compatibility seam must never enable source-Activity priming.
+        // This adapter owns background admission only. Guarded Activity preparation belongs
+        // to StartupReadinessCoordinator and its shared source/task admission, never this seam.
         return false;
     }
 

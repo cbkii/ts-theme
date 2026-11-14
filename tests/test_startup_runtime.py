@@ -1,4 +1,4 @@
-"""Execute startup production policy/coordinator against a deterministic API29 boundary model."""
+"""Execute the production background orchestrator against hand-driven source/task boundaries."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -8,176 +8,58 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'launcher/src/main/java/com/cbkii/ts18launcher'
 
-
 class StartupRuntimeTests(unittest.TestCase):
-    def test_admission_ownership_cancellation_and_exact_home_return(self):
-        if not shutil.which('java'):
-            self.skipTest('JDK unavailable')
+    def test_independent_background_readiness_boot_dedup_and_focus_yield(self):
+        if not shutil.which('java'): self.skipTest('JDK unavailable')
         stubs = {
-            'android/os/Looper.java': 'package android.os; public class Looper {static Looper l=new Looper(); public static Looper getMainLooper(){return l;} public static Looper myLooper(){return l;}}',
-            'android/os/SystemClock.java': 'package android.os; public class SystemClock {public static long now=100; public static long uptimeMillis(){return now;}}',
-            'android/os/Handler.java': '''package android.os;import java.util.*;
-public class Handler {record Job(Runnable r,long at){} static List<Job> jobs=new ArrayList<>();
-public Handler(Looper l){}public boolean post(Runnable r){return postDelayed(r,0);}
-public boolean postDelayed(Runnable r,long d){jobs.add(new Job(r,SystemClock.now+d));return true;}
-public void removeCallbacksAndMessages(Object o){jobs.clear();}
-public static void until(long end){int n=0;while(!jobs.isEmpty()){
-Job j=jobs.stream().min(Comparator.comparingLong(Job::at)).orElseThrow();if(j.at()>end)break;
-if(++n>1000)throw new AssertionError("unbounded jobs");jobs.remove(j);SystemClock.now=j.at();j.r().run();}SystemClock.now=end;}
-public static void reset(){jobs.clear();SystemClock.now=100;}}
-''',
-            'android/os/PowerManager.java': 'package android.os;public class PowerManager {public boolean isInteractive(){return true;}}',
-            'android/app/KeyguardManager.java': 'package android.app;public class KeyguardManager {public boolean isKeyguardLocked(){return false;}}',
-            'android/media/AudioManager.java': 'package android.media;public class AudioManager {public static final int MODE_NORMAL=0;public int getMode(){return 0;}}',
-            'android/content/SharedPreferences.java': '''package android.content;public class SharedPreferences {
-long value=-1;public long getLong(String k,long d){return value;}public Editor edit(){return new Editor();}
-public class Editor {public Editor putLong(String k,long v){value=v;return this;}public void apply(){}}}''',
-            'android/content/Context.java': '''package android.content;public class Context {
-public static final String POWER_SERVICE="power",KEYGUARD_SERVICE="key",AUDIO_SERVICE="audio",ACTIVITY_SERVICE="activity";public static final int MODE_PRIVATE=0;
-SharedPreferences prefs=new SharedPreferences();public Context getApplicationContext(){return this;}
-public SharedPreferences getSharedPreferences(String s,int m){return prefs;}public Object getContentResolver(){return null;}
-public android.content.pm.PackageManager getPackageManager(){return new android.content.pm.PackageManager();}
-public Object getSystemService(String s){return switch(s){case "power"->new android.os.PowerManager();case "key"->new android.app.KeyguardManager();case "audio"->new android.media.AudioManager();default->new android.app.ActivityManager();};}}
-''',
-            'android/app/Activity.java': 'package android.app;public class Activity extends android.content.Context {public boolean isFinishing(){return false;}public boolean hasWindowFocus(){return true;}public int getTaskId(){return 10;}}',
-            'android/app/ActivityManager.java': 'package android.app;public class ActivityManager {public static int moves;public static boolean reject,uncertain;public static Runnable moved=()->{};public void moveTaskToFront(int task,int flags){if(reject)throw new SecurityException();if(uncertain)throw new IllegalStateException();if(task!=10)throw new AssertionError("wrong HOME task");moves++;moved.run();}}',
-            'android/content/Intent.java': 'package android.content;public class Intent {String pkg;public Intent(String s){pkg=s;}public ComponentName getComponent(){return new ComponentName(pkg,pkg+".Main");}}',
-            'android/content/ComponentName.java': 'package android.content;public class ComponentName {String p,c;public ComponentName(String p,String c){this.p=p;this.c=c;}public String flattenToShortString(){return p+"/"+c;}}',
-            'android/content/pm/PackageManager.java': 'package android.content.pm;public class PackageManager {public android.content.Intent getLaunchIntentForPackage(String p){return new android.content.Intent(p);}}',
-            'android/provider/Settings.java': 'package android.provider;public class Settings {public static class Global{public static String BOOT_COUNT="boot";public static int getInt(Object c,String k,int d){return 5;}}}',
-            'com/cbkii/ts18launcher/platform/TopwayAdapter.java': 'package com.cbkii.ts18launcher.platform;public class TopwayAdapter {public static String defaultMusicPackage(android.content.Context c){return "com.tw.media";}}',
-            'com/cbkii/ts18launcher/Doubles.java': '''package com.cbkii.ts18launcher;
-class ProcessMediaSessionMonitor {interface Observer{void onProcessMediaStateChanged(MediaListenerService.Snapshot m,MediaListenerService.Snapshot r,boolean a);}static void addObserver(android.content.Context c,Observer o){}static void removeObserver(Observer o){}}
-class MediaListenerService {static boolean access=true;static boolean hasNotificationAccess(android.content.Context c){return access;}static class Snapshot{}}
-class Ts18LauncherApplication {static MediaSourceBootstrapper shared=new MediaSourceBootstrapper();static MediaSourceBootstrapper mediaSources(android.content.Context c){return shared;}}
-class MediaSourceBootstrapper {boolean musicReady,radioReady,musicPlaying;long commands;int warms,pauses;
-boolean hasUsableQueue(String p){return p.equals("com.tw.media")?musicReady:radioReady;}
-boolean hasSessionIdentity(String p){return hasUsableQueue(p);}void warm(String p){warms++;}boolean isPlaying(String p){return p.equals("com.tw.media")&&musicPlaying;}
-long userCommandGeneration(){return commands;}boolean pauseUnrequestedPlayback(String p,long g){pauses++;return true;}}
+          'android/annotation/SuppressLint.java': 'package android.annotation;public @interface SuppressLint {String[] value();}',
+          'android/app/Activity.java': 'package android.app;public class Activity {public boolean isFinishing(){return false;}public boolean isDestroyed(){return false;}}',
+          'android/media/session/PlaybackState.java':'package android.media.session;public class PlaybackState {public static int STATE_PAUSED=2;public static long ACTION_PLAY=4,ACTION_PLAY_PAUSE=512;}',
+          'android/os/Looper.java': 'package android.os;public class Looper {static Looper main=new Looper();public static Looper getMainLooper(){return main;}public static Looper myLooper(){return main;}}',
+          'android/os/Handler.java': '''package android.os;public class Handler {static class Item {Runnable r;long at;Item(Runnable r,long at){this.r=r;this.at=at;}}static java.util.List<Item> q=new java.util.ArrayList<>();public Handler(Looper l){}public void post(Runnable r){r.run();}public void postDelayed(Runnable r,long d){q.add(new Item(r,SystemClock.now+d));}public void removeCallbacks(Runnable r){q.removeIf(i->i.r==r);}public void removeCallbacksAndMessages(Object o){q.clear();}public static void advance(long ms){long end=SystemClock.now+ms;while(!q.isEmpty()){q.sort((a,b)->Long.compare(a.at,b.at));if(q.get(0).at>end)break;Item item=q.remove(0);SystemClock.now=item.at;item.r.run();}SystemClock.now=end;}}''',
+          'android/os/SystemClock.java': 'package android.os;public class SystemClock {public static long now=100;public static long elapsedRealtime(){return now;}}',
+          'android/content/Context.java': 'package android.content;public class Context {public static int MODE_PRIVATE=0;SharedPreferences p=new SharedPreferences();public Context getApplicationContext(){return this;}public Object getContentResolver(){return null;}public SharedPreferences getSharedPreferences(String s,int m){return p;}}',
+          'android/content/SharedPreferences.java': 'package android.content;public class SharedPreferences {long boot=-1;public long getLong(String k,long d){return boot;}public Editor edit(){return new Editor();}public class Editor {public Editor putLong(String k,long b){boot=b;return this;}public Editor remove(String k){return this;}public void apply(){}}}',
+          'android/provider/Settings.java': 'package android.provider;public class Settings {public static class Global {public static String BOOT_COUNT="boot";public static int getInt(Object c,String k,int d){return 5;}}}',
+          'com/cbkii/ts18launcher/media/MediaSourceKey.java': 'package com.cbkii.ts18launcher.media;public enum MediaSourceKey {MUSIC,RADIO}',
+          'com/cbkii/ts18launcher/Doubles.java': '''package com.cbkii.ts18launcher;
+class Ts18LauncherApplication {static int prepares;static java.util.List<com.cbkii.ts18launcher.media.MediaSourceKey> calls=new java.util.ArrayList<>();static void prepareDirectSource(android.content.Context c,com.cbkii.ts18launcher.media.MediaSourceKey k,long e){prepares++;calls.add(k);}static boolean legacyMediaEngineOwns(android.content.Context c,boolean radio){return Facade.engine==com.cbkii.ts18launcher.media.MediaEngine.LEGACY;}static MediaSourceBootstrapper mediaSources(android.content.Context c){if(Facade.engine!=com.cbkii.ts18launcher.media.MediaEngine.LEGACY)throw new AssertionError("unused legacy owner created");return new MediaSourceBootstrapper();}static Facade mediaFacade(android.content.Context c){return new Facade();}}
+class Facade {static String pkg="source";static com.cbkii.ts18launcher.media.MediaSourceState.Availability unavailable=com.cbkii.ts18launcher.media.MediaSourceState.Availability.NO_SESSION;static boolean live=false;static int nativeState=2;static long actions=4;static com.cbkii.ts18launcher.media.MediaEngine engine=com.cbkii.ts18launcher.media.MediaEngine.DIRECT;static int prerequisiteChanges;void prerequisitesChanged(){prerequisiteChanges++;}com.cbkii.ts18launcher.media.MediaSourceState state(com.cbkii.ts18launcher.media.MediaSourceKey k){return live?new com.cbkii.ts18launcher.media.MediaSourceState(k,engine,pkg,com.cbkii.ts18launcher.media.MediaSourceState.Availability.LIVE,nativeState,actions,"token","saved","title","",1):com.cbkii.ts18launcher.media.MediaSourceState.unavailable(k,engine,pkg,unavailable,0);}}
+class AuxioPreparationContract {static boolean capability=false;static boolean supported(android.content.Context c){return capability;}}
+class MaskedSourcePreparation {static int begins,joins,automatics;void automatic(){automatics++;}static MaskedSourcePreparation last;Runnable release;String pkg;java.util.List<java.util.function.Consumer<Boolean>> done=new java.util.ArrayList<>();boolean launchAdmittedOrUncertain(){return true;}MaskedSourcePreparation(android.app.Activity a,StartupReadinessCoordinator.LoaderUi u,StartupReadinessCoordinator.NavigationHook n,Runnable r){release=r;}boolean serves(String p){return p.equals(pkg);}void join(java.util.function.Consumer<Boolean> c){joins++;done.add(c);}void begin(String p,long d,java.util.function.Consumer<Boolean> c){begins++;pkg=p;done.add(c);last=this;}void complete(boolean ready){release.run();for(var c:done)c.accept(ready);}void cancel(){complete(false);}}
+class MediaEngineSelector {static String configuredPackage(android.content.Context c,com.cbkii.ts18launcher.media.MediaSourceKey k){return Facade.pkg;}}
+class MediaSourceBootstrapper {static int warms;void warm(String p){warms++;}}
 class UiPersonalizationPrefs {static boolean mediaStartupWarmup(android.content.Context c){return true;}}
-class TestingProfiles {static String mode="auto";static String startup(android.content.Context c){return mode;}}
-class LauncherPrefs {static String KEY_MUSIC="music",KEY_NAV="nav";static String music="com.tw.media";
-static String packageFor(android.content.Context c,String k){return k.equals("music")?music:"app.organicmaps.incar";}}
-class RadioProvider {static String resolvePackage(android.content.Context c){return "com.navimods.radio";}}
-class NavigationProvider {static String ORGANIC_MAPS_INCAR="app.organicmaps.incar";static boolean hasLauncherActivity(android.content.Context c,String p){return true;}}
-class MediaSourceAdapter {static String AUXIO_PACKAGE="com.tw.media",NAVRADIO_PACKAGE="com.navimods.radio";}
-class HomeMode {static boolean isDefaultHome(android.content.Context c){return true;}}
-class AndroidUserId {static int current(){return 0;}}
+class StartupTimeline {static void mark(String a,String... b){}}
 class MediaEventTrace {static void record(String a,String b,String... c){}}
-class AppResolver {enum LaunchOutcome {ACCEPTED,REJECTED,UNCERTAIN}static LaunchOutcome outcome=LaunchOutcome.ACCEPTED;static int launches;static Runnable launched=()->{};
-static LaunchOutcome launchForStartup(android.content.Context c,String p){launches++;
-if(outcome==LaunchOutcome.ACCEPTED){RootShell.top=RootShell.forComponent(p+"/"+p+".Main",20);launched.run();}return outcome;}}
-class NavigationHelperResult {boolean success;String code;NavigationHelperResult(boolean s,String c){success=s;code=c;}}
-class StartupRootFallback {static String code="STARTUP_SOURCE_DISPATCHED",returnCode="STARTUP_HOME_RESTORED";static int starts,returns;static Runnable before=()->{},launched=()->{};StartupRootFallback(android.content.Context c){}
-NavigationHelperResult launch(String p,String e,int h){starts++;before.run();if(code.equals("STARTUP_SOURCE_DISPATCHED")){RootShell.top=RootShell.forComponent(e,20);launched.run();}return new NavigationHelperResult(code.equals("STARTUP_SOURCE_DISPATCHED"),code);}
-NavigationHelperResult restoreHome(String p,String e,int t,int h){returns++;if(returnCode.equals("STARTUP_HOME_RESTORED"))android.app.ActivityManager.moved.run();return new NavigationHelperResult(returnCode.equals("STARTUP_HOME_RESTORED"),returnCode);}
-static boolean definitelyNotStarted(NavigationHelperResult r){return r.code.equals("STARTUP_SOURCE_REJECTED");}}
-
-class RootShell {static String top;static int probes;static Runnable afterProbe=()->{};
-static String forComponent(String c,int task){return "mResumedActivity: ActivityRecord{abc u0 "+c+" t"+task+"}\\n mCurrentFocus=Window{def u0 "+c+"}\\n";}
-static class Result {String output;Result(String o){output=o;}boolean success(){return true;}}
-static Result runWithin(String c,long t){probes++;String old=top;afterProbe.run();return new Result(old);}}
 ''',
-            'com/cbkii/ts18launcher/Harness.java': '''package com.cbkii.ts18launcher;
-import android.os.*;import java.lang.reflect.*;import java.util.concurrent.*;
-import static com.cbkii.ts18launcher.StartupReadinessPolicy.*;
-public class Harness {
-static void check(boolean b,String s){if(!b)throw new AssertionError(s);}
-static boolean navigationDeferred, navReady;
-static int navigationStarts;
-static class Inline extends AbstractExecutorService {public void execute(Runnable r){r.run();}public void shutdown(){}public java.util.List<Runnable> shutdownNow(){return java.util.List.of();}public boolean isShutdown(){return false;}public boolean isTerminated(){return false;}public boolean awaitTermination(long t,TimeUnit u){return true;}}
-static StartupReadinessCoordinator create()throws Exception{return create(true);}
-static StartupReadinessCoordinator create(boolean ready)throws Exception{
-navReady=ready;navigationStarts=0;
-Handler.reset();TestingProfiles.mode="auto";AppResolver.outcome=AppResolver.LaunchOutcome.ACCEPTED;
-StartupRootFallback.returnCode="STARTUP_HOME_RESTORED";android.app.ActivityManager.moved=()->{};
-StartupRootFallback.code="STARTUP_SOURCE_DISPATCHED";StartupRootFallback.starts=0;StartupRootFallback.returns=0;StartupRootFallback.before=()->{};
-android.app.ActivityManager.reject=false;android.app.ActivityManager.uncertain=false;
-MediaListenerService.access=true;RootShell.probes=0;AppResolver.launches=0;android.app.ActivityManager.moves=0;RootShell.afterProbe=()->{};
-RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);
-Ts18LauncherApplication.shared=new MediaSourceBootstrapper();Ts18LauncherApplication.shared.musicReady=true;
-Constructor<StartupReadinessCoordinator> c=StartupReadinessCoordinator.class.getDeclaredConstructor(android.content.Context.class);c.setAccessible(true);
-StartupReadinessCoordinator s=c.newInstance(new android.content.Context());Field f=s.getClass().getDeclaredField("observer");f.setAccessible(true);((ExecutorService)f.get(s)).shutdownNow();f.set(s,new Inline());AppResolver.launched=s::onHomePaused;StartupRootFallback.launched=s::onHomePaused;
-s.attachNavigationHook(new StartupReadinessCoordinator.NavigationHook(){public boolean ready(){return navReady;}public boolean busy(){return false;}public void reconcile(){check(!navigationDeferred,"Maps acquired while media pending");navigationStarts++;navReady=true;}
-public void deferAutomaticPresentation(boolean defer){navigationDeferred=defer;}});
-s.onHomeResumed(new android.app.Activity());return s;}
-static StartupReadinessPolicy ledger(StartupReadinessCoordinator s)throws Exception{Field f=s.getClass().getDeclaredField("policy");f.setAccessible(true);return (StartupReadinessPolicy)f.get(s);}
-public static void main(String[] args)throws Exception {
-StartupForegroundPolicy top=StartupForegroundPolicy.parse(RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10));
-check(top.matches(0,10,"com.cbkii.ts18launcher/.LauncherActivity"),"HOME alias identity");
-check(StartupForegroundPolicy.parse("mResumedActivity: ActivityRecord{a u0 p/.A t1}\\nmCurrentFocus=null")==null,"blank focus accepted");
-check(StartupForegroundPolicy.parse(RootShell.forComponent("p/.A",1)+RootShell.forComponent("q/.B",2))==null,"ambiguous display accepted");
-check(!top.matches(1,10,"com.cbkii.ts18launcher/.LauncherActivity"),"wrong user");
-StartupReadinessCoordinator s=create();int g=ledger(s).record(Source.RADIO).generation;
-s.onTrigger(Trigger.BOOT);check(ledger(s).record(Source.RADIO).generation==g,"late boot reset active generation");
-check(navigationDeferred,"Maps could take focus before media staging");
-Handler.until(4000);check(AppResolver.launches==1,"radio not staged once");
-Ts18LauncherApplication.shared.radioReady=true;
-android.app.ActivityManager.moved=()->{RootShell.top=RootShell.forComponent("com.cbkii.ts18launcher/.HomeAlias",10);s.onHomeResumed(new android.app.Activity());};
-Handler.until(8000);check(android.app.ActivityManager.moves==1,"exact HOME not restored");check(ledger(s).record(Source.RADIO).state==State.READY,"content not ready");check(!navigationDeferred,"Maps stayed deferred after media");s.destroy();
-StartupReadinessCoordinator ordered=create(false);Handler.until(4000);
-check(navigationStarts==0&&AppResolver.launches==1,"Maps focus starved media admission");
-Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.moved=()->ordered.onHomeResumed(new android.app.Activity());
-Handler.until(8000);check(navigationStarts==1&&!navigationDeferred,"Maps not admitted once after media");ordered.destroy();
-StartupReadinessCoordinator root=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;Handler.until(4000);
-check(AppResolver.launches==1&&StartupRootFallback.starts==1,"definite rejection did not select root once");root.destroy();
-StartupReadinessCoordinator rootFirst=create();TestingProfiles.mode="aggressive";Handler.until(4000);
-check(AppResolver.launches==0&&StartupRootFallback.starts==1,"aggressive did not select root first");rootFirst.destroy();
-StartupReadinessCoordinator fallback=create();TestingProfiles.mode="aggressive";StartupRootFallback.code="STARTUP_SOURCE_REJECTED";Handler.until(4000);
-check(AppResolver.launches==1&&StartupRootFallback.starts==1,"definite root refusal did not allow normal once");fallback.destroy();
-StartupReadinessCoordinator ambiguous=create();TestingProfiles.mode="aggressive";StartupRootFallback.code="PHASE_TIMEOUT";Handler.until(15000);
-check(AppResolver.launches==0&&StartupRootFallback.starts==1,"root uncertainty replayed normal launch");ambiguous.destroy();
-StartupReadinessCoordinator normalUnknown=create();AppResolver.outcome=AppResolver.LaunchOutcome.UNCERTAIN;Handler.until(15000);
-check(StartupRootFallback.starts==0,"uncertain normal start replayed via root");normalUnknown.destroy();
-StartupReadinessCoordinator homeRejected=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;
-android.app.ActivityManager.reject=true;android.app.ActivityManager.moved=()->homeRejected.onHomeResumed(new android.app.Activity());Handler.until(8000);
-check(StartupRootFallback.returns==1&&ledger(homeRejected).record(Source.RADIO).state==State.READY,"definite HOME refusal not recovered");homeRejected.destroy();
-StartupReadinessCoordinator rootHomeFailure=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;
-android.app.ActivityManager.reject=true;StartupRootFallback.returnCode="HOME_FOCUS_FAILED";Handler.until(15000);
-check(StartupRootFallback.returns==1&&ledger(rootHomeFailure).record(Source.RADIO).state==State.UNCERTAIN,"failed root return marked ready");rootHomeFailure.destroy();
-StartupReadinessCoordinator noHomeReturn=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
-check(StartupRootFallback.returns==0&&ledger(noHomeReturn).record(Source.RADIO).state==State.UNCERTAIN,"silent/unconfirmed return repeated or marked ready");noHomeReturn.destroy();
-StartupReadinessCoordinator cancelledRoot=create();AppResolver.outcome=AppResolver.LaunchOutcome.REJECTED;RootShell.afterProbe=cancelledRoot::noteUserInteraction;Handler.until(15000);
-check(StartupRootFallback.starts==0&&AppResolver.launches==0,"cancelled executor admitted source");cancelledRoot.destroy();
-StartupReadinessCoordinator homeUncertain=create();Handler.until(4000);Ts18LauncherApplication.shared.radioReady=true;android.app.ActivityManager.uncertain=true;Handler.until(15000);
-check(StartupRootFallback.returns==0&&ledger(homeUncertain).record(Source.RADIO).state==State.UNCERTAIN,"uncertain HOME return replayed");homeUncertain.destroy();
-StartupReadinessCoordinator unknown=create();RootShell.top="mCurrentFocus=null";Handler.until(15000);
-check(AppResolver.launches==0&&android.app.ActivityManager.moves==0,"unknown focus mutated");unknown.destroy();
-StartupReadinessCoordinator permission=create();Handler.until(4000);
-RootShell.top=RootShell.forComponent("com.android.permissioncontroller/.GrantPermissionsActivity",20);
-Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
-check(android.app.ActivityManager.moves==0,"permission screen stolen");permission.onTrigger(Trigger.SESSION_LOST);Handler.until(20000);
-check(AppResolver.launches==1,"uncertain launch repeated");permission.destroy();
-StartupReadinessCoordinator interrupted=create();Handler.until(4000);interrupted.noteUserInteraction();check(!navigationDeferred,"user navigation stayed blocked");Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
-check(android.app.ActivityManager.moves==0&&Ts18LauncherApplication.shared.pauses==0,"user cancellation ignored");interrupted.destroy();
-StartupReadinessCoordinator playing=create();Ts18LauncherApplication.shared.musicPlaying=true;Handler.until(15000);
-check(AppResolver.launches==0,"playing music disrupted");playing.destroy();
-StartupReadinessCoordinator off=create();Handler.until(4000);off.onScreenOff();Handler.until(15000);
-check(android.app.ActivityManager.moves==0,"screen-off restore");off.destroy();
-StartupReadinessCoordinator denied=create();MediaListenerService.access=false;Handler.until(15000);
-check(AppResolver.launches==0,"unobservable radio launched");denied.destroy();
-StartupReadinessCoordinator commands=create();Handler.until(4000);Ts18LauncherApplication.shared.commands++;Ts18LauncherApplication.shared.radioReady=true;Handler.until(15000);
-check(android.app.ActivityManager.moves==0&&Ts18LauncherApplication.shared.pauses==0,"transport request overwritten");commands.destroy();
-System.out.println("PASS startup boot dedupe/owners/exact HOME/permissions/unknown focus/user/audio/screen-off");
-}}
-'''
-        }
-        stubs['org/junit/Test.java'] = 'package org.junit;@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME) public @interface Test {}'
-        stubs['org/junit/Assert.java'] = 'package org.junit;public class Assert {public static void assertTrue(boolean b){if(!b)throw new AssertionError();}public static void assertFalse(boolean b){assertTrue(!b);}public static void assertEquals(Object a,Object b){assertTrue(java.util.Objects.equals(a,b));}}'
-        stubs['com/cbkii/ts18launcher/Harness.java'] = stubs['com/cbkii/ts18launcher/Harness.java'].replace(
-            'StartupForegroundPolicy top=',
-            'int tested=0;for(java.lang.reflect.Method m:StartupReadinessPolicyTest.class.getDeclaredMethods()){if(m.getAnnotation(org.junit.Test.class)!=null){m.invoke(new StartupReadinessPolicyTest());tested++;}}check(tested>=14,"policy coverage missing");StartupForegroundPolicy top=')
+          'com/cbkii/ts18launcher/Harness.java': '''package com.cbkii.ts18launcher;
+import com.cbkii.ts18launcher.StartupReadinessPolicy.Trigger;
+public class Harness {static int reconciles;static boolean deferred;static void check(boolean b){if(!b)throw new AssertionError();}static void counts(int music,int radio){check(java.util.Collections.frequency(Ts18LauncherApplication.calls,com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC)==music);check(java.util.Collections.frequency(Ts18LauncherApplication.calls,com.cbkii.ts18launcher.media.MediaSourceKey.RADIO)==radio);}
+public static void main(String[] x)throws Exception {var constructor=StartupReadinessCoordinator.class.getDeclaredConstructor(android.content.Context.class);constructor.setAccessible(true);var c=constructor.newInstance(new android.content.Context());
+c.attachNavigationHook(new StartupReadinessCoordinator.NavigationHook(){public boolean ready(){return false;}public boolean busy(){return false;}public void reconcile(){reconciles++;}public void deferAutomaticPresentation(boolean d){deferred=d;}});
+c.onHomeResumed(new android.app.Activity());check(reconciles==1&&!deferred);check(Ts18LauncherApplication.prepares==2);counts(1,1);
+c.onTrigger(Trigger.BOOT);check(Ts18LauncherApplication.prepares==2);
+android.os.SystemClock.now=20000;c.onTrigger(Trigger.READINESS_CHANGED);check(Ts18LauncherApplication.prepares==2&&reconciles>=2);
+c.noteExternalNavigation();int before=reconciles;c.onTrigger(Trigger.SESSION_LOST);check(reconciles==before);
+c.onHomePaused();c.onScreenOff();android.os.SystemClock.now=40000;c.onTrigger(Trigger.SCREEN_ON);check(Ts18LauncherApplication.prepares==4&&reconciles==before);
+c.onHomeResumed(new android.app.Activity());check(reconciles>before&&!deferred);
+c.onScreenOff();before=reconciles;android.os.SystemClock.now=60000;c.onTrigger(Trigger.SCREEN_ON);check(reconciles>before);
+c.onScreenOff();before=reconciles;android.os.SystemClock.now=80000;c.onTrigger(Trigger.ACC_ON);check(reconciles>before);c.destroy();int count=Ts18LauncherApplication.prepares;c.onTrigger(Trigger.RESTART);check(Ts18LauncherApplication.prepares==count);
+Ts18LauncherApplication.prepares=0;Ts18LauncherApplication.calls.clear();var retry=constructor.newInstance(new android.content.Context());retry.onHomeResumed(new android.app.Activity());check(Ts18LauncherApplication.prepares==2);android.os.Handler.advance(100000);check(Ts18LauncherApplication.prepares==6);counts(3,3);retry.onScreenOff();retry.onTrigger(Trigger.SCREEN_ON);check(Ts18LauncherApplication.prepares==8);retry.onScreenOff();retry.onTrigger(Trigger.SCREEN_ON);check(Ts18LauncherApplication.prepares==10);counts(5,5);Facade.engine=com.cbkii.ts18launcher.media.MediaEngine.LEGACY;retry.onMediaStateChanged(new Facade().state(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC));check(Ts18LauncherApplication.prepares==10&&MediaSourceBootstrapper.warms==1);retry.destroy();Facade.engine=com.cbkii.ts18launcher.media.MediaEngine.DIRECT;android.os.Handler.advance(100000);check(Ts18LauncherApplication.prepares==10&&MediaSourceBootstrapper.warms==1);
+Ts18LauncherApplication.prepares=0;Ts18LauncherApplication.calls.clear();var cold=constructor.newInstance(new android.content.Context());cold.onTrigger(Trigger.RESTART);check(Ts18LauncherApplication.prepares==0);android.os.Handler.advance(749);check(Ts18LauncherApplication.prepares==0);cold.attachNavigationHook(new StartupReadinessCoordinator.NavigationHook(){public boolean ready(){return false;}public boolean busy(){return false;}public void reconcile(){check(Ts18LauncherApplication.prepares==0);}});cold.onHomeResumed(new android.app.Activity());check(Ts18LauncherApplication.prepares==2);cold.destroy();
+Ts18LauncherApplication.prepares=0;Ts18LauncherApplication.calls.clear();var headless=constructor.newInstance(new android.content.Context());headless.onTrigger(Trigger.RESTART);android.os.Handler.advance(751);check(Ts18LauncherApplication.prepares==2);headless.destroy();
+Ts18LauncherApplication.prepares=0;Ts18LauncherApplication.calls.clear();var observe=constructor.newInstance(new android.content.Context());observe.onHomeResumed(new android.app.Activity());check(Ts18LauncherApplication.prepares==2);Facade.live=true;Facade.actions=0;check(!StartupReadinessCoordinator.ready(new Facade().state(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC)));Facade.actions=4;observe.onMediaStateChanged(new Facade().state(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC));Facade.nativeState=6;observe.onMediaStateChanged(new Facade().state(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC));check(Ts18LauncherApplication.prepares==3);counts(2,1);observe.destroy();Facade.live=false;Facade.nativeState=2;
+Facade.pkg="com.tw.media";Facade.unavailable=com.cbkii.ts18launcher.media.MediaSourceState.Availability.NO_SESSION;AuxioPreparationContract.capability=true;var recover=constructor.newInstance(new android.content.Context());recover.attachLoader(new StartupReadinessCoordinator.LoaderUi(){public void render(String s,boolean b){}public void mask(boolean b){}public void hide(){}public boolean canMask(){return true;}});recover.onHomeResumed(new android.app.Activity());check(MaskedSourcePreparation.begins==0);Facade.unavailable=com.cbkii.ts18launcher.media.MediaSourceState.Availability.CONNECTION_FAILED;recover.onMediaStateChanged(new Facade().state(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC));check(MaskedSourcePreparation.begins==1);recover.onMediaStateChanged(new Facade().state(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC));check(MaskedSourcePreparation.begins==1);check(recover.prepareInteractively(new android.app.Activity(),"com.tw.media",android.os.SystemClock.now+3000,r->{}));check(MaskedSourcePreparation.joins==1);MaskedSourcePreparation.last.complete(false);recover.onMediaStateChanged(new Facade().state(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC));check(MaskedSourcePreparation.begins==1);recover.destroy();
+var yield=constructor.newInstance(new android.content.Context());Facade.unavailable=com.cbkii.ts18launcher.media.MediaSourceState.Availability.NO_SESSION;yield.attachLoader(new StartupReadinessCoordinator.LoaderUi(){public void render(String s,boolean b){}public void mask(boolean b){}public void hide(){}public boolean canMask(){return true;}});yield.onHomeResumed(new android.app.Activity());yield.noteUserInteraction();Facade.unavailable=com.cbkii.ts18launcher.media.MediaSourceState.Availability.CONNECTION_FAILED;yield.onMediaStateChanged(new Facade().state(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC));check(MaskedSourcePreparation.begins==1);yield.destroy();
+System.out.println("PASS observed failure -> one Auxio alternate method / joins explicit Play / user yield / late actions / live readiness loss / Maps first at process creation / bounded missing-host grace / bounded retries / wake rearm / independent background sources / no legacy construction / late boot / task yield / wake / destruction");}}
+'''}
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for name, content in stubs.items():
-                p = root / name
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(content)
-            # Stub Context's identity mirrors the real standalone launcher.
-            p = root / 'android/content/Context.java'
-            p.write_text(p.read_text().replace('SharedPreferences prefs=', 'public String getPackageName(){return "com.cbkii.ts18launcher";} SharedPreferences prefs='))
-            shutil.copyfile(ROOT / 'launcher/src/test/java/com/cbkii/ts18launcher/StartupReadinessPolicyTest.java', root / 'com/cbkii/ts18launcher/StartupReadinessPolicyTest.java')
-            for name in ('StartupReadinessPolicy', 'StartupForegroundPolicy', 'StartupReadinessCoordinator'):
-                shutil.copyfile(SRC / (name + '.java'), root / 'com/cbkii/ts18launcher' / (name + '.java'))
-            subprocess.run(['java', '-m', 'jdk.compiler/com.sun.tools.javac.Main', '-d', str(root), *map(str, root.rglob('*.java'))], check=True)
-            subprocess.run(['java', '-cp', str(root), 'com.cbkii.ts18launcher.Harness'], check=True, timeout=30)
+            root=Path(tmp)
+            for name,text in stubs.items():
+                p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
+            for name in ('StartupReadinessCoordinator.java','StartupReadinessPolicy.java','media/MediaSourceState.java','media/MediaEngine.java'):
+                target=root/'com/cbkii/ts18launcher'/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_text((SRC/name).read_text())
+            compiled=subprocess.run(['java','-m','jdk.compiler/com.sun.tools.javac.Main','-d',tmp,*map(str,root.rglob('*.java'))],capture_output=True,text=True)
+            self.assertEqual(0,compiled.returncode,compiled.stderr)
+            subprocess.run(['java','-cp',tmp,'com.cbkii.ts18launcher.Harness'],check=True,timeout=5)

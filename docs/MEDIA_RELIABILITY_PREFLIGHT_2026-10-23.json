@@ -1,0 +1,518 @@
+{
+  "checked_at": "2026-10-23",
+  "scope": "ts-theme PR31 writable; Auxio-TS PR281 read-only",
+  "repositories": [
+    {
+      "repository": "cbkii/ts-theme",
+      "pr": 31,
+      "base_branch": "main",
+      "base_sha": "2cd04022231064deec627bd1593fc4cfde5d94ce",
+      "head_branch": "fix/diagnostic-layout-followup-20261020",
+      "head_sha": "03131deaa16519d5dd59a2fede7e36ca0c65852d",
+      "draft": true,
+      "mergeable": true,
+      "changed_files": [
+        ".github/workflows/testing-apk-draft.yml",
+        ".github/workflows/testing-apk-publish.yml",
+        ".github/workflows/testing-apk-reconcile-notes.yml",
+        "AGENTS.md",
+        "docs/AUTOMATIC_STARTUP_2026-10-20.md",
+        "docs/CAPTURE_FIXES_2026-10-22.md",
+        "docs/COMPACT_STARTUP_PROTOCOL.md",
+        "docs/DAY_NIGHT_IMPLEMENTATION_2026-10-20.md",
+        "docs/ICON_SOURCES.md",
+        "docs/INCAR_FINALISATION_2026-10-19.md",
+        "docs/INTEGRATION_FINALISATION_2026-10-21.md",
+        "docs/RADIO_METADATA.md",
+        "docs/SECOND_PASS_IMPLEMENTATION_2026-10-19.md",
+        "docs/STARTUP_READINESS_LOADER.md",
+        "launcher/src/main/AndroidManifest.xml",
+        "launcher/src/main/assets/nav/nav-window.sh",
+        "launcher/src/main/assets/radio/NOTICE.txt",
+        "launcher/src/main/assets/radio/au-state-rings.tsv.gz",
+        "launcher/src/main/assets/radio/au-stations.tsv",
+        "launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerActivity.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/AppDrawerPanel.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/AppearanceController.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/AppearanceDialogs.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/AppearanceSchedule.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/AustralianRadioDirectory.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/AuxioPreparationContract.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/CompactStartupClient.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/CompactStartupPeer.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/CompactStartupProvider.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/ConfigurationCodec.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/ConfigurationStore.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/MediaListenerService.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/MediaMetadataView.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/MediaNotificationAccessBootstrapper.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceAdapter.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceBootstrapper.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/MediaTickerPolicy.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/MetadataFadeRow.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/NativeNavigationPanel.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/NavTaskBridge.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/NavigationHelperResult.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/NavigationRootHelper.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/NavigationSurfaceBackend.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/NavigationWindowController.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/ProcessMediaSessionMonitor.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/RadioFrequency.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/RadioMetadataResolver.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/RadioStationAssociation.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/RootNavigationBackend.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/RootTaskSession.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/SessionControllerRegistry.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/ShortcutEditorView.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/SlotIconCatalog.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupBootReceiver.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupForegroundPolicy.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupLoaderPolicy.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupMaskFocus.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupMediaObservation.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupReadinessCoordinator.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupReadinessLoader.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupReadinessPolicy.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/StartupRootFallback.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/TestingProfiles.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/Ts18LauncherApplication.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/Ts18SafeArea.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/UiPersonalizationPrefs.java",
+        "launcher/src/main/java/com/cbkii/ts18launcher/platform/TopwayAdapter.java",
+        "launcher/src/main/res/drawable/ic_navigation_filled.xml",
+        "launcher/src/main/res/values/colors.xml",
+        "launcher/src/main/res/values/dimens.xml",
+        "launcher/src/main/res/values/strings.xml",
+        "launcher/src/main/res/values/styles.xml",
+        "launcher/src/test/java/com/cbkii/ts18launcher/AppearanceScheduleTest.java",
+        "launcher/src/test/java/com/cbkii/ts18launcher/ConfigurationCodecTest.java",
+        "launcher/src/test/java/com/cbkii/ts18launcher/StartupLoaderPolicyTest.java",
+        "scripts/ci/reconcile_testing_release.py",
+        "scripts/diagnostics/coldstart/SCOPE-AND-EVIDENCE.md",
+        "scripts/diagnostics/coldstart/SHA256SUMS",
+        "scripts/diagnostics/coldstart/START-HERE.md",
+        "scripts/diagnostics/coldstart/ts18-coldstart-boot.sh",
+        "scripts/diagnostics/coldstart/ts18-coldstart-validate.sh",
+        "scripts/qualification/ts18-validate.sh",
+        "tests/test_appearance_owner.py",
+        "tests/test_automotive_ui_state.py",
+        "tests/test_coldstart_kit.py",
+        "tests/test_compact_startup_client.py",
+        "tests/test_compact_startup_peer.py",
+        "tests/test_final_pass_hardening.py",
+        "tests/test_listener_recovery_runtime.py",
+        "tests/test_live_session_registry.py",
+        "tests/test_media_source_owner.py",
+        "tests/test_media_validation_repairs.py",
+        "tests/test_metadata_effective_snapshot.py",
+        "tests/test_music_identity.py",
+        "tests/test_native_navigation_window.py",
+        "tests/test_native_panel_measurement.py",
+        "tests/test_nav_task_bridge.py",
+        "tests/test_navigation_controller_recovery.py",
+        "tests/test_navigation_final_hardening.py",
+        "tests/test_navigation_lifecycle.py",
+        "tests/test_navigation_permission_regression.py",
+        "tests/test_navradio_cold_play_guard.py",
+        "tests/test_notification_access_bootstrap.py",
+        "tests/test_pr11_reconciliation.py",
+        "tests/test_radio_directory.py",
+        "tests/test_radio_snapshot_merge.py",
+        "tests/test_repair_qualification.py",
+        "tests/test_root_task_session_server.py",
+        "tests/test_standalone_launcher.py",
+        "tests/test_startup_loader_ui.py",
+        "tests/test_startup_readiness.py",
+        "tests/test_startup_root_contract.py",
+        "tests/test_startup_root_shell.py",
+        "tests/test_startup_runtime.py",
+        "tests/test_testing_draft_workflow.py",
+        "tests/test_testing_release_notes.py",
+        "tests/test_testing_request_admission.py",
+        "tools/update_radio_directory.py"
+      ],
+      "review_threads": [],
+      "reviews": [],
+      "checks": [
+        {
+          "name": "Publish requested TESTING snapshot / publish",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/ts-theme/actions/runs/39732176258/job/119670155385"
+        },
+        {
+          "name": "Source, workflow and Android builds",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/ts-theme/actions/runs/39732157732/job/119669518817"
+        },
+        {
+          "name": "Build requested TESTING snapshot",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/ts-theme/actions/runs/39732176258/job/119669514397"
+        },
+        {
+          "name": "Resolve explicit TESTING request",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/ts-theme/actions/runs/39732176258/job/119669485675"
+        },
+        {
+          "name": "Publish requested TESTING snapshot",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/cbkii/ts-theme/actions/runs/39732153760/job/119669450049"
+        },
+        {
+          "name": "Build requested TESTING snapshot",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/cbkii/ts-theme/actions/runs/39732153760/job/119669449943"
+        },
+        {
+          "name": "Resolve explicit TESTING request",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/ts-theme/actions/runs/39732153760/job/119669413411"
+        }
+      ],
+      "runs": [
+        {
+          "id": 39732176258,
+          "name": "Refresh Testing APK Draft",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "03131deaa16519d5dd59a2fede7e36ca0c65852d"
+        },
+        {
+          "id": 39732157732,
+          "name": "Validate",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "03131deaa16519d5dd59a2fede7e36ca0c65852d"
+        },
+        {
+          "id": 39732153760,
+          "name": "Refresh Testing APK Draft",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "03131deaa16519d5dd59a2fede7e36ca0c65852d"
+        }
+      ],
+      "comment_dispositions": [
+        {
+          "id": 6286011484,
+          "author": "qodo-code-review[bot]",
+          "updated": "2026-10-20T07:44:35Z",
+          "summary": "<!-- qodo:billing-blocked -->\n\n**ⓘ Qodo reviews are paused because the subscription is no longer active.** Ask your workspace admin to reactivate the "
+        },
+        {
+          "id": 6286012268,
+          "author": "coderabbitai[bot]",
+          "updated": "2026-10-22T06:09:00Z",
+          "summary": "<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n<!-- This is an auto-generated comment: sk"
+        },
+        {
+          "id": 6286014136,
+          "author": "pr-code-reviewer[bot]",
+          "updated": "2026-10-20T07:44:43Z",
+          "summary": "## :wave: Hi there!\n\n<p>Everything looks good!</p>\n\n<sub><sup>\nAutomatically generated with the help of gpt-3.5-turbo.\nFeedback? Please don't hesitate"
+        },
+        {
+          "id": 6286015932,
+          "author": "sourcery-ai[bot]",
+          "updated": "2026-10-20T07:44:48Z",
+          "summary": "Sorry @cbkii, you've used your own review budget of 250,000 diff characters for the last 7 days.\n\nYou can request another review in 1 day and 22 hours"
+        },
+        {
+          "id": 6286022688,
+          "author": "sourcery-ai[bot]",
+          "updated": "2026-10-20T07:45:08Z",
+          "summary": "<!-- Generated by sourcery-ai[bot]: start review_guide -->\n\n## Reviewer's Guide\n\nThe PR removes a measure-time layout mutation by updating navigation "
+        },
+        {
+          "id": 6304537726,
+          "author": "cbkii",
+          "updated": "2026-10-20T23:59:58Z",
+          "summary": "/testing-apk\n\nConsolidated candidate: b9a02674f69ba87bf13b7712adb13add82ba0462. Canonical Source, workflow and Android builds passed in run 3951785513"
+        }
+      ]
+    },
+    {
+      "repository": "cbkii/Auxio-TS",
+      "pr": 281,
+      "base_branch": "dev",
+      "base_sha": "6bd1e18de7378407f165d32b1e2001aa39586b65",
+      "head_branch": "fix/api29-theme-followup-20261020",
+      "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8",
+      "draft": true,
+      "mergeable": true,
+      "changed_files": [
+        "app/src/main/AndroidManifest.xml",
+        "app/src/main/java/org/oxycblt/auxio/MainActivity.kt",
+        "app/src/main/java/org/oxycblt/auxio/headunit/LauncherPreparationActivity.kt",
+        "app/src/main/java/org/oxycblt/auxio/playback/service/ExoPlaybackStateHolder.kt",
+        "app/src/main/java/org/oxycblt/auxio/playback/service/MediaSessionHolder.kt",
+        "app/src/main/java/org/oxycblt/auxio/playback/service/MediaSessionInterface.kt",
+        "app/src/main/java/org/oxycblt/auxio/playback/service/RestoreIntentArbiter.kt",
+        "app/src/main/java/org/oxycblt/auxio/playback/state/PassivePreparationPolicy.kt",
+        "app/src/main/java/org/oxycblt/auxio/playback/state/PlaybackStateHolder.kt",
+        "app/src/main/java/org/oxycblt/auxio/playback/state/PlaybackStateManager.kt",
+        "app/src/main/res/values/styles_ui.xml",
+        "app/src/test/java/org/oxycblt/auxio/headunit/LauncherPreparationTest.kt",
+        "app/src/test/java/org/oxycblt/auxio/playback/service/HomePlayDeadlineTest.kt",
+        "app/src/test/java/org/oxycblt/auxio/playback/service/LauncherMediaSessionContractTest.kt",
+        "app/src/test/java/org/oxycblt/auxio/playback/service/PrimitiveTransportOwnerTest.kt",
+        "app/src/test/java/org/oxycblt/auxio/playback/state/PassivePreparationPolicyTest.kt",
+        "app/src/test/java/org/oxycblt/auxio/ui/ToolbarColourInflationTest.kt",
+        "docs/DOCUMENTATION_INVENTORY.md",
+        "docs/INTEGRATION_FINALISATION_2026-10-21.md",
+        "docs/TS_THEME_INTEGRATION.md"
+      ],
+      "review_threads": [],
+      "reviews": [],
+      "checks": [
+        {
+          "name": "Publish requested TESTING snapshot / publish",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731624011/job/119671498805"
+        },
+        {
+          "name": "Android lint",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235728/job/119670325529"
+        },
+        {
+          "name": "Unit tests",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235728/job/119670325410"
+        },
+        {
+          "name": "Formatting",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235728/job/119670325393"
+        },
+        {
+          "name": "Build requested TESTING snapshot",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731624011/job/119667782490"
+        },
+        {
+          "name": "Resolve explicit TESTING request",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731624011/job/119667745453"
+        },
+        {
+          "name": "bridge",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731623191/job/119667742323"
+        },
+        {
+          "name": "bridge",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731619827/job/119667731530"
+        },
+        {
+          "name": "API 29 runtime smoke",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235700/job/119666571173"
+        },
+        {
+          "name": "build",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235700/job/119666570920"
+        },
+        {
+          "name": "Gradle quality (consolidated)",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235728/job/119666569789"
+        },
+        {
+          "name": "Workflow/script syntax",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235728/job/119666569653"
+        },
+        {
+          "name": "Head-unit safety",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235728/job/119666569615"
+        },
+        {
+          "name": "exact signed packaging",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235781/job/119666565645"
+        },
+        {
+          "name": "transaction contracts",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235781/job/119666564909"
+        },
+        {
+          "name": "Publish requested TESTING snapshot",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731233621/job/119666554066"
+        },
+        {
+          "name": "Build requested TESTING snapshot",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731233621/job/119666553090"
+        },
+        {
+          "name": "CodeFactor",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/runs/119666530461"
+        },
+        {
+          "name": "bridge",
+          "status": "completed",
+          "conclusion": "skipped",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235737/job/119666523645"
+        },
+        {
+          "name": "CI scope",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235728/job/119666522856"
+        },
+        {
+          "name": "CI scope",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235781/job/119666522595"
+        },
+        {
+          "name": "CI scope",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731235700/job/119666522194"
+        },
+        {
+          "name": "Resolve explicit TESTING request",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/cbkii/Auxio-TS/actions/runs/39731233621/job/119666518995"
+        }
+      ],
+      "runs": [
+        {
+          "id": 39731624011,
+          "name": "Refresh Testing APK Draft",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8"
+        },
+        {
+          "id": 39731623191,
+          "name": "LSPosed Bridge",
+          "status": "completed",
+          "conclusion": "skipped",
+          "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8"
+        },
+        {
+          "id": 39731619827,
+          "name": "LSPosed Bridge",
+          "status": "completed",
+          "conclusion": "skipped",
+          "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8"
+        },
+        {
+          "id": 39731235737,
+          "name": "LSPosed Bridge",
+          "status": "completed",
+          "conclusion": "skipped",
+          "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8"
+        },
+        {
+          "id": 39731235700,
+          "name": "Android Build",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8"
+        },
+        {
+          "id": 39731235728,
+          "name": "Android Quality",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8"
+        },
+        {
+          "id": 39731235781,
+          "name": "Manual Release Smoke",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8"
+        },
+        {
+          "id": 39731233621,
+          "name": "Refresh Testing APK Draft",
+          "status": "completed",
+          "conclusion": "success",
+          "head_sha": "19babc11e8ff7bbbcbcd86cce8d7701b16d903f8"
+        }
+      ],
+      "comment_dispositions": [
+        {
+          "id": 6286010054,
+          "author": "sourcery-ai[bot]",
+          "updated": "2026-10-20T07:44:30Z",
+          "summary": "Sorry @cbkii, you've used your own review budget of 250,000 diff characters for the last 7 days.\n\nYou can request another review in 1 day and 22 hours"
+        },
+        {
+          "id": 6286010125,
+          "author": "qodo-code-review[bot]",
+          "updated": "2026-10-20T07:44:31Z",
+          "summary": "<!-- qodo:billing-blocked -->\n\n**ⓘ Qodo reviews are paused because the subscription is no longer active.** Ask your workspace admin to reactivate the "
+        },
+        {
+          "id": 6286011097,
+          "author": "coderabbitai[bot]",
+          "updated": "2026-10-22T06:00:06Z",
+          "summary": "<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated comment: summarize by coderabbit.ai -->\n<!-- This is an auto-generated comment: sk"
+        },
+        {
+          "id": 6286013631,
+          "author": "pr-code-reviewer[bot]",
+          "updated": "2026-10-20T07:44:41Z",
+          "summary": "## :wave: Hi there!\n\n<p>Everything looks good!</p>\n\n<sub><sup>\nAutomatically generated with the help of gpt-3.5-turbo.\nFeedback? Please don't hesitate"
+        },
+        {
+          "id": 6286013805,
+          "author": "sourcery-ai[bot]",
+          "updated": "2026-10-20T07:44:42Z",
+          "summary": "<!-- Generated by sourcery-ai[bot]: start review_guide -->\n\n## Reviewer's Guide\n\nThis PR fixes Android 10 toolbar icon-button inflation by inheriting "
+        },
+        {
+          "id": 6319006443,
+          "author": "cbkii",
+          "updated": "2026-10-21T14:52:03Z",
+          "summary": "~~~markdown\nAUXIO-TS — OPEN PR #281 REVIEW / HARDENING REPORT\nReview date: 2026-10-22 (Australia/Sydney)\nMode: scoped multi-source Android 10/API29 TS"
+        }
+      ]
+    }
+  ]
+}

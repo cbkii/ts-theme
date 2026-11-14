@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CI-only, unsigned-peer refusal and root preference I/O fixture. Never distributed. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="app.organicmaps.incar">
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
+    <application android:hasCode="false" android:label="Cold consent CI fixture">
+        <meta-data android:name="app.organicmaps.incar.COMPACT_CONSENT_PREFS_PROTOCOL" android:value="1" />
+        <activity android:name="android.app.Activity" android:exported="true" />
+    </application>
+</manifest>

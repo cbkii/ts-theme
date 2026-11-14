@@ -1,5 +1,7 @@
 # TS18 navigation-task lifecycle correction
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 Owner: `cbkii/ts-theme`, cumulative PR #14, after #10 → #11 → #13.
 Organic Maps, SystemUI and Topway protected state are unchanged by this correction.
 

@@ -1,5 +1,7 @@
 package com.cbkii.ts18launcher;
 
+import com.cbkii.ts18launcher.AppCatalog.Entry;
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -40,16 +42,13 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** In-HOME app list. It overlays only the map surface, leaving the media strip visible. */
+/** Shared app catalogue, shortcuts and search, hosted by the full-page drawer Activity. */
 @SuppressLint({"SetTextI18n", "ViewConstructor"})
 final class AppDrawerPanel extends android.widget.FrameLayout {
-    private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "ts18-app-drawer-loader");
-        thread.setDaemon(true);
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
-
+    private TextView title;
+    private LinearLayout searchRow;
+    private ImageView searchIcon;
+    private final List<ImageButton> headerButtons = new ArrayList<>();
     private final Activity activity;
     private final Runnable onDismiss;
     private final List<Entry> allEntries = new ArrayList<>();
@@ -58,17 +57,6 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
     private final EditText search;
     private final GridView grid;
     private final AppsAdapter adapter = new AppsAdapter();
-    private final BroadcastReceiver packagesChanged = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) {
-            loadGeneration++;
-            loaded = false;
-            loading = false;
-            quickSignature = "";
-            allEntries.clear();
-            filter(search.getText() == null ? "" : search.getText().toString());
-            if (isOpen()) ensureLoaded();
-        }
-    };
     private boolean loaded;
     private boolean loading;
     private boolean preloadScheduled;
@@ -80,12 +68,6 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         super(activity);
         this.activity = activity;
         this.onDismiss = onDismiss;
-        IntentFilter packages = new IntentFilter();
-        packages.addAction(Intent.ACTION_PACKAGE_ADDED);
-        packages.addAction(Intent.ACTION_PACKAGE_REMOVED);
-        packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
-        packages.addDataScheme("package");
-        activity.registerReceiver(packagesChanged, packages);
         setBackgroundColor(0xF7050505);
 
         int gap = AutomotiveUi.dimen(activity, R.dimen.driver_gap);
@@ -97,7 +79,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
         LinearLayout header = new LinearLayout(activity);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(activity);
+        title = new TextView(activity);
         title.setText("Apps");
         title.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
         title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
@@ -107,9 +89,11 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         ImageButton settings = iconButton(R.drawable.ic_settings, "Settings");
         settings.setOnClickListener(v -> activity.startActivity(new Intent(activity, SettingsActivity.class)));
+        headerButtons.add(settings);
         header.addView(settings, new LinearLayout.LayoutParams(target, target));
         ImageButton close = iconButton(R.drawable.ic_close, "Close apps");
         close.setOnClickListener(v -> hidePanel());
+        headerButtons.add(close);
         header.addView(close, new LinearLayout.LayoutParams(target, target));
         AutomotiveUi.linkHorizontal(java.util.Arrays.asList(settings, close));
         root.addView(header, new LinearLayout.LayoutParams(
@@ -122,10 +106,10 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 AutomotiveUi.dimen(activity, R.dimen.ui_drawer_quick_height)));
 
-        LinearLayout searchRow = new LinearLayout(activity);
+        searchRow = new LinearLayout(activity);
         searchRow.setGravity(Gravity.CENTER_VERTICAL);
         searchRow.setBackground(AutomotiveUi.cardBackground(activity));
-        ImageView searchIcon = new ImageView(activity);
+        searchIcon = new ImageView(activity);
         searchIcon.setImageResource(R.drawable.ic_search);
         searchIcon.setColorFilter(AutomotiveUi.color(activity, R.color.ui_icon));
         searchIcon.setPadding(gap, gap, gap, gap);
@@ -152,6 +136,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         voice.setEnabled(voiceAvailable);
         voice.setContentDescription(voiceAvailable ? "Voice search" : "Voice search unavailable");
         voice.setOnClickListener(v -> activity.startActivityForResult(VoiceSearch.intent(), VoiceSearch.REQUEST_CODE));
+        headerButtons.add(voice);
         searchRow.addView(voice, new LinearLayout.LayoutParams(target, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(searchRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -212,11 +197,11 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     void destroy() {
         destroyed = true;
-        activity.unregisterReceiver(packagesChanged);
+        AppCatalog.get(activity).unsubscribe(catalogChanged);
         loadGeneration++;
         loading = false;
         preloadScheduled = false;
-        loader.shutdownNow();
+
         animate().cancel();
     }
 
@@ -247,19 +232,15 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     void applyAppearance() {
         setBackgroundColor(AutomotiveUi.color(activity, R.color.ui_black));
-        recolour(this);
+        title.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
+        search.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
+        search.setHintTextColor(AutomotiveUi.color(activity, R.color.ui_text_secondary));
+        searchIcon.setColorFilter(AutomotiveUi.color(activity, R.color.ui_icon));
+        searchRow.setBackground(AutomotiveUi.cardBackground(activity));
+        for (ImageButton button : headerButtons) AutomotiveUi.styleRailButton(activity, button);
+        quickSignature = "";
         refreshPreferences();
         adapter.notifyDataSetChanged();
-    }
-
-    private void recolour(View view) {
-        if (view instanceof TextView) ((TextView) view).setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
-        if (view instanceof EditText) ((EditText) view).setHintTextColor(AutomotiveUi.color(activity, R.color.ui_text_secondary));
-        if (view instanceof ImageButton) AutomotiveUi.styleRailButton(activity, (ImageButton) view);
-        if (view instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) recolour(group.getChildAt(i));
-        }
     }
 
     void applyVoiceSearch(String query) {
@@ -284,6 +265,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
             cell.setGravity(Gravity.CENTER);
             String role = LauncherPrefs.drawerQuickRole(activity, i);
             ImageButton button = iconButton(RoleIconCatalog.icon(role), RoleIconCatalog.label(role));
+            button.setTag(LauncherPrefs.DRAWER_QUICK_KEYS[i]);
             ShortcutSlot.bind(activity, button, LauncherPrefs.DRAWER_QUICK_KEYS[i]);
             button.setOnClickListener(v -> openDrawerQuick(index));
             button.setOnLongClickListener(v -> { openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]); return true; });
@@ -329,73 +311,19 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         if (input != null) input.hideSoftInputFromWindow(search.getWindowToken(), 0);
     }
 
+    private final java.util.function.Consumer<List<Entry>> catalogChanged = this::onCatalogChanged;
+    private void onCatalogChanged(List<Entry> entries) {
+        if (destroyed) return;
+        allEntries.clear(); allEntries.addAll(entries); loaded = true; loading = false;
+        quickSignature = "";
+        refreshPreferences();
+        filter(search.getText() == null ? "" : search.getText().toString());
+    }
+
     private void ensureLoaded() {
         if (loaded || loading || destroyed) return;
         loading = true;
-        final int generation = ++loadGeneration;
-        final long started = SystemClock.uptimeMillis();
-        loader.execute(() -> {
-            List<Entry> entries = loadEntries(generation);
-            post(() -> {
-                if (destroyed || generation != loadGeneration) return;
-                allEntries.clear();
-                allEntries.addAll(entries);
-                loaded = true;
-                loading = false;
-                filter(search.getText() == null ? "" : search.getText().toString());
-                MediaEventTrace.record("drawer", "catalog-ready",
-                        "count=" + allEntries.size() + " elapsedMs="
-                                + (SystemClock.uptimeMillis() - started));
-                loader.execute(() -> loadIcons(entries, generation));
-            });
-        });
-    }
-
-    private List<Entry> loadEntries(int generation) {
-        List<Entry> entries = new ArrayList<>();
-        PackageManager pm = activity.getPackageManager();
-        Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        List<ResolveInfo> resolved = pm.queryIntentActivities(query, PackageManager.MATCH_ALL);
-        Set<String> seenPackages = new HashSet<>();
-        for (ResolveInfo info : resolved) {
-            if (Thread.currentThread().isInterrupted() || destroyed || generation != loadGeneration)
-                break;
-            if (info.activityInfo == null) continue;
-            String packageName = info.activityInfo.packageName;
-            if (activity.getPackageName().equals(packageName) || seenPackages.contains(packageName)) continue;
-            Intent canonical = pm.getLaunchIntentForPackage(packageName);
-            ComponentName component = canonical == null ? null : canonical.getComponent();
-            if (component == null) continue;
-            seenPackages.add(packageName);
-            CharSequence label = info.activityInfo.applicationInfo.loadLabel(pm);
-            Entry entry = new Entry(packageName, component.getClassName(),
-                    label == null ? packageName : label.toString());
-            entries.add(entry);
-        }
-        Collections.sort(entries, Comparator.comparing(e -> e.label.toLowerCase(Locale.ROOT)));
-        return entries;
-    }
-
-    private void loadIcons(List<Entry> entries, int generation) {
-        PackageManager pm = activity.getPackageManager();
-        List<Drawable> icons = new ArrayList<>(entries.size());
-        for (Entry entry : entries) {
-            if (Thread.currentThread().isInterrupted() || destroyed || generation != loadGeneration)
-                return;
-            Drawable icon = null;
-            try { icon = pm.getActivityIcon(new ComponentName(entry.packageName, entry.activityName)); }
-            catch (PackageManager.NameNotFoundException ignored) {
-                try { icon = pm.getApplicationIcon(entry.packageName); }
-                catch (PackageManager.NameNotFoundException ignoredAgain) { /* UI fallback below. */ }
-            }
-            icons.add(icon);
-        }
-        post(() -> {
-            if (destroyed || generation != loadGeneration) return;
-            for (int i = 0; i < entries.size(); i++) entries.get(i).icon = icons.get(i);
-            if (isOpen()) adapter.notifyDataSetChanged();
-            MediaEventTrace.record("drawer", "icons-ready", "count=" + entries.size());
-        });
+        AppCatalog.get(activity).subscribe(catalogChanged);
     }
 
     private void filter(String query) {
@@ -414,6 +342,7 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
 
     private void openDrawerQuick(int index) {
         if (!ShortcutSlot.launch(activity, LauncherPrefs.DRAWER_QUICK_KEYS[index])) openPicker(LauncherPrefs.DRAWER_QUICK_KEYS[index]);
+        else if (activity instanceof AppDrawerActivity) activity.finish();
     }
 
     private void openPicker(String key) {
@@ -439,19 +368,10 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
         if (AppResolver.launchComponent(activity, entry.packageName, entry.activityName)) {
             dismissKeyboard();
             setVisibility(View.GONE);
+            if (activity instanceof AppDrawerActivity) activity.finish();
             return;
         }
         Toast.makeText(activity, "App unavailable", Toast.LENGTH_SHORT).show();
-    }
-
-    private static final class Entry {
-        final String packageName;
-        final String activityName;
-        final String label;
-        Drawable icon;
-        Entry(String packageName, String activityName, String label) {
-            this.packageName = packageName; this.activityName = activityName; this.label = label;
-        }
     }
 
     private final class AppsAdapter extends BaseAdapter {
@@ -484,8 +404,9 @@ final class AppDrawerPanel extends android.widget.FrameLayout {
                 cell.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 46));
             }
             Entry entry = visibleEntries.get(position);
-            icon.setImageDrawable(entry.icon == null
-                    ? activity.getDrawable(R.drawable.ic_launcher) : entry.icon);
+            AppCatalog.get(activity).bindIcon(icon, entry.target(),
+                    AutomotiveUi.dimen(activity, R.dimen.ui_drawer_icon));
+            label.setTextColor(AutomotiveUi.color(activity, R.color.ui_text));
             label.setText(entry.label);
             cell.setMinimumHeight(116);
             return cell;

@@ -27,7 +27,7 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
             "launcher/src/main/java/com/cbkii/ts18launcher/MediaSourceBootstrapper.java")
         self.assertIn("StartupReadinessCoordinator.get(this).onTrigger", launcher)
         coordinator = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupReadinessCoordinator.java").read_text()
-        self.assertIn("media().warm(pkg)", coordinator)
+        self.assertIn("mediaSources(context).warm(pkg)", coordinator)
         self.assertIn("Ts18LauncherApplication.mediaSources(context)", coordinator)
         self.assertIn("MediaBrowser", bootstrapper)
         self.assertIn("prepareExplicitService", bootstrapper)
@@ -37,7 +37,8 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
             "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         method = launcher.split("private void dispatchSourceCommand(", 1)[1].split(
             "private void settleSourceCommandFailure", 1)[0]
-        self.assertIn("if (success)", method)
+        self.assertIn("mediaFacade().commandUntil(key, packageName, LegacyMediaBackend.userAction(command), deadline", method)
+        self.assertIn("if (result.settledWithoutError())", method)
         self.assertIn('"background-only-command-failed"', method)
         self.assertIn("settleSourceCommandFailure", method)
         self.assertNotIn("primeForCommand", method)
@@ -53,7 +54,7 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
         self.assertIn("MediaSessionManager.OnActiveSessionsChangedListener", monitor)
         self.assertIn("getActiveSessions(listenerComponent)", monitor)
         self.assertIn("boolean authoritative", monitor)
-        self.assertIn("main.post(() -> reconcile", monitor)
+        self.assertIn("reconcile(active, bound)", monitor)
 
     def test_geometry_does_not_reapply_identical_layout_params(self):
         launcher = self.read(
@@ -74,14 +75,15 @@ class MediaNativeWindowSafetyTests(unittest.TestCase):
             "launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
         self.assertIn('"com.android.server.telecom"', monitor)
         self.assertIn('"com.android.dialer"', monitor)
-        self.assertIn("MediaSelection.pick(candidates, preferred, preferConfigured, remembered)", monitor)
-        self.assertIn("PlaybackState.STATE_BUFFERING", monitor)
-        self.assertIn("PlaybackState.STATE_CONNECTING", monitor)
-        self.assertIn("MediaListenerService.stabiliseSnapshot", monitor)
-        self.assertIn("left.sessionIdentity", monitor)
+        self.assertIn("MediaSelection.pick(values, preferred, dedicated, remembered)", monitor)
+        self.assertIn("MediaCommandPolicy.usesPauseAction", monitor)
+        self.assertIn("MediaItemObservation.read", monitor)
+        self.assertIn("ticket == revision", monitor)
         merge = launcher.split("private static MediaListenerService.Snapshot mergeSessionSnapshot", 1)[1].split(
             "private static MediaListenerService.Snapshot emptyMediaSnapshot", 1
         )[0]
+        # A non-authoritative process monitor keeps the listener's own observed snapshot as the
+        # fallback instead of blanking the source during the bounded re-read.
         self.assertIn("if (!coreAuthoritative) return secondary;", merge)
         self.assertIn("if (primary.packageName.isEmpty()) return primary;", merge)
         self.assertIn("primary.sessionIdentity", merge)

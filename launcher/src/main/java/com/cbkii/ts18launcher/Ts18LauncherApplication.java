@@ -30,6 +30,58 @@ public final class Ts18LauncherApplication extends Application
     private MediaSourceBootstrapper mediaBootstrapper;
     private String mediaConfiguration = "";
 
+    private com.cbkii.ts18launcher.media.MediaFeatureFacade mediaFacade;
+
+    /** Passive readiness epoch for sources served by the Direct engine; legacy is unaffected. */
+    static void prepareDirectSources(Context context, long epoch) {
+        mediaFacade(context).preparePassive(epoch);
+    }
+
+    static void prepareDirectSource(Context context, com.cbkii.ts18launcher.media.MediaSourceKey key, long epoch) {
+        mediaFacade(context).preparePassive(key, epoch);
+    }
+
+    /** The single UI-facing media entry point; selects the engine acting for each source. */
+    static com.cbkii.ts18launcher.media.MediaFeatureFacade mediaFacade(Context context) {
+        Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();
+        if (app.mediaFacade == null) {
+            app.mediaFacade = new com.cbkii.ts18launcher.media.MediaFeatureFacade(
+                    new com.cbkii.ts18launcher.media.MediaFeatureFacade.Configuration() {
+                        @Override public com.cbkii.ts18launcher.media.MediaEngine requestedEngine(
+                                com.cbkii.ts18launcher.media.MediaSourceKey key) {
+                            return MediaEngineSelector.requested(app, key);
+                        }
+                        @Override public String configuredPackage(
+                                com.cbkii.ts18launcher.media.MediaSourceKey key) {
+                            return MediaEngineSelector.configuredPackage(app, key);
+                        }
+                    }, new LegacyMediaBackend(app), MediaEngines.createDirect(app), android.os.SystemClock::elapsedRealtime);
+            app.mediaFacade.setReadinessListener(state -> StartupReadinessCoordinator.get(app).onMediaStateChanged(state));
+        }
+        app.mediaFacade.reconcile();
+        // The legacy session monitor runs only while some source is on the legacy engine.
+        boolean legacy = app.mediaFacade.engine(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC)
+                        == com.cbkii.ts18launcher.media.MediaEngine.LEGACY
+                || app.mediaFacade.engine(com.cbkii.ts18launcher.media.MediaSourceKey.RADIO)
+                        == com.cbkii.ts18launcher.media.MediaEngine.LEGACY;
+        ProcessMediaSessionMonitor.setDemand(app, legacy);
+        MediaListenerService.setDemand(legacy);
+        // Switching a source back to Legacy re-arms the listener connection it depends on.
+        if (legacy) MediaNotificationAccessBootstrapper.ensureConnected(app);
+        if (!legacy && app.mediaBootstrapper != null) {
+            app.mediaBootstrapper.destroy(); app.mediaBootstrapper = null; app.mediaConfiguration = "";
+        }
+        return app.mediaFacade;
+    }
+
+    /** True while the legacy engine is the one acting for Radio (radio) or Music. */
+    static boolean legacyMediaEngineOwns(Context context, boolean radio) {
+        return mediaFacade(context).engine(radio
+                ? com.cbkii.ts18launcher.media.MediaSourceKey.RADIO
+                : com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC)
+                == com.cbkii.ts18launcher.media.MediaEngine.LEGACY;
+    }
+
     /** One playback-command/bootstrap owner survives HOME stop and Activity recreation. */
     static MediaSourceBootstrapper mediaSources(Context context) {
         Ts18LauncherApplication app = (Ts18LauncherApplication) context.getApplicationContext();
@@ -48,9 +100,17 @@ public final class Ts18LauncherApplication extends Application
     private final BroadcastReceiver wakeReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
+            if (Intent.ACTION_USER_UNLOCKED.equals(intent.getAction())) {
+                MediaNotificationAccessBootstrapper.ensureConnected(Ts18LauncherApplication.this);
+                StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
+                        .onTrigger(StartupReadinessPolicy.Trigger.USER_UNLOCKED); return;
+            }
             if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                ProcessMediaSessionMonitor.setVisible(Ts18LauncherApplication.this, false);
                 StartupReadinessCoordinator.get(Ts18LauncherApplication.this).onScreenOff(); return;
             }
+            MediaNotificationAccessBootstrapper.ensureConnected(Ts18LauncherApplication.this);
+            ProcessMediaSessionMonitor.setVisible(Ts18LauncherApplication.this, launcherResumed);
             // Screen-on is a wake observation only; it is never treated as verified ACC-on.
             StartupReadinessCoordinator.get(Ts18LauncherApplication.this)
                     .onTrigger(StartupReadinessPolicy.Trigger.SCREEN_ON);
@@ -73,11 +133,34 @@ public final class Ts18LauncherApplication extends Application
         }
     };
 
+    /** A configured media package was installed, replaced or re-enabled: a refused bind may now succeed. */
+    private final BroadcastReceiver mediaPackageReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            String changed = intent == null || intent.getData() == null ? "" : intent.getData().getSchemeSpecificPart();
+            if (changed == null || changed.isEmpty()) return;
+            for (com.cbkii.ts18launcher.media.MediaSourceKey key : com.cbkii.ts18launcher.media.MediaSourceKey.values()) {
+                if (changed.equals(MediaEngineSelector.configuredPackage(Ts18LauncherApplication.this, key))) {
+                    MediaEventTrace.record("media", "source-package-changed", changed);
+                    mediaFacade(Ts18LauncherApplication.this).prerequisitesChanged();
+                    return;
+                }
+            }
+        }
+    };
+
+    private String catalogLocales = "";
+
     @Override public void onCreate() {
         super.onCreate();
-        NavigationPermissionBootstrapper.ensureEarly(this);
-        MediaNotificationAccessBootstrapper.ensureEarly(this);
-        ProcessMediaSessionMonitor.start(this);
+        catalogLocales = getResources().getConfiguration().getLocales().toLanguageTags();
+        StartupTimeline.mark("app.create");
+        // Registers package invalidation only; discovery/icons stay lazy and off-thread.
+        AppCatalog.get(this);
+        StartupTimeline.span("app.migrate-surfaces", () -> { HomeNavigationSurfacePolicy.migrateRetiredSurfaces(this); });
+        StartupTimeline.span("app.root-task-warm", () -> { if (HomeMode.isDefaultHome(this)) RootTaskSession.warm(this); });
+        StartupTimeline.span("app.nav-permission-early", () -> { NavigationPermissionBootstrapper.ensureEarly(this); });
+        StartupTimeline.span("app.media-access-early", () -> { MediaNotificationAccessBootstrapper.ensureEarly(this); });
+        StartupTimeline.span("app.media-monitor-start", () -> { mediaFacade(this); });
         registerActivityLifecycleCallbacks(this);
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_MEDIA_MOUNTED);
@@ -91,10 +174,33 @@ public final class Ts18LauncherApplication extends Application
         IntentFilter wake = new IntentFilter(Intent.ACTION_SCREEN_ON);
         wake.addAction(Intent.ACTION_SCREEN_OFF);
         wake.addAction(Intent.ACTION_USER_PRESENT);
+        wake.addAction(Intent.ACTION_USER_UNLOCKED);
         registerReceiver(wakeReceiver, wake);
+        IntentFilter packages = new IntentFilter(Intent.ACTION_PACKAGE_REPLACED);
+        packages.addAction(Intent.ACTION_PACKAGE_ADDED);
+        packages.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        packages.addDataScheme("package");
+        registerReceiver(mediaPackageReceiver, packages);
         MediaEventTrace.record("process", "created");
+        MediaEventTrace.record("startup", "profile", TestingProfiles.summary(this));
         // Process (re)creation: classify against the persisted boot counter and reconcile.
-        StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.RESTART);
+        StartupTimeline.span("app.startup-coordinator", () ->
+                StartupReadinessCoordinator.get(this).onTrigger(StartupReadinessPolicy.Trigger.RESTART));
+        StartupTimeline.mark("app.created");
+    }
+
+    @Override public void onConfigurationChanged(android.content.res.Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        // Only a locale change alters labels. Day/night and other changes keep the catalogue.
+        String locales = configuration.getLocales().toLanguageTags();
+        if (locales.equals(catalogLocales)) return;
+        catalogLocales = locales;
+        AppCatalog.get(this).invalidate();
+    }
+
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= TRIM_MEMORY_RUNNING_LOW) AppCatalog.get(this).trim();
     }
 
     private void warmConfiguredMusicAfterMount() {

@@ -7,6 +7,10 @@ import android.content.SharedPreferences;
 final class UiPersonalizationPrefs {
     static final String KEY_MEDIA_STARTUP_WARMUP = "media.startup.warmup";
     static final String KEY_NAV_ROOT_PERMISSION_GRANT = "navigation.permissions.root_grant";
+    /** Device-local consent for the root notification-listener convenience; never exported. */
+    static final String KEY_MEDIA_LISTENER_ROOT_GRANT = "media.listener.root_grant";
+    /** Marker: a root listener grant by this launcher was verified. Internal, never exported. */
+    static final String KEY_MEDIA_LISTENER_ROOT_GRANT_APPLIED = "media.listener.root_grant.applied";
     static final String KEY_ACCENT_HUE = "ui.accent.hue";
     static final String KEY_HOME_SHORTCUTS_ENABLED = "ui.home.shortcuts.enabled";
     static final String KEY_QUICK_ICON_1 = "ui.quick.icon.1";
@@ -44,6 +48,23 @@ final class UiPersonalizationPrefs {
     }
     static void setNavigationRootPermissionGrant(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(KEY_NAV_ROOT_PERMISSION_GRANT, enabled).apply();
+    }
+
+    static boolean mediaListenerRootGrant(Context context) {
+        return prefs(context).getBoolean(KEY_MEDIA_LISTENER_ROOT_GRANT, false);
+    }
+    static boolean mediaListenerRootGrantApplied(Context context) {
+        return prefs(context).getBoolean(KEY_MEDIA_LISTENER_ROOT_GRANT_APPLIED, false);
+    }
+    /** Changing consent always clears the applied marker: consent given now is fresh consent. */
+    static void setMediaListenerRootGrant(Context context, boolean enabled) {
+        SharedPreferences.Editor editor = prefs(context).edit().remove(KEY_MEDIA_LISTENER_ROOT_GRANT_APPLIED);
+        if (enabled) editor.putBoolean(KEY_MEDIA_LISTENER_ROOT_GRANT, true);
+        else editor.remove(KEY_MEDIA_LISTENER_ROOT_GRANT);
+        editor.apply();
+    }
+    static void markMediaListenerRootGrantApplied(Context context) {
+        prefs(context).edit().putBoolean(KEY_MEDIA_LISTENER_ROOT_GRANT_APPLIED, true).apply();
     }
 
     static boolean homeShortcutsEnabled(Context context) {

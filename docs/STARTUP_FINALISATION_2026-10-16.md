@@ -1,5 +1,7 @@
 # PR #24 finalisation and qualification ledger
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 Target: `cbkii/ts-theme`, `copilot/fix-cold-start-reliability`, stacked on PR #25
 `a9effde5fef9b1d52ec9f3e4d167a1629dcde210`, itself on frozen PR #19
 `4e59089cce98b7f768c1788c612b3a19a62957fc`. Starting #24 head:

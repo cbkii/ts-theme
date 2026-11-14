@@ -94,16 +94,36 @@ class TestingDraftWorkflowTests(unittest.TestCase):
         self.assertLess(signer, info)
         self.assertLess(sums, info)
 
-    def test_release_notes_are_real_markdown_with_links_and_provenance(self):
-        self.assertIn("testing-release-body.md", PUBLISH)
-        self.assertIn("## Current TESTING builds", PUBLISH)
-        self.assertIn("browser_download_url", PUBLISH)
-        self.assertIn("Current PR head", PUBLISH)
-        self.assertIn("Built SHA", PUBLISH)
-        self.assertIn("Managed by **Refresh Testing APK Draft**", PUBLISH)
-        self.assertIn("testing-apk-draft-managed", PUBLISH)
-        self.assertIn("](null)", PUBLISH)
-        self.assertNotIn('body="Testing-only rolling launcher build.', PUBLISH)
+    def test_release_notes_are_reconciled_from_txt_and_verified(self):
+        reconciler = (ROOT / "scripts/ci/reconcile_testing_release.py").read_text(encoding="utf-8")
+        repair = (ROOT / ".github/workflows/testing-apk-reconcile-notes.yml").read_text(encoding="utf-8")
+        self.assertIn("reconcile_testing_release.py", PUBLISH)
+        self.assertIn("Checkout trusted release-note reconciler", PUBLISH)
+        self.assertIn("notes_schema_version=2", PUBLISH)
+        self.assertIn("change_%d=%s", PUBLISH)
+        self.assertNotIn('body="$RUNNER_TEMP/testing-release-body.md"', PUBLISH)
+        self.assertIn("## Current TESTING builds", reconciler)
+        self.assertIn("<!-- testing-apk-draft-managed -->", reconciler)
+        self.assertIn("<!-- testing-apk-notes:begin -->", reconciler)
+        self.assertIn("<!-- testing-apk-notes:end -->", reconciler)
+        self.assertIn("BUILD_INFO checksum mismatch", reconciler)
+        self.assertIn("Release PATCH/read-back mismatch", reconciler)
+        # A branch-selected manual workflow can replace its own guard or jobs. The comment
+        # event instead selects the default-branch definition and checks maintainer authority.
+        self.assertNotIn("\n  workflow_dispatch:", repair)
+        self.assertIn("issue_comment:", repair)
+        self.assertIn("github.event.issue.pull_request", repair)
+        self.assertIn("github.event.comment.body == '/testing-notes'", repair)
+        self.assertIn("github.event.comment.author_association", repair)
+        self.assertIn('["OWNER", "MEMBER", "COLLABORATOR"]', repair)
+        impl = (ROOT / ".github/workflows/testing-apk-reconcile-notes-impl.yml").read_text(encoding="utf-8")
+        self.assertIn("testing-apk-reconcile-notes-impl.yml@main", repair)
+        self.assertNotIn("reconcile_testing_release.py", repair)
+        self.assertIn("workflow_call:", impl)
+        self.assertIn("testing-only-draft-release-${{ github.repository }}", impl)
+        self.assertIn("reconcile_testing_release.py", impl)
+        self.assertIn("contents: write", impl)
+
 
     def test_validate_no_longer_duplicates_codex_branch_pushes(self):
         self.assertIn("- main", VALIDATE)

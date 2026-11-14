@@ -13,10 +13,10 @@ import java.util.Map;
 /** Versioned, whitelisted configuration. No preferences dump, evidence, cache or location. */
 final class ConfigurationCodec {
     static final String SCHEMA = "com.cbkii.ts18launcher.config";
-    static final int VERSION = 1;
+    static final int VERSION = 2;
     static final int MAX_BYTES = 64 * 1024;
     interface Packages { boolean available(String name); }
-    enum Type { PACKAGE, ROLE, ICON, HUE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE, NAV_SURFACE }
+    enum Type { PACKAGE, ROLE, ICON, HUE, BOOLEAN, COUNT, MINUTES, RAIL, SIDE, MEDIA, APPEARANCE, AUTO_SOURCE, NAV_SURFACE, ENGINE }
     static final Map<String, Type> KEYS;
     static {
         Map<String, Type> keys = new LinkedHashMap<>();
@@ -35,10 +35,10 @@ final class ConfigurationCodec {
         keys.put(LauncherPrefs.KEY_QUICK_COUNT, Type.COUNT);
         keys.put(LauncherPrefs.KEY_RAIL_POSITION, Type.RAIL);
         keys.put(LauncherPrefs.KEY_RADIO_SIDE, Type.SIDE);
-        keys.put(LauncherPrefs.KEY_MAP_ENABLED, Type.BOOLEAN);
         keys.put(HomeNavigationSurfacePolicy.KEY, Type.NAV_SURFACE);
-        keys.put(LauncherPrefs.KEY_MAP_CONTROLS_ENABLED, Type.BOOLEAN);
         keys.put(LauncherPrefs.KEY_MEDIA_MODE, Type.MEDIA);
+        keys.put(MediaEngineSelector.KEY_MUSIC_ENGINE, Type.ENGINE);
+        keys.put(MediaEngineSelector.KEY_RADIO_ENGINE, Type.ENGINE);
         keys.put(LauncherPrefs.KEY_APPEARANCE_MODE, Type.APPEARANCE);
         keys.put(LauncherPrefs.KEY_APPEARANCE_AUTO_SOURCE, Type.AUTO_SOURCE);
         keys.put(LauncherPrefs.KEY_APPEARANCE_DAY_START, Type.MINUTES);
@@ -46,12 +46,29 @@ final class ConfigurationCodec {
         KEYS = Collections.unmodifiableMap(keys);
     }
 
+    /** Retired online-map keys: accepted from old exports, never exported or stored. */
+    static final java.util.Set<String> RETIRED_BOOLEAN_KEYS = Collections.unmodifiableSet(
+            new java.util.LinkedHashSet<>(java.util.Arrays.asList(
+                    HomeNavigationSurfacePolicy.RETIRED_MAP_ENABLED_KEY,
+                    HomeNavigationSurfacePolicy.RETIRED_MAP_CONTROLS_KEY)));
+
+    /**
+     * Device-local consent state. It is never exported or imported, and any import or reset clears
+     * it, so a settings file can never switch a root convenience on.
+     */
+    static final java.util.Set<String> DEVICE_CONSENT_KEYS = Collections.unmodifiableSet(
+            new java.util.LinkedHashSet<>(java.util.Arrays.asList(
+                    UiPersonalizationPrefs.KEY_MEDIA_LISTENER_ROOT_GRANT,
+                    UiPersonalizationPrefs.KEY_MEDIA_LISTENER_ROOT_GRANT_APPLIED)));
+
     static final class Preview {
         final Map<String, Object> values;
         final List<String> unavailable;
-        Preview(Map<String, Object> values, List<String> unavailable) {
+        final List<String> warnings;
+        Preview(Map<String, Object> values, List<String> unavailable, List<String> warnings) {
             this.values = Collections.unmodifiableMap(new LinkedHashMap<>(values));
             this.unavailable = Collections.unmodifiableList(new ArrayList<>(unavailable));
+            this.warnings = Collections.unmodifiableList(new ArrayList<>(warnings));
         }
         String summary() {
             StringBuilder text = new StringBuilder("Replace launcher configuration with ")
@@ -60,6 +77,7 @@ final class ConfigurationCodec {
                 text.append(entry.getKey()).append(" = ").append(entry.getValue()).append('\n');
             if (!unavailable.isEmpty()) text.append("\nUnavailable apps ignored (defaults restored):\n")
                     .append(String.join("\n", unavailable));
+            if (!warnings.isEmpty()) text.append("\nIgnored settings:\n").append(String.join("\n", warnings));
             return text.toString();
         }
     }
@@ -80,29 +98,50 @@ final class ConfigurationCodec {
             throw new JSONException("Configuration exceeds 64 KiB");
         JSONObject document = new JSONObject(json);
         if (document.length() != 3 || !SCHEMA.equals(document.opt("schema"))
-                || !(document.opt("version") instanceof Integer) || document.getInt("version") != VERSION
+                || !(document.opt("version") instanceof Integer) || (document.getInt("version") < 1 || document.getInt("version") > VERSION)
                 || !(document.opt("settings") instanceof JSONObject))
             throw new JSONException("Unsupported configuration schema/version");
         JSONObject settings = document.getJSONObject("settings");
         Map<String, Object> values = new LinkedHashMap<>();
         List<String> unavailable = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        boolean retiredMapEnabled = false;
         Iterator<String> names = settings.keys();
         while (names.hasNext()) {
             String key = names.next();
             Object value = settings.get(key);
+            if (DEVICE_CONSENT_KEYS.contains(key)) throw new JSONException("Device-local consent cannot be imported");
+            if (RETIRED_BOOLEAN_KEYS.contains(key)) {
+                // Files exported before the online map was retired stay importable. The retired
+                // keys are type-checked, never stored, and only select the safe fullscreen surface.
+                if (!(value instanceof Boolean)) throw new JSONException("Invalid value for " + key);
+                if (HomeNavigationSurfacePolicy.RETIRED_MAP_ENABLED_KEY.equals(key))
+                    retiredMapEnabled = (Boolean) value;
+                continue;
+            }
+            if (!KEYS.containsKey(key)) { warnings.add("Unknown setting ignored: " + key); continue; }
             validate(key, value);
+            if (KEYS.get(key) == Type.PACKAGE && value instanceof String
+                    && ((String) value).contains("/") && !ShortcutSlot.isSlotKey(key))
+                throw new JSONException("Component requires a shortcut slot: " + key);
             if (KEYS.get(key) == Type.PACKAGE) {
                 String name = (String) value;
                 if (name.isEmpty()) continue;
-                if (!packages.available(name)) { unavailable.add(key + ": " + name); continue; }
+                if (!packages.available(AppResolver.packagePart(name))) { unavailable.add(key + ": " + name); continue; }
             }
+            if (KEYS.get(key) == Type.APPEARANCE) value = LauncherPrefs.canonicalAppearance((String) value);
+            if (KEYS.get(key) == Type.AUTO_SOURCE) value = LauncherPrefs.AUTO_SOURCE_SCHEDULE;
+            if (KEYS.get(key) == Type.NAV_SURFACE) value = HomeNavigationSurfacePolicy.canonical((String) value);
             values.put(key, value);
         }
+        if (retiredMapEnabled && !values.containsKey(HomeNavigationSurfacePolicy.KEY))
+            values.put(HomeNavigationSurfacePolicy.KEY, HomeNavigationSurfacePolicy.FULLSCREEN);
         Object day = values.get(LauncherPrefs.KEY_APPEARANCE_DAY_START);
         Object night = values.get(LauncherPrefs.KEY_APPEARANCE_NIGHT_START);
-        if (day instanceof Integer && (Integer) day >= 0 && day.equals(night))
+        if (!AppearanceSchedule.valid(day instanceof Integer ? (Integer) day : -1,
+                night instanceof Integer ? (Integer) night : -1))
             throw new JSONException("Day and night anchors must differ");
-        return new Preview(values, unavailable);
+        return new Preview(values, unavailable, warnings);
     }
 
     private static void validate(String key, Object value) throws JSONException {
@@ -114,7 +153,7 @@ final class ConfigurationCodec {
         if (value instanceof String) {
             String text = (String) value;
             if (text.length() > 255) throw new JSONException("Setting too long: " + key);
-            if (type == Type.PACKAGE && (text.isEmpty() || text.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+"))) return;
+            if (type == Type.PACKAGE && (text.isEmpty() || AppResolver.validTarget(text))) return;
             if (type == Type.ROLE && RoleIconCatalog.isKnown(text)) return;
             if (type == Type.ICON && SlotIconCatalog.isKnown(text)) return;
             if (type == Type.HUE && AccentPalette.isKnown(text)) return;
@@ -124,6 +163,7 @@ final class ConfigurationCodec {
             if (type == Type.APPEARANCE && oneOf(text, "auto", "day", "high_contrast", "dim", "night")) return;
             if (type == Type.AUTO_SOURCE && oneOf(text, "sensor", "schedule")) return;
             if (type == Type.NAV_SURFACE && HomeNavigationSurfacePolicy.isKnown(text)) return;
+            if (type == Type.ENGINE && com.cbkii.ts18launcher.media.MediaEngine.isKnownStoredValue(text)) return;
         }
         throw new JSONException("Invalid value for " + key);
     }

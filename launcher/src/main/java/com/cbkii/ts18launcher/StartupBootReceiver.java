@@ -9,10 +9,28 @@ import android.content.Intent;
  * bootstrap waits until the HOME Activity is actually resumed.
  */
 public final class StartupBootReceiver extends BroadcastReceiver {
+    // Durable signal must reach disk before goAsync finishes; commit runs off the main thread.
+    @android.annotation.SuppressLint("ApplySharedPref")
     @Override public void onReceive(Context context, Intent intent) {
         if (context == null || intent == null
                 || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
         MediaEventTrace.record("startup", "boot-completed-signal");
-        StartupReadinessCoordinator.get(context).onTrigger(StartupReadinessPolicy.Trigger.BOOT);
+        // Commit inside goAsync: no receiver-created singleton/timer must outlive onReceive.
+        PendingResult pending = goAsync();
+        new Thread(() -> {
+            try {
+                int boot = android.provider.Settings.Global.getInt(context.getContentResolver(),
+                        android.provider.Settings.Global.BOOT_COUNT, -1);
+                if (!context.getSharedPreferences("startup_readiness", Context.MODE_PRIVATE).edit()
+                        .putInt("pending_boot_v1", boot).commit())
+                    MediaEventTrace.record("startup", "boot-signal-not-persisted");
+                // Best-effort live reconciliation complements the durable signal; HOME may already
+                // be visible when BOOT_COMPLETED arrives. Future HOME still works if this process dies.
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(() ->
+                        StartupReadinessCoordinator.get(context).onTrigger(StartupReadinessPolicy.Trigger.BOOT));
+            } catch (RuntimeException unavailable) {
+                MediaEventTrace.record("startup", "boot-signal-unavailable", unavailable.getClass().getSimpleName());
+            } finally { pending.finish(); }
+        }, "startup-boot-signal").start();
     }
 }

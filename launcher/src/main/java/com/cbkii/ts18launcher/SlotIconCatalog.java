@@ -34,18 +34,30 @@ final class SlotIconCatalog {
     static final String NOTIFICATIONS = "notifications";
     static final String PALETTE = "palette";
 
+    static final String MICROPHONE = "microphone";
+    static final String LOCATION = "location";
+    static final String PLAY = "play";
+    static final String PAUSE = "pause";
+    static final String NEXT = "next";
+    static final String PREVIOUS = "previous";
+    static final String ZOOM_IN = "zoom_in";
+    static final String ZOOM_OUT = "zoom_out";
+    static final String APPS = "apps";
+
     static final String[] VALUES = {
             AUTO, NAVIGATION, RADIO, MUSIC, BLUETOOTH, PHONE, FAVORITE, HOME, WORK,
             SEARCH, CAMERA, SETTINGS, UTILITY, VIDEO, WEATHER, GENERIC, CAR, MAP,
             ROUTE, EQUALIZER, PODCAST, USB, FILES, WIFI, DOWNLOAD, VOLUME, POWER,
-            DASHBOARD, LIGHT, NOTIFICATIONS, PALETTE
+            DASHBOARD, LIGHT, NOTIFICATIONS, PALETTE,
+            MICROPHONE, LOCATION, PLAY, PAUSE, NEXT, PREVIOUS, ZOOM_IN, ZOOM_OUT, APPS
     };
     static final String[] LABELS = {
             "Auto", "Navigation", "Radio", "Music", "Bluetooth", "Phone", "Favourite",
             "Home", "Work", "Search", "Camera", "Settings", "Tools", "Media/video",
             "Weather", "App", "Car", "Map", "Route", "Equaliser", "Podcast", "USB",
             "Files", "Wi-Fi", "Download", "Volume", "Power", "Dashboard", "Light",
-            "Notifications", "Palette"
+            "Notifications", "Palette",
+            "Microphone", "Location", "Play", "Pause", "Next", "Previous", "Zoom in", "Zoom out", "Apps"
     };
 
     private SlotIconCatalog() {}
@@ -95,6 +107,15 @@ final class SlotIconCatalog {
         if (LIGHT.equals(safe)) return R.drawable.ic_lightbulb;
         if (NOTIFICATIONS.equals(safe)) return R.drawable.ic_notifications;
         if (PALETTE.equals(safe)) return R.drawable.ic_palette;
+        if (MICROPHONE.equals(safe)) return R.drawable.ic_mic;
+        if (LOCATION.equals(safe)) return R.drawable.ic_my_location;
+        if (PLAY.equals(safe)) return R.drawable.ic_play;
+        if (PAUSE.equals(safe)) return R.drawable.ic_pause;
+        if (NEXT.equals(safe)) return R.drawable.ic_next;
+        if (PREVIOUS.equals(safe)) return R.drawable.ic_previous;
+        if (ZOOM_IN.equals(safe)) return R.drawable.ic_zoom_in;
+        if (ZOOM_OUT.equals(safe)) return R.drawable.ic_zoom_out;
+        if (APPS.equals(safe)) return R.drawable.ic_apps;
         return R.drawable.ic_shortcut;
     }
 }

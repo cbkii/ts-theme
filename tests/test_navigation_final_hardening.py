@@ -9,13 +9,12 @@ BACKEND = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/RootNavigationB
 
 
 class NavigationFinalHardeningTest(unittest.TestCase):
-    def test_drawer_skips_redundant_root_parking_when_home_already_focused(self):
+    def test_drawer_shows_before_guarded_parking_without_view_focus_shortcut(self):
         overlay = CONTROLLER.split("void openLauncherOverlay(Runnable show)", 1)[1].split(
             "void cancelLauncherOverlay()", 1
         )[0]
-        self.assertIn("activity.hasWindowFocus()", overlay)
-        self.assertIn("home-focus-already-owned", overlay)
-        self.assertIn("needsValidation = true", overlay)
+        self.assertNotIn("activity.hasWindowFocus()", overlay)
+        self.assertLess(overlay.index("show.run()"), overlay.index("suspendForLauncherSurface"))
         self.assertIn('suspendForLauncherSurface("launcher overlay")', overlay)
 
     def test_parking_uses_guarded_helper_instead_of_unconditional_root_focus(self):

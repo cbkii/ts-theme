@@ -14,7 +14,7 @@ import java.util.Map;
 final class StartupReadinessPolicy {
     enum Source { MUSIC, RADIO, NAVIGATION }
     enum State { UNAVAILABLE, STARTING, READY, ACTIVE, FAILED, BLOCKED, UNCERTAIN }
-    enum Trigger { BOOT, SCREEN_ON, ACC_ON, HOME_RESUME, STORAGE_MOUNT, SESSION_LOST, RESTART }
+    enum Trigger { BOOT, SCREEN_ON, ACC_ON, HOME_RESUME, STORAGE_MOUNT, SESSION_LOST, READINESS_CHANGED, RESTART, USER_UNLOCKED }
     enum Kind { FULL_BOOT, SAME_BOOT_WAKE, HOME_RETURN }
     enum Mode { BACKGROUND_ONLY, AUTOMATIC_FALLBACK, AGGRESSIVE }
     enum Method { NONE, SESSION, BROWSER, SERVICE, ACTIVITY_BOOTSTRAP, TASK_ADOPTION }
@@ -28,6 +28,8 @@ final class StartupReadinessPolicy {
         Method method = Method.NONE;
         int generation;
         int attempts;
+        /** Late-USB admissions are counted separately and remain bounded per boot. */
+        int storageAdmissions;
         long startedMs = -1L;
         long finishedMs = -1L;
         String firstFailingBoundary = "";
@@ -74,24 +76,26 @@ final class StartupReadinessPolicy {
     /** Whether this trigger may begin a new admission for the source. */
     boolean admit(Source source, Trigger trigger, long now) {
         Record r = records.get(source);
+        // Genuine late USB may re-admit Music beyond the startup attempt ledger, but repeated
+        // mount events stay bounded too: at most MAX_ATTEMPTS_PER_BOOT storage admissions/boot.
+        boolean lateUsb = source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT
+                && r.storageAdmissions < MAX_ATTEMPTS_PER_BOOT;
         switch (r.state) {
             case STARTING:
                 return false;
             case READY:
             case ACTIVE:
-                return source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT;
+                return lateUsb;
             case FAILED:
             case UNAVAILABLE:
             case BLOCKED:
-                if (r.attempts >= MAX_ATTEMPTS_PER_BOOT
-                        && !(source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT)) return false;
-                boolean lateUsb = source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT;
+                if (r.attempts >= MAX_ATTEMPTS_PER_BOOT && !lateUsb) return false;
                 if (r.state == State.FAILED && r.finishedMs >= 0L && !lateUsb
                         && now - r.finishedMs < FAILED_RETRY_SPACING_MS) return false;
                 return true;
             case UNCERTAIN:
                 // Session callbacks are observations, not proof a prior launch failed.
-                return source == Source.MUSIC && trigger == Trigger.STORAGE_MOUNT;
+                return lateUsb;
             default:
                 return false;
         }
@@ -104,6 +108,7 @@ final class StartupReadinessPolicy {
         r.trigger = trigger;
         r.generation = ++nextGeneration;
         r.attempts++;
+        if (trigger == Trigger.STORAGE_MOUNT) r.storageAdmissions++;
         r.startedMs = now;
         r.finishedMs = -1L;
         r.firstFailingBoundary = "";
@@ -156,6 +161,14 @@ final class StartupReadinessPolicy {
         }
     }
 
+    /** Evidence loss does not revoke an accepted Activity claim or authorise another admission. */
+    void observedUnavailable(Source source, String boundary, long now) {
+        Record r = records.get(source);
+        r.state = State.UNCERTAIN;
+        r.finishedMs = now;
+        if (r.firstFailingBoundary.isEmpty()) r.firstFailingBoundary = boundary;
+    }
+
     void configurationChanged(Source source) {
         Record replacement = new Record();
         replacement.generation = ++nextGeneration;
@@ -167,6 +180,13 @@ final class StartupReadinessPolicy {
         if (r.activityLaunchAccepted) return false;
         r.activityLaunchAccepted = true;
         return true;
+    }
+    void releaseUnadmitted(Source source, int generation) {
+        Record r = records.get(source);
+        if (r.generation != generation) return;
+        r.activityLaunchAccepted = false;
+        r.state = State.UNAVAILABLE;
+        r.attempts = Math.max(0, r.attempts - 1);
     }
 
     private boolean finish(Source source, int generation, State state, String boundary, long now) {

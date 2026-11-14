@@ -13,7 +13,7 @@ class NavRadioColdPlayGuardTest(unittest.TestCase):
         self.assertIn('MediaEventTrace.record("service", "cold-play-guard"', BOOTSTRAP)
         self.assertIn("boolean guardedColdPlay = pending.coldPlayGuarded", BOOTSTRAP)
         self.assertIn("if (!guardedColdPlay && MediaCommandPolicy.acknowledged", BOOTSTRAP)
-        self.assertIn("if (!sendDesired(controller, pending.desired))", BOOTSTRAP)
+        self.assertIn("if (!sendPending(controller, pending))", BOOTSTRAP)
         self.assertIn("pending.dispatched = true", BOOTSTRAP)
         self.assertNotIn("sendDesired(controller, pending.desired);\n        sendDesired", BOOTSTRAP)
 
