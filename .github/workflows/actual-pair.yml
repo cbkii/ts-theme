@@ -68,6 +68,7 @@ jobs:
           bash scripts/bootstrap-dependencies.sh --profile full-build
           bash scripts/ci-gradle.sh :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Exercise actual restore and Next callbacks across UIDs
+        timeout-minutes: 10
         shell: bash
         env:
           ANDROID_SERIAL: emulator-5554
@@ -75,7 +76,7 @@ jobs:
         run: |
           mkdir -p "$ANDROID_AVD_HOME"
           if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
-          printf 'no\n' | "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/avdmanager" create avd --force \
+          printf 'no\n' | timeout --kill-after=5s 60s "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/avdmanager" create avd --force \
             -n actual-pair -k 'system-images;android-29;default;x86_64' >/dev/null
           "${ANDROID_SDK_ROOT}/emulator/emulator" -avd actual-pair -port 5554 -no-window -no-audio \
             -no-boot-anim -gpu swiftshader_indirect > "$RUNNER_TEMP/actual-pair-emulator.txt" 2>&1 &
@@ -83,10 +84,10 @@ jobs:
           trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
           timeout 120s adb wait-for-device
           for attempt in $(seq 1 90); do
-            [[ $(adb shell getprop sys.boot_completed | tr -d '\r') == 1 ]] && break
+            [[ $(timeout --kill-after=2s 5s adb shell getprop sys.boot_completed | tr -d '\r') == 1 ]] && break
             sleep 2
           done
-          [[ $(adb shell getprop sys.boot_completed | tr -d '\r') == 1 ]]
+          [[ $(timeout --kill-after=2s 5s adb shell getprop sys.boot_completed | tr -d '\r') == 1 ]]
           bash scripts/ci/api29-actual-pair-smoke.sh \
             launcher/build/outputs/apk/debug/launcher-debug.apk \
             launcher/build/outputs/apk/androidTest/debug/launcher-debug-androidTest.apk \
