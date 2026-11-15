@@ -234,6 +234,7 @@ public final class BrowserStarterIpcProbe {
                 AtomicReference<com.cbkii.ts18launcher.media.MediaCommandResult> result = new AtomicReference<>();
                 instrumentation.runOnMainSync(() -> engine.get().command(pkg,
                         com.cbkii.ts18launcher.media.MediaUserAction.NEXT, r -> { result.set(r); settled.countDown(); }));
+                check(!settled.await(100, TimeUnit.MILLISECONDS), "Next settled inside the source's blank gap");
                 check(settled.await(3, TimeUnit.SECONDS), "actual Next did not settle");
                 check(result.get().outcome == com.cbkii.ts18launcher.media.MediaCommandResult.Outcome.ACKNOWLEDGED,
                         "actual Next was not confirmed: " + result.get().outcome);
@@ -241,6 +242,7 @@ public final class BrowserStarterIpcProbe {
                 check(java.util.Collections.frequency(sent, DirectOperation.PREPARE) == prepares,
                         "actual callback gap rearmed passive restore");
             }
+            check(gaps.get() >= 4, "Actual source-publication gaps did not reach the engine: " + gaps.get());
             android.util.Log.i("TS18Media", "actual-pair callbacks gaps=" + gaps.get() + " committedNext=4");
         } finally {
             instrumentation.runOnMainSync(() -> { session.unwatch(); engine.get().detach();
