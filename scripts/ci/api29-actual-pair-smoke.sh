@@ -21,7 +21,8 @@ sha256sum "$1" "$2" "$3" "$4" > "$proof/APK-SHA256SUMS.txt"
 printf 'launcher_source=%s\nauxio_source=%s\nqualification=API29_EMULATOR_ONLY\n' \
   "$LAUNCHER_SOURCE_SHA" "$AUXIO_SOURCE_SHA" > "$proof/SOURCE-PAIR.txt"
 stage install
-for apk in "$1" "$2" "$3" "$4"; do timeout --kill-after=5s 60s adb install -r "$apk"; done
+# API29's streamed second install stalled before the probe; use push/pm installation.
+for apk in "$1" "$2" "$3" "$4"; do timeout --kill-after=5s 60s adb install --no-streaming -r "$apk"; done
 # Seed is opt-in, debug-only, emulator-only and refuses an existing persisted queue.
 stage source-gap-probe
 timeout --kill-after=5s 90s adb shell am instrument -w -e pair_seed 1 -e pair_gaps 1 -e expected_source_sha "$AUXIO_SOURCE_SHA" \
