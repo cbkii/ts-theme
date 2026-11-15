@@ -104,6 +104,8 @@ public final class DirectSourceEngine {
     private long generation;
     private Object pinnedToken;
     private SessionObservation current;
+    /** Playback was positively loaded in this exact session; a paused metadata gap is still warm. */
+    private boolean loadedInSession;
     private boolean liveThisEpoch;
     private MediaSourceState.Availability availability = MediaSourceState.Availability.UNCONFIGURED;
     private Pending pendingToggle;
@@ -162,7 +164,7 @@ public final class DirectSourceEngine {
         packageName = next;
         generation++;
         clearHandoverPause();
-        pinnedToken = null; current = null; liveThisEpoch = false; published = null;
+        pinnedToken = null; current = null; loadedInSession = false; liveThisEpoch = false; published = null;
         startCapable = false;
         connectionFailed = false;
         refused = false;
@@ -181,7 +183,7 @@ public final class DirectSourceEngine {
         attached = false;
         generation++;
         clearHandoverPause();
-        pinnedToken = null; current = null; liveThisEpoch = false; published = null;
+        pinnedToken = null; current = null; loadedInSession = false; liveThisEpoch = false; published = null;
         availability = MediaSourceState.Availability.UNCONFIGURED;
     }
 
@@ -234,6 +236,7 @@ public final class DirectSourceEngine {
                 || !pinnedToken.equals(observation.token)
                 || !packageName.equals(observation.packageName)) return;
         current = observation;
+        observeSessionOwnership(observation);
         continueStart();
         continuePrepare();
         if (handoverPause != null && observation.nativeState != PlaybackState.STATE_PLAYING) clearHandoverPause();
@@ -428,6 +431,7 @@ public final class DirectSourceEngine {
         Object nextToken = session == null ? null : session.token;
         boolean tokenChanged = pinnedToken == null ? nextToken != null : !pinnedToken.equals(nextToken);
         if (tokenChanged) {
+            loadedInSession = false;
             // A different (or no) session: nothing in flight may be confirmed by it.
             generation++;
             clearHandoverPause();
@@ -437,6 +441,7 @@ public final class DirectSourceEngine {
         }
         pinnedToken = nextToken;
         current = session;
+        observeSessionOwnership(session);
         availability = next;
         if (session != null) {
             connectionFailed = false;
@@ -582,7 +587,7 @@ public final class DirectSourceEngine {
         if ("com.navimods.radio".equals(packageName)
                 || starter != null && !starter.canPreparePassive(packageName)) return;
         if (live()) {
-            if (loaded(current) || MediaSourceState.transitioning(current.nativeState)) return;
+            if (loadedInSession || loaded(current) || MediaSourceState.transitioning(current.nativeState)) return;
             pendingPrepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, null);
             continuePrepare();
             publish();
@@ -673,6 +678,13 @@ public final class DirectSourceEngine {
         return observation != null && !observation.itemId.isEmpty()
                 && (observation.nativeState == PlaybackState.STATE_PAUSED
                     || observation.nativeState == PlaybackState.STATE_PLAYING);
+    }
+
+    private void observeSessionOwnership(SessionObservation observation) {
+        if (observation == null || observation.nativeState == PlaybackState.STATE_NONE
+                || observation.nativeState == PlaybackState.STATE_STOPPED
+                || observation.nativeState == PlaybackState.STATE_ERROR) loadedInSession = false;
+        else if (loaded(observation)) loadedInSession = true;
     }
 
     private static boolean advertisesPrepare(SessionObservation observation) {

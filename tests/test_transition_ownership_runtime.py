@@ -74,6 +74,9 @@ public static void main(String[] args)throws Exception{
  check(sent.equals(List.of(DirectOperation.NEXT)),"live transition sent passive PREPARE: "+sent);
  check(Ts18LauncherApplication.prepares==before,"coordinator rearmed readiness for the same live token");
  engine.onSessionChanged(state(3,"new"));check(results.size()==1&&results.get(0).outcome==MediaCommandResult.Outcome.ACKNOWLEDGED,"replacement not acknowledged");
+ engine.onSessionChanged(state(2,""));engine.preparePassive(1000);
+ check(sent.equals(List.of(DirectOperation.NEXT)),"warm paused metadata gap rearmed PREPARE");
+ engine.onSessionChanged(state(3,"new"));
 
  // Same-source raw/primitive/canonical promotion is hydration, not a skip commit.
  engine.command("com.tw.media",MediaUserAction.NEXT,results::add);
@@ -96,6 +99,9 @@ public static void main(String[] args)throws Exception{
  check(results.size()==5,"raw URI fallback -> rich tags was counted as a skip");
  engine.onSessionChanged(new SessionObservation("token","com.tw.media",3,16438,"next-id","next title","",true,true,"file:///next"));
  check(results.size()==6,"raw URI baseline did not observe a true replacement");
+ int preparesBefore=Collections.frequency(sent,DirectOperation.PREPARE);
+ engine.onSessionChanged(state(1,""));engine.preparePassive(1001);
+ check(Collections.frequency(sent,DirectOperation.PREPARE)==preparesBefore+1,"genuinely stopped empty session never prepared");
  owner.destroy();System.out.println("PASS real coordinator -> engine metadata-gap boundary");
 }}
 '''
