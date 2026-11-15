@@ -19,6 +19,9 @@ public final class SessionObservation {
     public final String itemId;
     public final String title;
     public final String subtitle;
+    /** Source URI survives Auxio raw/primitive/canonical ID promotion. Never logged. */
+    public final String mediaUri;
+    public final long positionMs, stateUpdatedMs;
 
     public SessionObservation(Object token, String packageName, int nativeState, long actions,
                               String itemId, String title, String subtitle) {
@@ -28,6 +31,21 @@ public final class SessionObservation {
     public SessionObservation(Object token, String packageName, int nativeState, long actions,
                               String itemId, String title, String subtitle,
                               boolean deadlinePlay, boolean sourceOwned) {
+        this(token, packageName, nativeState, actions, itemId, title, subtitle,
+                deadlinePlay, sourceOwned, "");
+    }
+
+    public SessionObservation(Object token, String packageName, int nativeState, long actions,
+                              String itemId, String title, String subtitle,
+                              boolean deadlinePlay, boolean sourceOwned, String mediaUri) {
+        this(token, packageName, nativeState, actions, itemId, title, subtitle,
+                deadlinePlay, sourceOwned, mediaUri, -1L, -1L);
+    }
+
+    public SessionObservation(Object token, String packageName, int nativeState, long actions,
+                              String itemId, String title, String subtitle,
+                              boolean deadlinePlay, boolean sourceOwned, String mediaUri,
+                              long positionMs, long stateUpdatedMs) {
         this.deadlinePlay = deadlinePlay;
         this.sourceOwned = sourceOwned;
         this.token = token;
@@ -37,9 +55,13 @@ public final class SessionObservation {
         this.itemId = itemId == null ? "" : itemId;
         this.title = title == null ? "" : title.trim();
         this.subtitle = subtitle == null ? "" : subtitle.trim();
+        this.mediaUri = mediaUri == null || mediaUri.isEmpty()
+                ? (this.itemId.startsWith("file:") || this.itemId.startsWith("content:") ? this.itemId : "") : mediaUri;
+        this.positionMs = positionMs;
+        this.stateUpdatedMs = stateUpdatedMs;
     }
     SessionObservation withSourceOwned(boolean owned) {
         return new SessionObservation(token, packageName, nativeState, actions, itemId, title,
-                subtitle, deadlinePlay, owned);
+                subtitle, deadlinePlay, owned, mediaUri, positionMs, stateUpdatedMs);
     }
 }

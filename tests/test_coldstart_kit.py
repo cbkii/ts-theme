@@ -158,6 +158,29 @@ probe probe {cap} {budget} {command}
         self.assertEqual(2048, (path / 'output.txt').stat().st_size)
         self.assertIn('result=TRUNCATED', (path / 'meta.txt').read_text())
 
+    def test_native_framework_output_and_planned_stop_are_recorded(self):
+        fake = self.root / 'native-logcat'
+        fake.write_text('#!/bin/bash\nwhile [[ "$1" != -f ]]; do shift; done; shift\nprintf "framework-event\\n" > "$1"\nprintf "native-stderr\\n" >&2\nexec /usr/bin/sleep 30\n')
+        fake.chmod(0o700)
+        self.boot.write_text(self.boot.read_text().replace('/system/bin/logcat', str(fake)))
+        out = self.base / 'run-framework'
+        (out / 'probes').mkdir(parents=True)
+        result = self.shell(f"""OUT='{out}'
+WORK_END=$(( $(ms) + 5000 )); RESERVED=0; COUNT=0
+: > "$OUT/workers.tsv"
+start_worker framework-admission 2097152 3 __framework_native__
+set -- $LAST_WORKER
+sleep 0.2
+stop_worker "$1" "$2" "$3" "$4"
+""", timeout=6)
+        self.assertEqual(0, result.returncode, result.stderr)
+        path = out / 'probes/1-framework-admission'
+        self.assertEqual('framework-event\n', (path / 'framework-admission.txt').read_text())
+        self.assertIn('native-stderr', (path / 'stderr.txt').read_text())
+        self.assertIn('termination=COLLECTOR_STOPPED', (path / 'exit-status.txt').read_text())
+        self.assertIn('PLANNED_STREAM_STOP', (path / 'meta.txt').read_text())
+        self.assertNotIn('producer_rc=0', (path / 'exit-status.txt').read_text())
+
     def test_command_failure_is_not_success(self):
         path = self.capture('/bin/bash -c \'echo permission-denied;exit 17\'')
         meta = (path / 'meta.txt').read_text()

@@ -89,7 +89,7 @@ class NavigationProvider {static final String ORGANIC_MAPS_INCAR="app.organicmap
 static boolean hasLauncherActivity(android.app.Activity a,String p){return true;}
 static boolean open(android.app.Activity a,String p,android.location.Location l){launches++;return true;}}
 class RawFreeformTaskBackend implements NavigationSurfaceBackend {
-static String coldPolicy="";public void setColdLaunchPolicy(String p){coldPolicy=p;}
+static boolean pendingThenReady;static String coldPolicy="";public void setColdLaunchPolicy(String p){coldPolicy=p;}
 static int presents,resumes,verifies,fullscreens,statuses,departures,suspends,homeReturns,returnedTask;static long deadline;static boolean delayed,holdFullscreen,peerResume,peerVerify;static Callback held;static String fullscreenCode="ROOT_UNAVAILABLE";static long workMs;static String first="TASK_OBSERVATION_UNCERTAIN";static boolean resumeMiss,alwaysMiss,bootstrapMode,statusAbsentOnce,resumeUserActivity,verifyHidden;static String statusTop;
 RawFreeformTaskBackend(android.app.Activity a){}public void setDeadline(long d){deadline=d;}public String label(){return "fake";}
 static NavigationHelperResult good(){return NavigationHelperResult.parse("OK code=RESUMED_NATIVE user=0 task=42 stack=4 package=app.organicmaps.incar component=app.organicmaps.incar/app.organicmaps.MwmActivity display=0 windowingMode=5 bounds=0,100,1100,700 visible=1 drawn=1");}
@@ -103,11 +103,11 @@ public void verify(String p,NavigationWindowBounds b,int t,Callback cb){verifies
 public void resume(String p,NavigationWindowBounds b,int t,String h,int ht,Callback cb){resumes++;if(resumeUserActivity){cb.onResult(NavigationHelperResult.failure("USER_ACTIVITY",""));return;}
 if(resumeMiss){resumeMiss=false;cb.onResult(NavigationHelperResult.failure("FOREGROUND_CHANGED",""));}else cb.onResult(peerResume?NavigationHelperResult.parse(good().raw.replace("visible=1 drawn=1","visible=unknown drawn=unknown phase=peer-surface")):good());}
 public void status(String p,int t,Callback cb){statuses++;if(presents==0){cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}if(statusAbsentOnce){statusAbsentOnce=false;cb.onResult(NavigationHelperResult.failure("TASK_NOT_FOUND",""));return;}android.os.SystemClock.now=Math.min(deadline,android.os.SystemClock.now+workMs);if(statusTop!=null&&!alwaysMiss&&!bootstrapMode){cb.onResult(NavigationHelperResult.parse(good().raw.replace("app.organicmaps.incar/app.organicmaps.MwmActivity",statusTop)));return;}cb.onResult(alwaysMiss?NavigationHelperResult.failure(first,""):bootstrapMode?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","bounds=0,0,0,0")):good());}
-public void fullscreen(String p,String c,int t,Callback cb){fullscreens++;if(holdFullscreen){held=cb;return;}cb.onResult(("SUCCESS".equals(fullscreenCode)||"BAD_BOUNDS".equals(fullscreenCode))?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","BAD_BOUNDS".equals(fullscreenCode)?"bounds=0,100,1100,700":"bounds=0,0,0,0")):NavigationHelperResult.failure(fullscreenCode,""));}
+public void fullscreen(String p,String c,int t,Callback cb){fullscreens++;if(pendingThenReady){if(fullscreens==1){cb.onResult(NavigationHelperResult.failure("LAUNCH_PENDING",""));return;}if(!"manual".equals(coldPolicy)){cb.onResult(NavigationHelperResult.failure("AUTOSTART_DISABLED_OR_UNAVAILABLE",""));return;}fullscreenCode="SUCCESS";}if(holdFullscreen){held=cb;return;}cb.onResult(("SUCCESS".equals(fullscreenCode)||"BAD_BOUNDS".equals(fullscreenCode))?NavigationHelperResult.parse(good().raw.replace("windowingMode=5","windowingMode=1").replace("bounds=0,100,1100,700","BAD_BOUNDS".equals(fullscreenCode)?"bounds=0,100,1100,700":"bounds=0,0,1280,720 geometry=fullscreen")):NavigationHelperResult.failure(fullscreenCode,""));}
 public void returnHome(String p,int task,String h,int ht,Callback cb){homeReturns++;returnedTask=task;cb.onResult(NavigationHelperResult.failure("RETURN_HOME_REFUSED","platform boundary"));}
 public void backgroundFullscreen(String p,int t,String h,int ht,boolean e,Callback cb){departures++;cb.onResult(good());}
 public void suspend(String p,int t,String h,int ht,Callback cb){suspends++;cb.onResult(good());}public void destroy(){}
-static void reset(){CompactStartupClient.next=CompactStartupClient.Snapshot.known();coldPolicy="";presents=resumes=verifies=fullscreens=statuses=departures=suspends=homeReturns=returnedTask=0;delayed=holdFullscreen=peerResume=peerVerify=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=bootstrapMode=statusAbsentOnce=resumeUserActivity=verifyHidden=false;statusTop=null;first="TASK_OBSERVATION_UNCERTAIN";
+static void reset(){pendingThenReady=false;CompactStartupClient.next=CompactStartupClient.Snapshot.known();coldPolicy="";presents=resumes=verifies=fullscreens=statuses=departures=suspends=homeReturns=returnedTask=0;delayed=holdFullscreen=peerResume=peerVerify=false;held=null;TestingProfiles.nav="N1";fullscreenCode="ROOT_UNAVAILABLE";android.app.Activity.focused=true;alwaysMiss=resumeMiss=bootstrapMode=statusAbsentOnce=resumeUserActivity=verifyHidden=false;statusTop=null;first="TASK_OBSERVATION_UNCERTAIN";
 NavigationProvider.launches=0;workMs=0;android.os.SystemClock.now=1000;android.view.View.jobs.clear();}}
 ''')
             (package / 'Harness.java').write_text(r'''package com.cbkii.ts18launcher;
@@ -214,6 +214,12 @@ public static void main(String[] args)throws Exception{
  c.openFullscreen(null);CompactStartupClient.next=new CompactStartupClient.Snapshot(true,false,true,42);CompactStartupClient.deliver();
  c.onHomeStopped();c.onHomeVisible();android.view.View.drain();
  check("deny".equals(RawFreeformTaskBackend.coldPolicy),"completed explicit action leaked manual cold authority after opt-out");c.destroy();
+ // Captured LAUNCH_PENDING continuation retains user authority and reacquires the same task.
+ RawFreeformTaskBackend.reset();RawFreeformTaskBackend.fullscreenCode="SUCCESS";p=new NativeNavigationPanel();c=start(p);android.view.View.drain();
+ RawFreeformTaskBackend.pendingThenReady=true;int navigationLaunches=NavigationProvider.launches;
+ c.openFullscreen(null);android.view.View.drain();
+ check(RawFreeformTaskBackend.fullscreens==2&&NavigationProvider.launches==navigationLaunches,"pending fullscreen lost its user request or opened a second task");
+ check(!"manual".equals(RawFreeformTaskBackend.coldPolicy),"settled request leaked manual authority");c.destroy();
  // Source icons remain independent; superseded map callback cannot change the new action.
  RawFreeformTaskBackend.reset();RawFreeformTaskBackend.delayed=true;p=new NativeNavigationPanel();c=start(p);
  int[] opened={0};c.launchAfterSuspension(()->opened[0]++);check(opened[0]==1,"source icon waits for callback");RawFreeformTaskBackend.held.onResult(RawFreeformTaskBackend.good());

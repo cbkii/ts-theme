@@ -78,10 +78,12 @@ elif cmd == 'app_process':
         s['mode'] = int(a[4]) if a[0] == 'mode' else s['mode']
         if a[0] == 'clear-fullscreen-bounds':
             if s.get('reject_clear_bounds'): print('UNKNOWN SecurityException resize_denied'); sys.exit(1)
-            if not s.get('retain_compact_bounds'): s['bounds'] = [0,0,0,0]
+            if not s.get('retain_compact_bounds'): s['bounds'] = [0,0,1280,720]
         if a[5] == '1': s['focus'] = 42
         write_state(s)
     component = 'unknown' if s.get('unknown_top') else 'app.organicmaps.incar/app.organicmaps.MwmActivity'
+    if a[0] == 'verify-fullscreen' and (s['mode'] != 1 or s['bounds'] != [0,0,1280,720]):
+        print('UNKNOWN IllegalStateException GEOMETRY_NOT_VERIFIED'); sys.exit(1)
     print('FOUND 42 4 0 %s %s %s unknown' % (s['mode'], ','.join(map(str,s['bounds'])), component))
 elif cmd == 'am':
     if a == ['help']:
@@ -279,7 +281,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             nav_alive=False, bridge_available=True, focus=7, method='N2')
         self.assertIn('code=FULLSCREEN', result.stdout)
         self.assertEqual(1, state['start_dispatches'])
-        self.assertEqual([0,0,0,0], state['bounds'])
+        self.assertEqual([0,0,1280,720], state['bounds'])
 
     def test_n2_normal_task_converts_then_restores_same_home_before_map(self):
         result, state = self.run_helper(['present-native','0','app.organicmaps.incar',
@@ -309,10 +311,16 @@ class NavigationLifecycleTest(unittest.TestCase):
         self.assertIn('FOREGROUND_CHANGED', result.stdout)
         self.assertEqual([], state['commands'])
 
+    def test_broker_observed_map_uses_the_shared_shell_claim_completion(self):
+        result, state = self.run_helper(['reconcile-claim', '0', 'app.organicmaps.incar', '42'], seed_claim=True)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(0, state['claims_remaining'])
+        self.assertEqual([], state['commands'])
+
     def test_fullscreen_clears_compact_override_bounds(self):
         result, state = self.run_helper(['fullscreen','0','app.organicmaps.incar','42'], bridge_available=True)
         self.assertEqual(0, result.returncode, result.stdout)
-        self.assertEqual([0,0,0,0], state['bounds'])
+        self.assertEqual([0,0,1280,720], state['bounds'])
 
     def test_fullscreen_rejects_mode_only_success_with_compact_bounds(self):
         result, state = self.run_helper(['fullscreen','0','app.organicmaps.incar','42'],

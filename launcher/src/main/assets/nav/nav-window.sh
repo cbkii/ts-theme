@@ -32,6 +32,7 @@ PHASE=admission
 VISIBLE=unknown
 DRAWN=unknown
 IDENTITY_SOURCE=unknown
+GEOMETRY=unknown
 trap 'rm -f "$SNAPSHOT" "$START_HELP" "$LAUNCH_OUTPUT" "$RECENTS" "$STACKS" "$WINDOWS" "$FOCUS_AFTER" "$WINDOW_OWNERS"' EXIT HUP INT TERM
 
 TASK_SNAPSHOT_AWK='
@@ -311,7 +312,7 @@ emit_protocol() {
     "$outcome" "$code" "$ANDROID_USER" "$TASK_ID" "$STACK_ID" "$PKG" "$TASK_COMPONENT" "$DISPLAY_ID" \
     "$WINDOWING_MODE" "$TASK_BOUNDS" "$SUPPORTS_PIP" "$LAUNCHED" "$TRANSACTION" \
     "$HELP_EXIT" "$HELP_WINDOWING_MODE" "$HELP_DISPLAY" "$LAUNCH_EXIT" "$PHASE" "$VISIBLE" "$DRAWN" "$IDENTITY_SOURCE"
-  printf 'method=%s transition=%s ' "$METHOD" "$TRANSITION"
+  printf 'method=%s transition=%s geometry=%s overrideBounds=unknown ' "$METHOD" "$TRANSITION" "$GEOMETRY"
   vendor_state_fields
   printf '\n'
 }
@@ -790,12 +791,25 @@ move_task_fullscreen() {
   fi
   PHASE=geometry
   require_task "$pkg" "$wanted_task" 1
-  if [ "$TASK_BOUNDS" != 0,0,0,0 ]; then
-    run_bridge clear-fullscreen-bounds "$pkg" "$wanted_task" 1 0 >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_GEOMETRY_UNCONFIRMED
-  fi
-  wait_state "$pkg" "$wanted_task" 1 0,0,0,0 || fail FULLSCREEN_GEOMETRY_UNCONFIRMED
+  run_bridge clear-fullscreen-bounds "$pkg" "$wanted_task" 1 0 >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_GEOMETRY_UNCONFIRMED
   require_foreground_task "$wanted_task" FULLSCREEN_NOT_FOREGROUND
-  require_task "$pkg" "$wanted_task" 1
+  verify_fullscreen_geometry "$pkg" "$wanted_task"
+}
+
+verify_fullscreen_geometry() {
+  fullscreen_pkg="$1"; fullscreen_task="$2"; fullscreen_try=0
+  while [ "$fullscreen_try" -lt 3 ]; do
+    fullscreen_record=$(run_bridge verify-fullscreen "$fullscreen_pkg" "$fullscreen_task" 1 0 2>/dev/null)
+    if [ "$?" = 0 ] && parse_task_record "$fullscreen_record" && [ "$TASK_ID" = "$fullscreen_task" ] \
+        && [ "$DISPLAY_ID" = 0 ] && [ "$WINDOWING_MODE" = 1 ] \
+        && printf '%s\n' "$TASK_BOUNDS" | awk -F, 'NF==4 && $1==0 && $2==0 && $3>0 && $4>0 {ok=1} END {exit !ok}'; then
+      GEOMETRY=fullscreen
+      return 0
+    fi
+    fullscreen_try=$((fullscreen_try + 1))
+    sleep 0.1
+  done
+  fail FULLSCREEN_GEOMETRY_UNCONFIRMED
 }
 
 # Exact foreground ownership for media staging; no mode/geometry or vendor mutations.
@@ -911,12 +925,13 @@ case "$action" in
     printf '\n'
     ;;
 
-  status)
+  status|status-shell|reconcile-claim)
     PKG="${3:-}"
     hint="${4:-0}"
     valid_package "$PKG" || fail BAD_PACKAGE
     valid_uint "$hint" || fail BAD_TASK
     require_task "$PKG" "$hint" 1
+    if [ "$action" = reconcile-claim ]; then require_bootstrap_ready; fi
     emit_protocol OK STATUS
     ;;
 
@@ -1149,6 +1164,8 @@ case "$action" in
         run_bridge mode "$PKG" "$wanted_task" 1 0 >"$LAUNCH_OUTPUT" 2>&1 || fail BACKGROUND_MODE_UNSUPPORTED
       fi
       wait_state "$PKG" "$wanted_task" 1 any || fail FULLSCREEN_REJECTED
+      run_bridge clear-fullscreen-bounds "$PKG" "$wanted_task" 1 0 >"$LAUNCH_OUTPUT" 2>&1 || fail FULLSCREEN_GEOMETRY_UNCONFIRMED
+      verify_fullscreen_geometry "$PKG" "$wanted_task"
       emit_protocol OK BACKGROUND_FULLSCREEN
     fi
     ;;

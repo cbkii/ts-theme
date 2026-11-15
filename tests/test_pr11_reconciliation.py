@@ -50,7 +50,7 @@ class Pr11ReconciliationTests(unittest.TestCase):
             '[ "$(id -u 2>/dev/null)" = 0 ]', 1
         )[0]
         self.assertIn('--windowingMode 1 --task "$wanted_task"', fullscreen)
-        self.assertIn('wait_state "$pkg" "$wanted_task" 1 0,0,0,0', fullscreen)
+        self.assertIn('verify_fullscreen_geometry "$pkg" "$wanted_task"', fullscreen)
         self.assertNotIn("am task resize ", fullscreen)
 
     def test_known_navigation_task_is_verified_and_corroborated_before_repair(self):
@@ -66,7 +66,7 @@ class Pr11ReconciliationTests(unittest.TestCase):
         self.assertIn("retryKnownTaskMiss", present)
         self.assertIn("TASK_OBSERVATION_UNCERTAIN", present)
         self.assertIn("return verified", present)
-        self.assertIn('helper.run("status", packageName, "0")', corroborate)
+        self.assertIn('helper.run("status-shell", packageName, "0")', corroborate)
         self.assertIn('"TASK_NOT_FOUND".equals(live.code)', corroborate)
         self.assertNotIn('pidof', corroborate)
 

@@ -53,6 +53,7 @@ final class StartupReadinessCoordinator {
     private long epoch;
     private boolean homeResumed, yielded, destroyed;
     private final java.util.Map<MediaSourceKey, String> configured = new java.util.EnumMap<>(MediaSourceKey.class);
+    private final java.util.Map<MediaSourceKey, MediaSourceState> readySessions = new java.util.EnumMap<>(MediaSourceKey.class);
     private final java.util.Map<MediaSourceKey, Runnable> recovery = new java.util.EnumMap<>(MediaSourceKey.class);
     private boolean screenOff;
     private boolean initialGraceUsed;
@@ -136,11 +137,13 @@ final class StartupReadinessCoordinator {
         String identity = pkg + ":" + state.engine;
         if (!identity.equals(configured.put(key, identity))) policy.configurationChanged(source(key));
         if (ready(state)) {
+            readySessions.put(key, state);
             cancelRecovery(key);
             policy.observedReady(source(key), now);
             if (state.playing()) policy.active(source(key), now);
             return;
         }
+        if (retainsReadiness(state)) return;
         StartupReadinessPolicy.Record record = policy.record(source(key));
         if (record.state == State.READY || record.state == State.ACTIVE) policy.sessionLost(source(key));
         if (!policy.admit(source(key), trigger, now)) return;
@@ -173,6 +176,14 @@ final class StartupReadinessCoordinator {
                     && (state.actions & (PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PLAY_PAUSE)) != 0L);
     }
 
+    private boolean retainsReadiness(MediaSourceState state) {
+        MediaSourceState previous = state == null ? null : readySessions.get(state.key);
+        return previous != null && state.live() && state.generation == previous.generation
+                && state.engine == previous.engine && state.packageName.equals(previous.packageName)
+                && previous.sessionIdentity != null && previous.sessionIdentity.equals(state.sessionIdentity)
+                && (state.ownsPlaybackWork() || state.nativeState == PlaybackState.STATE_PAUSED);
+    }
+
     void onMediaStateChanged(MediaSourceState state) {
         // Publisher callbacks may be synchronous during facade construction or reconciliation.
         main.post(() -> {
@@ -182,9 +193,11 @@ final class StartupReadinessCoordinator {
                 reconcileSource(state.key, Trigger.READINESS_CHANGED, SystemClock.elapsedRealtime()); return;
             }
             if (state != null && ready(latest)) {
+                readySessions.put(state.key, latest);
                 cancelRecovery(state.key);
                 policy.observedReady(source(state.key), SystemClock.elapsedRealtime());
-            } else if (state != null && (latest.availability == MediaSourceState.Availability.SOURCE_LOST
+            } else if (state != null && !retainsReadiness(latest)
+                    && (latest.availability == MediaSourceState.Availability.SOURCE_LOST
                     || policy.record(source(state.key)).state == State.READY
                     || policy.record(source(state.key)).state == State.ACTIVE)) {
                 policy.sessionLost(source(state.key));

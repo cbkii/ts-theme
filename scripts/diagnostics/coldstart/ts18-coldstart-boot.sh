@@ -98,7 +98,17 @@ worker() {
   shift 4
   # shellcheck disable=SC3040 # Numeric token splitting, literal AWK or Magisk ash pipefail.
   set -o pipefail
-  "$@" 2>&1 | "$BB" head -c "$w_cap" > "$w_dir/output.txt"
+  if [ "${1:-}" = __framework_native__ ]; then
+    # Native file output avoids stdio/awk buffering of the low-volume admission stream.
+    # Two 256 KiB native segments plus bounded error files fit the 2 MiB reservation.
+    (ulimit -f 1024; /system/bin/logcat -b main -b system -v monotonic \
+      -f "$w_dir/framework-admission.txt" -r 256 -n 1 \
+      ActivityManager:I ActivityTaskManager:I MediaBrowserService:I \
+      TS18Browser:V TS18Transport:V TS18Media:V TS18Nav:V '*:S') \
+      > "$w_dir/stdout.txt" 2> "$w_dir/stderr.txt"
+  else
+    "$@" 2>&1 | "$BB" head -c "$w_cap" > "$w_dir/output.txt"
+  fi
   w_rc=$?
   printf '%s\n' "$w_rc" > "$w_dir/done"
   # Keep the proven process-group leader alive until the supervisor kills its group.
@@ -154,12 +164,22 @@ stop_worker() {
     fi
   fi
   st_bytes=$("$BB" stat -c %s "$st_dir/output.txt" 2>/dev/null) || st_bytes=0
+  case "$st_dir" in *-framework-admission)
+    st_bytes=$("$BB" stat -c %s "$st_dir/framework-admission.txt" 2>/dev/null) || st_bytes=0
+    ;; esac
   st_cap=$("$BB" sed -n 's/^cap_bytes=//p' "$st_dir/meta.txt")
   if [ "$st_bytes" -ge "$st_cap" ]; then st_status=TRUNCATED
   elif [ "$st_rc" = 0 ]; then st_status=OK
   elif [ "$st_rc" = UNKNOWN ]; then
-    case "$st_dir" in *-logcat-*|*-input-events|*-process-samples|*-resource-pressure) st_status=PLANNED_STREAM_STOP;; *) st_status=TIMEOUT_OR_STOP;; esac
+    case "$st_dir" in *-logcat-*|*-framework-admission|*-input-events|*-process-samples|*-resource-pressure) st_status=PLANNED_STREAM_STOP;; *) st_status=TIMEOUT_OR_STOP;; esac
   else st_status=COMMAND_FAILED; fi
+  case "$st_dir" in *-framework-admission)
+    [ "$st_bytes" -gt 0 ] || st_status=EMPTY_OR_UNAVAILABLE
+    [ ! -e "$st_dir/framework-admission.txt.1" ] || st_status=TRUNCATED
+    ;; esac
+  # Every normal stop has an explicit record, even when SIGKILL prevents a child exit code.
+  # UNKNOWN remains unknown; planned termination is not exit=0 or proof of no framework event.
+  printf 'producer_rc=%s\ntermination=COLLECTOR_STOPPED\nresult=%s\n' "$st_rc" "$st_status" > "$st_dir/exit-status.txt"
   printf 'end_uptime_ms=%s\nrc=%s\nbytes=%s\nresult=%s\n' "$(ms)" "$st_rc" "$st_bytes" "$st_status" >> "$st_dir/meta.txt"
   case "$st_dir:$st_status" in *-screen-*:OK) "$BB" mv "$st_dir/output.txt" "$st_dir/screenshot.png";; esac
   : > "$st_dir/closed"
@@ -412,7 +432,8 @@ collect() {
   # The already-running absolute guard also bounds final hashing and cleanup.
   event 'capture_start; first-60s avoid heavy probes; timestamps are evidence, not audible/pixel readiness'
   cs_secs=$(((WORK_END - $(ms)) / 1000))
-  start_worker logcat-main-system-crash 25165824 "$cs_secs" /system/bin/logcat -b main -b system -b crash -v threadtime -v monotonic '*:I' TS18Media:V TS18Nav:V InCarCompactStartup:V
+  start_worker logcat-main-system-crash 25165824 "$cs_secs" /system/bin/logcat -b main -b system -b crash -v threadtime -v monotonic '*:I' TS18Media:V TS18Nav:V TS18Transport:V InCarCompactStartup:V
+  start_worker framework-admission 2097152 "$cs_secs" __framework_native__
   MAIN_LOG_WORKER=$LAST_WORKER
   start_worker logcat-events 6291456 "$cs_secs" /system/bin/logcat -b events -v threadtime -v monotonic '*:I'
   EVENT_LOG_WORKER=$LAST_WORKER

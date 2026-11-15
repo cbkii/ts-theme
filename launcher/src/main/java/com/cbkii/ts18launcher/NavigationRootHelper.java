@@ -19,7 +19,7 @@ final class NavigationRootHelper {
     private static final Pattern COMPONENT = Pattern.compile(
             "[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+/(?:\\.[A-Za-z0-9_.$]+|[A-Za-z0-9_.$]+(?:\\.[A-Za-z0-9_.$]+)*)");
     private static final Pattern ACTION = Pattern.compile(
-            "probe|status|present-native|verify-native|resume-windowed|fullscreen|park-windowed|background-fullscreen|probe-task-mode|startup-source|startup-home|return-home");
+            "probe|status|status-shell|reconcile-claim|present-native|verify-native|resume-windowed|fullscreen|park-windowed|background-fullscreen|probe-task-mode|startup-source|startup-home|return-home");
     private static final String ASSET = "nav/nav-window.sh";
     private static final long INSTALL_TIMEOUT_MS = 4000L;
     private static final long COMMAND_TIMEOUT_MS = 12000L;
@@ -30,6 +30,7 @@ final class NavigationRootHelper {
     private boolean installedThisProcess;
     private long deadline;
     private long presentationEpoch;
+    private int reconciledMapTask = -1;
     void setPresentationEpoch(long epoch) {
         presentationEpoch = epoch;
         RootTaskSession.get(context).epoch(epoch);
@@ -109,7 +110,17 @@ final class NavigationRootHelper {
             NavigationHelperResult fast = "startup-home".equals(action)
                     ? session.runCurrent(until, fields.toArray(new String[0]))
                     : session.run(presentationEpoch, until, fields.toArray(new String[0]));
-            if (fast != null && !"BRIDGE_API_UNSUPPORTED".equals(fast.code)) return fast;
+            if (fast != null && !"BRIDGE_API_UNSUPPORTED".equals(fast.code)) {
+                if (mapFastPath && fast.success && fast.userId == AndroidUserId.current()
+                        && fast.displayId == 0 && fast.taskId > 0 && fast.taskId != reconciledMapTask
+                        && "app.organicmaps.incar/app.organicmaps.MwmActivity".equals(fast.component)) {
+                    // The same claim owner completes accepted work whether shell or broker
+                    // first observed the map. This verb independently rechecks its exact task.
+                    NavigationHelperResult reconciled = run("reconcile-claim", args[0], Integer.toString(fast.taskId));
+                    if (reconciled.success) reconciledMapTask = fast.taskId;
+                }
+                return fast;
+            }
         }
         NavigationHelperResult install = ensureInstalled();
         if (!install.success) return install;

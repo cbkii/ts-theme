@@ -354,6 +354,7 @@ cap disks "$BB" df -k
 cap thermal /system/bin/dumpsys thermalservice
 cap kernel /system/bin/dmesg
 capture logcat 8 16777216 /system/bin/logcat -d -b all -t 12000 -v epoch
+capture framework-admission 4 1048576 /system/bin/logcat -d -b main -b system -t 1200 -v monotonic ActivityManager:I ActivityTaskManager:I MediaBrowserService:I TS18Browser:V TS18Transport:V '*:S'
 capture organicmaps-file-logs 10 14680064 "$BB" sh "$SELF" --app-files
 cap dropbox-index /system/bin/dumpsys dropbox
 # Bounded recent tombstones/ANRs; never clear or modify their source.
@@ -1218,7 +1219,7 @@ else atomic "$STATE/export-status" "WARN archive/CRC failed; retained $OUT"; fi
 TS18_EMBEDDED_PAYLOAD_6_END
     cat > "$stage/SHA256SUMS" <<'TS18_EMBEDDED_PAYLOAD_7_END'
 89d6f722aee167156574409fbd08c79a7581505d445abaef41d96179426bfd0f  capture-lib.sh
-cadfe044442e4c42fe15b1cc0152e8ddaaf5b4ebe34def5a8a27c62ee7ffa728  checkpoint.sh
+8eb8a855995f654f9c29fa33f5b0f2d79f51c19a5298f9b58c0548dbe48713cf  checkpoint.sh
 3886ea78d402d783e62d5b3fdecf80780ed9780584a7ffb6f6708250fa433fad  guide.sh
 d092aeb9953018bb86a43dad6549874ab416872b01f9a8976c83c71586932e3e  cases.tsv
 13ba176983ebab71b2f7de3fd4caaccb857e76eef915ea3e592f97452a44fbe1  pr-heads.json

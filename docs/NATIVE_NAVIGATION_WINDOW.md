@@ -1,5 +1,10 @@
 # Native HOME navigation window
 
+On API29, `StackInfo.taskBounds` are effective inherited bounds. Fullscreen proof requires the exact user/task/display and mode 1, clears task/stack compact overrides with null, then checks a positive effective rectangle against independently read logical display dimensions. Empty requested overrides are compatible with non-empty effective bounds. The helper reports observed bounds, before/after identities, provenance and `overrideBounds=unknown` where the framework does not expose that field. It never substitutes hard-coded display geometry for missing evidence.
+
+An explicit Retry/Fullscreen request owns a single absolute 45-second budget across helper operations and LAUNCH_PENDING/bootstrap continuations. Finishing one helper operation does not turn that request into automatic/denied policy. The accepted launch journal still prevents duplicate dispatch; elapsed time alone never clears it. Broker observation of the exact MwmActivity reconciles through the same shell claim-completion owner. A known-task miss uses the explicitly separate `status-shell` Activity/Recents/stack path; repeated broker reads alone are not independent absence evidence. Live task, live Activity, retained Recents, process and rendered surface remain separate observations.
+
+
 ## Product contract
 
 The standalone launcher does not copy or mirror another application's map. It presents the configured navigation application's real Android task over the launcher-owned map rectangle.

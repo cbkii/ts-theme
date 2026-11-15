@@ -102,6 +102,17 @@ public final class MediaSourceState {
     /** Only the framework's own PLAYING state counts; buffering and connecting do not. */
     public boolean playing() { return live() && nativeState == NATIVE_STATE_PLAYING; }
 
+    /** Framework BUFFERING/CONNECTING and directional item transitions are source-owned work. */
+    public static boolean transitioning(int state) {
+        return state == 6 || state == 8 || state == 9 || state == 10 || state == 11;
+    }
+
+    /** A live session can lose its metadata while its player changes item. */
+    public boolean ownsPlaybackWork() {
+        return live() && (playing() || transitioning(nativeState)
+                || nativeState == 2 && !itemId.isEmpty());
+    }
+
     /** Presentation equality: identical states must not restart tickers or animations. */
     public boolean samePresentation(MediaSourceState other) {
         return other != null && key == other.key && engine == other.engine

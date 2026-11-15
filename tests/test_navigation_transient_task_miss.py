@@ -25,7 +25,7 @@ class NavigationTransientTaskMissTest(unittest.TestCase):
         self.assertIn("if (evidence == AbsenceEvidence.ABSENT) return second;", policy)
         self.assertIn("NavigationHelperResult.withCode(", policy)
         self.assertIn('cached, "TASK_OBSERVATION_UNCERTAIN"', policy)
-        self.assertIn('helper.run("status", packageName, "0")', corroborate)
+        self.assertIn('helper.run("status-shell", packageName, "0")', corroborate)
         self.assertIn('"TASK_NOT_FOUND".equals(live.code)', corroborate)
         self.assertNotIn('pidof', corroborate)
 

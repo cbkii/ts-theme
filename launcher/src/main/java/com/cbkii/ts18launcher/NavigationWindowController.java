@@ -72,6 +72,7 @@ final class NavigationWindowController {
     private int nextExplicitRequest;
     private int pendingExplicitRequest;
     private int manualOperationId;
+    private long explicitRequestDeadline;
     private boolean automaticColdYielded;
     private int yieldedOperationId;
     private enum Presentation { COMPACT_HOME, FULLSCREEN_MAPS, BACKGROUND_FULLSCREEN }
@@ -140,7 +141,7 @@ final class NavigationWindowController {
 
     private void updateColdPolicy() {
         if (backend == null) return;
-        String policy = (activeOperationId != 0 && manualOperationId == activeOperationId) ? "manual"
+        String policy = explicitRequestActive() ? "manual"
                 : !NavigationProvider.ORGANIC_MAPS_INCAR.equals(selectedPackage()) ? "manual"
                 : !automaticColdYielded && CompactStartupClient.automaticAllowed(activity)
                         && compactSnapshot.compatible && compactSnapshot.enabled
@@ -391,7 +392,7 @@ final class NavigationWindowController {
     /** Explicit independent escape route. Never used by automatic map recovery. */
     boolean openNormally(Location location) {
         explicitNavigation.run();
-        pendingExplicitRequest = ++nextExplicitRequest;
+        beginExplicitRequest();
         String pkg = selectedPackage();
         if (pkg.isEmpty() || state == State.DESTROYED) { clearExplicitAdmission(); return false; }
         launchAfterSuspension(() -> openOrdinaryFullscreen(pkg, location, "explicit-normal-open"));
@@ -401,7 +402,7 @@ final class NavigationWindowController {
 
     boolean openFullscreen(Location location) {
         explicitNavigation.run();
-        pendingExplicitRequest = ++nextExplicitRequest;
+        beginExplicitRequest();
         if (state == State.DESTROYED) { clearExplicitAdmission(); return false; }
         desire(Presentation.FULLSCREEN_MAPS);
         if ("N0".equals(TestingProfiles.navigation(activity))) return openNormally(location);
@@ -756,7 +757,8 @@ final class NavigationWindowController {
             if (!finishOperation(operation, result, pkg)) return;
             retainObservedTask(result, pkg);
             if (acceptIdentity(result, pkg, 0) && result.displayId == 0 && result.windowingMode == 1
-                    && "0,0,0,0".equals(result.bounds)) {
+                    && result.fullscreenGeometryConfirmed()) {
+                clearExplicitAdmission();
                 state = State.FULLSCREEN_HANDOFF; fullscreenGoal = false; cancelRecovery(); recovery.reset(); observationOnly = false;
                 activeTaskId = result.taskId; activePackage = pkg; lastHelperCode = "";
                 needsValidation = true; needsPresentation = true; clearFailureLatch();
@@ -846,15 +848,24 @@ final class NavigationWindowController {
     }
 
     private void consumeExplicitDispatch(int operation) {
-        if (pendingExplicitRequest != 0) {
-            pendingExplicitRequest = 0;
+        if (explicitRequestActive()) {
             manualOperationId = operation;
         }
         updateColdPolicy();
     }
 
+    private void beginExplicitRequest() {
+        pendingExplicitRequest = ++nextExplicitRequest;
+        explicitRequestDeadline = SystemClock.elapsedRealtime() + 45000L;
+    }
+
+    private boolean explicitRequestActive() {
+        return pendingExplicitRequest != 0 && SystemClock.elapsedRealtime() < explicitRequestDeadline;
+    }
+
     private void clearExplicitAdmission() {
         pendingExplicitRequest = 0;
+        explicitRequestDeadline = 0L;
         manualOperationId = 0;
         updateColdPolicy();
     }
@@ -863,6 +874,7 @@ final class NavigationWindowController {
         if (activeOperationId != 0 || state == State.DESTROYED) { pendingReconcile = true; return 0; }
         long now = SystemClock.elapsedRealtime();
         long deadline = recovery.deadline(now);
+        if (pendingExplicitRequest != 0) deadline = Math.min(deadline, explicitRequestDeadline);
         if (now >= deadline) { latchFailure(selectedPackage(), configuredMode, "ACTION_TIMEOUT"); return 0; }
         activeOperationId = ++nextTransactionId;
         operationPresentationEpoch = presentationEpoch;
@@ -970,7 +982,7 @@ final class NavigationWindowController {
         desire(Presentation.COMPACT_HOME);
         fullscreenGoal = false; fullscreenRequested = false; pendingFullscreenLocation = null;
         automaticColdYielded = false; waitingForHomeFocus = false;
-        pendingExplicitRequest = ++nextExplicitRequest;
+        beginExplicitRequest();
         if (state == State.DESTROYED) return;
         MediaEventTrace.record("navigation", "retry-request", "transaction=" + activeOperationId);
         if (activeOperationId != 0) {

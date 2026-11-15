@@ -12,6 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavTaskBridge.java"
 STUBS = {
+    "android/hardware/display/DisplayManagerGlobal.java": "package android.hardware.display;public class DisplayManagerGlobal {public static DisplayManagerGlobal getInstance(){return new DisplayManagerGlobal();}public Info getDisplayInfo(int display){return new Info();}public static class Info {public int logicalWidth=1280,logicalHeight=720;}}",
     "android/util/Log.java": "package android.util; public class Log {public static int i(String t,String s){return 0;}}",
     "android/annotation/SuppressLint.java": "package android.annotation; public @interface SuppressLint { String[] value(); }",
     "android/os/Build.java": "package android.os; public class Build { public static class VERSION { public static int SDK_INT=29; }}",
@@ -30,7 +31,7 @@ public class Configuration { public Window windowConfiguration=new Window();
 }''',
     "android/app/IActivityTaskManager.java": '''package android.app;
 import java.util.List;
-public interface IActivityTaskManager { List<StackInfo> getAllStackInfos(); void setTaskWindowingMode(int id,int mode,boolean toTop); void resizeStack(int id,android.graphics.Rect bounds,boolean dock,boolean preserve,boolean animate,int duration); }
+public interface IActivityTaskManager { List<StackInfo> getAllStackInfos(); void setTaskWindowingMode(int id,int mode,boolean toTop); void resizeTask(int id,android.graphics.Rect bounds,int mode); void resizeStack(int id,android.graphics.Rect bounds,boolean dock,boolean preserve,boolean animate,int duration); }
 ''',
     "android/app/StackInfo.java": '''package android.app;
 import android.content.ComponentName; import android.graphics.Rect; import android.content.res.Configuration;
@@ -60,6 +61,7 @@ public class ActivityTaskManager {
    if("ambiguous".equals(scenario)){StackInfo other=new StackInfo();other.taskIds[0]=43;return Arrays.asList(s,other);}
    return Arrays.asList(s);
   }
+  public void resizeTask(int id,android.graphics.Rect bounds,int mode){if(bounds!=null)throw new AssertionError("non-null task override");}
   public void resizeStack(int id,android.graphics.Rect bounds,boolean dock,boolean preserve,boolean animate,int duration){
    if(bounds!=null||preserve||animate||dock)throw new AssertionError("unsafe resize");
    System.out.println("CLEAR stack="+id+" null=true");

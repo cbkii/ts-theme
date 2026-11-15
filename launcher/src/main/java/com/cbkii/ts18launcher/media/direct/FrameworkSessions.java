@@ -149,8 +149,10 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
         long actions = 0L;
         boolean deadlinePlay = false;
         String itemId = "";
+        String mediaUri = "";
         String title = "";
         String subtitle = "";
+        long positionMs = -1L, stateUpdatedMs = -1L;
         try {
             packageName = controller.getPackageName();
             PlaybackState playback = controller.getPlaybackState();
@@ -158,12 +160,15 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
             if (playback != null) {
                 state = playback.getState();
                 actions = playback.getActions();
+                positionMs = playback.getPosition();
+                stateUpdatedMs = playback.getLastPositionUpdateTime();
                 for (PlaybackState.CustomAction action : playback.getCustomActions()) {
                     if (action != null && SessionObservation.HOME_PLAY_V1.equals(action.getAction())) deadlinePlay = true;
                 }
             }
             if (metadata != null) {
                 itemId = text(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID);
+                mediaUri = text(metadata, MediaMetadata.METADATA_KEY_MEDIA_URI);
                 title = text(metadata, MediaMetadata.METADATA_KEY_TITLE,
                         MediaMetadata.METADATA_KEY_DISPLAY_TITLE);
                 subtitle = text(metadata, MediaMetadata.METADATA_KEY_ARTIST,
@@ -179,10 +184,12 @@ final class FrameworkSessions implements DirectSessionRegistry.Source {
             state = PlaybackState.STATE_NONE;
             actions = 0L;
             itemId = "";
+            mediaUri = "";
             title = "";
             subtitle = "";
         }
-        return new SessionObservation(token, packageName, state, actions, itemId, title, subtitle, deadlinePlay, false);
+        return new SessionObservation(token, packageName, state, actions, itemId, title, subtitle,
+                deadlinePlay, false, mediaUri, positionMs, stateUpdatedMs);
     }
 
     private static String text(MediaMetadata metadata, String... keys) {

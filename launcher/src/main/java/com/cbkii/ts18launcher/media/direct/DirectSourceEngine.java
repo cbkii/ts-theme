@@ -80,14 +80,14 @@ public final class DirectSourceEngine {
         final Object token;
         final long generation;
         final DirectOperation operation;
-        final String itemAtDispatch;
+        SessionObservation observationAtDispatch;
         long createdMs;
         final List<MediaBackend.ResultCallback> callbacks = new ArrayList<>();
         Object timer;
         long deadlineElapsedMs;
-        Pending(long opId, Object token, long generation, DirectOperation operation, String item) {
+        Pending(long opId, Object token, long generation, DirectOperation operation, SessionObservation observation) {
             this.opId = opId; this.token = token; this.generation = generation;
-            this.operation = operation; this.itemAtDispatch = item;
+            this.operation = operation; this.observationAtDispatch = observation;
         }
     }
 
@@ -352,7 +352,7 @@ public final class DirectSourceEngine {
         }
 
         Object token = pinnedToken;
-        Pending pending = new Pending(++nextOpId, token, generation, operation, itemIdentity(current));
+        Pending pending = new Pending(++nextOpId, token, generation, operation, current);
         pending.createdMs = clock.nowMs();
         if (callback != null) pending.callbacks.add(callback);
         long deadline = Math.min(deadlineElapsedMs, clock.nowMs() + PLAY_ACK_MS);
@@ -507,7 +507,7 @@ public final class DirectSourceEngine {
             if (callback != null) pendingStart.callbacks.add(callback);
             return;
         }
-        Pending start = new Pending(++nextOpId, null, generation, DirectOperation.PLAY, "");
+        Pending start = new Pending(++nextOpId, null, generation, DirectOperation.PLAY, null);
         start.createdMs = clock.nowMs();
         if (callback != null) start.callbacks.add(callback);
         start.deadlineElapsedMs = Math.min(deadlineElapsedMs, clock.nowMs() + COLD_START_MS);
@@ -546,7 +546,7 @@ public final class DirectSourceEngine {
             return;
         }
         Pending play = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PLAY,
-                itemIdentity(current));
+                current);
         play.createdMs = start.createdMs;
         play.callbacks.addAll(start.callbacks);
         if (!dispatch(pinnedToken, DirectOperation.PLAY, deadline)) {
@@ -574,7 +574,7 @@ public final class DirectSourceEngine {
         if (!attached || epoch <= decidedPrepareEpoch || packageName.isEmpty()) return;
         // Membership and access must be known before anything is decided for this epoch.
         if (!access && !startCapable) return;
-        if (pendingStart != null || pendingPrepare != null || pendingToggle != null) return;
+        if (pendingStart != null || pendingPrepare != null || pendingToggle != null || !pendingSkips.isEmpty()) return;
         if (availability == MediaSourceState.Availability.AMBIGUOUS_SOURCE
                 || availability == MediaSourceState.Availability.SERVICE_UNAVAILABLE && !startCapable) return;
         decidedPrepareEpoch = epoch;
@@ -582,8 +582,8 @@ public final class DirectSourceEngine {
         if ("com.navimods.radio".equals(packageName)
                 || starter != null && !starter.canPreparePassive(packageName)) return;
         if (live()) {
-            if (loaded(current)) return;
-            pendingPrepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");
+            if (loaded(current) || MediaSourceState.transitioning(current.nativeState)) return;
+            pendingPrepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, null);
             continuePrepare();
             publish();
             return;
@@ -602,7 +602,7 @@ public final class DirectSourceEngine {
     }
 
     private void beginPrepareBind() {
-        Pending prepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, "");
+        Pending prepare = new Pending(++nextOpId, null, generation, DirectOperation.PREPARE, null);
         pendingPrepare = prepare;
         prepare.timer = clock.schedule(COLD_START_MS, () -> {
             if (pendingPrepare != prepare) return;
@@ -622,18 +622,17 @@ public final class DirectSourceEngine {
         // Radio was explicitly Activity-prepared; reconnecting may observe it but must not
         // issue PREPARE, which can select the hardware source on this player.
         if ("com.navimods.radio".equals(packageName)) { endPrepare(); return; }
-        if (loaded(current)) { endPrepare(); return; }
+        if (loaded(current) || MediaSourceState.transitioning(current.nativeState)
+                || pendingToggle != null || !pendingSkips.isEmpty()) { endPrepare(); return; }
         // Preserve the original timer while a newly published session initialises its actions.
-        if (!advertisesPrepare(current) || !current.itemId.isEmpty()
-                && (current.nativeState == PlaybackState.STATE_BUFFERING
-                    || current.nativeState == PlaybackState.STATE_CONNECTING)) {
+        if (!advertisesPrepare(current)) {
             if (prepare.timer == null) prepare.timer = clock.schedule(PREPARE_OBSERVE_MS, () -> {
                 if (pendingPrepare == prepare) endPrepare();
             });
             return;
         }
         if (prepare.timer != null) { clock.cancel(prepare.timer); prepare.timer = null; }
-        Pending sent = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PREPARE, "");
+        Pending sent = new Pending(++nextOpId, pinnedToken, generation, DirectOperation.PREPARE, null);
         pendingPrepare = sent;
         if (!transport.dispatch(pinnedToken, DirectOperation.PREPARE)) { endPrepare(); return; }
         sent.timer = clock.schedule(PREPARE_OBSERVE_MS, () -> {
@@ -729,11 +728,18 @@ public final class DirectSourceEngine {
         }
         if (pendingSkips.isEmpty()) return;
         String item = itemIdentity(observation);
+        if (item.isEmpty() || !loaded(observation)) return;
         for (Pending skip : new ArrayList<>(pendingSkips)) {
             if (skip.generation == generation && skip.token.equals(observation.token)
-                    && !skip.itemAtDispatch.equals(item)) {
+                    && (replacementObserved(skip.observationAtDispatch, observation)
+                        || previousRewound(skip, observation))) {
                 finish(skip, new MediaCommandResult(MediaCommandResult.Outcome.ACKNOWLEDGED, "",
                         observation.nativeState == PlaybackState.STATE_PLAYING, true));
+                // One observed commit cannot acknowledge several rapid dispatches.
+                for (Pending later : pendingSkips) {
+                    later.observationAtDispatch = observation;
+                }
+                break;
             }
         }
     }
@@ -790,8 +796,33 @@ public final class DirectSourceEngine {
     }
 
     private static String itemIdentity(SessionObservation observation) {
+        if (observation == null) return "";
+        if (!observation.mediaUri.isEmpty()) return "u:" + observation.mediaUri;
+        if (observation.itemId.isEmpty() && observation.title.isEmpty()) return "";
         return observation.itemId.isEmpty()
                 ? "t:" + observation.title + "\u0000" + observation.subtitle : "i:" + observation.itemId;
+    }
+
+    private static boolean replacementObserved(SessionObservation before, SessionObservation after) {
+        if (before == null || itemIdentity(before).isEmpty()) return false;
+        if (!before.mediaUri.isEmpty() && !after.mediaUri.isEmpty())
+            return !before.mediaUri.equals(after.mediaUri);
+        if (!before.itemId.isEmpty() && before.itemId.equals(after.itemId)) return false;
+        if (before.mediaUri.isEmpty() != after.mediaUri.isEmpty()) return false;
+        // URI/canonical/queue-index promotion and delayed tags are not a different source.
+        if (!before.title.isEmpty() && before.title.equals(after.title)
+                && before.subtitle.equals(after.subtitle)) return false;
+        if (before.itemId.startsWith("queue:") || after.itemId.startsWith("queue:"))
+            return !before.title.isEmpty() && !after.title.isEmpty() && !before.title.equals(after.title);
+        return !itemIdentity(before).equals(itemIdentity(after));
+    }
+
+    private static boolean previousRewound(Pending skip, SessionObservation after) {
+        SessionObservation before = skip.observationAtDispatch;
+        return skip.operation == DirectOperation.PREVIOUS && before != null
+                && !itemIdentity(before).isEmpty() && itemIdentity(before).equals(itemIdentity(after))
+                && before.positionMs > 3000L && after.positionMs >= 0L && after.positionMs <= 1000L
+                && after.stateUpdatedMs > before.stateUpdatedMs;
     }
 
     private static String describe(DirectOperation operation) {

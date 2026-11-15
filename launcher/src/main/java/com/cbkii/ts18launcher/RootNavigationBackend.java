@@ -224,10 +224,10 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
 
     private AbsenceEvidence corroborateKnownTask(String packageName, int taskId) {
         if (!safePackage(packageName) || taskId <= 0) return AbsenceEvidence.UNKNOWN;
-        // status already corroborates activities, structured ATM, live Recents and stacks.
-        // Do not let a weaker package process or empty historical Recents entry veto it.
+        // Explicitly bypass the broker: shell status inspects Activity dumps, Recents and stacks.
+        // Repeating getAllStackInfos is persistence over time, not independent absence evidence.
         if (remaining() < 1500L || destroyed) return AbsenceEvidence.UNKNOWN;
-        NavigationHelperResult live = helper.run("status", packageName, "0");
+        NavigationHelperResult live = helper.run("status-shell", packageName, "0");
         if (live.success) return AbsenceEvidence.TASK_PRESENT;
         return "TASK_NOT_FOUND".equals(live.code) ? AbsenceEvidence.ABSENT : AbsenceEvidence.UNKNOWN;
     }

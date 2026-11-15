@@ -38,7 +38,7 @@ void resizeStack(int id,android.graphics.Rect b,boolean d,boolean p,boolean a,in
 import java.util.*;import java.nio.file.*;import android.content.ComponentName;import android.graphics.Rect;
 public class ActivityTaskManager {static final Service SERVICE=new Service();public static IActivityTaskManager getService(){return SERVICE;}
 public static class Service implements IActivityTaskManager {
-final StackInfo map=new StackInfo(),home=new StackInfo(),music=new StackInfo(),foreign=new StackInfo();int focused=7;
+final StackInfo map=new StackInfo(),home=new StackInfo(),music=new StackInfo(),foreign=new StackInfo();int focused=7,recreating;
 Service(){home.taskIds=new int[]{7};home.taskNames=new String[]{"com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias"};home.stackId=0;
 home.topActivity=ComponentName.unflattenFromString("com.cbkii.ts18launcher/com.cbkii.ts18launcher.LauncherActivity");home.configuration.windowConfiguration.type=2;
 music.taskIds=new int[]{84};music.taskNames=new String[]{"com.tw.media/com.tw.music.MusicActivity"};music.stackId=5;
@@ -49,14 +49,15 @@ if(System.getenv("CASE").startsWith("radio")){focused=84;music.taskNames=new Str
 if("radio-shared".equals(System.getenv("CASE"))){music.taskIds=new int[]{84,85};music.taskNames=new String[]{"com.navimods.radio/com.navimods.radio.Main","other.app/.Main"};music.taskUserIds=new int[]{0,0};}
 if("radio-permission".equals(System.getenv("CASE")))music.topActivity=ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
 if("bootstrap".equals(System.getenv("CASE")))focused=42;
-if("foreign".equals(System.getenv("CASE")))focused=99;
+if("stale-fullscreen".equals(System.getenv("CASE"))){map.configuration.windowConfiguration.mode=5;map.taskBounds=new Rect[]{new Rect(0,141,1131,702)};}
+if("foreign".equals(System.getenv("CASE"))||"stale-fullscreen".equals(System.getenv("CASE")))focused=99;
 if("shared".equals(System.getenv("CASE"))){map.taskIds=new int[]{42,43};map.taskUserIds=new int[]{0,0};map.taskNames=new String[]{map.taskNames[0],"other.app/.Main"};}
 if(System.getenv("CASE").startsWith("park")){map.configuration.windowConfiguration.mode=5;map.taskBounds=new Rect[]{new Rect(0,141,1131,702)};focused=42;}
 if("user-settings".equals(System.getenv("CASE"))){map.configuration.windowConfiguration.mode=5;map.taskBounds=new Rect[]{new Rect(0,141,1131,702)};map.topActivity=ComponentName.unflattenFromString("app.organicmaps.incar/app.organicmaps.settings.SettingsActivity");}
 if("park-settings".equals(System.getenv("CASE")))map.topActivity=ComponentName.unflattenFromString("app.organicmaps.incar/app.organicmaps.settings.SettingsActivity");
 if("park-permission".equals(System.getenv("CASE")))map.topActivity=ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
 writeFocus();}
-public List<StackInfo> getAllStackInfos(){return Arrays.asList(map,home,music,foreign);}
+public List<StackInfo> getAllStackInfos(){if(recreating>0&&--recreating==0)map.topActivity=ComponentName.unflattenFromString("app.organicmaps.incar/app.organicmaps.MwmActivity");return Arrays.asList(map,home,music,foreign);}
 public StackInfo getFocusedStackInfo(){return focused==7?home:focused==84?music:focused==99?foreign:map;}
 void writeFocus(){try{String component=getFocusedStackInfo().topActivity.flattenToString();if("dialog".equals(System.getenv("CASE")))component="com.android.permissioncontroller/.GrantPermissionsActivity";
 String mask="TS18Ready_10211_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -70,9 +71,10 @@ if(id==7&&"park-replaced".equals(System.getenv("CASE")))map.taskIds=new int[]{43
 writeFocus();}
 public void setTaskWindowingMode(int id,int mode,boolean top){if(top)throw new AssertionError("mode stole focus");System.out.println("MODE "+id+" "+mode);
 map.configuration.windowConfiguration.mode=mode;
+if("recreate".equals(System.getenv("CASE"))){map.topActivity=null;recreating=3;}
 if("cancel".equals(System.getenv("CASE"))){try{Files.writeString(Path.of(System.getenv("SIGNAL")),"mode");long end=System.nanoTime()+2_000_000_000L;while(!Files.exists(Path.of(System.getenv("RELEASE")))&&System.nanoTime()<end)Thread.sleep(5);}catch(Exception e){throw new RuntimeException(e);}}}
-public void resizeTask(int id,Rect b,int mode){if(id!=42||mode!=0)throw new AssertionError("wrong task");System.out.println("RESIZE "+id);map.taskBounds=new Rect[]{b};}
-public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration){if(b!=null||d||p||a)throw new AssertionError("unsafe bounds");System.out.println("CLEAR "+id);map.taskBounds=new Rect[]{new Rect()};}
+public void resizeTask(int id,Rect b,int mode){if(id!=42||mode!=0)throw new AssertionError("wrong task");System.out.println("RESIZE "+id);if(!"stale-fullscreen".equals(System.getenv("CASE")))map.taskBounds=new Rect[]{b==null?new Rect(0,0,1280,720):b};}
+public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration){if(b!=null||d||p||a)throw new AssertionError("unsafe bounds");System.out.println("CLEAR "+id);if(!"stale-fullscreen".equals(System.getenv("CASE")))map.taskBounds=new Rect[]{new Rect(0,0,1280,720)};}
 }}
 """
         source = SOURCE.read_text().replace(
@@ -210,6 +212,22 @@ public void resizeStack(int id,Rect b,boolean d,boolean p,boolean a,int duration
         result = self.request(child, ["background-fullscreen", 0, "app.organicmaps.incar", 42, "com.cbkii.ts18launcher", 7, 1])
         self.assertIn("OK code=BACKGROUND_FULLSCREEN", result[-1])
         self.assertFalse(any(x.startswith("FOCUS") for x in result))
+        self.finish(child)
+
+    def test_fullscreen_readback_rejects_a_stale_compact_rectangle(self):
+        child = self.launch("stale-fullscreen")
+        result = self.request(child, ["background-fullscreen", 0, "app.organicmaps.incar", 42, "com.cbkii.ts18launcher", 7, 1])
+        self.assertIn("FAIL code=GEOMETRY_NOT_VERIFIED", result[-1])
+        self.assertIn("afterBounds=0,141,1131,702", result[-1])
+        self.assertFalse(any(x.startswith("FOCUS") for x in result))
+        self.finish(child)
+
+    def test_mode_switch_tolerates_bounded_activity_recreation_of_the_same_task(self):
+        child = self.launch("recreate")
+        result = self.request(child, ["resume-windowed", 0, "app.organicmaps.incar", 0, 141, 1131, 702, 42, "com.cbkii.ts18launcher", 7])
+        self.assertIn("OK code=RESUMED_NATIVE", result[-1])
+        self.assertIn("task=42", result[-1])
+        self.assertEqual(1, sum(x.startswith("MODE") for x in result))
         self.finish(child)
 
     def test_radio_return_refuses_ambiguous_stack_and_permission_activity(self):

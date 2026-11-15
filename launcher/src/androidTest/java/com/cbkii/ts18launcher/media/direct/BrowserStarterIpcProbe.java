@@ -149,6 +149,10 @@ public final class BrowserStarterIpcProbe {
 
     /** Actual paired Auxio APK, cross-UID. No fixture session or launcher-owned player. */
     public static String runAuxio(Instrumentation instrumentation, String packageName) throws Exception {
+        return runAuxio(instrumentation, packageName, false);
+    }
+
+    public static String runAuxio(Instrumentation instrumentation, String packageName, boolean transitions) throws Exception {
         check("com.tw.media".equals(packageName) || "com.tw.media.debug".equals(packageName),
                 "not a maintained Auxio package");
         Context app = instrumentation.getTargetContext();
@@ -165,13 +169,74 @@ public final class BrowserStarterIpcProbe {
             SessionObservation observed = first.session.read();
             check(observed.deadlinePlay, "actual Auxio does not advertise HOME_PLAY_V1");
             check((observed.actions & PlaybackState.ACTION_PREPARE) != 0L, "actual Auxio lacks PREPARE");
+            if (transitions) exerciseAuxioTransitions(instrumentation, first.session, packageName);
             // This test qualifies handshake/capabilities only. A saved queue and audible decoder
             // require their own test; do not manufacture them from an empty installation.
         } finally { instrumentation.runOnMainSync(first.connection::disconnect); }
         AttemptResult second = connect(instrumentation, connector, service);
         try { check(packageName.equals(second.sessionPackage), "Auxio reconnect lost its owner"); }
         finally { instrumentation.runOnMainSync(second.connection::disconnect); }
-        return "PASS API29 actual Auxio cross-UID framework browser / source token / HOME_PLAY_V1 / reconnect";
+        return "PASS API29 actual Auxio cross-UID framework browser / source token / HOME_PLAY_V1 / reconnect"
+                + (transitions ? " / actual restore-next callbacks" : "");
+    }
+
+    private static void exerciseAuxioTransitions(Instrumentation instrumentation,
+            DirectSessionRegistry.Session session, String pkg) throws Exception {
+        check(android.os.Build.VERSION.SDK_INT == 29 && ("ranchu".equals(android.os.Build.HARDWARE)
+                || "goldfish".equals(android.os.Build.HARDWARE)), "transition seeding requires an API29 emulator");
+        Handler main = new Handler(Looper.getMainLooper());
+        java.util.List<DirectOperation> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.concurrent.atomic.AtomicInteger gaps = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicLong epoch = new java.util.concurrent.atomic.AtomicLong();
+        AtomicReference<DirectSourceEngine> engine = new AtomicReference<>();
+        CountDownLatch loaded = new CountDownLatch(1);
+        instrumentation.runOnMainSync(() -> {
+            DirectSourceEngine owner = new DirectSourceEngine(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC,
+                    (token, op) -> { sent.add(op); return session.dispatch(op); },
+                    new DirectSourceEngine.Clock() {
+                        public Object schedule(long delay, Runnable task) { main.postDelayed(task, delay); return task; }
+                        public void cancel(Object handle) { main.removeCallbacks((Runnable) handle); }
+                    }, new DirectSourceEngine.Labels() {
+                        public String sourceLabel() { return "Music"; }
+                        public String appLabel(String p) { return p; }
+                    });
+            engine.set(owner); owner.attach(pkg);
+            SessionObservation initial = session.read().withSourceOwned(true);
+            owner.onSessions(false, java.util.Collections.singletonList(initial));
+            if (DirectSourceEngine.loaded(initial)) loaded.countDown();
+            session.watch(() -> {
+                SessionObservation now = session.read().withSourceOwned(true);
+                if (now.itemId.isEmpty()) gaps.incrementAndGet();
+                owner.onSessionChanged(now);
+                // Deliberately ask on every real callback: the engine must not restart a
+                // source-owned transition even if a readiness caller rearms an epoch.
+                owner.preparePassive(epoch.incrementAndGet());
+                if (DirectSourceEngine.loaded(now)) loaded.countDown();
+            }, () -> { });
+            owner.preparePassive(epoch.incrementAndGet());
+        });
+        try {
+            check(loaded.await(8, TimeUnit.SECONDS), "BLOCKED seed was not restored by actual Auxio");
+            int prepares = java.util.Collections.frequency(sent, DirectOperation.PREPARE);
+            for (int i = 0; i < 4; i++) {
+                String before = session.read().mediaUri;
+                check(!before.isEmpty(), "actual source URI missing");
+                CountDownLatch settled = new CountDownLatch(1);
+                AtomicReference<com.cbkii.ts18launcher.media.MediaCommandResult> result = new AtomicReference<>();
+                instrumentation.runOnMainSync(() -> engine.get().command(pkg,
+                        com.cbkii.ts18launcher.media.MediaUserAction.NEXT, r -> { result.set(r); settled.countDown(); }));
+                check(settled.await(3, TimeUnit.SECONDS), "actual Next did not settle");
+                check(result.get().outcome == com.cbkii.ts18launcher.media.MediaCommandResult.Outcome.ACKNOWLEDGED,
+                        "actual Next was not confirmed: " + result.get().outcome);
+                check(!before.equals(session.read().mediaUri), "ACK retained the old source");
+                check(java.util.Collections.frequency(sent, DirectOperation.PREPARE) == prepares,
+                        "actual callback gap rearmed passive restore");
+            }
+            android.util.Log.i("TS18Media", "actual-pair callbacks gaps=" + gaps.get() + " committedNext=4");
+        } finally {
+            instrumentation.runOnMainSync(() -> { session.unwatch(); engine.get().detach();
+                if (session.read().nativeState == PlaybackState.STATE_PLAYING) session.dispatch(DirectOperation.PAUSE); });
+        }
     }
 
     private static AttemptResult connect(Instrumentation instrumentation,

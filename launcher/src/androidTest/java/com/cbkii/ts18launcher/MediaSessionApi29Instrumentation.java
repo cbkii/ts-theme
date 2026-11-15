@@ -19,9 +19,11 @@ import java.util.concurrent.TimeUnit;
  */
 public final class MediaSessionApi29Instrumentation extends Instrumentation {
     private String auxioBrowserPackage;
+    private boolean auxioTransitions;
     private boolean observeLive, coldConsent, m2Browser, m2Media3, n3Path, readinessOverlay;
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
+        auxioTransitions = arguments != null && "1".equals(arguments.getString("auxio_transitions"));
         coldConsent = arguments != null && "1".equals(arguments.getString("cold_consent"));
         observeLive = arguments != null && "1".equals(arguments.getString("observe_live"));
         m2Browser = arguments != null && "1".equals(arguments.getString("m2_browser"));
@@ -129,7 +131,7 @@ public final class MediaSessionApi29Instrumentation extends Instrumentation {
         Bundle result = new Bundle();
         try {
             result.putString("stream", com.cbkii.ts18launcher.media.direct.BrowserStarterIpcProbe.runAuxio(
-                    this, auxioBrowserPackage) + "\n");
+                    this, auxioBrowserPackage, auxioTransitions) + "\n");
             finish(Activity.RESULT_OK, result);
         } catch (Exception | AssertionError error) {
             result.putString("stream", "FAIL actual Auxio browser " + error + "\n");

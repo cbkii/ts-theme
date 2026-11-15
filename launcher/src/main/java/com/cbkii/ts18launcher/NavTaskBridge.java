@@ -36,7 +36,7 @@ public final class NavTaskBridge {
             if (observed == null) { System.out.println("NONE"); return; }
             if (!"status".equals(action)) {
                 if (!"mode".equals(action) && !"probe-mode".equals(action)
-                        && !"clear-fullscreen-bounds".equals(action))
+                        && !"clear-fullscreen-bounds".equals(action) && !"verify-fullscreen".equals(action))
                     throw new IllegalArgumentException("BAD_ACTION");
                 if (hint <= 0 || args.length != 6)
                     throw new IllegalArgumentException("TASK_AUTHORITY_REQUIRED");
@@ -50,19 +50,21 @@ public final class NavTaskBridge {
                 if (observed.foreignTop) throw new IllegalStateException("LEGITIMATE_FOREIGN_ACTIVITY");
                 if ("unknown".equals(observed.component))
                     throw new IllegalStateException("TOP_ACTIVITY_UNOBSERVED");
-                if ("clear-fullscreen-bounds".equals(action)) {
+                if ("verify-fullscreen".equals(action)) {
+                    requireFullscreenGeometry(observed);
+                } else if ("clear-fullscreen-bounds".equals(action)) {
                     if (observed.mode != 1 || mode != 1 || toTop)
                         throw new IllegalStateException("FULLSCREEN_AUTHORITY_REQUIRED");
                     // API29 resizeStack(null) removes compact override bounds. Never use a
                     // display-sized non-null rectangle or touch a shared/foreign stack.
                     Method resize = api.getMethod("resizeStack", int.class, Rect.class,
                             boolean.class, boolean.class, boolean.class, int.class);
+                    api.getMethod("resizeTask", int.class, Rect.class, int.class)
+                            .invoke(service, observed.id, null, 0);
                     resize.invoke(service, observed.stack, null, false, false, false, -1);
                 } else {
                     Method setMode = api.getMethod("setTaskWindowingMode", int.class, int.class, boolean.class);
                     if ("probe-mode".equals(action)) { mode = observed.mode; toTop = false; }
-                    if (!"probe-mode".equals(action))
-                        setMode.invoke(service, observed.id, observed.mode, false);
                     setMode.invoke(service, observed.id, mode, toTop);
                 }
                 observed = resolve(stacks.invoke(service), pkg, user, hint);
@@ -85,6 +87,8 @@ public final class NavTaskBridge {
         final long id, deadline, epoch;
         final String[] fields;
         final String maskTitle;
+        String taskEvidence = "";
+        String foregroundEvidence = "";
         Request(String[] line) {
             id = Long.parseLong(line[1]); deadline = Long.parseLong(line[2]); epoch = Long.parseLong(line[3]);
             String tail = line[line.length - 1];
@@ -131,7 +135,7 @@ public final class NavTaskBridge {
                 Throwable cause = error instanceof InvocationTargetException ? ((InvocationTargetException) error).getTargetException() : error;
                 String code = error instanceof NoSuchMethodException ? "BRIDGE_API_UNSUPPORTED" : String.valueOf(cause.getMessage());
                 if (!code.matches("[A-Z_]{1,80}")) code = "ROOT_TRANSACTION_UNCERTAIN";
-                result = "FAIL code=" + code;
+                result = "FAIL code=" + code + request.taskEvidence + request.foregroundEvidence;
             }
             System.out.println("TS18_RESULT " + request.id + " " + result); System.out.flush();
             if (closed.get() && requests.isEmpty()) return;
@@ -170,7 +174,7 @@ public final class NavTaskBridge {
             Object service = Class.forName("android.app.ActivityTaskManager").getDeclaredMethod("getService").invoke(null);
             Object raw = Class.forName("android.app.IActivityTaskManager").getMethod("getAllStackInfos").invoke(service);
             Task task = resolve(raw, pkg, user, hint);
-            if (task == null) return "FAIL code=TASK_NOT_FOUND";
+            if (task == null) return "FAIL code=TASK_NOT_FOUND provenance=ATM_STACK scope=live_stacks expectedTask=" + hint;
             // Read-only verbs report the task as it is, exactly as the shell helper does. They do
             // not judge HOME (a launcher Settings or drawer screen on top is legitimate) and they
             // accept any Activity of the navigation package: the driver may be in its settings.
@@ -188,7 +192,8 @@ public final class NavTaskBridge {
                     + " component=" + task.component + " display=" + task.display + " windowingMode=" + task.mode
                     + " bounds=" + (task.bounds == null ? "unknown" : task.bounds.left + "," + task.bounds.top
                         + "," + task.bounds.right + "," + task.bounds.bottom)
-                    + " launched=0 method=N2 phase=task-observation visible=" + task.visibility() + " drawn=unknown";
+                    + " launched=0 method=N2 phase=task-observation visible=" + task.visibility()
+                    + " drawn=unknown provenance=ATM_STACK overrideBounds=unknown baseComponent=" + task.baseComponent;
         }
         if (a.length < 6) throw new IllegalArgumentException("BAD_ARGUMENT");
         String action = a[0], pkg = a[2];
@@ -226,6 +231,7 @@ public final class NavTaskBridge {
         Method clear = api.getMethod("resizeStack", int.class, Rect.class, boolean.class, boolean.class, boolean.class, int.class);
         Task task = resolve(stacks.invoke(service), pkg, user, taskId);
         if (task == null) return "FAIL code=TASK_NOT_FOUND";
+        request.taskEvidence = task.evidence("before");
         Task home = resolve(stacks.invoke(service), "com.cbkii.ts18launcher", user, homeId);
         requireHome(home);
         if (sourceReturn) {
@@ -271,19 +277,16 @@ public final class NavTaskBridge {
         if (departure) {
             request.current();
             if (task.mode != 1) mode.invoke(service, taskId, 1, false);
-            task = resolve(stacks.invoke(service), pkg, user, taskId);
-            requireMap(task);
+            task = awaitMap(request, service, stacks, pkg, user, taskId);
             if (task.mode != 1) throw new IllegalStateException("WINDOWING_MODE_MISMATCH");
-            if (task.bounds != null && !task.bounds.isEmpty()) {
-                foreground(request, focused.invoke(service), taskId, homeId, user, true);
-                clear.invoke(service, task.stack, null, false, false, false, -1);
-            }
+            foreground(request, focused.invoke(service), taskId, homeId, user, true);
+            request.current(); resize.invoke(service, taskId, null, 0);
+            request.current(); clear.invoke(service, task.stack, null, false, false, false, -1);
         } else {
             request.current();
             boolean wasFullscreen = task.mode == 1;
             if (task.mode != 5) mode.invoke(service, taskId, 5, false);
-            task = resolve(stacks.invoke(service), pkg, user, taskId);
-            requireMap(task);
+            task = awaitMap(request, service, stacks, pkg, user, taskId);
             if (!target.equals(task.bounds)) {
                 foreground(request, focused.invoke(service), taskId, homeId, user, false);
                 resize.invoke(service, taskId, target, 0);
@@ -305,16 +308,57 @@ public final class NavTaskBridge {
                     || focusedUsers.length != 1 || focusedUsers[0] != user || focusedIds[0] != taskId)
                 throw new IllegalStateException("FOREGROUND_CHANGED");
         }
-        task = resolve(stacks.invoke(service), pkg, user, taskId);
-        requireMap(task);
-        if (departure ? task.mode != 1 || task.bounds != null && !task.bounds.isEmpty()
-                : task.mode != 5 || !target.equals(task.bounds)) throw new IllegalStateException("GEOMETRY_NOT_VERIFIED");
-        String bounds = departure ? "0,0,0,0" : target.left + "," + target.top + "," + target.right + "," + target.bottom;
+        boolean geometry = false;
+        for (int attempt = 0; attempt < 8; attempt++) {
+            task = awaitMap(request, service, stacks, pkg, user, taskId);
+            request.taskEvidence = request.taskEvidence.split(" afterTask=", 2)[0] + task.evidence("after");
+            geometry = departure ? fullscreenGeometry(task) : task.mode == 5 && target.equals(task.bounds);
+            if (geometry) break;
+            Thread.sleep(40L);
+        }
+        if (!geometry) throw new IllegalStateException("GEOMETRY_NOT_VERIFIED");
+        String bounds = rectangle(task.bounds);
         return "OK code=" + (departure ? "BACKGROUND_FULLSCREEN" : "RESUMED_NATIVE")
                 + " user=" + user + " package=" + pkg + " task=" + taskId + " stack=" + task.stack
                 + " component=" + task.component
                 + " display=0 windowingMode=" + task.mode + " bounds=" + bounds
-                + " launched=0 method=N2 phase=peer-surface visible=" + task.visibility() + " drawn=unknown";
+                + " launched=0 method=N2 phase=peer-surface visible=" + task.visibility() + " drawn=unknown"
+                + " geometry=" + (departure ? "fullscreen" : "compact") + " overrideBounds=unknown provenance=ATM_STACK"
+                + request.taskEvidence + request.foregroundEvidence;
+    }
+
+    private static Task awaitMap(Request request, Object service, Method stacks, String pkg, int user, int id) throws Exception {
+        for (int attempt = 0; attempt < 8; attempt++) {
+            request.current();
+            Task task = resolve(stacks.invoke(service), pkg, user, id);
+            if (task != null) {
+                request.taskEvidence = request.taskEvidence.split(" afterTask=", 2)[0] + task.evidence("after");
+                if (task.foreignTop || !"unknown".equals(task.component)) { requireMap(task); return task; }
+            }
+            Thread.sleep(40L);
+        }
+        throw new IllegalStateException("TASK_OBSERVATION_UNCERTAIN");
+    }
+
+    private static boolean fullscreenGeometry(Task task) throws Exception {
+        if (task == null || task.mode != 1 || task.bounds == null || task.bounds.isEmpty()) return false;
+        // API29 taskBounds are effective inherited bounds. Requested override bounds are not
+        // exposed by StackInfo. Compare against the independently observed logical display.
+        Object global = Class.forName("android.hardware.display.DisplayManagerGlobal").getMethod("getInstance").invoke(null);
+        Object info = global.getClass().getMethod("getDisplayInfo", int.class).invoke(global, task.display);
+        if (info == null) return false;
+        int width = info.getClass().getField("logicalWidth").getInt(info);
+        int height = info.getClass().getField("logicalHeight").getInt(info);
+        return width > 0 && height > 0 && task.bounds.left == 0 && task.bounds.top == 0
+                && task.bounds.right == width && task.bounds.bottom == height;
+    }
+
+    private static void requireFullscreenGeometry(Task task) throws Exception {
+        if (!fullscreenGeometry(task)) throw new IllegalStateException("GEOMETRY_NOT_VERIFIED");
+    }
+
+    private static String rectangle(Rect bounds) {
+        return bounds == null ? "unknown" : bounds.left + "," + bounds.top + "," + bounds.right + "," + bounds.bottom;
     }
 
     private static void requireMap(Task task) {
@@ -347,6 +391,9 @@ public final class NavTaskBridge {
         int[] ids = (int[]) focused.getClass().getField("taskIds").get(focused);
         int[] users = (int[]) focused.getClass().getField("taskUserIds").get(focused);
         ComponentName top = (ComponentName) focused.getClass().getField("topActivity").get(focused);
+        request.foregroundEvidence = " foregroundTasks=" + java.util.Arrays.toString(ids).replace(" ", "")
+                + " foregroundUsers=" + java.util.Arrays.toString(users).replace(" ", "")
+                + " foregroundTop=" + (top == null ? "unknown" : top.flattenToString());
         if (ids == null || users == null || ids.length != 1 || users.length != 1 || users[0] != user || top == null
                 || (departure ? ids[0] == task || ids[0] == home : ids[0] != task && ids[0] != home))
             throw new IllegalStateException("FOREGROUND_CHANGED");
@@ -430,6 +477,7 @@ public final class NavTaskBridge {
                 found.display = type.getField("displayId").getInt(stack);
                 found.mode = mode; found.activityType = activityType; found.taskCount = ids.length;
                 found.component = component.flattenToString();
+                found.baseComponent = found.component;
                 ComponentName top = (ComponentName) type.getField("topActivity").get(stack);
                 found.foreignTop = top != null && !pkg.equals(top.getPackageName());
                 // The stack top is the task top only for an exclusive stack. Preserve base
@@ -447,10 +495,15 @@ public final class NavTaskBridge {
 
     private static final class Task {
         int id, stack, display, mode, activityType, taskCount;
-        String component;
+        String component, baseComponent;
         boolean foreignTop;
         int visible = -1;
         Rect bounds;
+        String evidence(String phase) {
+            return " " + phase + "Task=" + id + " " + phase + "Stack=" + stack + " " + phase + "Display=" + display
+                    + " " + phase + "Mode=" + mode + " " + phase + "Bounds=" + rectangle(bounds)
+                    + " " + phase + "Base=" + baseComponent + " " + phase + "Top=" + component;
+        }
         String visibility() { return visible < 0 ? "unknown" : Integer.toString(visible); }
         String record() {
             String rectangle = bounds == null ? "unknown"

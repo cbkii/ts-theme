@@ -1,5 +1,10 @@
 # Media control and readiness
 
+An item transition on a live package/token/generation is source-owned work. BUFFERING, CONNECTING, directional transition states and a temporary metadata gap must not rearm cold PREPARE. Startup readiness retains the previously observed session through that transition; true session replacement or a positively empty terminal state can open a bounded new admission.
+
+Next is acknowledged only after a positive replacement source is observed. The source URI takes precedence over a raw/canonical media ID or queue index, so hydration/reordering of the same track is not a skip. Empty metadata remains unconfirmed. Previous may also be acknowledged by a fresh same-source rewind from beyond three seconds to the start. One observed replacement settles at most one outstanding skip; a timeout reports SENT_UNCONFIRMED and never replays it.
+
+
 Music and Radio each have one selected engine through `MediaFeatureFacade`. M2 Direct is the TESTING default when no preference exists. Explicit `legacy` remains a compatibility rollback; malformed or future stored values also resolve to Legacy, so a corrupted preference or a downgrade never strands a source on an unavailable engine. An unselected engine cannot command, prepare or publish for that source.
 
 The playback application owns its service, queue, MediaSession, notification and audio focus. The launcher never creates another player/session or writes the tuner.
