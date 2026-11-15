@@ -340,6 +340,9 @@ public final class NavTaskBridge {
         throw new IllegalStateException("TASK_OBSERVATION_UNCERTAIN");
     }
 
+    // Runs only behind main's API29/root gate, including calls from the persistent broker.
+    // Keep the intentional hidden display read scoped here; reflection failures stay UNKNOWN.
+    @SuppressLint({"BlockedPrivateApi", "PrivateApi"})
     private static boolean fullscreenGeometry(Task task) throws Exception {
         if (task == null || task.mode != 1 || task.bounds == null || task.bounds.isEmpty()) return false;
         // API29 taskBounds are effective inherited bounds. Requested override bounds are not
