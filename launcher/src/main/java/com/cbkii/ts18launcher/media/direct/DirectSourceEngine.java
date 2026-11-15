@@ -831,10 +831,22 @@ public final class DirectSourceEngine {
 
     private static boolean previousRewound(Pending skip, SessionObservation after) {
         SessionObservation before = skip.observationAtDispatch;
-        return skip.operation == DirectOperation.PREVIOUS && before != null
-                && !itemIdentity(before).isEmpty() && itemIdentity(before).equals(itemIdentity(after))
-                && before.positionMs > 3000L && after.positionMs >= 0L && after.positionMs <= 1000L
-                && after.stateUpdatedMs > before.stateUpdatedMs;
+        if (skip.operation != DirectOperation.PREVIOUS || before == null
+                || itemIdentity(before).isEmpty() || !itemIdentity(before).equals(itemIdentity(after))
+                || after.positionMs < 0L || after.positionMs > 1000L
+                || after.stateUpdatedMs <= before.stateUpdatedMs) return false;
+        // PlaybackState.position is the position at its last update, not now. A playing source
+        // normally publishes once near the start of a track, so extrapolate to the dispatch time.
+        long dispatched = estimatedPosition(before, skip.createdMs);
+        return dispatched >= 0L && dispatched - after.positionMs >= 1500L;
+    }
+
+    /** Framework PlaybackState position extrapolated to an elapsedRealtime; -1 when unknown. */
+    static long estimatedPosition(SessionObservation observation, long atElapsedMs) {
+        if (observation == null || observation.positionMs < 0L) return -1L;
+        if (observation.nativeState != PlaybackState.STATE_PLAYING || observation.stateUpdatedMs <= 0L
+                || atElapsedMs <= observation.stateUpdatedMs) return observation.positionMs;
+        return observation.positionMs + (atElapsedMs - observation.stateUpdatedMs);
     }
 
     private static String describe(DirectOperation operation) {

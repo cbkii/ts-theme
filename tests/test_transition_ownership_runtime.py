@@ -88,6 +88,19 @@ public static void main(String[] args)throws Exception{
  engine.command("com.tw.media",MediaUserAction.PREVIOUS,results::add);
  engine.onSessionChanged(new SessionObservation("token","com.tw.media",3,16438,"canonical-8","other","",true,true,"file:///different",0,200));
  check(results.size()==3,"legitimate Previous rewind was not acknowledged");
+ // A playing source publishes its position once near track start; dispatch-time position is
+ // extrapolated (Auxio's own >3 s rewind rule applies to its current, not last published, position).
+ android.os.SystemClock.now=1000;engine.onSessionChanged(new SessionObservation("token","com.tw.media",3,16438,"canonical-8","other","",true,true,"file:///different",200,1000));
+ android.os.SystemClock.now=9000;engine.command("com.tw.media",MediaUserAction.PREVIOUS,results::add);
+ engine.onSessionChanged(new SessionObservation("token","com.tw.media",3,16438,"canonical-8","other","",true,true,"file:///different",0,9040));
+ check(results.size()==4&&results.get(3).outcome==MediaCommandResult.Outcome.ACKNOWLEDGED,"playing-track Previous rewind used the stale published position");
+ // Near the start, an unchanged item reset to 0 is not a demonstrated rewind or item change.
+ android.os.SystemClock.now=9500;engine.command("com.tw.media",MediaUserAction.PREVIOUS,results::add);
+ engine.onSessionChanged(new SessionObservation("token","com.tw.media",3,16438,"canonical-8","other","",true,true,"file:///different",0,9600));
+ check(results.size()==4,"Previous at track start acknowledged an unchanged item");
+ engine.onSessionChanged(new SessionObservation("token","com.tw.media",3,16438,"canonical-7","prior","",true,true,"file:///prior",0,9700));
+ check(results.size()==5,"Previous to an earlier item did not settle");
+ results.remove(4);results.remove(3);
  engine.command("com.tw.media",MediaUserAction.NEXT,results::add);
  engine.command("com.tw.media",MediaUserAction.NEXT,results::add);
  engine.onSessionChanged(state(3,"third"));check(results.size()==4,"one commit acknowledged several rapid skips");
