@@ -189,6 +189,7 @@ public final class BrowserStarterIpcProbe {
         java.util.concurrent.atomic.AtomicInteger gaps = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicLong epoch = new java.util.concurrent.atomic.AtomicLong();
         AtomicReference<DirectSourceEngine> engine = new AtomicReference<>();
+        AtomicReference<String> committedSource = new AtomicReference<>("");
         CountDownLatch loaded = new CountDownLatch(1);
         instrumentation.runOnMainSync(() -> {
             DirectSourceEngine owner = new DirectSourceEngine(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC,
@@ -203,15 +204,23 @@ public final class BrowserStarterIpcProbe {
             engine.set(owner); owner.attach(pkg);
             SessionObservation initial = session.read().withSourceOwned(true);
             owner.onSessions(false, java.util.Collections.singletonList(initial));
-            if (DirectSourceEngine.loaded(initial)) loaded.countDown();
+            if (DirectSourceEngine.loaded(initial) && !initial.mediaUri.isEmpty()) {
+                committedSource.set(initial.mediaUri); loaded.countDown();
+            }
             session.watch(() -> {
                 SessionObservation now = session.read().withSourceOwned(true);
                 if (now.itemId.isEmpty()) gaps.incrementAndGet();
+                // Capture the same positive source observation that reaches the real engine.
+                // A separate Binder read after ACK may already be in the next metadata gap.
+                if (DirectSourceEngine.loaded(now) && !now.mediaUri.isEmpty()) {
+                    committedSource.set(now.mediaUri); loaded.countDown();
+                }
+                android.util.Log.i("TS18Media", "actual-pair callback state=" + now.nativeState
+                        + " item=" + !now.itemId.isEmpty() + " uri=" + !now.mediaUri.isEmpty());
                 owner.onSessionChanged(now);
                 // Deliberately ask on every real callback: the engine must not restart a
                 // source-owned transition even if a readiness caller rearms an epoch.
                 owner.preparePassive(epoch.incrementAndGet());
-                if (DirectSourceEngine.loaded(now)) loaded.countDown();
             }, () -> { });
             owner.preparePassive(epoch.incrementAndGet());
         });
@@ -219,7 +228,7 @@ public final class BrowserStarterIpcProbe {
             check(loaded.await(8, TimeUnit.SECONDS), "BLOCKED seed was not restored by actual Auxio");
             int prepares = java.util.Collections.frequency(sent, DirectOperation.PREPARE);
             for (int i = 0; i < 4; i++) {
-                String before = session.read().mediaUri;
+                String before = committedSource.get();
                 check(!before.isEmpty(), "actual source URI missing");
                 CountDownLatch settled = new CountDownLatch(1);
                 AtomicReference<com.cbkii.ts18launcher.media.MediaCommandResult> result = new AtomicReference<>();
@@ -228,7 +237,7 @@ public final class BrowserStarterIpcProbe {
                 check(settled.await(3, TimeUnit.SECONDS), "actual Next did not settle");
                 check(result.get().outcome == com.cbkii.ts18launcher.media.MediaCommandResult.Outcome.ACKNOWLEDGED,
                         "actual Next was not confirmed: " + result.get().outcome);
-                check(!before.equals(session.read().mediaUri), "ACK retained the old source");
+                check(!before.equals(committedSource.get()), "ACK retained the old source at step " + i);
                 check(java.util.Collections.frequency(sent, DirectOperation.PREPARE) == prepares,
                         "actual callback gap rearmed passive restore");
             }

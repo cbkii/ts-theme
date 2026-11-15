@@ -304,7 +304,12 @@ public class DirectSourceMediaBackendTest {
         tap(MediaSourceKey.MUSIC, AUXIO, MediaUserAction.NEXT);
         assertEquals(Arrays.asList(DirectOperation.NEXT, DirectOperation.NEXT), music.dispatched);
         music.item("c", "C", "").emit();
+        assertEquals("one observed replacement cannot acknowledge two commands", 1, results.size());
+        music.emit();
+        assertEquals("repeated metadata is not another replacement", 1, results.size());
+        music.item("d", "D", "").emit();
         assertEquals(2, results.size());
+        for (MediaCommandResult result : results) assertEquals(Outcome.ACKNOWLEDGED, result.outcome);
     }
 
     // ---- item identity and metadata -------------------------------------------------------

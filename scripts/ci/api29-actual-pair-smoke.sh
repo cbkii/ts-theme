@@ -12,6 +12,8 @@ for apk in "$1" "$2" "$3" "$4"; do [[ -f $apk ]] || exit 66; done
 unzip -p "$1" assets/build-info.properties | grep -Fxq "source_revision=$LAUNCHER_SOURCE_SHA"
 proof=$5
 mkdir -p "$proof"
+# Preserve bounded real callback evidence even when seed/transport assertions fail.
+trap 'timeout 10s adb shell logcat -d -t 2000 -v monotonic -s TS18Transport:V TS18Media:V > "$proof/callbacks.txt" 2>&1 || true' EXIT
 sha256sum "$1" "$2" "$3" "$4" > "$proof/APK-SHA256SUMS.txt"
 printf 'launcher_source=%s\nauxio_source=%s\nqualification=API29_EMULATOR_ONLY\n' \
   "$LAUNCHER_SOURCE_SHA" "$AUXIO_SOURCE_SHA" > "$proof/SOURCE-PAIR.txt"
@@ -25,5 +27,4 @@ adb shell am instrument -w -e auxio_browser 1 -e auxio_transitions 1 -e auxio_pa
   com.cbkii.ts18launcher.test/com.cbkii.ts18launcher.MediaSessionApi29Instrumentation | tee "$proof/actual-transitions.txt"
 grep -Fq 'PASS API29 actual Auxio cross-UID' "$proof/actual-transitions.txt"
 grep -Fq 'actual restore-next callbacks' "$proof/actual-transitions.txt"
-adb shell logcat -d -v monotonic -s 'TS18Transport:V' 'TS18Media:V' > "$proof/callbacks.txt"
 printf 'PASS actual Auxio decoder/restore/Next -> actual launcher engine, four committed sources, no passive reprepare\n'
