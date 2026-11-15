@@ -11,9 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavTaskBridge.java"
-STUBS = {
-    # Only the dumpsys process boundary is doubled here; NavWindowProbe has its own IO tests.
-    "com/cbkii/ts18launcher/NavWindowProbe.java": '''package com.cbkii.ts18launcher;
+WINDOW_PROBE_STUB = '''package com.cbkii.ts18launcher;
 public class NavWindowProbe {
  static int reads;
  public static class Failure extends Exception { final String reason="TEST_IO"; }
@@ -23,7 +21,9 @@ public class NavWindowProbe {
   String token="recent-focus-race".equals(s)&&reads%2==0?"changed":"home";
   return "mCurrentFocus=Window{"+token+" u0 "+owner+"}";
  }
-}''',
+}'''
+
+STUBS = {
     "android/hardware/display/DisplayManagerGlobal.java": "package android.hardware.display;public class DisplayManagerGlobal {public static DisplayManagerGlobal getInstance(){return new DisplayManagerGlobal();}public Info getDisplayInfo(int display){return new Info();}public static class Info {public int logicalWidth=1280,logicalHeight=720;}}",
     "android/os/Bundle.java": "package android.os; public class Bundle { public int mode=-1, display=-1; }",
     "android/content/Intent.java": "package android.content; public class Intent { final ComponentName c; public Intent(String s){c=ComponentName.unflattenFromString(s);} public ComponentName getComponent(){return c;} }",
@@ -134,7 +134,10 @@ class NavTaskBridgeTest(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory()
         cls.work = Path(cls.temp.name)
         files = []
-        for name, text in STUBS.items():
+        stubs = dict(STUBS)
+        # Keep this IO double local: the broker harness imports STUBS and runs the real probe.
+        stubs["com/cbkii/ts18launcher/NavWindowProbe.java"] = WINDOW_PROBE_STUB
+        for name, text in stubs.items():
             file = cls.work / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text(text)
