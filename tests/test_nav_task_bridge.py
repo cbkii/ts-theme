@@ -59,7 +59,7 @@ public class StackInfo {
  public ComponentName topActivity=ComponentName.unflattenFromString("app.organicmaps.incar/app.organicmaps.MwmActivity");
 }''',
     "android/app/ActivityTaskManager.java": '''package android.app;
-import java.util.*;
+import java.util.*; import android.content.ComponentName;
 public class ActivityTaskManager {
  public static IActivityTaskManager getService(){return new Service();}
  public static class Service implements IActivityTaskManager {
@@ -143,8 +143,10 @@ class NavTaskBridgeTest(unittest.TestCase):
             file.write_text(text)
             files.append(str(file))
         # Use the JDK compiler module: also works where javac's wrapper is not installed.
-        subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "-d", str(cls.work),
-                        *files, str(SOURCE), str(SOURCE.with_name("StartupMaskFocus.java")), str(SOURCE.with_name("NavCompactConsent.java")), str(SOURCE.with_name("NavigationTaskStage.java"))], check=True, capture_output=True, text=True)
+        compiled = subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "-d", str(cls.work),
+                        *files, str(SOURCE), str(SOURCE.with_name("StartupMaskFocus.java")), str(SOURCE.with_name("NavCompactConsent.java")), str(SOURCE.with_name("NavigationTaskStage.java"))], capture_output=True, text=True)
+        if compiled.returncode:
+            raise AssertionError(compiled.stdout + compiled.stderr)
 
     @classmethod
     def tearDownClass(cls):
