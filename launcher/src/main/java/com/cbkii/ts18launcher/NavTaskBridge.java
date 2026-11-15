@@ -11,7 +11,11 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 
-/** API-29-only app_process entry point. No Activity launch or vendor-state writes. */
+/**
+ * API-29-only app_process entry point. No vendor-state writes. Its only Activity start is
+ * reacquire-recent: the explicit-user, claim-guarded resumption of one exact retained
+ * Recents task, preserving its task identity exactly as SystemUI Recents would.
+ */
 public final class NavTaskBridge {
     private NavTaskBridge() { }
 
@@ -32,6 +36,10 @@ public final class NavTaskBridge {
             Object service = atm.getDeclaredMethod("getService").invoke(null);
             Class<?> api = Class.forName("android.app.IActivityTaskManager");
             Method stacks = api.getMethod("getAllStackInfos");
+            if ("recent-task".equals(action) || "reacquire-recent".equals(action)) {
+                retainedRecent(action, args, service, api, stacks, pkg, user, hint);
+                return;
+            }
             Task observed = resolve(stacks.invoke(service), pkg, user, hint);
             if (observed == null) { System.out.println("NONE"); return; }
             if (!"status".equals(action)) {
@@ -451,6 +459,72 @@ public final class NavTaskBridge {
                     + " " + unavailable.getMessage());
             throw focusUnknown(unavailable.reason);
         }
+    }
+
+    /**
+     * A task whose Activities finished (Back on Android 10, or an app finish) leaves Recents with
+     * stackId=-1 and numActivities=0 while its process can stay alive. Recents resumes that
+     * SAME task ID through startActivityFromRecents; an ordinary launcher intent instead creates a
+     * new task. Read-only recent-task reports the unique retained candidate;
+     * reacquire-recent resumes only the caller-named one and reads back that exact ID.
+     * Any live, running or unaccounted package task is contrary evidence and is never resumed.
+     */
+    // Root app_process only (main's API29/UID0 gate); hidden ATM/Recents contracts stay UNKNOWN.
+    @SuppressLint({"BlockedPrivateApi", "PrivateApi"})
+    private static void retainedRecent(String action, String[] args, Object service, Class<?> api,
+                                       Method stacks, String pkg, int user, int hint) throws Exception {
+        boolean start = "reacquire-recent".equals(action);
+        if (start && (hint <= 0 || args.length != 5)) throw new IllegalArgumentException("TASK_AUTHORITY_REQUIRED");
+        int mode = start ? Integer.parseInt(args[4]) : 0;
+        if (start && mode != 1 && mode != 5) throw new IllegalArgumentException("BAD_MODE");
+        Task live = resolve(stacks.invoke(service), pkg, user, 0);
+        if (live != null) { System.out.println(live.record()); return; }
+        Object slice = api.getMethod("getRecentTasks", int.class, int.class, int.class)
+                .invoke(service, 32, 0x0002 /* RECENT_IGNORE_UNAVAILABLE */, user);
+        Object listed = slice == null ? null : slice.getClass().getMethod("getList").invoke(slice);
+        if (!(listed instanceof List)) throw new IllegalStateException("RECENTS_UNREADABLE");
+        int candidate = -1, retained = 0;
+        for (Object info : (List<?>) listed) {
+            Class<?> type = info.getClass();
+            Object base = type.getField("baseIntent").get(info);
+            ComponentName component = base instanceof android.content.Intent
+                    ? ((android.content.Intent) base).getComponent() : null;
+            if (type.getField("userId").getInt(info) != user) continue;
+            if (component == null) throw new IllegalStateException("RECENT_IDENTITY_UNREADABLE");
+            if (!pkg.equals(component.getPackageName())) continue;
+            int id = type.getField("taskId").getInt(info);
+            if (type.getField("stackId").getInt(info) != -1 || type.getField("isRunning").getBoolean(info)
+                    || type.getField("numActivities").getInt(info) != 0)
+                throw new IllegalStateException("TASK_OBSERVATION_UNCERTAIN");
+            retained++;
+            if (hint <= 0 || id == hint) candidate = id;
+        }
+        if (hint <= 0 && retained > 1) throw new IllegalStateException("TASK_AMBIGUOUS");
+        if (candidate <= 0) { System.out.println("NONE"); return; }
+        if (!start) { System.out.println("RECENT " + candidate); return; }
+        android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+        options.setLaunchDisplayId(0);
+        android.app.ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, mode);
+        int code;
+        try {
+            code = (Integer) api.getMethod("startActivityFromRecents", int.class, android.os.Bundle.class)
+                    .invoke(service, candidate, options.toBundle());
+        } catch (InvocationTargetException refused) {
+            Throwable cause = refused.getTargetException();
+            // Framework argument and permission checks precede any Activity start.
+            if (cause instanceof SecurityException || cause instanceof IllegalArgumentException) {
+                System.out.println("REFUSED " + cause.getClass().getSimpleName());
+                System.exit(5);
+            }
+            throw refused;
+        }
+        if (code < 0) { System.out.println("REFUSED start=" + code); System.exit(5); }
+        for (int attempt = 0; attempt < 12; attempt++) {
+            Task resumed = resolve(stacks.invoke(service), pkg, user, candidate);
+            if (resumed != null) { System.out.println(resumed.record()); return; }
+            Thread.sleep(50L);
+        }
+        throw new IllegalStateException("REACQUIRE_UNCONFIRMED");
     }
 
     private static Task resolve(Object raw, String pkg, int user, int hint) throws Exception {

@@ -224,7 +224,10 @@ class NativeNavigationWindowContractTest(unittest.TestCase):
         self.assertIn("logCapabilityEvidence(result)", self.controller)
         self.assertRegex(
             present,
-            r'0\) validate_observed_component ;;\s*1\)\s*\[ "\$METHOD" != N0 \] \|\| fail NORMAL_OPEN_REQUIRED\s*require_home_presentation 0\s*launch_freeform_once',
+            # HOME presentation precedes both the explicit same-task Recents resumption and
+            # the single ordinary cold launch.
+            r'0\) validate_observed_component ;;\s*1\)\s*\[ "\$METHOD" != N0 \] \|\| fail NORMAL_OPEN_REQUIRED\s*require_home_presentation 0\s*'
+            r'if reacquire_retained_task 1; then[^;]*?require_task "\$PKG" "\$TASK_ID" 1\s*else\s*launch_freeform_once',
         )
         self.assertEqual(1, present.count('launch_freeform_once "$launch_component"'))
         self.assertRegex(present, r"2\) fail TASK_AMBIGUOUS.*;;")

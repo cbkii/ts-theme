@@ -66,6 +66,22 @@ elif cmd == 'app_process':
         print('UNKNOWN SecurityException permission_denied'); sys.exit(1)
     if s.get('ambiguous') and a[3] == '0':
         print('UNKNOWN IllegalStateException TASK_AMBIGUOUS'); sys.exit(1)
+    if a[0] == 'recent-task':
+        if s.get('nav_alive', True): print('FOUND 42 4 0 %s %s unknown unknown' % (s['mode'], ','.join(map(str,s['bounds'])))); sys.exit(0)
+        retained = s.get('retained_recent', 0)
+        if retained and a[3] in ('0', str(retained)): print('RECENT %s' % retained)
+        else: print('NONE')
+        sys.exit(0)
+    if a[0] == 'reacquire-recent':
+        s['commands'].append(['bridge', *a])
+        if s.get('reacquire_refused'): write_state(s); print('REFUSED start=-91'); sys.exit(5)
+        assert a[3] == str(s.get('retained_recent')), a
+        s.update(nav_alive=True, mode=int(a[4]), bounds=[0,0,1280,720], focus=42,
+                 nav_component=s.get('reacquired_component', 'app.organicmaps.MwmActivity'))
+        s.pop('retained_recent', None); s['empty_recents'] = False
+        write_state(s)
+        print('FOUND 42 4 0 %s 0,0,1280,720 app.organicmaps.incar/%s unknown' % (s['mode'], s['nav_component']))
+        sys.exit(0)
     if not s.get('nav_alive', True): print('NONE'); sys.exit(0)
     if a[0] != 'status':
         if s.get('bridge_top_missing'):
@@ -171,6 +187,7 @@ class NavigationLifecycleTest(unittest.TestCase):
                 boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
                 claim = work / ('launch-0-' + overrides.get('nav_package', 'app.organicmaps.incar') + '-' + boot)
                 claim.mkdir()
+                if isinstance(seed_claim, str): (claim / 'state').write_text(seed_claim + '\n')
                 os.utime(claim, (1, 1))
             if legacy_claim:
                 boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
@@ -195,6 +212,7 @@ class NavigationLifecycleTest(unittest.TestCase):
                         state_path.write_text(json.dumps(state))
             final_state = json.loads(state_path.read_text())
             final_state['claims_remaining'] = len(list(work.glob('launch-*')))
+            final_state['claim_states'] = [c.joinpath('state').read_text().strip() for c in work.glob('launch-*') if c.joinpath('state').exists()]
             final_state['automatic_claims'] = len(list(work.glob('auto-v1-*')))
             receipt = work / 'start-dispatches.jsonl'
             final_state['start_dispatches'] = len(receipt.read_text().splitlines()) if receipt.exists() else 0
@@ -316,6 +334,84 @@ class NavigationLifecycleTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout)
         self.assertEqual(0, state['claims_remaining'])
         self.assertEqual([], state['commands'])
+
+    # Run 2 (v3.4.1): accepted bootstrap task 9235 lost its Activities while Maps' process stayed
+    # alive; Recents kept the empty task. Explicit Fullscreen alternated LAUNCH_PENDING and
+    # AUTOSTART_DISABLED until the operator resumed the SAME task from Recents.
+    RUN2_CLAIM = 'observed 16847 900 method=N2 transaction=2 uptime=124 task=42'
+    FULLSCREEN = ['fullscreen', '0', 'app.organicmaps.incar', '0', 'app.organicmaps.incar/app.organicmaps.SplashActivity']
+
+    def run2(self, **overrides):
+        values = dict(nav_alive=False, process_only=True, empty_recents=True, retained_recent=42,
+                      bridge_available=True, focus=7, method='N2')
+        values.update(overrides)
+        return self.run_helper(self.FULLSCREEN, **values)
+
+    def test_run2_explicit_fullscreen_resumes_same_retained_task_under_its_claim(self):
+        result, state = self.run2(seed_claim=self.RUN2_CLAIM)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('code=FULLSCREEN', result.stdout)
+        self.assertIn(' task=42 ', result.stdout)
+        self.assertEqual(0, state['start_dispatches'], 'ordinary launcher intent would create a second task')
+        self.assertEqual([['bridge', 'reacquire-recent', '0', 'app.organicmaps.incar', '42', '1']],
+                         [c for c in state['commands'] if c[:2] == ['bridge', 'reacquire-recent']])
+        self.assertEqual(0, state['claims_remaining'], 'observed map did not settle the original claim')
+
+    def test_explicit_fullscreen_without_claim_takes_one_claim_for_reacquisition(self):
+        result, state = self.run2()
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertEqual(0, state['claims_remaining'])
+
+    def test_reacquired_bootstrap_keeps_claim_until_map_is_observed(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, process_only=True, empty_recents=True, retained_recent=42,
+            bridge_available=True, focus=7, method='N2', transition='bridge', seed_claim=self.RUN2_CLAIM,
+            reacquired_component='app.organicmaps.SplashActivity')
+        self.assertIn('BOOTSTRAP_PENDING', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertEqual(1, state['claims_remaining'])
+        self.assertRegex(state['claim_states'][0], r'^observed .*method=N2 .*task=42$')
+
+    def test_uncertain_or_unbound_claim_is_never_reacquired(self):
+        for claim in ('uncertain 16847 900 method=N2 transaction=2 uptime=124 task=42',
+                      'accepted 16847 900 method=N2 transaction=2 uptime=124 task=unknown',
+                      'dispatching 16847 900 method=N2 transaction=2 uptime=124 task=42'):
+            result, state = self.run2(seed_claim=claim)
+            self.assertIn('LAUNCH_PENDING', result.stdout, claim)
+            self.assertEqual(0, state['start_dispatches'], claim)
+            self.assertFalse([c for c in state['commands'] if c[:2] == ['bridge', 'reacquire-recent']], claim)
+
+    def test_claim_bound_to_another_task_is_not_reacquired(self):
+        result, state = self.run2(seed_claim=self.RUN2_CLAIM.replace('task=42', 'task=41'))
+        self.assertIn('LAUNCH_PENDING', result.stdout)
+        self.assertFalse([c for c in state['commands'] if c[:2] == ['bridge', 'reacquire-recent']])
+
+    def test_automatic_policy_never_resumes_from_recents(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, process_only=True, empty_recents=True, retained_recent=42,
+            bridge_available=True, focus=7, method='N2', cold_policy='automatic', seed_claim=self.RUN2_CLAIM)
+        self.assertNotEqual(0, result.returncode, result.stdout)
+        self.assertFalse([c for c in state['commands'] if c[:1] == ['bridge'] and 'recent' in c[1]])
+        self.assertEqual(0, state['start_dispatches'])
+
+    def test_explicit_compact_retry_resumes_same_task_then_windows_it(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, process_only=True, empty_recents=True, retained_recent=42,
+            bridge_available=True, focus=7, method='N2', transition='bridge', seed_claim=self.RUN2_CLAIM)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertEqual(5, state['mode'])
+        self.assertEqual(0, state['claims_remaining'])
+
+    def test_framework_refusal_restores_the_original_claim_exactly(self):
+        result, state = self.run2(seed_claim=self.RUN2_CLAIM, reacquire_refused=True)
+        self.assertIn('LAUNCH_PENDING', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertEqual([self.RUN2_CLAIM], state['claim_states'])
 
     def test_fullscreen_clears_compact_override_bounds(self):
         result, state = self.run_helper(['fullscreen','0','app.organicmaps.incar','42'], bridge_available=True)

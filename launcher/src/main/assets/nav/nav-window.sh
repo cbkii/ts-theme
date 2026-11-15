@@ -696,6 +696,58 @@ check_cold_launch_result() {
   journal_launch accepted
 }
 
+# Explicit-user recovery of the exact task Recents retains after its Activities finished
+# (Android 10 Back, or an app finish, while the process may stay alive). Resuming that task ID
+# cannot create a second Maps task; an ordinary LAUNCHER intent would. One atomic claim still
+# covers the start. An accepted/observed claim bound to the same task is that launch's own
+# continuation; reserved, dispatching, uncertain or unbound claims stay protected
+# (LAUNCH_PENDING via the ordinary path). Automatic/passive policy never reaches this.
+# Returns 0 with the resumed task parsed, 1 when no unique retained task applies.
+reacquire_retained_task() {
+  [ "$COLD_POLICY" = manual ] || return 1
+  launch_claim_path || return 1
+  retained_hint=0
+  retained_state=""
+  if [ -d "$launch_marker" ]; then
+    retained_state=$(cat "$launch_marker/state" 2>/dev/null) || return 1
+    case "$retained_state" in accepted\ *|observed\ *) ;; *) return 1 ;; esac
+    retained_hint=${retained_state##*task=}
+    valid_uint "$retained_hint" || return 1
+    [ "$retained_hint" -gt 0 ] || return 1
+  fi
+  recent_record=$(run_bridge recent-task "$PKG" "$retained_hint" 2>/dev/null) || return 1
+  case "$recent_record" in RECENT\ *) ;; *) return 1 ;; esac
+  recent_task=${recent_record#RECENT }
+  valid_uint "$recent_task" || return 1
+  [ "$recent_task" -gt 0 ] || return 1
+  [ "$retained_hint" = 0 ] || [ "$recent_task" = "$retained_hint" ] || return 1
+  [ -n "$retained_state" ] || claim_cold_launch
+  PHASE=reacquire
+  TASK_ID="$recent_task"
+  journal_launch reacquiring
+  reacquired=$(run_bridge reacquire-recent "$PKG" "$recent_task" "$1" 2>/dev/null)
+  case "$reacquired" in
+    FOUND\ *) ;;
+    REFUSED*)
+      # The framework refused before any Activity start: restore the prior claim exactly.
+      if [ -n "$retained_state" ]; then
+        printf '%s\n' "$retained_state" > "$launch_marker/state.$$" && mv "$launch_marker/state.$$" "$launch_marker/state"
+      else
+        clear_launch_claim
+        clear_automatic_refusal
+      fi
+      log_event "retained task reacquire refused package=$PKG task=$recent_task detail=$reacquired"
+      return 1 ;;
+    *) journal_launch uncertain; fail REACQUIRE_UNCONFIRMED "task=$recent_task" ;;
+  esac
+  parse_task_record "$reacquired" || { journal_launch uncertain; fail TASK_OBSERVATION_UNCERTAIN; }
+  [ "$TASK_ID" = "$recent_task" ] || { journal_launch uncertain; fail TASK_REPLACED "expectedTask=$recent_task"; }
+  LAUNCHED=1
+  journal_launch accepted
+  log_event "reacquired retained task=$TASK_ID package=$PKG transaction=$TRANSACTION mode=$1"
+  return 0
+}
+
 resolve_launch_claim_if_ready() {
   [ "$DISPLAY_ID" = 0 ] || return 0
   [ "$TASK_COMPONENT" != unknown ] || return 0
@@ -961,9 +1013,18 @@ case "$action" in
         1)
           [ "$METHOD" != N0 ] || fail NORMAL_OPEN_REQUIRED
           require_home_presentation 0
-          launch_freeform_once "$launch_component"
-          PHASE=bootstrap
-          require_task "$PKG" 0 1
+          if reacquire_retained_task 1; then
+            # Same-task resumption follows the N2 fullscreen-then-window bridge path.
+            METHOD=N2
+            TRANSITION=bridge
+            journal_launch accepted
+            PHASE=bootstrap
+            require_task "$PKG" "$TASK_ID" 1
+          else
+            launch_freeform_once "$launch_component"
+            PHASE=bootstrap
+            require_task "$PKG" 0 1
+          fi
           journal_launch observed
           ;;
         2) fail TASK_AMBIGUOUS "count=${TASK_COUNT:-unknown}" ;;
@@ -1111,19 +1172,25 @@ case "$action" in
         [ "$METHOD" != N0 ] || fail NORMAL_OPEN_REQUIRED
         valid_component "$cold_component" || fail COMPONENT_UNKNOWN
         case "$cold_component" in "$PKG"/*) ;; *) fail COMPONENT_PACKAGE_MISMATCH ;; esac
-        PHASE=launch
-        native_launch_supported || fail FULLSCREEN_LAUNCH_UNSUPPORTED
-        claim_cold_launch
-        journal_launch dispatching
-        bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 1 \
-          -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
-          -f 0x10000000 -n "$cold_component" >"$LAUNCH_OUTPUT" 2>&1
-        LAUNCH_EXIT=$?
-        check_cold_launch_result FULLSCREEN_FAILED FULLSCREEN_LAUNCH_UNSUPPORTED
-        LAUNCHED=1
-        PHASE=bootstrap
-        require_task "$PKG" 0 30
-        hint="$TASK_ID"
+        if reacquire_retained_task 1; then
+          PHASE=bootstrap
+          require_task "$PKG" "$TASK_ID" 30
+          hint="$TASK_ID"
+        else
+          PHASE=launch
+          native_launch_supported || fail FULLSCREEN_LAUNCH_UNSUPPORTED
+          claim_cold_launch
+          journal_launch dispatching
+          bounded am start --user "$ANDROID_USER" --display 0 --windowingMode 1 \
+            -a android.intent.action.MAIN -c android.intent.category.LAUNCHER \
+            -f 0x10000000 -n "$cold_component" >"$LAUNCH_OUTPUT" 2>&1
+          LAUNCH_EXIT=$?
+          check_cold_launch_result FULLSCREEN_FAILED FULLSCREEN_LAUNCH_UNSUPPORTED
+          LAUNCHED=1
+          PHASE=bootstrap
+          require_task "$PKG" 0 30
+          hint="$TASK_ID"
+        fi
         ;;
       2) fail TASK_AMBIGUOUS ;;
       *) fail TASK_OBSERVATION_UNCERTAIN ;;
