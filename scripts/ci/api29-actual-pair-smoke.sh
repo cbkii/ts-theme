@@ -24,7 +24,7 @@ timeout 90s adb shell am instrument -w -e pair_seed 1 -e pair_gaps 1 -e expected
   com.tw.media.debug.test/androidx.test.runner.AndroidJUnitRunner > "$proof/seed.txt" 2>&1 &
 probe_pid=$!
 ready=0
-for attempt in $(seq 1 200); do
+for _ in $(seq 1 200); do
   if adb shell run-as com.tw.media.debug test -f cache/pair-gap-ready; then ready=1; break; fi
   if ! kill -0 "$probe_pid" 2>/dev/null; then cat "$proof/seed.txt"; exit 1; fi
   sleep 0.1
