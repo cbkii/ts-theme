@@ -63,7 +63,7 @@ jobs:
       - name: Build actual Auxio and opt-in seed
         working-directory: paired-auxio
         env:
-          GITHUB_SHA: ${{ steps.peer.outputs.sha }}
+          AUXIO_TS_SOURCE_SHA: ${{ steps.peer.outputs.sha }}
         run: |
           bash scripts/bootstrap-dependencies.sh --profile full-build
           bash scripts/ci-gradle.sh :app:assembleDebug :app:assembleDebugAndroidTest

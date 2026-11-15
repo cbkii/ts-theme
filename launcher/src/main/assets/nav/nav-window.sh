@@ -799,8 +799,8 @@ move_task_fullscreen() {
 verify_fullscreen_geometry() {
   fullscreen_pkg="$1"; fullscreen_task="$2"; fullscreen_try=0
   while [ "$fullscreen_try" -lt 3 ]; do
-    fullscreen_record=$(run_bridge verify-fullscreen "$fullscreen_pkg" "$fullscreen_task" 1 0 2>/dev/null)
-    if [ "$?" = 0 ] && parse_task_record "$fullscreen_record" && [ "$TASK_ID" = "$fullscreen_task" ] \
+    if fullscreen_record=$(run_bridge verify-fullscreen "$fullscreen_pkg" "$fullscreen_task" 1 0 2>/dev/null) \
+        && parse_task_record "$fullscreen_record" && [ "$TASK_ID" = "$fullscreen_task" ] \
         && [ "$DISPLAY_ID" = 0 ] && [ "$WINDOWING_MODE" = 1 ] \
         && printf '%s\n' "$TASK_BOUNDS" | awk -F, 'NF==4 && $1==0 && $2==0 && $3>0 && $4>0 {ok=1} END {exit !ok}'; then
       GEOMETRY=fullscreen

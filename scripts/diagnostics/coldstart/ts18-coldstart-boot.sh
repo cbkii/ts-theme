@@ -101,7 +101,7 @@ worker() {
   if [ "${1:-}" = __framework_native__ ]; then
     # Native file output avoids stdio/awk buffering of the low-volume admission stream.
     # Two 256 KiB native segments plus bounded error files fit the 2 MiB reservation.
-    (ulimit -f 1024; /system/bin/logcat -b main -b system -v monotonic \
+    (ulimit -f 1024 || exit 70; /system/bin/logcat -b main -b system -v monotonic \
       -f "$w_dir/framework-admission.txt" -r 256 -n 1 \
       ActivityManager:I ActivityTaskManager:I MediaBrowserService:I \
       TS18Browser:V TS18Transport:V TS18Media:V TS18Nav:V '*:S') \
