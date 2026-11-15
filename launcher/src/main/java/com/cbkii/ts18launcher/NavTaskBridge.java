@@ -502,6 +502,17 @@ public final class NavTaskBridge {
         if (hint <= 0 && retained > 1) throw new IllegalStateException("TASK_AMBIGUOUS");
         if (candidate <= 0) { System.out.println("NONE"); return; }
         if (!start) { System.out.println("RECENT " + candidate); return; }
+        // Re-read the live owner after Recents discovery. A newly live task is reused, never started.
+        Task appeared = resolve(stacks.invoke(service), pkg, user, 0);
+        if (appeared != null) { System.out.println(appeared.record()); return; }
+        try {
+            requireRecentHome(service, api, stacks, user, candidate);
+        } catch (Exception unavailable) {
+            // No start has been attempted; the shell may restore its prior claim exactly.
+            System.out.println("REFUSED FOREGROUND_NOT_VERIFIED");
+            System.exit(5);
+            return;
+        }
         android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
         options.setLaunchDisplayId(0);
         android.app.ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class).invoke(options, mode);
@@ -525,6 +536,24 @@ public final class NavTaskBridge {
             Thread.sleep(50L);
         }
         throw new IllegalStateException("REACQUIRE_UNCONFIRMED");
+    }
+
+    /** Same live HOME/task/window proof as broker mutations, immediately before Recents start. */
+    private static void requireRecentHome(Object service, Class<?> api, Method stacks,
+                                          int user, int candidate) throws Exception {
+        Object focused = api.getMethod("getFocusedStackInfo").invoke(service);
+        if (focused == null) throw new IllegalStateException("FOREGROUND_CHANGED");
+        int[] ids = (int[]) focused.getClass().getField("taskIds").get(focused);
+        if (ids == null || ids.length != 1 || ids[0] <= 0)
+            throw new IllegalStateException("FOREGROUND_CHANGED");
+        int home = ids[0];
+        requireHome(resolve(stacks.invoke(service), "com.cbkii.ts18launcher", user, home));
+        Request proof = new Request(new String[] { "REQUEST", "1",
+                String.valueOf(android.os.SystemClock.elapsedRealtime() + 4500L),
+                String.valueOf(EPOCH.get()), "recent" });
+        foreground(proof, api.getMethod("getFocusedStackInfo").invoke(service),
+                candidate, home, user, false);
+        proof.current();
     }
 
     private static Task resolve(Object raw, String pkg, int user, int hint) throws Exception {

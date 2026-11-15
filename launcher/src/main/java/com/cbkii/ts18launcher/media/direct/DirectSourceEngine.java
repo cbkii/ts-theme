@@ -841,9 +841,11 @@ public final class DirectSourceEngine {
         return dispatched >= 0L && dispatched - after.positionMs >= 1500L;
     }
 
-    /** Framework PlaybackState position extrapolated to an elapsedRealtime; -1 when unknown. */
+    /** Matched Auxio 1x position extrapolated to elapsedRealtime; other rates stay unassumed. */
     static long estimatedPosition(SessionObservation observation, long atElapsedMs) {
         if (observation == null || observation.positionMs < 0L) return -1L;
+        if (!"com.tw.media".equals(observation.packageName)
+                && !"com.tw.media.debug".equals(observation.packageName)) return observation.positionMs;
         if (observation.nativeState != PlaybackState.STATE_PLAYING || observation.stateUpdatedMs <= 0L
                 || atElapsedMs <= observation.stateUpdatedMs) return observation.positionMs;
         return observation.positionMs + (atElapsedMs - observation.stateUpdatedMs);

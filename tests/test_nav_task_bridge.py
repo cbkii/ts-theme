@@ -12,6 +12,18 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/NavTaskBridge.java"
 STUBS = {
+    # Only the dumpsys process boundary is doubled here; NavWindowProbe has its own IO tests.
+    "com/cbkii/ts18launcher/NavWindowProbe.java": '''package com.cbkii.ts18launcher;
+public class NavWindowProbe {
+ static int reads;
+ public static class Failure extends Exception { final String reason="TEST_IO"; }
+ public static String read(ProcessBuilder p,long timeout)throws Failure {
+  String s=System.getenv("SCENARIO"); reads++;
+  String owner="recent-focus-overlay".equals(s)?"com.android.permissioncontroller/.GrantPermissionsActivity":"com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias";
+  String token="recent-focus-race".equals(s)&&reads%2==0?"changed":"home";
+  return "mCurrentFocus=Window{"+token+" u0 "+owner+"}";
+ }
+}''',
     "android/hardware/display/DisplayManagerGlobal.java": "package android.hardware.display;public class DisplayManagerGlobal {public static DisplayManagerGlobal getInstance(){return new DisplayManagerGlobal();}public Info getDisplayInfo(int display){return new Info();}public static class Info {public int logicalWidth=1280,logicalHeight=720;}}",
     "android/os/Bundle.java": "package android.os; public class Bundle { public int mode=-1, display=-1; }",
     "android/content/Intent.java": "package android.content; public class Intent { final ComponentName c; public Intent(String s){c=ComponentName.unflattenFromString(s);} public ComponentName getComponent(){return c;} }",
@@ -36,7 +48,7 @@ public class Configuration { public Window windowConfiguration=new Window();
 }''',
     "android/app/IActivityTaskManager.java": '''package android.app;
 import java.util.List;
-public interface IActivityTaskManager { List<StackInfo> getAllStackInfos(); Slice getRecentTasks(int max,int flags,int user); int startActivityFromRecents(int task,android.os.Bundle options); void setTaskWindowingMode(int id,int mode,boolean toTop); void resizeTask(int id,android.graphics.Rect bounds,int mode); void resizeStack(int id,android.graphics.Rect bounds,boolean dock,boolean preserve,boolean animate,int duration); }
+public interface IActivityTaskManager { StackInfo getFocusedStackInfo(); List<StackInfo> getAllStackInfos(); Slice getRecentTasks(int max,int flags,int user); int startActivityFromRecents(int task,android.os.Bundle options); void setTaskWindowingMode(int id,int mode,boolean toTop); void resizeTask(int id,android.graphics.Rect bounds,int mode); void resizeStack(int id,android.graphics.Rect bounds,boolean dock,boolean preserve,boolean animate,int duration); }
 ''',
     "android/app/StackInfo.java": '''package android.app;
 import android.content.ComponentName; import android.graphics.Rect; import android.content.res.Configuration;
@@ -60,7 +72,21 @@ public class ActivityTaskManager {
    if("no-top".equals(scenario))s.topActivity=null;
    if("unknown-name".equals(scenario))s.taskNames[0]="unreadable";
   }
-  boolean resumed;
+  boolean resumed; int stackReads;
+  StackInfo home() {
+   StackInfo h=new StackInfo(); h.taskIds=new int[]{7}; h.taskUserIds=new int[]{0};
+   h.taskNames=new String[]{"com.cbkii.ts18launcher/com.cbkii.ts18launcher.HomeAlias"};
+   h.topActivity=ComponentName.unflattenFromString(h.taskNames[0]);
+   h.stackId=2; h.configuration.windowConfiguration.mode=1;return h;
+  }
+  public StackInfo getFocusedStackInfo() {
+   StackInfo h=home();
+   if("recent-focus-foreign".equals(scenario)){
+    h.taskIds[0]=99;h.taskNames[0]="other.package/.Activity";
+    h.topActivity=ComponentName.unflattenFromString(h.taskNames[0]);
+   }
+   return h;
+  }
   public Slice getRecentTasks(int max,int flags,int user){
    if(flags!=2)throw new AssertionError("unavailable recents requested");
    List<RecentTaskInfo> list=new ArrayList<>();
@@ -78,9 +104,11 @@ public class ActivityTaskManager {
    resumed=true;s.configuration.windowConfiguration.mode=options.mode;return 0;
   }
   public List<StackInfo> getAllStackInfos(){
+   stackReads++;
    if("denied".equals(scenario))throw new SecurityException("permission denied");
    if("absent".equals(scenario))return Collections.emptyList();
-   if(scenario!=null&&scenario.startsWith("recent")&&!resumed&&!"recent-live".equals(scenario))return Collections.emptyList();
+   if("recent-appeared".equals(scenario)&&stackReads>=2)return Arrays.asList(s,home());
+   if(scenario!=null&&scenario.startsWith("recent")&&!resumed&&!"recent-live".equals(scenario))return Collections.singletonList(home());
    if("ambiguous".equals(scenario)){StackInfo other=new StackInfo();other.taskIds[0]=43;return Arrays.asList(s,other);}
    return Arrays.asList(s);
   }
@@ -113,7 +141,7 @@ class NavTaskBridgeTest(unittest.TestCase):
             files.append(str(file))
         # Use the JDK compiler module: also works where javac's wrapper is not installed.
         subprocess.run(["java", "-m", "jdk.compiler/com.sun.tools.javac.Main", "-d", str(cls.work),
-                        *files, str(SOURCE), str(SOURCE.with_name("StartupMaskFocus.java")), str(SOURCE.with_name("NavWindowProbe.java")), str(SOURCE.with_name("NavCompactConsent.java")), str(SOURCE.with_name("NavigationTaskStage.java"))], check=True, capture_output=True, text=True)
+                        *files, str(SOURCE), str(SOURCE.with_name("StartupMaskFocus.java")), str(SOURCE.with_name("NavCompactConsent.java")), str(SOURCE.with_name("NavigationTaskStage.java"))], check=True, capture_output=True, text=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -245,3 +273,16 @@ class NavTaskBridgeTest(unittest.TestCase):
             result = self.run_bridge("reacquire-recent", hint="42", scenario=scenario)
             self.assertEqual(5, result.returncode, result.stdout)
             self.assertIn("REFUSED", result.stdout)
+
+    def test_retained_resume_refuses_foreign_permission_or_changed_window_focus(self):
+        for scenario in ("recent-focus-foreign", "recent-focus-overlay", "recent-focus-race"):
+            result = self.run_bridge("reacquire-recent", hint="42", scenario=scenario)
+            self.assertEqual(5, result.returncode, result.stdout)
+            self.assertIn("REFUSED FOREGROUND_NOT_VERIFIED", result.stdout)
+            self.assertNotIn("RECENT_START", result.stdout)
+
+    def test_task_appearing_during_recents_discovery_is_reused_without_a_start(self):
+        result = self.run_bridge("reacquire-recent", hint="42", scenario="recent-appeared")
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn("FOUND 42", result.stdout)
+        self.assertNotIn("RECENT_START", result.stdout)

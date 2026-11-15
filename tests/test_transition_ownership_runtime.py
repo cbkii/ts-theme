@@ -115,6 +115,18 @@ public static void main(String[] args)throws Exception{
  int preparesBefore=Collections.frequency(sent,DirectOperation.PREPARE);
  engine.onSessionChanged(state(1,""));engine.preparePassive(1001);
  check(Collections.frequency(sent,DirectOperation.PREPARE)==preparesBefore+1,"genuinely stopped empty session never prepared");
+ // An unqualified third-party clock/rate cannot turn a heartbeat at position 0 into a rewind ACK.
+ DirectSourceEngine generic=new DirectSourceEngine(MediaSourceKey.MUSIC,(t,o)->true,
+ new DirectSourceEngine.Clock(){public Object schedule(long d,Runnable r){return r;}public void cancel(Object t){}},
+ new DirectSourceEngine.Labels(){public String sourceLabel(){return "Music";}public String appLabel(String p){return p;}});
+ List<MediaCommandResult> genericResults=new ArrayList<>();
+ generic.attach("other.player");
+ generic.onSessions(false,Collections.singletonList(new SessionObservation("generic","other.player",3,16438,"same","same","",false,true,"file:///same",0,1000)));
+ android.os.SystemClock.now=9000;
+ generic.command("other.player",MediaUserAction.PREVIOUS,genericResults::add);
+ generic.onSessionChanged(new SessionObservation("generic","other.player",3,16438,"same","same","",false,true,"file:///same",0,9040));
+ check(genericResults.isEmpty(),"unqualified playback rate produced a false Previous ACK");
+ generic.detach();
  owner.destroy();System.out.println("PASS real coordinator -> engine metadata-gap boundary");
 }}
 '''
