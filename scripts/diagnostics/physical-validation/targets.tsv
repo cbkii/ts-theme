@@ -1,0 +1,9 @@
+role	package	owner	contract	must_not_assume
+launcher	com.cbkii.ts18launcher	cbkii/ts-theme	Android HOME API29	installed APK is latest PR
+music	com.tw.media	cbkii/Auxio-TS	MediaSession+service	service exists means playing
+navigation	app.organicmaps.incar	cbkii/organicmaps	Activity/task/location	windowed map is working
+radio-thirdparty	com.navimods.radio	NavRadio+	MediaSession/RadioService	service is exported
+radio-oem	com.tw.radio	Topway	privileged native radio	generic MediaSession works
+control-oem	com.tw.service.xt	Topway XTService	Binder/TWUtil	root equals platform identity
+control-oem	com.tw.service	Topway TWService	MCU/source	properties are actuators
+legacy-host	com.dofun.variety	DoFun	RePlugin/widget host	active HOME or removable

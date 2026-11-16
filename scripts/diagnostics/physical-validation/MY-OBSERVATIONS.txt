@@ -1,0 +1,13 @@
+Run / boot:
+Power/reboot/ACC procedure and off duration:
+Music first PLAY (without opening app):
+Next title and audible result:
+Previous alone / Next Previous / Next Next Previous:
+Radio first PLAY and handover sound/delay:
+Maps compact/fullscreen/HOME:
+Maps BACK (separate):
+Black map / touch / route change:
+Clock and loader:
+Shuffle (optional):
+Manual app launches, force-stops or recovery attempts with approximate time:
+Other observations:

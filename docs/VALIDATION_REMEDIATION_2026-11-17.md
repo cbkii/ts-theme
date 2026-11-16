@@ -31,3 +31,15 @@ expansion. Do not mutate protected SystemUI to suppress an unproven cause.
 Shuffle issue #288 remains open pending committed-order/scope restart and physical qualification.
 All new physical, electrical cold-power and ACC-wake acceptance remains NOT_RUN by the builder.
 Use continuous bounded recordings and record segment gaps, preflight presence and true stop reasons.
+
+## Collector source and limits
+
+The previously external v3.5.0 module is now maintained under
+`scripts/diagnostics/physical-validation/`. Its successor records consecutive 45-second segments,
+retains the three-boot cap, admits Boot 3 preflight, records explicit log stop reasons and encoder
+PIDs, and requires a final signed APK selection at packaging. The source template is deliberately
+unpinned. Per-run raw cap is 32 MB; three-run archive cap is 100 MB in up to five 20 MB parts.
+The optional read-only power observer arms a separate same-boot follow-up without claiming ACC.
+The new guide separates BACK, HOME and the actual fullscreen icon and preserves silent-recording
+limitations. Status-bar policy/overlays and existing Maps surface tags support the next narrow
+clock/black-map investigation; no protected SystemUI or speculative native Maps mutation is made.

@@ -20,6 +20,7 @@ final class StartupReadinessLoader {
     private final WindowManager windows;
     private final Rect bounds = new Rect();
     private final String title;
+    private final java.util.List<TextView> statuses = new java.util.ArrayList<>();
     private boolean visible, attached, overlayFailed;
     private Runnable drawn;
 
@@ -65,7 +66,7 @@ final class StartupReadinessLoader {
         int size = AutomotiveUi.dimen(activity, R.dimen.driver_target_min);
         progress.addView(spinner, new LinearLayout.LayoutParams(size, size));
         TextView status = new TextView(activity);
-        status.setTag("readiness-status");
+        statuses.add(status);
         status.setTextColor(0xffffffff);
         status.setTextSize(20);
         status.setGravity(Gravity.CENTER);
@@ -100,8 +101,7 @@ final class StartupReadinessLoader {
     }
 
     void show(String status, boolean homeVisible) {
-        ((TextView) homePanel.findViewWithTag("readiness-status")).setText(status);
-        ((TextView) mask.findViewWithTag("readiness-status")).setText(status);
+        for (TextView label : statuses) label.setText(status);
         visible = true;
         homePanel.setVisibility(homeVisible ? View.VISIBLE : View.GONE);
         if (homeVisible) { homePanel.bringToFront(); homePanel.requestFocus(); }

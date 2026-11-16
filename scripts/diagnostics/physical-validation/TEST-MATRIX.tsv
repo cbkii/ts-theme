@@ -1,0 +1,11 @@
+id	physical_action	pass_evidence_required	passive_capture_source	default_status
+APK_PAIR	Install signed launcher d8e9378 Auxio 6b00bc1 Maps ab7ecd0	Exact base APK SHA256 MATCH; signing/embedded source separately confirmed	APK-MATCH.tsv; apps/*	NOT_RUN
+WP1_NEXT	20 or more deliberate Next requests during playing queue	20 distinct committed replacements; no blank metadata ACK or passive PREPARE	target-logcat*; TS18Transport; media_session; notes	NOT_RUN
+WP1_PREVIOUS	Several Previous taps >3s into playing track	Rewind acknowledged on same Auxio track without stale restore; no false ACK	target-logcat*; TS18Media; snapshots; notes	NOT_RUN
+WP2_FULLSCREEN	Maps compact/fullscreen/HOME cycles	Exact task, user, display, window mode, effective bounds and visible pixels/touch	activity/windows/recents snapshots; video; notes	NOT_RUN
+WP3_RETAINED_TASK	Back once fullscreen Maps root then one explicit Retry/Fullscreen if emptied	Original task ID reacquired; line 'reacquired retained task='; no second 'cold launch'	task-lifecycle-events*; TS18Nav; Recents; video	NOT_RUN
+WP4_SHUFFLE	Raw OFF/ALL shuffle before rich library, then app restart	Order/scope/current source/position persisted after committed toggle	TS18Transport; media; notes	NOT_RUN
+WP4_COLD_MUSIC_RADIO	First HOME Music Play and Radio Play without priming	One tap readiness with no splash/focus theft and correct replacement	target-logcat*; video; audio; notes	NOT_RUN
+WP4_AUDIBLE_HANDOVER	Music→Radio then Radio→Music	Replacement audible before old player paused; no duplicate command	TS18Media; audio snapshots; operator ears/phone video	NOT_RUN
+WP5_LIFECYCLE	Two Android reboots, separately true cold power, separately ACC wake	Distinct boot IDs; demonstrated power event; ACC evidence not inferred	boot-id; uptime; video; user notes	NOT_RUN
+WP5_COLLECTOR	Passive unattended recording and sealing	Native producer stop records; verified ZIP/manifest; run caps respected	LOG-STREAM-STATUS; SUMMARY; MANIFEST.sha256	NOT_RUN

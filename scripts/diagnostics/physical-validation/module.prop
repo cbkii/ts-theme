@@ -1,0 +1,6 @@
+id=ts18_execution_preflight
+name=TS18 Physical TESTING Validation Capture (3-Boot)
+version=v3.6.0
+versionCode=360
+author=CB TS18 Engineering
+description=Unattended passive API29 physical campaign; 3 distinct boot IDs, targeted media/nav/events, consecutive bounded recordings per boot, bounded verified Download archives. No app automation.

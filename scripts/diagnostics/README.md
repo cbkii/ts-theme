@@ -106,3 +106,12 @@ D2 storage attribution, D3 GMS investigation and D4 audio/app profiling remain
 read-only evidence tasks until a fresh current-build capture identifies a causal
 owner. Any later system mutation or private instrumentation requires its own
 matched-build evidence, rollback plan and explicit approval.
+
+## Physical validation Magisk module
+
+The unattended module source is in [physical-validation](physical-validation/START-HERE.md).
+Build it with `python3 scripts/diagnostics/build-physical-validation.py --selection <final.tsv>
+--collector-source <full-commit> --output <new.zip>` from the repository root. The selection must
+contain exactly Launcher, Auxio and Maps with full source SHAs and signed base-APK SHA-256 values.
+Unpinned templates are refused. The builder generates the file checksums and ZIP permissions;
+never install a raw source ZIP. Host coverage is part of `tests/test_physical_validation.py`.
