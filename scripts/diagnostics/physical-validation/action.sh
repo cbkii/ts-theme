@@ -18,5 +18,6 @@ active=$(b cat "$ROOT/.active" 2>/dev/null)
 case "$active" in "$ROOT"/boot-*) [ ! -f "$active/CAPTURE-IN-PROGRESS.txt" ] || b cat "$active/CAPTURE-IN-PROGRESS.txt";; esac
 echo 'Three distinct boot IDs, maximum three committed runs. No automatic reboot.'
 echo 'Default VALIDATION: up to seven consecutive 45s video segments per boot if 32MB run headroom allows.'
-echo 'No app driving. A new boot ID is necessary for another run; ACC without reboot is not a new run.'
+echo 'No app driving. A new boot ID is needed for each automatic slot; use the optional follow-up for same-boot wake.'
 echo 'Module need not write /data/adb to self-disable; counter is in Download.'
+echo 'Optional manual/wake follow-ups use separate boot-followup folders and do not consume boot slots.'

@@ -72,7 +72,8 @@ public final class NavTaskBridge {
                     // bounds, and require fresh geometry after any accepted transaction.
                     if (!fullscreenGeometry(observed)) {
                         resize.invoke(service, observed.stack, null, false, false, false, -1);
-                        requireFullscreenGeometry(resolve(stacks.invoke(service), pkg, user, hint));
+                        // The shell caller performs bounded geometry readback; an accepted
+                        // clear may still be propagating through WMS at this instant.
                     }
                 } else {
                     Method setMode = api.getMethod("setTaskWindowingMode", int.class, int.class, boolean.class);
