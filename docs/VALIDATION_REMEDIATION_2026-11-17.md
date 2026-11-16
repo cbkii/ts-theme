@@ -43,3 +43,11 @@ The optional read-only power observer arms a separate same-boot follow-up withou
 The new guide separates BACK, HOME and the actual fullscreen icon and preserves silent-recording
 limitations. Status-bar policy/overlays and existing Maps surface tags support the next narrow
 clock/black-map investigation; no protected SystemUI or speculative native Maps mutation is made.
+
+## Automated coverage boundary
+
+The playback-holder regression uses the captured 1,069-item membership and invokes 30 actual
+Next commands after cached-to-canonical handoff, followed by Previous back to the original
+retained decoder item. Its player/persistence boundaries are doubles. The separate API29 pair
+uses the actual decoder/browser/session across UIDs and four deliberate publication gaps;
+it does not certify the large-queue canonical transition, audible TS18 behaviour or map pixels.
