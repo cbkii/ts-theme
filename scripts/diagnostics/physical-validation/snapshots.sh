@@ -53,7 +53,7 @@ while [ ! -f "$OUT/STOP" ] && [ "$i" -lt 8 ]; do
   capture "$OUT/snapshots/$n-media.txt" 2 49152 /system/bin/dumpsys media_session
   capture "$OUT/snapshots/$n-audio.txt" 2 32768 /system/bin/dumpsys audio
   if [ "$i" -eq 0 ] || [ "$i" -eq 4 ] || [ "$i" -eq 7 ]; then
-    capture "$OUT/snapshots/$n-app-services.txt" 2 65536 "$BB" sh -c '/system/bin/dumpsys activity services com.tw.media; /system/bin/dumpsys activity services com.cbkii.ts18launcher; /system/bin/dumpsys activity services app.organicmaps.incar' 
+    capture "$OUT/snapshots/$n-app-services.txt" 2 65536 "$BB" sh -c '/system/bin/dumpsys activity services com.tw.media; /system/bin/dumpsys activity services com.cbkii.ts18launcher; /system/bin/dumpsys activity services app.organicmaps.incar'
   fi
   if [ "$i" -eq 0 ] || [ "$i" -eq 7 ]; then capture "$OUT/snapshots/$n-processes.txt" 2 24576 /system/bin/ps -A; fi
   # Discrete stdout/ring approach survives a failed continuous file writer.

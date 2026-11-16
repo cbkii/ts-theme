@@ -110,7 +110,7 @@ record GNSS_TTFF NOT_RUN gnss/location-summary.txt 'Provider/requests are not pr
 # Boot, power, storage, persistent writers and performance budgets.
 probe startup/bootstat 2 24576 "$BB" sh -c '/system/bin/getprop | grep -E "^\[(ro[.]boottime[.]|sys[.]boot_completed|dev[.]bootcomplete|init[.]svc[.](zygote|surfaceflinger|bootanim))" | head -n 100'
 probe startup/proc-memory 2 32768 "$BB" cat /proc/meminfo
-probe startup/proc-pressure 2 16384 "$BB" sh -c 'for p in cpu io memory; do echo "=== $p ==="; cat "/proc/pressure/$p" 2>&1; done' 
+probe startup/proc-pressure 2 16384 "$BB" sh -c 'for p in cpu io memory; do echo "=== $p ==="; cat "/proc/pressure/$p" 2>&1; done'
 probe startup/boot-stats 3 32768 /system/bin/dumpsys activity processes
 probe startup/power 3 65536 /system/bin/dumpsys power
 probe startup/battery 3 32768 /system/bin/dumpsys battery

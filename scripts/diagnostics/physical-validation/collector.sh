@@ -194,7 +194,7 @@ finish() {
     printf 'home_event_uptime=%s\nhome_first_sample_start=%s\npre_mount_capture=NOT_RUN_DOWNLOAD_NOT_READY\n' "${HIST_HOME:-UNKNOWN}" "${OBS_HOME:-UNKNOWN}"
     printf 'video_windows_requested=%s\nvideo_structurally_valid=%s\nvideo_failed=%s\nvideo_last_stop_uptime=%s\n' "$MAX_VIDEO" "$VGOOD" "$VFAILED" "$VLAST"
     printf 'capture_kind=%s\n' "$PHASE"
-    printf 'downloads_exported=yes\noutput_mount=VERIFIED_READ_WRITE_RENAME\n' 
+    printf 'downloads_exported=yes\noutput_mount=VERIFIED_READ_WRITE_RENAME\n'
     if [ "$REASON" = run_deadline ]; then printf 'capture_status=COMPLETED_OBSERVATION_WINDOW\n'; else printf 'capture_status=PARTIAL_WINDOW\n'; fi
     printf 'status_counts_scope=bounded_journal_only\n'
     b awk -F '\t' '{n[$3]++} END {for (k in n) print "probe_journal_" k "=" n[k]}' "$OUT/status.tsv"
