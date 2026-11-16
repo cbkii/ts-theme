@@ -10,6 +10,8 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.LinearLayout;
 
 /** Opaque, bounded visual mask. Readiness and launch authority remain in the coordinator. */
 final class StartupReadinessLoader {
@@ -55,13 +57,28 @@ final class StartupReadinessLoader {
         panel.setFocusableInTouchMode(true);
         panel.setClickable(true);
         panel.setBackgroundColor(AutomotiveUi.color(activity, R.color.ui_black));
+        LinearLayout progress = new LinearLayout(activity);
+        progress.setOrientation(LinearLayout.VERTICAL);
+        progress.setGravity(Gravity.CENTER);
         ProgressBar spinner = new ProgressBar(activity);
         spinner.setIndeterminate(true);
         int size = AutomotiveUi.dimen(activity, R.dimen.driver_target_min);
-        FrameLayout.LayoutParams spin = new FrameLayout.LayoutParams(size, size, Gravity.CENTER);
-        panel.addView(spinner, spin);
+        progress.addView(spinner, new LinearLayout.LayoutParams(size, size));
+        TextView status = new TextView(activity);
+        status.setTag("readiness-status");
+        status.setTextColor(0xffffffff);
+        status.setTextSize(20);
+        status.setGravity(Gravity.CENTER);
+        status.setPadding(size / 2, size / 3, size / 2, size / 3);
+        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        progress.addView(status);
+        panel.addView(progress, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
         android.widget.Button cancel = new android.widget.Button(activity);
         cancel.setText(R.string.startup_loader_dismiss);
+        cancel.setAllCaps(false);
+        cancel.setTextColor(0xffffffff);
+        cancel.setBackground(AutomotiveUi.interactiveBackground(activity, false));
         cancel.setOnClickListener(v -> dismiss.run());
         FrameLayout.LayoutParams button = new FrameLayout.LayoutParams(size * 3, size,
                 Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
@@ -82,7 +99,9 @@ final class StartupReadinessLoader {
         if (attached) hideMask();
     }
 
-    void show(String ignoredStatus, boolean homeVisible) {
+    void show(String status, boolean homeVisible) {
+        ((TextView) homePanel.findViewWithTag("readiness-status")).setText(status);
+        ((TextView) mask.findViewWithTag("readiness-status")).setText(status);
         visible = true;
         homePanel.setVisibility(homeVisible ? View.VISIBLE : View.GONE);
         if (homeVisible) { homePanel.bringToFront(); homePanel.requestFocus(); }

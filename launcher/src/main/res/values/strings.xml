@@ -12,7 +12,7 @@
     <string name="appearance_defaults">Day at 07:00; night at 19:00. Switches directly at each anchor.</string>
     <string name="appearance_invalid_schedule">Day and night must start at different times. The previous schedule is unchanged.</string>
     <string name="startup_loader_title">Assisted Radio start</string>
-    <string name="startup_loader_dismiss">Cancel</string>
+    <string name="startup_loader_dismiss">Continue to Home</string>
     <string name="startup_radio_preparing">Preparing Radio…</string>
     <string name="startup_loader_overlay">Hide the Radio app while it prepares</string>
     <string name="startup_loader_overlay_granted">Allowed. A bounded launcher mask covers the Radio app during an assisted start while leaving system controls visible.</string>

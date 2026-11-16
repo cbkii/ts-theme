@@ -65,7 +65,8 @@ public class ActivityTaskManager {
  public static class Service implements IActivityTaskManager {
   final StackInfo s=new StackInfo(); final String scenario=System.getenv("SCENARIO");
   Service(){
-   if("fullscreen".equals(scenario))s.configuration.windowConfiguration.mode=1;
+   if("fullscreen".equals(scenario)||"fullscreen-ready".equals(scenario))s.configuration.windowConfiguration.mode=1;
+   if("fullscreen-ready".equals(scenario))s.taskBounds[0]=new android.graphics.Rect(0,0,1280,720);
    if("shared".equals(scenario)){s.taskIds=new int[]{42,99};s.taskNames=new String[]{s.taskNames[0],"other.package/.Activity"};s.taskUserIds=new int[]{0,0};}
    if("wrong-user".equals(scenario))s.taskUserIds[0]=10;
    if("foreign-top".equals(scenario))s.topActivity=android.content.ComponentName.unflattenFromString("com.android.permissioncontroller/.GrantPermissionsActivity");
@@ -112,9 +113,10 @@ public class ActivityTaskManager {
    if("ambiguous".equals(scenario)){StackInfo other=new StackInfo();other.taskIds[0]=43;return Arrays.asList(s,other);}
    return Arrays.asList(s);
   }
-  public void resizeTask(int id,android.graphics.Rect bounds,int mode){if(bounds!=null)throw new AssertionError("non-null task override");}
+  public void resizeTask(int id,android.graphics.Rect bounds,int mode){throw new IllegalArgumentException("resizeTask_not_allowed_on_task");}
   public void resizeStack(int id,android.graphics.Rect bounds,boolean dock,boolean preserve,boolean animate,int duration){
    if(bounds!=null||preserve||animate||dock)throw new AssertionError("unsafe resize");
+   s.taskBounds[0]=new android.graphics.Rect(0,0,1280,720);
    System.out.println("CLEAR stack="+id+" null=true");
   }
   public void setTaskWindowingMode(int id,int mode,boolean toTop){
@@ -165,6 +167,12 @@ class NavTaskBridgeTest(unittest.TestCase):
         result = self.run_bridge("clear-fullscreen-bounds", scenario="fullscreen")
         self.assertEqual(0, result.returncode, result.stdout)
         self.assertIn("CLEAR stack=8 null=true", result.stdout)
+        self.assertNotIn("CALL task=", result.stdout)
+
+    def test_already_fullscreen_performs_no_resize(self):
+        result = self.run_bridge("clear-fullscreen-bounds", scenario="fullscreen-ready")
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertNotIn("CLEAR stack=", result.stdout)
         self.assertNotIn("CALL task=", result.stdout)
 
     def test_clear_fullscreen_bounds_refuses_freeform_shared_and_permission_flow(self):

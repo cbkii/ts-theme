@@ -67,9 +67,13 @@ public final class NavTaskBridge {
                     // display-sized non-null rectangle or touch a shared/foreign stack.
                     Method resize = api.getMethod("resizeStack", int.class, Rect.class,
                             boolean.class, boolean.class, boolean.class, int.class);
-                    api.getMethod("resizeTask", int.class, Rect.class, int.class)
-                            .invoke(service, observed.id, null, 0);
-                    resize.invoke(service, observed.stack, null, false, false, false, -1);
+                    // Fullscreen tasks reject resizeTask on the exact TS18 firmware. A
+                    // correct inherited rectangle needs no write; only clear stale stack
+                    // bounds, and require fresh geometry after any accepted transaction.
+                    if (!fullscreenGeometry(observed)) {
+                        resize.invoke(service, observed.stack, null, false, false, false, -1);
+                        requireFullscreenGeometry(resolve(stacks.invoke(service), pkg, user, hint));
+                    }
                 } else {
                     Method setMode = api.getMethod("setTaskWindowingMode", int.class, int.class, boolean.class);
                     if ("probe-mode".equals(action)) { mode = observed.mode; toTop = false; }
@@ -288,8 +292,9 @@ public final class NavTaskBridge {
             task = awaitMap(request, service, stacks, pkg, user, taskId);
             if (task.mode != 1) throw new IllegalStateException("WINDOWING_MODE_MISMATCH");
             foreground(request, focused.invoke(service), taskId, homeId, user, true);
-            request.current(); resize.invoke(service, taskId, null, 0);
-            request.current(); clear.invoke(service, task.stack, null, false, false, false, -1);
+            if (!fullscreenGeometry(task)) {
+                request.current(); clear.invoke(service, task.stack, null, false, false, false, -1);
+            }
         } else {
             request.current();
             boolean wasFullscreen = task.mode == 1;
