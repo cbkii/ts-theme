@@ -1,0 +1,34 @@
+name: Preserve TS18 rollback
+on:
+  push:
+    branches: ["diagnostics/ts18-rollback-20261117"]
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download existing signed assets and verify exact hashes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, urllib.request
+          assets = [{"id":752157512,"name":"BUILD_INFO-SHA-1d862a1.txt","size":1192,"sha256":"0a54f18039996c4873bb38d10d5b6fdafc12176f1caa6707ba4e39849d52601e"},{"id":752208061,"name":"BUILD_INFO-SHA-d8e9378.txt","size":1192,"sha256":"82b90e8f08567d07d2c69209933aa260425319d586071d67f38598f3340f1177"},{"id":752157461,"name":"SHA256SUMS-SHA-1d862a1.txt","size":410,"sha256":"12bb8c3a3228bee1139b38a08cc0005bbf678a10c1b4817b5399cb63c4e331eb"},{"id":752208024,"name":"SHA256SUMS-SHA-d8e9378.txt","size":410,"sha256":"b2576684d6eaf642171288948bd8cb104eab712fed9f73673b29f07325d458ad"},{"id":752157418,"name":"SIGNER-SHA-1d862a1.txt","size":973,"sha256":"f098cb005c4eff8ddfbb90112a0c8addb72174aab5bb59fc6339f78a7092d7e6"},{"id":752207995,"name":"SIGNER-SHA-d8e9378.txt","size":973,"sha256":"f098cb005c4eff8ddfbb90112a0c8addb72174aab5bb59fc6339f78a7092d7e6"},{"id":752157302,"name":"TS18-Standalone-Launcher-TESTING-SHA-1d862a1.apk","size":650844,"sha256":"f14f687a7ec3bf3bf47ef66f32e70bb522ebf022c5d1e537a5260a8b5d648ffa"},{"id":752207902,"name":"TS18-Standalone-Launcher-TESTING-SHA-d8e9378.apk","size":650844,"sha256":"69d4222ce15bfb153974bef06eed10494cd1d8602db60e2e469b4bf7dbdf7f6a"}]
+          out = pathlib.Path("rollback")
+          out.mkdir()
+          for a in assets:
+              request = urllib.request.Request("https://api.github.com/repos/cbkii/ts-theme/releases/assets/" + str(a["id"]), headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/octet-stream", "X-GitHub-Api-Version": "2022-11-28"})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  data = response.read(a["size"] + 1)
+              assert len(data) == a["size"] and hashlib.sha256(data).hexdigest() == a["sha256"], a["name"]
+              (out / a["name"]).write_bytes(data)
+          (out / "SOURCE-ASSETS.json").write_text(json.dumps({"repository": "cbkii/ts-theme", "assets": assets}, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ts18-signed-rollback-before-remediation
+          path: rollback/
+          if-no-files-found: error
+          retention-days: 30
