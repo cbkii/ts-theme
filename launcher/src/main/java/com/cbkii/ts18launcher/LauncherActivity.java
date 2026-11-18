@@ -548,7 +548,9 @@ public class LauncherActivity extends Activity implements MediaListenerService.O
         MediaSourceState state = mediaFacade().state(key);
         // A prior failed bind is evidence to change method, not spend another first tap on
         // the same rejected cold path. A healthy/live session is always controlled directly.
-        if (key == MediaSourceKey.MUSIC && command == MediaListenerService.Command.PLAY_PAUSE
+        if ((key == MediaSourceKey.MUSIC || key == MediaSourceKey.RADIO)
+                && mediaFacade().engine(key) == MediaEngine.DIRECT
+                && command == MediaListenerService.Command.PLAY_PAUSE
                 && state.availability == MediaSourceState.Availability.CONNECTION_FAILED
                 && prepareSourceForCommand(key, label, packageName, command, generation, deadline)) return;
         dispatchSourceCommand(key, label, packageName, command, generation, deadline, false);

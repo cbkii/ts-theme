@@ -133,8 +133,8 @@ final class MaskedSourcePreparation {
                 if (valid(foreground)) {
                     boolean stillHome = foreground.taskId == home.getTaskId() && homeComponent(foreground.component);
                     if (key == MediaSourceKey.MUSIC && launchEntry.equals(foreground.component)) {
-                        // The one-use preparation entry immediately hands off to MainActivity.
-                        // Observe that owned transition; it is not a foreign permission screen.
+                        // A prepare-only entry may finish without opening any Music UI.
+                        // Wait for its owned transition; it is not a permission screen.
                         if (SystemClock.elapsedRealtime() >= deadline) cancel();
                         else main.postDelayed(this::observeSource, 100L);
                         return;
@@ -145,11 +145,16 @@ final class MaskedSourcePreparation {
                     }
                     if (!stillHome) sourceTask = foreground.taskId;
                     MediaSourceState source = Ts18LauncherApplication.mediaFacade(home).state(key);
-                    if (!stillHome && source.live() && pkg.equals(source.packageName)
+                    if ((!stillHome || key == MediaSourceKey.MUSIC)
+                            && source.live() && pkg.equals(source.packageName)
                             && (key == MediaSourceKey.MUSIC ? StartupReadinessCoordinator.ready(source)
                                 : source.playing() || (source.actions & (android.media.session.PlaybackState.ACTION_PLAY
                                     | android.media.session.PlaybackState.ACTION_PLAY_PAUSE)) != 0L)) {
-                        restoreHome(source); return;
+                        // The service-only entry can return HOME before a foreground sample.
+                        // Do not require MainActivity or mutate an already-correct HOME task.
+                        if (stillHome) verifyHomeSession(source);
+                        else restoreHome(source);
+                        return;
                     }
                 }
                 if (SystemClock.elapsedRealtime() >= deadline) cancel();
@@ -162,16 +167,29 @@ final class MaskedSourcePreparation {
         restoring = true;
         io.execute(() -> {
             NavigationHelperResult returned = returnHome(deadline);
-            NavigationHelperResult focused = returned != null && returned.success ? observe(deadline) : null;
-            main.postDelayed(() -> {
+            main.post(() -> {
+                if (ended) return;
+                if (returned == null || !returned.success) { finish(false); return; }
+                verifyHomeSession(source);
+            });
+        });
+    }
+
+    /** Re-read HOME and the source token after source onStop/finish has settled. */
+    private void verifyHomeSession(MediaSourceState source) {
+        restoring = true;
+        main.postDelayed(() -> io.execute(() -> {
+            NavigationHelperResult focused = observe(deadline);
+            main.post(() -> {
                 if (ended) return;
                 MediaSourceState after = Ts18LauncherApplication.mediaFacade(home).state(key);
                 boolean survived = after.live() && pkg.equals(after.packageName)
                         && source.sessionIdentity != null && source.sessionIdentity.equals(after.sessionIdentity);
-                finish(!cancelRequested && survived && valid(focused) && focused.taskId == home.getTaskId()
+                finish(!cancelRequested && SystemClock.elapsedRealtime() < deadline && survived
+                        && valid(focused) && focused.taskId == home.getTaskId()
                         && homeComponent(focused.component));
-            }, 300L); // Observe onStop/session teardown after the verified task handoff.
-        });
+            });
+        }), 300L);
     }
 
     boolean launchAdmittedOrUncertain() { return dispatched; }
