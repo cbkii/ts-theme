@@ -24,6 +24,7 @@ Consolidated on 18 November 2026: [PR #44](https://github.com/cbkii/ts-theme/pul
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Runtime owners and application/repository boundaries |
 | [CONTINUOUS_READINESS.md](CONTINUOUS_READINESS.md) | Maps-first admission, independent media recovery and masked Radio transaction |
+| [TS18_VALIDATION_CANDIDATE_2026-11-19.md](TS18_VALIDATION_CANDIDATE_2026-11-19.md) | v3.5.0 plan audit, proven cleanup and merged scope awaiting physical validation |
 | [MEDIA.md](MEDIA.md) | M2/Legacy, package/token authority, capability waits, deadline and handover |
 | [MEDIA_BACKGROUND_READINESS.md](MEDIA_BACKGROUND_READINESS.md) | Per-source adapters, binary provenance and diagnostic limits |
 | [MEDIA_CONTROLLER_SIMPLIFICATION.md](MEDIA_CONTROLLER_SIMPLIFICATION.md) | Ordinary transport and truthful metadata rules |
