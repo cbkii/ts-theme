@@ -1,6 +1,6 @@
 # Documentation index and current authority
 
-Reviewed on 13 November 2026 against integration source `801abd2b8f779faced243a6e6efabffb082574e7` (including readiness PR #53). This is an audit snapshot, not a permanent latest-head pin. At inspection, default `main` was `2cd04022231064deec627bd1593fc4cfde5d94ce`, and open [PR #44](https://github.com/cbkii/ts-theme/pull/44), branch `integration/ts18-candidate`, carried the current candidate. Refresh these refs before work; do not review `main` as though it contains the integration. Preserve ancestry and do not merge merely to refresh docs.
+Consolidated on 18 November 2026: [PR #44](https://github.com/cbkii/ts-theme/pull/44) is merged into `main` at `fc4c990985a97d166a350c457268fa5157e5e306`. Auxio #287/#289 are also merged. These are audit anchors, not permanent latest-head pins. Refresh live refs before work. The [separate Radio/Maps/clock investigation](RADIO_MAP_CLOCK_INVESTIGATION_2026-11-18.md) starts from that consolidated baseline; it does not reopen or add commits to the previous integration stack.
 
 ## Start here
 

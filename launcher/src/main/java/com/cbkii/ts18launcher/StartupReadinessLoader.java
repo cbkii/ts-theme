@@ -33,8 +33,8 @@ final class StartupReadinessLoader {
         homePanel.setVisibility(View.GONE);
         root.addView(homePanel);
         mask = content(dismiss);
-        // Cover app-drawn bar backgrounds too, below the higher SystemUI windows. A fixed dark
-        // underlay keeps their icons legible; only our controls are inset into the safe area.
+        // Constrain the opaque window itself to the app's measured safe area. OEM clock and
+        // navigation surfaces must not depend on their z-order relative to an app underlay.
         mask.setBackgroundColor(0xff000000);
     }
 
@@ -119,16 +119,16 @@ final class StartupReadinessLoader {
         try {
             android.util.DisplayMetrics display = new android.util.DisplayMetrics();
             windows.getDefaultDisplay().getRealMetrics(display);
-            if (display.widthPixels < bounds.right || display.heightPixels < bounds.bottom)
+            if (bounds.left < 0 || bounds.top < 0
+                    || display.widthPixels < bounds.right || display.heightPixels < bounds.bottom)
                 throw new IllegalStateException("display bounds unavailable");
-            mask.setPadding(bounds.left, bounds.top, display.widthPixels - bounds.right,
-                    display.heightPixels - bounds.bottom);
-            WindowManager.LayoutParams layout = new WindowManager.LayoutParams(display.widthPixels, display.heightPixels,
+            mask.setPadding(0, 0, 0, 0);
+            WindowManager.LayoutParams layout = new WindowManager.LayoutParams(bounds.width(), bounds.height(),
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.OPAQUE);
             layout.gravity = Gravity.TOP | Gravity.LEFT;
-            layout.x = 0; layout.y = 0;
+            layout.x = bounds.left; layout.y = bounds.top;
             layout.setTitle(title);
             attached = true;
             StartupMaskFocus.activeTitle = title;
