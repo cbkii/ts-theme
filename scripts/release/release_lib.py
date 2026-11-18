@@ -161,7 +161,6 @@ def load_config(root: Path) -> dict[str, Any]:
         "product_name",
         "asset_stem",
         "application_id",
-        "plugin_id",
         "module",
         "gradle_task",
         "apk_path",
@@ -182,7 +181,6 @@ def load_config(root: Path) -> dict[str, Any]:
         "product_name",
         "asset_stem",
         "application_id",
-        "plugin_id",
         "module",
         "gradle_task",
         "apk_path",
@@ -362,7 +360,6 @@ def load_manifest(path: Path, verify_files: bool = True) -> dict[str, Any]:
         "version_code",
         "source_sha",
         "package_id",
-        "plugin_id",
         "signer_sha256",
         "release_mode",
         "release_state",
@@ -387,9 +384,13 @@ def load_manifest(path: Path, verify_files: bool = True) -> dict[str, Any]:
         raise ReleaseError("Publication manifest mode or state is invalid")
     if not isinstance(manifest["replace_existing_assets"], bool):
         raise ReleaseError("Publication manifest replacement authority is invalid")
-    for field in ("product_name", "package_id", "plugin_id"):
+    for field in ("product_name", "package_id"):
         if not isinstance(manifest[field], str) or not manifest[field]:
             raise ReleaseError(f"Publication manifest {field} is invalid")
+    # Historical DoFun theme releases carried a plug-in id; repairing one must keep it.
+    if manifest["package_id"] == "launcher.variety.theme.plugin.sfp_cbk_black" and (
+            not isinstance(manifest.get("plugin_id"), str) or not manifest["plugin_id"]):
+        raise ReleaseError("Publication manifest plugin_id is invalid")
     if re.fullmatch(r"[0-9A-F]{64}", str(manifest["signer_sha256"])) is None:
         raise ReleaseError("Publication manifest signer SHA-256 is invalid")
     assets = manifest["assets"]

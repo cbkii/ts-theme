@@ -14,7 +14,11 @@ FORBIDDEN_DEX_MARKERS = (
     b"Lkotlinx/",
     b"Landroidx/",
     b"Lcom/qihoo360/",
+    # The in-HOME online map is retired; its WebView bridge must not return.
+    b"Landroid/webkit/WebView;",
 )
+# Retired online-map payload: no file under this prefix may ship again.
+FORBIDDEN_FILE_PREFIXES = ("assets/map/",)
 # Only externally named Android components belong here. R8 is expected to rename
 # ordinary implementation classes such as navigation policies/backends.
 REQUIRED_DEX_MARKERS = (
@@ -28,10 +32,6 @@ REQUIRED_DEX_MARKERS = (
 REQUIRED_FILES = {
     "AndroidManifest.xml",
     "classes.dex",
-    "assets/map/map.html",
-    "assets/map/vendor/leaflet.js",
-    "assets/map/vendor/leaflet.css",
-    "assets/map/vendor/LEAFLET-LICENSE.txt",
     "assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt",
     "assets/nav/nav-window.sh",
 }
@@ -71,6 +71,12 @@ def inspect(apk: Path) -> None:
         if missing:
             fail(f"missing required files: {', '.join(sorted(missing))}")
 
+        retired = sorted(
+            name for name in names if name.startswith(FORBIDDEN_FILE_PREFIXES)
+        )
+        if retired:
+            fail(f"retired online-map assets present: {retired[:8]}")
+
         dex_files = sorted(
             name for name in names
             if name.startswith("classes") and name.endswith(".dex")
@@ -104,7 +110,7 @@ def inspect(apk: Path) -> None:
     print(
         "launcher envelope: PASS "
         f"apk_bytes={size} dex=1 native=0 "
-        "kotlin=0 androidx=0 replugin=0 leaflet_map_assets=present "
+        "kotlin=0 androidx=0 replugin=0 retired_map_assets=absent "
         "navigation_task_helper=present navigation_native_mode5=present "
         "topway_home_compat=present material_symbols_notice=present"
     )

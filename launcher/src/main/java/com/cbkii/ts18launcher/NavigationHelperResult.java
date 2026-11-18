@@ -9,7 +9,7 @@ final class NavigationHelperResult {
     final int displayId; final int windowingMode; final int supportsPip;
     final int launched; final int transactionId;
     final int helpExit; final int helpWindowingMode; final int helpDisplay; final int launchExit;
-    final int windowVisible; final int windowDrawn; final String phase;
+    final int windowVisible; final int windowDrawn; final String phase; final String method; final String geometry;
     final String packageName; final String component; final String bounds; final String pinnedPackage; final String raw;
 
     private NavigationHelperResult(boolean success, String code, int userId, int taskId, int stackId,
@@ -17,6 +17,16 @@ final class NavigationHelperResult {
             int helpExit, int helpWindowingMode, int helpDisplay, int launchExit,
             String packageName,
             String component, String bounds, String pinnedPackage, String raw, int windowVisible, int windowDrawn, String phase) {
+        String protocol = lastProtocolLine(raw);
+        String parsedMethod = "";
+        String parsedGeometry = "";
+        for (String token : protocol.split("\\s+")) {
+            if (token.equals("method=N1")) parsedMethod = "N1";
+            else if (token.equals("method=N2")) parsedMethod = "N2";
+            if (token.equals("geometry=fullscreen")) parsedGeometry = "fullscreen";
+        }
+        this.method = parsedMethod;
+        this.geometry = parsedGeometry;
         this.windowVisible=windowVisible; this.windowDrawn=windowDrawn; this.phase=phase;
         this.success=success; this.code=code; this.userId=userId; this.taskId=taskId; this.stackId=stackId;
         this.displayId=displayId; this.windowingMode=windowingMode; this.supportsPip=supportsPip;
@@ -55,6 +65,13 @@ final class NavigationHelperResult {
                 source.bounds, source.pinnedPackage, raw, source.windowVisible, source.windowDrawn, source.phase);
     }
     boolean presentationConfirmed() { return success && windowVisible == 1 && windowDrawn == 1; }
+    boolean fullscreenGeometryConfirmed() {
+        if (!success || displayId != 0 || windowingMode != 1 || !"fullscreen".equals(geometry)) return false;
+        String[] sides = bounds.split(",");
+        if (sides.length != 4) return false;
+        return "0".equals(sides[0]) && "0".equals(sides[1])
+                && parseNonNegative(sides[2]) > 0 && parseNonNegative(sides[3]) > 0;
+    }
     private static String lastProtocolLine(String raw){
         if(raw==null||raw.isEmpty()) return ""; String[] lines=raw.split("\\r?\\n");
         for(int i=lines.length-1;i>=0;i--){ String line=lines[i].trim(); if(line.startsWith("OK ")||line.equals("OK")||line.startsWith("FAIL ")||line.equals("FAIL")) return line; }

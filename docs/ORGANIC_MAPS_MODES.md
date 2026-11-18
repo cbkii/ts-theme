@@ -1,5 +1,7 @@
 # Organic Maps future driving-mode integration
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 This is a roadmap note only. The standalone launcher does not currently invoke Organic Maps private/JNI location-mode APIs.
 
 The current `cbkii/organicmaps` SDK source defines `app.organicmaps.sdk.location.LocationState` with the exact `EMyPositionMode`-aligned values:

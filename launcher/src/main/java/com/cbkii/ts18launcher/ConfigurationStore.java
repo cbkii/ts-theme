@@ -17,7 +17,13 @@ final class ConfigurationStore {
             if (!prefs.contains(key)) continue;
             switch (entry.getValue()) {
                 case BOOLEAN: result.put(key, prefs.getBoolean(key, false)); break;
-                case COUNT: case MINUTES: result.put(key, prefs.getInt(key, 0)); break;
+                case COUNT: result.put(key, prefs.getInt(key, 0)); break;
+                case MINUTES: result.put(key, LauncherPrefs.KEY_APPEARANCE_DAY_START.equals(key)
+                        ? LauncherPrefs.appearanceDayStartMinutes(context)
+                        : LauncherPrefs.appearanceNightStartMinutes(context)); break;
+                case APPEARANCE: result.put(key, LauncherPrefs.appearanceMode(context)); break;
+                case AUTO_SOURCE: result.put(key, LauncherPrefs.AUTO_SOURCE_SCHEDULE); break;
+                case NAV_SURFACE: result.put(key, HomeNavigationSurfacePolicy.mode(context)); break;
                 default: result.put(key, prefs.getString(key, "")); break;
             }
         }
@@ -25,14 +31,29 @@ final class ConfigurationStore {
     }
     static synchronized boolean replace(Context context, Map<String, Object> values) {
         Map<String, Object> previous = read(context);
+        Map<String, Boolean> consent = consentSnapshot(context);
         if (edit(context, values).commit()) return true;
         // commit() changes in-memory preferences even if storage fails: restore that snapshot too.
-        edit(context, previous).commit();
+        // The rollback must also restore the device-local consent keys a failed import cleared.
+        SharedPreferences.Editor rollback = edit(context, previous);
+        for (Map.Entry<String, Boolean> entry : consent.entrySet())
+            rollback.putBoolean(entry.getKey(), entry.getValue());
+        if (!rollback.commit())
+            MediaEventTrace.record("configuration", "rollback-storage-unavailable");
         return false;
+    }
+    private static Map<String, Boolean> consentSnapshot(Context context) {
+        SharedPreferences prefs = LauncherPrefs.prefs(context);
+        Map<String, Boolean> consent = new LinkedHashMap<>();
+        for (String key : ConfigurationCodec.DEVICE_CONSENT_KEYS)
+            if (prefs.contains(key)) consent.put(key, prefs.getBoolean(key, false));
+        return consent;
     }
     private static SharedPreferences.Editor edit(Context context, Map<String, Object> values) {
         SharedPreferences.Editor editor = LauncherPrefs.prefs(context).edit();
         for (String key : ConfigurationCodec.KEYS.keySet()) editor.remove(key);
+        for (String key : ConfigurationCodec.RETIRED_BOOLEAN_KEYS) editor.remove(key);
+        for (String key : ConfigurationCodec.DEVICE_CONSENT_KEYS) editor.remove(key);
         for (Map.Entry<String, Object> entry : values.entrySet()) {
             if (!ConfigurationCodec.KEYS.containsKey(entry.getKey())) continue;
             Object value = entry.getValue();

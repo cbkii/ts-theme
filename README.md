@@ -1,13 +1,18 @@
 # TS18 Dashboard
 
+Start with the [documentation index](docs/README.md). It identifies current guides, historical evidence and the integration branch to inspect before a release review; old PR handoffs are not current build provenance.
+
 Android dashboard development for CB's Topway TS18 (Android 10/API 29, 1280 x 720).
 
-The repository has two deliberately separate runtime lanes:
+The repository has one launcher product and a separate test fixture:
 
 - **`launcher/` - standalone TS18 HOME candidate (primary direction).** An ordinary independently signed Android launcher that owns the dashboard directly and removes DoFun/RePlugin from the normal runtime path.
-- **`theme/` - legacy DoFun/RePlugin theme lane.** Retained as rollback/reference while standalone HOME is physically qualified.
+- **`media-fixture/`** is a CI-only Media3 interoperability/decoder fixture, excluded from launcher runtime and distribution.
+- The former `theme/` DoFun/RePlugin plug-in is **retired** and no longer built or released from this repository. The OEM DoFun host on the head unit is not affected and remains the HOME fallback.
 
 DoFun remains installed and enabled during launcher qualification.
+
+M2 is the intended TESTING default for Music and Radio, with explicit Legacy compatibility rollback. Cold Music Play uses the source-owned deadline contract; source-owned MediaBrowser sessions do not require notification access. Startup prefers silent service preparation and admits N2 Maps first; explicit NavRadio demand can use the bounded masked recovery described below. See [media](docs/MEDIA.md), [architecture](docs/ARCHITECTURE.md) and the [consolidated acceptance playbook](docs/CONSOLIDATED_TESTING_PLAYBOOK.md).
 
 ## Project posture: local, offline and private by default
 
@@ -25,11 +30,11 @@ Recommended offline-capable ecosystem choices include **Organic Maps** and **Osm
 
 Package: `com.cbkii.ts18launcher`.
 
-The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material runtime/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes existing Android media sessions; bounded media readiness is background-only and uses exact per-source service adapters plus standard MediaSession/MediaBrowser surfaces. No readiness/transport path opens a source Activity.
+The launcher stays deliberately small: platform Android Views/Java, API 29, no Compose/AppCompat/Material runtime/Room/DataStore/Rx/DI, no launcher-owned player/queue/MediaSession/audio focus, no native libraries, and a one-DEX release envelope enforced by CI. A notification-listener service observes existing Android media sessions; bounded service readiness uses exact per-source adapters and standard MediaSession/MediaBrowser surfaces. Only the configured NavRadio explicit-demand fallback may lease a drawn opaque mask and initialise its source Activity; normal warm controls remain background-only.
 
 ### TS18 Mono Drive HOME
 
-Exact TS18 testing preserves the physical Topway/SystemUI authority: 1280 x 720 panel, 55 px top boundary, safe-right x=1225 and safe-bottom y=702. HOME uses a **96 px side rail** and **88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip**. Physical SystemUI boundaries remain raw pixels; inner UI uses semantic Android dimensions where appropriate.
+The known panel is 1280 x 720. Historical conservative geometry uses a 55 px top boundary, safe-right x=1225 and safe-bottom y=702; live display/decor/insets determine the current usable rectangle. HOME uses a **96 px side rail** and **88 px `[Radio controls] [shared active metadata] [Music controls] [DD MMM]` strip**. Physical SystemUI boundaries remain raw pixels; inner UI uses semantic Android dimensions where appropriate.
 
 The rail can be Driver side, Left or Right; on this exact Australian RHD unit Driver side means right. Radio/Music control groups can be swapped independently with `Radio / Music sides`.
 
@@ -48,11 +53,11 @@ Radio and Music remain separate playback authorities but share one metadata area
 
 The shared metadata surface uses a 22sp slow-marquee primary title/station plus static 16sp secondary artist/program/source. Identical session snapshots do not restart the marquee's five-second hold. MediaBrowser-acquired controllers are observed through their real MediaSession token and deduplicated against active sessions; empty/whitespace TITLE/ARTIST fields fall through to valid display-title/subtitle metadata. The last explicitly selected source resolves simultaneous stale `PLAYING` reports.
 
-The Radio source icon always opens configured/default Radio. The Music source icon always opens configured/default Music. Those explicit source/app icons are the only media-strip controls allowed to foreground the source apps; the shared metadata surface is display-only. Previous / Play-Pause / Next remain usable at all times. A press uses a bounded background sequence: exact package MediaSession -> evidence-backed source adapter -> exported MediaBrowser/session service -> bounded session discovery -> one directional command -> playback acknowledgement for Play/Pause. A Play/Pause intent is resolved once at tap time and retained through preparation; duplicate in-flight Play/Pause requests are coalesced. There is no Activity-launch fallback. The launcher creates no MediaSession and never owns audio focus.
+The Radio source icon always opens configured/default Radio. The Music source icon always opens configured/default Music. Normal app opening uses those explicit icons; a cold NavRadio Play may use its separate authenticated masked recovery; the shared metadata surface is display-only. Previous / Play-Pause / Next remain usable at all times. A press uses a bounded background sequence: exact package MediaSession -> evidence-backed source adapter -> exported MediaBrowser/session service -> bounded session discovery -> one directional command -> playback acknowledgement for Play/Pause. A Play/Pause intent is resolved once at tap time and retained through preparation; duplicate in-flight Play/Pause requests are coalesced. A non-dispatched Direct NavRadio Play may use one bounded masked Activity fallback; unsupported actions and already-dispatched transport are never retried through it. The launcher creates no MediaSession and never owns audio focus.
 
 A **Warm media sources on HOME start** switch runs idempotent Media Ready reconciliation on HOME start/resume/focus. Auxio-TS may be passively prepared through its exact exported MediaBrowser wrapper with the source-owned Background Ready/PREPARE path. Generic sources use an exported standard MediaBrowser service when present. NavRadio+ remains **interactive-Play preparation only** until the installed API-29 build proves that starting its service while idle does not activate radio or switch routing. Preparing one source does not pause the other; a genuinely playing opposite source is paused only after the newly requested source has acknowledged Play.
 
-On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. NavRadio+ `com.navimods.radio` is adapted through its exported Media3 `RadioService` only when that component resolves in the installed build. Exact stock **`com.tw.radio`** declares no Android service component, so it remains existing-session/external-route only and is never secretly foregrounded for readiness. Private Topway radio commands remain outside this adapter until their transport/authority is separately qualified. Readiness and transport never foreground source Activities, including cold startup or explicit Play recovery. See [background media readiness adapters](docs/MEDIA_BACKGROUND_READINESS.md).
+On this exact unit **`com.tw.media` is Auxio-TS**, not native Topway music. NavRadio+ `com.navimods.radio` is adapted through its exported Media3 `RadioService` only when that component resolves in the installed build. Exact stock **`com.tw.radio`** declares no Android service component, so it remains existing-session/external-route only and is never secretly foregrounded for readiness. Private Topway radio commands remain outside this adapter until their transport/authority is separately qualified. Silent source-owned preparation is preferred. Explicit Radio demand may use one bounded, authenticated masked NavRadio Activity transaction when its background contract cannot become ready; current audio, legitimate setup flows and existing HOME/Maps task authority are preserved. Passive tuner activation remains gated. See the [current readiness contract](docs/CONTINUOUS_READINESS.md).
 
 ### Shortcut App / Icon model
 
@@ -67,11 +72,11 @@ All fixed/user-selectable monochrome glyphs use one pinned family: **Google Mate
 
 ### Appearance and accent hue
 
-Launcher chrome and the experimental map share Auto / Day / High contrast / Dim / Night appearance. Auto can use ambient light or schedule; stale/unavailable sensor evidence falls back to schedule. Generic unset schedule uses 07:00/19:00 anchors with transition/high-glare periods; user anchors may cross midnight.
+Launcher chrome uses Auto / Day / Night appearance (older High contrast / Dim selections map to Day / Night). Scheduled Auto is the default, with 07:00/19:00 anchors unless changed; user anchors may cross midnight. Legacy sensor selection resolves to Schedule. Day/Night updates launcher chrome in place; the external navigation app owns its appearance independently.
 
-Accent hue is deliberately simple and independent of appearance mode. Settings presents a **single strip of coloured circles** for Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. Hue affects only the semantic accent role: primary/selected/focus elements, subtle source accents, section accents, fixed Navigation and experimental-map location accent. Neutral black/charcoal/white hierarchy remains unchanged.
+Accent hue is deliberately simple and independent of appearance mode. Settings presents a **single strip of coloured circles** for Orange, Amber, Lime, Green, Teal, Cyan, Blue, Purple, Pink and Red. Hue affects only the semantic accent role: primary/selected/focus elements, subtle source accents, section accents and fixed Navigation. Neutral black/charcoal/white hierarchy remains unchanged.
 
-Do not add a first-run wizard unless later physical/user testing establishes a concrete discoverability problem; sensible defaults plus the default Settings quick slot are the current onboarding model.
+Setup is a short, skippable checklist offered after HOME is usable when Music, Radio and Navigation assignments are all empty; it can be repeated from Settings. It never silently takes HOME or grants access.
 
 ### Apps drawer
 
@@ -83,21 +88,18 @@ This launcher is not a generic resizable/split-screen HOME. Responsive work is l
 
 ### HOME navigation surfaces
 
-Settings has one authoritative **HOME navigation surface** preference with three mutually exclusive modes:
+Settings has one authoritative **HOME navigation surface** preference with two mutually exclusive modes:
 
 - **Native navigation window - TESTING** - primary path: one real external navigation task on display 0 in Android freeform `windowingMode=5`, bounded to the launcher navigation rectangle.
 - **Fullscreen only** - explicit safe fallback.
-- **Legacy online map fallback** - launcher-owned Leaflet/WebView surface; online-only, last-resort, never automatic.
 
-For upgrades, a previously explicit `map.enabled=true` is consulted only when the new surface preference has never been written, and historical `raw_freeform` is migrated to `native_window`. Once `navigation.surface.mode` exists it is the sole surface authority; an invalid stored mode fails safe to fullscreen. Standard Android PiP is no longer a selectable or automatic navigation path.
+The earlier launcher-owned Leaflet/WebView online map is **retired**. On upgrade or settings import, a stored `leaflet` surface or legacy `map.enabled=true` resolves to explicit **Fullscreen only**, historical `raw_freeform` resolves to `native_window`, and the retired keys are dropped. `navigation.surface.mode` is the sole surface authority.
 
 Exact TS18 evidence from a known-good DoFun/Organic Maps launch establishes a real external navigation task on display 0 in freeform mode 5, alongside Topway `isPipLauncher ... :navi` policy. The launcher therefore treats package + task ID + current top component + display + windowing mode + task bounds as the machine-state authority. It does **not** claim that raw `am task resize` reproduces DoFun's full private Topway navigation policy.
 
-The mode-5 path is root-assisted but bounded. Java resolves the configured package's ordinary exported launcher Activity and derives the Android user from the launcher process UID (the application UID itself is not used as a user ID). One helper transaction first adopts exactly one same-user, same-package task with a known matching component; only if none exists does it launch that component once with explicit display 0 and mode 5, then acquire, resize and verify the exact task. Ambiguous tasks fail closed. HOME stops do not cancel an in-flight transaction, callbacks coalesce behind one operation, and a failure latch keeps HOME usable until explicit Retry or Open fullscreen.
+The mode-5 path is root-assisted but bounded. Java resolves the configured package's ordinary exported launcher Activity and derives the Android user from the launcher process UID (the application UID itself is not used as a user ID). One helper transaction first adopts exactly one same-user, same-package task with a known matching component; only if none exists does it launch that component once with explicit display 0 and mode 5, then acquire, resize and verify the exact task. Ambiguous tasks fail closed. HOME stops do not cancel an in-flight transaction, callbacks coalesce behind one operation, and bounded event-driven recovery keeps HOME usable; Retry and Open fullscreen remain explicit escape paths, not normal startup requirements.
 
 Physical testing of `PR11-5aea8bc` proved visible bounded Organic Maps rendering on standalone HOME but also exposed unreliable warm lifecycle/app handoff and permission/settings UI after launcher-driven task handling. Current code no longer restarts a warm navigation Activity merely to park it: one atomic helper transaction validates the same-user Organic Maps and canonical HOME tasks, focuses HOME, then revalidates the unchanged mode-5 task, component and bounds. Cold acquisition remains the ordinary direct MAIN/LAUNCHER start. Explicit fullscreen/freeform mode changes remain a separate Android-Q transaction and may use `am start --task` because the captured TS18 behaviour rejects resize until the existing task is first established in mode 5. These changes are repository-verified but still require exact-device retest; inside-map touch, warm recovery and vehicle lifecycle remain physical gates.
-
-The Leaflet/WebView implementation remains **OFF by default on a clean install**. When selected it retains pinned Leaflet 1.9.4, restricted OSM raster requests through the native TileBroker, bounded cache/revalidation, renderer recovery, process-local state, no arbitrary browsing and no JS bridge. The raster cache is not an Organic Maps/OsmAnd/Google/Yandex offline database.
 
 Machine-state success is not physical HOME success. Mode 5 still requires exact-device qualification of visible composition, map touch inside the rectangle, launcher touch outside it, app-drawer round trips, fullscreen/HOME transitions, unrelated-task isolation, navigator switching, process recreation, reverse return, reboot, cold boot and ACC sleep/wake.
 
@@ -127,7 +129,7 @@ Physical validation is still required for the selected/inactive media hierarchy 
 
 ## Safe HOME rollout
 
-Install/test the APK as an ordinary Activity first; its HOME alias is disabled by default. Configure and physically qualify while DoFun remains HOME, then explicitly enable/select standalone HOME only after ordinary-Activity gates pass. DoFun remains rollback HOME through reboot/cold-boot/ACC qualification.
+For a new installation, test the APK as an ordinary Activity before explicitly enabling/selecting its HOME alias. On an already configured unit, resolve and preserve the current HOME. DoFun remains installed/enabled as rollback through reboot/cold-boot/ACC qualification. Automatic compact startup and masked Radio recovery need the launcher selected as HOME; those checks cannot pass in ordinary-Activity mode.
 
 Reverse-camera hand-off/return remains roadmapped physical validation only. There is no reverse-camera implementation in this launcher.
 
@@ -137,11 +139,10 @@ Reverse-camera hand-off/return remains roadmapped physical validation only. Ther
 python3 tools/ts18_theme.py validate
 python3 -m unittest discover -s tests -v
 
-gradle :theme:lintDebug :theme:assembleDebug
 gradle :launcher:lintDebug :launcher:testDebugUnitTest :launcher:assembleDebug
 ```
 
-CI also requires an empty launcher release runtime dependency graph, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin release envelope, pinned Leaflet assets, Material Symbols attribution and valid APK signature.
+CI also requires an empty launcher release runtime dependency graph, signed/minified one-DEX/no-native/no-Kotlin/no-AndroidX/no-RePlugin release envelope, no retired online-map assets or WebView bridge, Material Symbols attribution and valid APK signature.
 
 ## Testing and candidate releases
 
@@ -160,4 +161,4 @@ The separate **Standalone Launcher Candidate** workflow produces an explicitly v
 
 CI proves source/build/release contracts only. It does not prove physical head-unit behaviour.
 
-Current observation contract: `ProcessMediaSessionMonitor` observes real session tokens on the main looper alongside the notification listener and rechecks notification access. Event callbacks drive updates; explicit listener refresh requests have a 15-second minimum spacing; no periodic timer is scheduled and storage events can request refresh while HOME is hidden. Revoked/missing notification access remains blocked. Browser connections do not grant notification access or create another playback authority.
+Current observation contract: M2 uses its source-owned browser sessions and event-driven registry; listener-only discovery requires notification access. `ProcessMediaSessionMonitor` is demand-gated to explicit Legacy sources, with Binder reads on one worker and publication on main; its visible-only one-second verification tick is idle when both sources use M2. Storage events can request background reconciliation while HOME is hidden. Browser authority neither grants notification access nor creates a second playback authority.

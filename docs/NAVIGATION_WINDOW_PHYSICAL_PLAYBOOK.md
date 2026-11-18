@@ -1,5 +1,7 @@
 # Native navigation window physical playbook
 
+> **Historical PR11 procedure.** Retains the original failure and acceptance design, not current APK names or installation instructions. Use [the consolidated campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) and [current navigation ownership](NAVIGATION.md) for the latest candidate; re-use only relevant scenario observations.
+
 ## Goal
 
 Qualify one selected navigation application's real Android task on the exact TS18. Repository and CI results do not prove the physical result.

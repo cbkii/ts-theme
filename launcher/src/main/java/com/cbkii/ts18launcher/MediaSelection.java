@@ -19,6 +19,12 @@ final class MediaSelection {
         displayed = explicit;
     }
 
+    String reconcileObservedPlayback(boolean radioPlaying, boolean musicPlaying, boolean loading) {
+        // Loading is not confirmed playback; it only prevents an unnecessary presentation switch.
+        if (!radioPlaying && !musicPlaying && loading) return displayed;
+        return reconcile(radioPlaying, musicPlaying);
+    }
+
     String reconcile(boolean radioPlaying, boolean musicPlaying) {
         // An explicit tap takes effect immediately. Only a new activity transition may
         // auto-select a sole playing authority; repeated metadata/poll callbacks cannot undo it.
@@ -59,18 +65,25 @@ final class MediaSelection {
     }
 
     static int pick(List<Candidate> sessions, String preferred, boolean prefer, String remembered) {
-        if (prefer) {
-            int index = exact(sessions, preferred, false);
-            if (index >= 0) return index;
+        // Dedicated ownership is absolute, even when the configured app has no session.
+        if (prefer) return exact(sessions, preferred, false);
+        int playing = -1;
+        for (int i = 0; i < sessions.size(); i++) {
+            Candidate c = sessions.get(i);
+            if (!c.eligible || !c.active) continue;
+            if (c.packageName.equals(remembered)) return i;
+            if (playing < 0 || c.packageName.equals(preferred)) playing = i;
         }
+        if (playing >= 0) return playing;
         int rememberedIndex = exact(sessions, remembered, true);
         if (rememberedIndex >= 0) return rememberedIndex;
+        int preferredIndex = exact(sessions, preferred, false);
+        if (preferredIndex >= 0) return preferredIndex;
         int paused = -1, any = -1;
         for (int i = 0; i < sessions.size(); i++) {
-            Candidate candidate = sessions.get(i);
-            if (!candidate.eligible) continue;
-            if (candidate.active) return i;
-            if (paused < 0 && candidate.pausedOrStopped) paused = i;
+            Candidate c = sessions.get(i);
+            if (!c.eligible) continue;
+            if (paused < 0 && c.pausedOrStopped) paused = i;
             if (any < 0) any = i;
         }
         return paused >= 0 ? paused : any;

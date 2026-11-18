@@ -29,4 +29,6 @@
     <dimen name="driver_gap">8dp</dimen>
     <dimen name="driver_gap_large">12dp</dimen>
     <dimen name="ui_play_visual">60dp</dimen>
+    <dimen name="ui_metadata_padding_horizontal">16dp</dimen>
+    <dimen name="ui_metadata_fade_width">28dp</dimen>
 </resources>

@@ -1,5 +1,7 @@
 # TS18 DoFun activation and LSPosed feasibility diagnostic
 
+> **Specialist DoFun diagnostic procedure.** This targets the protected OEM host/legacy activation investigation, not normal standalone-launcher startup or release qualification. Do not install its persistent collector or perform theme experiments as a launcher prerequisite. Use only for the corresponding diagnostic task, with current identity/recovery evidence. The launcher campaign is [here](CONSOLIDATED_TESTING_PLAYBOOK.md).
+
 Use this when DoFun can **list and preview** TS18 Dashboard Theme but **Use** fails, falls back, or removes the custom tile. This pass keeps the existing RePlugin activation investigation and adds the evidence needed to decide whether a narrow LSPosed/libxposed adapter is practical on CB's exact TS18.
 
 The collector is deliberately diagnostic only. It does not install an Xposed module, change LSPosed scope, bypass signature checks, edit `p.l`, replace a donor, force-stop DoFun, clear app data, mount overlays or change SELinux.

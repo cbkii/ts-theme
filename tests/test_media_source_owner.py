@@ -50,6 +50,8 @@ check(second==Ts18LauncherApplication.mediaSources(app)&&!second.destroyed);
 RadioProvider.radio="other.radio";
 MediaSourceBootstrapper third=Ts18LauncherApplication.mediaSources(app);
 check(third!=second&&second.destroyed);
+AndroidUserId.user=10;MediaSourceBootstrapper profile=Ts18LauncherApplication.mediaSources(app);
+check(profile!=third&&third.destroyed);check(profile==Ts18LauncherApplication.mediaSources(app));
 System.out.println("PASS effective source identity preserves one process owner");
 }}
 ''')

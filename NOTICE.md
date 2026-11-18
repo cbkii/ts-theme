@@ -16,12 +16,9 @@ The following inputs were inspected locally but are **not distributed** in this 
 
 Only hashes, interface facts, independently authored configurations, tools, documentation and visual assets are included. Reference APKs are never build inputs.
 
-Qihoo360 RePlugin is a separate Apache-2.0 project. The build fetches the official
-`replugin-plugin-lib` 2.3.4 AAR from Qihoo360's published repository and accepts it only when its
-SHA-256 is `0c3132e90dc372056bd9601788ee67a1c97fb64d15f6074826825addadf6a89f`. The AAR is
-not committed; its loader classes are incorporated in release APKs under RePlugin's Apache-2.0
-licence. This repository's Apache-2.0 `LICENSE` accompanies each GitHub Release through the source
-archive.
+Historical theme builds used the Apache-2.0 Qihoo360 RePlugin loader. The `theme/` module and its download/build path are retired; current launcher APKs include no RePlugin runtime. Historical hash/licence records remain in Git history and [research evidence](docs/RESEARCH_EVIDENCE.md).
+
+Current launcher functional glyphs are Apache-2.0 Material Symbols Rounded; pinned provenance and adaptation details are in [icon sources](docs/ICON_SOURCES.md), with the notice shipped in `launcher/src/main/assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt`. The radio reference dataset has its separate attribution in `launcher/src/main/assets/radio/NOTICE.txt`.
 
 Auxio-TS is referenced as interoperability evidence. No Auxio-TS source or binary is copied into this repository.
 
@@ -34,5 +31,4 @@ Apache-2.0 licence. The exact source revision recorded by the supplied Snow 7 AP
 is `edc24150a787c14e082e72f55bbce7dca6239cdd`.
 
 Corresponding editable SVG source and a copy of GPL v3 are retained under `third_party/snow/`.
-Only the four generated `alt_*` PNGs in `theme/src/main/res/mipmap-mdpi-v4/` derive from those
-GPL-3.0 assets; the selected default hotseat icons are project-authored simple white glyphs.
+The four generated `alt_*` PNGs belonged to the retired theme module. Current launcher APKs do not package these Snow assets. Retained SVG source and GPL licence remain separately attributed; they must not be relabelled as Apache-2.0.

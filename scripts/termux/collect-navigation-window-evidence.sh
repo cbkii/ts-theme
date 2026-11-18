@@ -324,7 +324,8 @@ if [ "$ROOT_OK" -eq 1 ] && [ -s "$prefs" ]; then
   MODE="$(sed -n 's/.*<string name="navigation.surface.mode">\([^<]*\)<\/string>.*/\1/p' "$prefs" | tail -n 1)"
   [ "$MODE" != raw_freeform ] || MODE=native_window
   if [ -z "$MODE" ]; then
-    if grep -q '<boolean name="map.enabled" value="true"' "$prefs"; then MODE=leaflet; else MODE=native_window; fi
+    # The online map is retired: its old boolean now resolves to the fullscreen surface.
+    if grep -q '<boolean name="map.enabled" value="true"' "$prefs"; then MODE=fullscreen; else MODE=native_window; fi
   fi
 else
   result BLOCKED configuration "launcher preferences unreadable"

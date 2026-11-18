@@ -147,8 +147,17 @@ jobs:
         run: |
           set -euo pipefail
           python3 release-source/tools/ts18_theme.py validate
-          python3 release-source/tools/fetch_replugin.py \
-            --output release-source/build/dependencies/replugin-plugin-lib-2.3.4.aar
+
+      - name: Confirm the exact source contains the launcher module
+        # Pre-retirement immutable sources only carry the retired theme module: reject such
+        # historical repair requests here instead of failing inside the Gradle build.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f release-source/launcher/build.gradle.kts ]]; then
+            echo "::error::The selected source predates the launcher module; repair of retired theme-era releases is not supported by this workflow."
+            exit 1
+          fi
 
       - name: Materialise ephemeral signing keystore
         shell: bash
@@ -175,24 +184,15 @@ jobs:
           gradle --project-dir release-source --no-daemon --stacktrace \
             -PVERSION_NAME="$RELEASE_VERSION_NAME" \
             -PVERSION_CODE="$RELEASE_VERSION_CODE" \
-            :theme:assembleRelease
+            :launcher:assembleRelease
 
-      - name: Verify minimal RePlugin runtime envelope
+      - name: Verify launcher runtime envelope
         shell: bash
-        env:
-          RELEASE_MODE: ${{ inputs.release_mode }}
         run: |
           set -euo pipefail
-          if python3 -c 'import json; from pathlib import Path; config=json.loads(Path("release-source/release-config.json").read_text(encoding="utf-8")); raise SystemExit(0 if isinstance(config.get("runtime_envelope"), dict) else 1)'; then
-            python3 scripts/release/runtime_envelope.py \
-              --apk release-source/theme/build/outputs/apk/release/theme-release.apk \
-              --config release-source/release-config.json
-          elif [[ "$RELEASE_MODE" == "repair_existing_release" ]]; then
-            echo "::notice::Historical release source predates the runtime-envelope contract; preserving its immutable repair path."
-          else
-            echo "::error::New release source is missing runtime_envelope."
-            exit 1
-          fi
+          # The checker from the exact release source defines that source's envelope.
+          python3 release-source/tools/launcher_apk_check.py \
+            release-source/launcher/build/outputs/apk/release/launcher-release.apk
 
       - name: Qualify APK and construct closed publication bundle
         shell: bash
@@ -203,7 +203,7 @@ jobs:
           set -euo pipefail
           python3 scripts/release/qualify.py \
             --source-root release-source \
-            --apk release-source/theme/build/outputs/apk/release/theme-release.apk \
+            --apk release-source/launcher/build/outputs/apk/release/launcher-release.apk \
             --plan release-plan.json \
             --output-dir qualified \
             --build-tools "$ANDROID_SDK_ROOT/build-tools/36.0.0" \

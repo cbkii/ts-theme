@@ -17,7 +17,7 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertNotIn("cold-foreground-prime", LAUNCHER)
         self.assertIn("StartupReadinessCoordinator.get(this).onTrigger", LAUNCHER)
         coordinator = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/StartupReadinessCoordinator.java").read_text()
-        self.assertIn("media().warm(pkg)", coordinator)
+        self.assertIn("mediaSources(context).warm(pkg)", coordinator)
         self.assertIn("Ts18LauncherApplication.mediaSources(context)", coordinator)
 
     def test_process_media_session_monitor_is_primary_cold_boot_observer(self):
@@ -26,8 +26,8 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertIn("onProcessMediaStateChanged", LAUNCHER)
         self.assertIn("addOnActiveSessionsChangedListener", PROCESS_MONITOR)
         self.assertIn("getActiveSessions(listenerComponent)", PROCESS_MONITOR)
-        self.assertIn("scheduleRefresh()", PROCESS_MONITOR)
-        self.assertIn("MediaSelection.pick(candidates, preferred, preferConfigured, remembered)", PROCESS_MONITOR)
+        self.assertIn("requestRefresh()", PROCESS_MONITOR)
+        self.assertIn("MediaSelection.pick(values, preferred, dedicated, remembered)", PROCESS_MONITOR)
 
     def test_geometry_application_is_idempotent(self):
         place = LAUNCHER.split("private void place(View view", 1)[1].split(
@@ -64,6 +64,17 @@ class FinalPassHardeningTest(unittest.TestCase):
         self.assertIn("LauncherPrefs.packageFor(activity, key)", DRAWER)
         self.assertIn("ShortcutSlot.iconAppearance(activity, key)", DRAWER)
         self.assertIn('quickSignature = "";', DRAWER)
+
+    def test_drawer_appearance_restores_auto_app_identity_after_shared_styling(self):
+        appearance = DRAWER.split("void applyAppearance()", 1)[1].split("void applyVoiceSearch", 1)[0]
+        quick = DRAWER.split("void refreshPreferences()", 1)[1].split("private String quickPreferenceSignature", 1)[0]
+        self.assertIn('quickSignature = "";', appearance)
+        self.assertIn("refreshPreferences();", appearance)
+        self.assertIn("button.setTag(LauncherPrefs.DRAWER_QUICK_KEYS[i])", quick)
+        self.assertLess(quick.index("iconButton("), quick.index("ShortcutSlot.bind"))
+        self.assertIn("R.color.ui_text_secondary", quick)
+        self.assertIn("searchIcon.setColorFilter", appearance)
+        self.assertIn("styleRailButton(this, quickButtons[i], false)", LAUNCHER)
 
     def test_drawer_grid_long_press_opens_android_app_info(self):
         self.assertIn("grid.setOnItemLongClickListener", DRAWER)

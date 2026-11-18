@@ -78,7 +78,7 @@ final class MediaEventTrace {
 
     private static void logInfo(String line) {
         try {
-            Log.i(LOG_TAG, line);
+            Log.i(LOG_TAG, line + " uid=" + android.os.Process.myUid());
         } catch (RuntimeException | LinkageError unavailableAndroidRuntime) {
             // Ring-buffer evidence remains testable when android.util.Log is only a JVM stub.
         }

@@ -9,6 +9,8 @@ import android.media.session.MediaSession;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.service.notification.NotificationListenerService;
@@ -34,10 +36,18 @@ public final class MediaListenerService extends NotificationListenerService {
         public final String packageName;
         public final String title;
         public final String artist;
+        final RadioFrequency radioFrequency;
         public final boolean playing;
         public final int state;
         public final long actions;
         final Object sessionIdentity;
+        final String mediaId;
+        final long queueItemId;
+        final long observationGeneration;
+        final long observedAtMs;
+        final boolean itemVerified;
+        final String itemEvidence;
+        final int observedQueueSize;
 
         Snapshot(String packageName, String title, String artist, boolean playing) {
             this(packageName, title, artist,
@@ -51,13 +61,60 @@ public final class MediaListenerService extends NotificationListenerService {
 
         Snapshot(String packageName, String title, String artist, int state, long actions,
                  Object sessionIdentity) {
+            this(packageName, title, artist, state, actions, sessionIdentity, "", -1L, 0L, 0L, false);
+        }
+
+        Snapshot(String packageName, String title, String artist, int state, long actions,
+                 Object sessionIdentity, String mediaId, long queueItemId,
+                 long generation, long observedAtMs, boolean itemVerified) {
+            this(packageName, title, artist, state, actions, sessionIdentity, mediaId, queueItemId,
+                    generation, observedAtMs, itemVerified, "NO_ITEM_ID", -1);
+        }
+
+        Snapshot(String packageName, String title, String artist, int state, long actions,
+                 Object sessionIdentity, String mediaId, long queueItemId,
+                 long generation, long observedAtMs, boolean itemVerified, String evidence, int queueSize) {
             this.packageName = packageName == null ? "" : packageName;
             this.title = normalise(title);
             this.artist = normalise(artist);
+            this.radioFrequency = RadioFrequency.observed(this.packageName, this.title, this.artist);
             this.state = state;
             this.actions = actions;
             this.sessionIdentity = sessionIdentity;
-            this.playing = usesPauseAction(state);
+            this.playing = state == PlaybackState.STATE_PLAYING;
+            this.mediaId = normalise(mediaId);
+            this.queueItemId = queueItemId;
+            this.observationGeneration = generation;
+            this.observedAtMs = observedAtMs;
+            this.itemVerified = itemVerified;
+            this.itemEvidence = evidence;
+            this.observedQueueSize = queueSize;
+        }
+
+        Snapshot withMetadata(String title, String artist) {
+            return new Snapshot(packageName, title, artist, state, actions, sessionIdentity,
+                    mediaId, queueItemId, observationGeneration, observedAtMs, itemVerified,
+                    itemEvidence, observedQueueSize);
+        }
+
+        String trackIdentity() {
+            return String.valueOf(sessionIdentity) + ":" + observationGeneration + ":" + mediaId + ":" + queueItemId;
+        }
+
+        String observationEvidence() {
+            String idHash = "none";
+            if (!mediaId.isEmpty()) {
+                try {
+                    byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(mediaId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    StringBuilder hash = new StringBuilder();
+                    for (int i = 0; i < 6; i++) hash.append(String.format(java.util.Locale.ROOT, "%02x", digest[i] & 255));
+                    idHash = hash.toString();
+                } catch (java.security.NoSuchAlgorithmException unavailable) { idHash = "unavailable"; }
+            }
+            return "owner=" + observationGeneration + " item=" + idHash + " active=" + queueItemId
+                    + " queue=" + observedQueueSize + " evidence=" + itemEvidence
+                    + " state=" + state + " actions=" + actions;
         }
 
         public boolean isEmpty() {
@@ -85,7 +142,7 @@ public final class MediaListenerService extends NotificationListenerService {
                     return (actions & PlaybackState.ACTION_SKIP_TO_NEXT) != 0L
                             || MediaSourceAdapter.allowsUnadvertisedSkip(packageName);
                 case PLAY_PAUSE:
-                    long direct = playing ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY;
+                    long direct = usesPauseAction(state) ? PlaybackState.ACTION_PAUSE : PlaybackState.ACTION_PLAY;
                     return (actions & direct) != 0L
                             || (actions & PlaybackState.ACTION_PLAY_PAUSE) != 0L;
                 default:
@@ -111,12 +168,22 @@ public final class MediaListenerService extends NotificationListenerService {
     private final Map<MediaSession.Token, MediaController> watched = new HashMap<>();
     private final Map<MediaSession.Token, MediaController> external = new HashMap<>();
     private final Map<MediaSession.Token, MediaController.Callback> externalCallbacks = new HashMap<>();
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private boolean connected;
+    private int listenerGeneration;
     private MediaSessionManager sessionManager;
     private ComponentName listenerComponent;
     private String radioNotificationKey = "";
     private String radioNotificationTitle = "";
     private String radioNotificationText = "";
     private String radioNotificationStation = "";
+    // One notification retained while its media-session token is not yet observable (session
+    // transition race). Replayed from reconcile() once the matching controller is observable.
+    private String pendingRadioKey = "";
+    private String pendingRadioTitle = "";
+    private String pendingRadioText = "";
+    private Object pendingRadioToken;
+    private final RadioStationAssociation radioAssociation = new RadioStationAssociation();
 
     private final MediaController.Callback callback = new MediaController.Callback() {
         @Override public void onMetadataChanged(MediaMetadata metadata) { refresh(); }
@@ -125,8 +192,7 @@ public final class MediaListenerService extends NotificationListenerService {
         @Override public void onQueueChanged(List<MediaSession.QueueItem> queue) { refresh(); }
     };
 
-    private final MediaSessionManager.OnActiveSessionsChangedListener sessionsChangedListener =
-            controllers -> reconcile(controllers == null ? new ArrayList<>() : controllers);
+    private MediaSessionManager.OnActiveSessionsChangedListener sessionsChangedListener;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -137,46 +203,48 @@ public final class MediaListenerService extends NotificationListenerService {
 
     @Override public void onListenerConnected() {
         super.onListenerConnected();
+        connected = true;
+        final int generation = ++listenerGeneration;
+        sessionsChangedListener = ignored -> main.post(() -> {
+            if (connected && instance == this && generation == listenerGeneration) refresh();
+        });
         instance = this;
+        publishEmpty();
+        ProcessMediaSessionMonitor.refresh(this);
+        MediaNotificationAccessBootstrapper.connected();
         MediaEventTrace.record("listener", "connected");
         if (sessionManager == null) {
             MediaEventTrace.record("listener", "manager-unavailable");
             publishEmpty();
             return;
         }
-        try {
-            sessionManager.addOnActiveSessionsChangedListener(
-                    sessionsChangedListener, listenerComponent);
-        } catch (SecurityException ignored) {
-            MediaEventTrace.record("listener", "session-access-denied");
-            publishEmpty();
-            return;
-        }
-        attachRegisteredExternalControllers();
-        refresh();
+        if (!legacyDemand) return;
+        activateLegacy(++activationSerial, 0);
     }
 
     @Override public void onListenerDisconnected() {
         MediaEventTrace.record("listener", "disconnected", "requesting framework rebind");
+        connected = false;
+        listenerGeneration++;
         releaseAll();
         detachSessionListener();
-        instance = null;
-        notifyObservers();
+        if (instance == this) { instance = null; publishEmpty(); }
         super.onListenerDisconnected();
-        if (listenerComponent != null) requestRebind(listenerComponent);
+        MediaNotificationAccessBootstrapper.ensureConnected(this);
     }
 
     @Override public void onDestroy() {
         MediaEventTrace.record("listener", "destroyed");
+        connected = false;
+        listenerGeneration++;
         releaseAll();
         detachSessionListener();
-        if (instance == this) instance = null;
-        notifyObservers();
+        if (instance == this) { instance = null; publishEmpty(); }
         super.onDestroy();
     }
 
     @Override public void onNotificationPosted(StatusBarNotification sbn) {
-        if (sbn == null || !RadioProvider.resolvePackage(this).equals(sbn.getPackageName())) return;
+        if (!legacyDemand || sbn == null || !RadioProvider.resolvePackage(this).equals(sbn.getPackageName())) return;
         Notification notification = sbn.getNotification();
         if (notification == null || (notification.flags & Notification.FLAG_ONGOING_EVENT) == 0) return;
         Bundle extras = notification.extras;
@@ -185,17 +253,50 @@ public final class MediaListenerService extends NotificationListenerService {
                 Notification.EXTRA_TITLE_BIG);
         String text = firstNotificationText(extras, Notification.EXTRA_TEXT,
                 Notification.EXTRA_BIG_TEXT, Notification.EXTRA_SUB_TEXT);
+        text = MediaTickerPolicy.join(text,
+                firstNotificationText(extras, Notification.EXTRA_SUB_TEXT),
+                firstNotificationText(extras, "frequency", "freq"));
         if (title.isEmpty() && text.isEmpty()) return;
-        radioNotificationKey = sbn.getKey() == null ? "" : sbn.getKey();
-        radioNotificationTitle = title;
-        radioNotificationText = text;
+        Object notificationToken = extras.getParcelable(Notification.EXTRA_MEDIA_SESSION);
         Snapshot currentRadio = snapshotOf(findRadioController());
-        radioNotificationStation = notificationStation(title, currentRadio);
-        MediaEventTrace.record("metadata", "radio-notification", sbn.getPackageName());
+        if (notificationToken != null && !notificationToken.equals(currentRadio.sessionIdentity)) {
+            // Session transition: the notification's session is not observable yet. Retain the
+            // notification and replay it when reconciliation observes the matching controller,
+            // instead of dropping a legitimate new-station notification.
+            pendingRadioKey = sbn.getKey() == null ? "" : sbn.getKey();
+            pendingRadioTitle = title;
+            pendingRadioText = text;
+            pendingRadioToken = notificationToken;
+            MediaEventTrace.record("metadata", "radio-notification-deferred", sbn.getPackageName());
+            return;
+        }
+        adoptRadioNotification(sbn.getKey(), title, text, currentRadio);
         refresh();
     }
 
+    private void adoptRadioNotification(String key, String title, String text, Snapshot currentRadio) {
+        pendingRadioKey = "";
+        pendingRadioTitle = "";
+        pendingRadioText = "";
+        pendingRadioToken = null;
+        radioNotificationKey = key == null ? "" : key;
+        radioNotificationTitle = title;
+        radioNotificationText = text;
+        radioAssociation.observe(currentRadio.sessionIdentity, meaningfulRadioTitle(currentRadio));
+        radioNotificationStation = notificationStation(title, currentRadio);
+        radioAssociation.notification(radioNotificationStation);
+        MediaEventTrace.record("metadata", "radio-notification",
+                RadioProvider.resolvePackage(this));
+    }
+
     @Override public void onNotificationRemoved(StatusBarNotification sbn) {
+        if (sbn != null && sbn.getKey() != null && pendingRadioToken != null
+                && sbn.getKey().equals(pendingRadioKey)) {
+            pendingRadioKey = "";
+            pendingRadioTitle = "";
+            pendingRadioText = "";
+            pendingRadioToken = null;
+        }
         if (sbn == null || radioNotificationKey.isEmpty() || sbn.getKey() == null
                 || !radioNotificationKey.equals(sbn.getKey())) return;
         radioNotificationKey = "";
@@ -207,7 +308,7 @@ public final class MediaListenerService extends NotificationListenerService {
     }
 
     private void detachSessionListener() {
-        if (sessionManager == null) return;
+        if (sessionManager == null || sessionsChangedListener == null) return;
         try {
             sessionManager.removeOnActiveSessionsChangedListener(sessionsChangedListener);
         } catch (RuntimeException ignored) {
@@ -215,7 +316,53 @@ public final class MediaListenerService extends NotificationListenerService {
         }
     }
 
+    private static boolean legacyDemand;
+    private int activationSerial;
+
+    private void activateLegacy(int serial, int attempt) {
+        if (serial != activationSerial || !legacyDemand || !connected || instance != this) return;
+        try {
+            sessionManager.addOnActiveSessionsChangedListener(sessionsChangedListener, listenerComponent, main);
+        } catch (RuntimeException unavailable) {
+            MediaEventTrace.record("listener", "registration-unavailable", "attempt=" + attempt);
+            // Nothing is attached or replayed until registration holds, so a retry cannot
+            // duplicate controller callbacks or notification replays.
+            if (attempt < 3) main.postDelayed(() -> activateLegacy(serial, attempt + 1), 250L << attempt);
+            else publishEmpty();
+            return;
+        }
+        attachRegisteredExternalControllers();
+        refresh();
+        try {
+            StatusBarNotification[] active = getActiveNotifications();
+            if (active != null) for (StatusBarNotification notification : active) onNotificationPosted(notification);
+        } catch (RuntimeException unavailable) {
+            MediaEventTrace.record("listener", "notification-replay-unavailable");
+        }
+    }
+
+    /** True while some source is served by the Legacy engine, the only consumer of this connection. */
+    static boolean legacyDemanded() { return legacyDemand; }
+
+    static void setDemand(boolean demanded) {
+        if (legacyDemand == demanded) return;
+        legacyDemand = demanded;
+        MediaListenerService service = instance;
+        if (service == null) return;
+        int serial = ++service.activationSerial;
+        service.main.post(() -> {
+            if (instance != service || !service.connected || serial != service.activationSerial) return;
+            service.detachSessionListener();
+            service.releaseAll();
+            if (!legacyDemand) { publishEmpty(); return; }
+            if (service.sessionManager != null && service.sessionsChangedListener != null)
+                service.activateLegacy(serial, 0);
+        });
+    }
+
     private void refresh() {
+        if (Looper.myLooper() != Looper.getMainLooper()) { main.post(this::refresh); return; }
+        if (!legacyDemand || !connected || instance != this) return;
         if (sessionManager == null) {
             publishEmpty();
             return;
@@ -224,39 +371,18 @@ public final class MediaListenerService extends NotificationListenerService {
             reconcile(sessionManager.getActiveSessions(listenerComponent));
         } catch (SecurityException ignored) {
             MediaEventTrace.record("listener", "refresh-access-denied");
-            publishEmpty();
+            releaseAll(); publishEmpty();
+        } catch (RuntimeException unavailable) {
+            MediaEventTrace.record("listener", "refresh-unavailable");
+            releaseAll(); publishEmpty();
         }
     }
 
     private void reconcile(List<MediaController> activeControllers) {
+        if (!legacyDemand || !connected || instance != this) return;
         List<MediaController> active = activeControllers == null
                 ? new ArrayList<>() : activeControllers;
-        Map<MediaSession.Token, MediaController> next = new HashMap<>();
-        for (MediaController controller : active) {
-            MediaSession.Token token = tokenOf(controller);
-            if (controller == null || token == null) continue;
-            next.put(token, controller);
-            if (!watched.containsKey(token)) {
-                try {
-                    controller.registerCallback(callback);
-                } catch (RuntimeException ignored) {
-                    // A single broken session must not break HOME.
-                }
-            }
-        }
-
-        for (Map.Entry<MediaSession.Token, MediaController> entry : watched.entrySet()) {
-            if (!next.containsKey(entry.getKey())) {
-                try {
-                    entry.getValue().unregisterCallback(callback);
-                } catch (RuntimeException ignored) {
-                    // Framework may already have removed it.
-                }
-            }
-        }
-        watched.clear();
-        watched.putAll(next);
-
+        active = SessionControllerRegistry.reconcile(watched, active, callback, main);
         List<MediaController> controllers = mergedControllers(active);
         MediaController genericController = selectGenericController(controllers);
         MediaController radioController = pickExactPackage(
@@ -265,8 +391,20 @@ public final class MediaListenerService extends NotificationListenerService {
         Snapshot previousGeneric = lastGeneric;
         Snapshot previousRadio = lastRadio;
         Snapshot rawRadio = snapshotOf(radioController);
-        boolean notificationMatches = notificationMatchesRadioSnapshot(
-                radioNotificationStation, rawRadio);
+        // Replay a notification retained during the session transition once its session token
+        // is observable; this reconcile consumes it in the same pass.
+        if (pendingRadioToken != null && pendingRadioToken.equals(rawRadio.sessionIdentity)) {
+            if (!pendingRadioTitle.isEmpty() || !pendingRadioText.isEmpty()) {
+                adoptRadioNotification(pendingRadioKey, pendingRadioTitle, pendingRadioText, rawRadio);
+            } else {
+                pendingRadioKey = pendingRadioTitle = pendingRadioText = "";
+                pendingRadioToken = null;
+            }
+        }
+        boolean navRadio = "com.navimods.radio".equals(rawRadio.packageName);
+        radioAssociation.observe(rawRadio.sessionIdentity, meaningfulRadioTitle(rawRadio));
+        boolean notificationMatches = (!navRadio || radioAssociation.current())
+                && notificationMatchesRadioSnapshot(radioNotificationStation, rawRadio);
         if (!notificationMatches
                 && (!radioNotificationTitle.isEmpty() || !radioNotificationText.isEmpty())) {
             MediaEventTrace.record("metadata", "radio-notification-mismatch",
@@ -274,10 +412,12 @@ public final class MediaListenerService extends NotificationListenerService {
                             + " sessionStation=" + meaningfulRadioTitle(rawRadio));
         }
         Snapshot nextGeneric = stabiliseSnapshot(previousGeneric, snapshotOf(genericController));
-        Snapshot nextRadio = stabiliseSnapshot(previousRadio,
-                applyRadioFallback(rawRadio,
-                        notificationMatches ? radioNotificationTitle : "",
-                        notificationMatches ? radioNotificationText : ""));
+        Snapshot fallbackRadio = applyRadioFallback(rawRadio,
+                notificationMatches ? radioNotificationTitle : "",
+                notificationMatches ? radioNotificationText : "");
+        // An identity gap is meaningful. Do not resurrect the previous station through stability.
+        Snapshot nextRadio = navRadio && meaningfulRadioTitle(rawRadio).isEmpty() && !notificationMatches
+                ? fallbackRadio : stabiliseSnapshot(previousRadio, fallbackRadio);
         boolean genericChanged = !sameSnapshot(previousGeneric, nextGeneric);
         boolean radioChanged = !sameSnapshot(previousRadio, nextRadio);
         lastGeneric = nextGeneric;
@@ -357,7 +497,7 @@ public final class MediaListenerService extends NotificationListenerService {
             }
         };
         try {
-            controller.registerCallback(observer);
+            controller.registerCallback(observer, main);
         } catch (RuntimeException ignored) {
             forgetRegisteredExternalController(token, controller);
             return;
@@ -390,7 +530,7 @@ public final class MediaListenerService extends NotificationListenerService {
                 LauncherPrefs.mediaMode(this));
         if (preferConfigured) {
             MediaController configured = pickExactPackage(controllers, preferredPackage);
-            if (configured != null && !excludedFromGenericMedia(configured, radioPackage)) return configured;
+            return configured != null && !excludedFromGenericMedia(configured, radioPackage) ? configured : null;
         }
         return pickPrimary(controllers, radioPackage, preferredPackage, preferConfigured,
                 LauncherPrefs.lastMusicPackage(this));
@@ -413,7 +553,7 @@ public final class MediaListenerService extends NotificationListenerService {
             candidates.add(new MediaSelection.Candidate(controller == null ? "" : controller.getPackageName(),
                     controller != null && !excludedFromGenericMedia(controller, excludedPackage),
                     state != null && value != PlaybackState.STATE_NONE && value != PlaybackState.STATE_ERROR,
-                    usesPauseAction(value), value == PlaybackState.STATE_PAUSED || value == PlaybackState.STATE_STOPPED));
+                    value == PlaybackState.STATE_PLAYING, value == PlaybackState.STATE_PAUSED || value == PlaybackState.STATE_STOPPED));
         }
         int selected = MediaSelection.pick(candidates, preferredPackage, preferConfigured, rememberedPackage);
         return selected < 0 ? null : controllers.get(selected);
@@ -437,7 +577,7 @@ public final class MediaListenerService extends NotificationListenerService {
             if (controller == null || !packageName.equals(controller.getPackageName())) continue;
             PlaybackState state = playbackState(controller);
             int value = state == null ? PlaybackState.STATE_NONE : state.getState();
-            if (usesPauseAction(value)) return controller;
+            if (value == PlaybackState.STATE_PLAYING) return controller;
             if (fallback == null) fallback = controller;
         }
         return fallback;
@@ -470,7 +610,24 @@ public final class MediaListenerService extends NotificationListenerService {
                 MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE);
         int state = playbackState == null ? PlaybackState.STATE_NONE : playbackState.getState();
         long actions = playbackState == null ? 0L : playbackState.getActions();
+        if (RadioFrequency.NAVRADIO.equals(controller.getPackageName())) artist = radioDetails(metadata, artist);
         return new Snapshot(controller.getPackageName(), title, artist, state, actions, token);
+    }
+
+    static String radioDetails(MediaMetadata metadata, String artist) {
+        if (metadata == null) return artist;
+        java.util.List<String> fields = new java.util.ArrayList<>();
+        fields.add(artist);
+        // Unit-bearing text only. Unqualified vendor integers never become tuner state.
+        for (String key : new String[] {MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+                MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION, MediaMetadata.METADATA_KEY_ALBUM,
+                MediaMetadata.METADATA_KEY_GENRE, "frequency", "freq", "band", "rds"}) {
+            try {
+                CharSequence value = metadata.getText(key);
+                if (value != null && value.length() <= 256) fields.add(value.toString());
+            } catch (RuntimeException wrongType) { /* Numeric/private contracts remain unknown. */ }
+        }
+        return MediaTickerPolicy.join(fields.toArray(new String[0]));
     }
 
     private static String firstNonBlank(MediaMetadata metadata, String... keys) {
@@ -530,6 +687,8 @@ public final class MediaListenerService extends NotificationListenerService {
         String primary = snapshot.title;
         String secondary = snapshot.artist;
         boolean placeholder = isRadioPlaceholder(primary);
+        if (placeholder && RadioFrequency.isFrequencyOnly(snapshot.packageName, secondary)
+                && cleanTitle.isEmpty() && cleanText.isEmpty()) return snapshot;
         if (placeholder && cleanTitle.isEmpty() && cleanText.isEmpty()
                 && !secondary.isEmpty() && !isRadioPlaceholder(secondary)) {
             primary = secondary;
@@ -545,22 +704,13 @@ public final class MediaListenerService extends NotificationListenerService {
                     && !cleanText.equalsIgnoreCase(primary)) secondary = cleanText;
         }
         if (primary.equals(snapshot.title) && secondary.equals(snapshot.artist)) return snapshot;
-        return new Snapshot(snapshot.packageName, primary, secondary,
-                snapshot.state, snapshot.actions, snapshot.sessionIdentity);
+        return snapshot.withMetadata(primary, secondary);
     }
 
     static Snapshot stabiliseSnapshot(Snapshot previous, Snapshot next) {
-        if (next == null) return new Snapshot("", "", "", false);
-        boolean sameSession = previous != null && previous.sessionIdentity != null
-                && next.sessionIdentity != null
-                && previous.sessionIdentity.equals(next.sessionIdentity);
-        if (!sameSession || next.packageName.isEmpty()
-                || !next.packageName.equals(previous.packageName)
-                || next.hasMetadata() || !previous.hasMetadata()) return next;
-        MediaEventTrace.record("metadata", "retain-valid-same-token",
-                next.packageName + " state=" + stateName(next.state));
-        return new Snapshot(next.packageName, previous.title, previous.artist,
-                next.state, next.actions, next.sessionIdentity);
+        // A token identifies a session, never an individual song. Retention window is zero:
+        // absent current metadata means unknown, even if the token has not changed.
+        return next == null ? new Snapshot("", "", "", false) : next;
     }
 
     private static boolean sameSnapshot(Snapshot first, Snapshot second) {
@@ -620,6 +770,10 @@ public final class MediaListenerService extends NotificationListenerService {
         }
         external.clear();
         externalCallbacks.clear();
+        radioNotificationKey = radioNotificationTitle = radioNotificationText = radioNotificationStation = "";
+        pendingRadioKey = pendingRadioTitle = pendingRadioText = "";
+        pendingRadioToken = null;
+        radioAssociation.observe(null, "");
     }
 
     private static void publishEmpty() {
@@ -657,6 +811,8 @@ public final class MediaListenerService extends NotificationListenerService {
             if (candidate == null || candidate == observer) OBSERVERS.remove(reference);
         }
     }
+
+    static boolean isConnected() { return instance != null; }
 
     public static void refreshActiveSessions() {
         MediaListenerService service = instance;
@@ -703,7 +859,7 @@ public final class MediaListenerService extends NotificationListenerService {
     public static boolean sendGeneric(Command command) {
         MediaListenerService service = instance;
         if (service == null) return false;
-        MediaController selected = service.findGenericController();
+        MediaController selected = ProcessMediaSessionMonitor.selectedController(lastGeneric.packageName);
         if (selected != null) LauncherPrefs.rememberMusic(service, selected.getPackageName());
         LauncherPrefs.selectSource(service, MediaSelection.MUSIC);
         return service.sendToController(selected, command);
@@ -713,7 +869,8 @@ public final class MediaListenerService extends NotificationListenerService {
         MediaListenerService service = instance;
         if (service == null) return false;
         LauncherPrefs.selectSource(service, MediaSelection.RADIO);
-        return service.sendToController(service.findRadioController(), command);
+        return service.sendToController(ProcessMediaSessionMonitor.selectedController(
+                RadioProvider.resolvePackage(service)), command);
     }
 
     private List<MediaController> activeAndExternalControllers() {
@@ -726,10 +883,6 @@ public final class MediaListenerService extends NotificationListenerService {
             }
         }
         return mergedControllers(active);
-    }
-
-    private MediaController findGenericController() {
-        return selectGenericController(activeAndExternalControllers());
     }
 
     private MediaController findRadioController() {

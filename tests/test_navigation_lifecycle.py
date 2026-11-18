@@ -26,6 +26,8 @@ a = sys.argv[1:]
 if cmd == 'id': print(0)
 elif cmd == 'dumpsys':
     if a[0] == 'window':
+        focus_component = ('app.organicmaps.incar/app.organicmaps.MwmActivity' if s['focus'] == 42 else 'com.cbkii.ts18launcher/.HomeAlias')
+        print('mCurrentFocus=Window{fake u0 ' + focus_component + '}')
         print('  Window #0 Window{fake u0 app.organicmaps.incar/app.organicmaps.MwmActivity' + ('Other' if s.get('decoy_window') else '') + '}:')
         print('    mDisplayId=0 stackId=4')
         print('    mHasSurface=true isReadyForDisplay()=true')
@@ -64,6 +66,22 @@ elif cmd == 'app_process':
         print('UNKNOWN SecurityException permission_denied'); sys.exit(1)
     if s.get('ambiguous') and a[3] == '0':
         print('UNKNOWN IllegalStateException TASK_AMBIGUOUS'); sys.exit(1)
+    if a[0] == 'recent-task':
+        if s.get('nav_alive', True): print('FOUND 42 4 0 %s %s unknown unknown' % (s['mode'], ','.join(map(str,s['bounds'])))); sys.exit(0)
+        retained = s.get('retained_recent', 0)
+        if retained and a[3] in ('0', str(retained)): print('RECENT %s' % retained)
+        else: print('NONE')
+        sys.exit(0)
+    if a[0] == 'reacquire-recent':
+        s['commands'].append(['bridge', *a])
+        if s.get('reacquire_refused'): write_state(s); print('REFUSED start=-91'); sys.exit(5)
+        assert a[3] == str(s.get('retained_recent')), a
+        s.update(nav_alive=True, mode=int(a[4]), bounds=[0,0,1280,720], focus=42,
+                 nav_component=s.get('reacquired_component', 'app.organicmaps.MwmActivity'))
+        s.pop('retained_recent', None); s['empty_recents'] = False
+        write_state(s)
+        print('FOUND 42 4 0 %s 0,0,1280,720 app.organicmaps.incar/%s unknown' % (s['mode'], s['nav_component']))
+        sys.exit(0)
     if not s.get('nav_alive', True): print('NONE'); sys.exit(0)
     if a[0] != 'status':
         if s.get('bridge_top_missing'):
@@ -76,14 +94,16 @@ elif cmd == 'app_process':
         s['mode'] = int(a[4]) if a[0] == 'mode' else s['mode']
         if a[0] == 'clear-fullscreen-bounds':
             if s.get('reject_clear_bounds'): print('UNKNOWN SecurityException resize_denied'); sys.exit(1)
-            if not s.get('retain_compact_bounds'): s['bounds'] = [0,0,0,0]
+            if not s.get('retain_compact_bounds'): s['bounds'] = [0,0,1280,720]
         if a[5] == '1': s['focus'] = 42
         write_state(s)
     component = 'unknown' if s.get('unknown_top') else 'app.organicmaps.incar/app.organicmaps.MwmActivity'
+    if a[0] == 'verify-fullscreen' and (s['mode'] != 1 or s['bounds'] != [0,0,1280,720]):
+        print('UNKNOWN IllegalStateException GEOMETRY_NOT_VERIFIED'); sys.exit(1)
     print('FOUND 42 4 0 %s %s %s unknown' % (s['mode'], ','.join(map(str,s['bounds'])), component))
 elif cmd == 'am':
     if a == ['help']:
-        print('start --windowingMode --display'); sys.exit(0)
+        print('start' if s.get('no_direct_options') else 'start --windowingMode --display'); sys.exit(s.get('help_exit', 0))
     if a[:2] == ['stack', 'list']:
         print('Stack id=4 bounds=[0,0][1280,720] displayId=0 userId=0')
         if s.get('nav_alive', True): print('taskId=42: app.organicmaps.incar/app.organicmaps.DownloadResourcesActivity')
@@ -105,7 +125,7 @@ elif cmd == 'am':
         else:
             s['nav_alive'] = not s.get('delayed_task')
             s['nav_component'] = s.get('cold_component', 'app.organicmaps.SplashActivity')
-        s['mode'] = int(a[a.index('--windowingMode')+1]); s['focus'] = 7 if s.get('delayed_task') else 42
+        s['mode'] = int(a[a.index('--windowingMode')+1]) if '--windowingMode' in a else 1; s['focus'] = 7 if s.get('delayed_task') else 42
     elif a[:2] == ['task', 'focus']:
         s['focus'] = int(a[2])
         if s.get('transition_component_on_home_focus') and s['focus'] == 7:
@@ -126,7 +146,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             work = Path(tmp)
             bin_dir = work / 'bin'
             bin_dir.mkdir()
-            for name in ('awk', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout', 'mkdir', 'rmdir', 'mv'):
+            for name in ('awk', 'sed', 'cat', 'cut', 'grep', 'head', 'rm', 'sleep', 'tr', 'python3', 'timeout', 'mkdir', 'rmdir', 'mv'):
                 resolved = shutil.which(name) or (shutil.which('gtimeout') if name == 'timeout' else None)
                 if resolved is None and name == 'timeout':
                     self.skipTest('GNU timeout required for bounded Android command doubles')
@@ -140,11 +160,13 @@ class NavigationLifecycleTest(unittest.TestCase):
                 path = bin_dir / name
                 path.write_text(ANDROID.replace('app.organicmaps.incar', overrides.get('nav_package', 'app.organicmaps.incar')))
                 path.chmod(0o700)
+            cold_policy = overrides.pop("cold_policy", "manual")
             method = overrides.pop("method", "N1")
             transition = overrides.pop("transition", "intent")
             replays = overrides.pop("replays", 1)
             parallel = overrides.pop("parallel", False)
             seed_claim = overrides.pop("seed_claim", False)
+            legacy_claim = overrides.pop("legacy_claim", "")
             close_after_first = overrides.pop("close_after_first", False)
             reveal_after_first = overrides.pop("reveal_after_first", False)
             disable_claim = overrides.pop("disable_claim", False)
@@ -154,8 +176,9 @@ class NavigationLifecycleTest(unittest.TestCase):
             state_path.write_text(json.dumps(state))
             source = HELPER.read_text().replace('PATH=/system/bin:/system/xbin:/vendor/bin', f'PATH={bin_dir}', 1)
             source = source.replace('/proc/$$/stat', '/proc/self/stat')
+            source = source.replace('/data/adb/ts18-launcher/', str(work / 'legacy') + '/')
             source = source.replace('/system/bin/toybox timeout -k 1', 'timeout -k 1')
-            source = source.replace('ROOT_DIR=/data/adb/ts18-launcher', f'ROOT_DIR={work}', 1)
+            source = source.replace('ROOT_DIR=${TS18_STATE_DIR:?launcher private runtime directory required}', f'ROOT_DIR={work}', 1)
             if disable_claim:
                 source = source.replace('mkdir "$launch_marker" 2>/dev/null || fail LAUNCH_PENDING', 'mkdir -p "$launch_marker"', 1)
             script = work / 'helper.sh'
@@ -164,10 +187,14 @@ class NavigationLifecycleTest(unittest.TestCase):
                 boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
                 claim = work / ('launch-0-' + overrides.get('nav_package', 'app.organicmaps.incar') + '-' + boot)
                 claim.mkdir()
+                if isinstance(seed_claim, str): (claim / 'state').write_text(seed_claim + '\n')
                 os.utime(claim, (1, 1))
+            if legacy_claim:
+                boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+                (work / 'legacy' / (legacy_claim + '-0-app.organicmaps.incar-' + boot)).mkdir(parents=True)
             def invoke():
                 return subprocess.run(['/bin/sh', str(script), *args], capture_output=True, text=True,
-                                        env={**os.environ, 'ANDROID_STATE': str(state_path), 'TS18_METHOD': method, 'TS18_TRANSITION': transition}, timeout=12)
+                                        env={**os.environ, 'ANDROID_STATE': str(state_path), 'TS18_METHOD': method, 'TS18_TRANSITION': transition, 'TS18_COLD_POLICY': cold_policy}, timeout=12)
             if parallel:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
                     results = list(pool.map(lambda _: invoke(), range(2)))
@@ -185,9 +212,76 @@ class NavigationLifecycleTest(unittest.TestCase):
                         state_path.write_text(json.dumps(state))
             final_state = json.loads(state_path.read_text())
             final_state['claims_remaining'] = len(list(work.glob('launch-*')))
+            final_state['claim_states'] = [c.joinpath('state').read_text().strip() for c in work.glob('launch-*') if c.joinpath('state').exists()]
+            final_state['automatic_claims'] = len(list(work.glob('auto-v1-*')))
             receipt = work / 'start-dispatches.jsonl'
             final_state['start_dispatches'] = len(receipt.read_text().splitlines()) if receipt.exists() else 0
             return result, final_state
+
+    def test_opt_out_blocks_new_cold_admission_but_adopts_warm_task(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        result, state = self.run_helper(args, nav_alive=False, focus=7, cold_policy='deny')
+        self.assertIn('AUTOSTART_DISABLED_OR_UNAVAILABLE', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        result, state = self.run_helper(args, cold_policy='deny')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(0, state['start_dispatches'])
+
+    def test_automatic_claim_survives_ready_task_and_process_loss(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        result, state = self.run_helper(args, nav_alive=False, focus=7, cold_policy='automatic',
+                cold_component='app.organicmaps.MwmActivity', replays=2, close_after_first=True)
+        self.assertIn('AUTOSTART_ALREADY_CLAIMED', result.stdout)
+        self.assertEqual(1, state['start_dispatches'])
+        self.assertEqual(1, state['automatic_claims'])
+
+    def test_runtime_storage_upgrade_preserves_legacy_current_boot_claims(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        for marker, policy, code in [('launch', 'manual', 'LAUNCH_PENDING'),
+                                     ('launch', 'automatic', 'LAUNCH_PENDING'),
+                                     ('auto-v1', 'automatic', 'AUTOSTART_ALREADY_CLAIMED')]:
+            with self.subTest(marker=marker, policy=policy):
+                result, state = self.run_helper(args, nav_alive=False, focus=7,
+                                                cold_policy=policy, legacy_claim=marker)
+                self.assertIn(code, result.stdout)
+                self.assertEqual(0, state['start_dispatches'])
+
+    def test_legacy_claim_never_prevents_warm_task_adoption(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        for marker in ('launch', 'auto-v1'):
+            result, state = self.run_helper(args, cold_policy='automatic', legacy_claim=marker)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual(0, state['start_dispatches'])
+
+    def test_uncertain_automatic_launch_is_never_replayed(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        result, state = self.run_helper(args, nav_alive=False, focus=7, cold_policy='automatic',
+                exception_launch=True, replays=2)
+        self.assertEqual(1, state['start_dispatches'])
+        self.assertEqual(1, state['automatic_claims'])
+
+    def test_inconclusive_help_never_selects_an_activity_method(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        result, state = self.run_helper(args, nav_alive=False, focus=7, cold_policy='automatic', help_exit=1, no_direct_options=True)
+        self.assertIn('LAUNCH_CAPABILITY_UNCERTAIN', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+
+    def test_missing_direct_options_uses_one_normal_n2_admission(self):
+        args = ['present-native', '0', 'app.organicmaps.incar',
+                'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1']
+        result, state = self.run_helper(args, nav_alive=False, focus=7, cold_policy='automatic',
+                no_direct_options=True, bridge_available=True, cold_component='app.organicmaps.MwmActivity')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(1, state['start_dispatches'])
+        launch = next(c for c in state['commands'] if c[0] == 'start')
+        self.assertNotIn('--windowingMode', launch)
+        self.assertEqual(5, state['mode'])
 
     def test_n2_cold_bootstraps_normally_once_before_compact(self):
         result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
@@ -205,7 +299,7 @@ class NavigationLifecycleTest(unittest.TestCase):
             nav_alive=False, bridge_available=True, focus=7, method='N2')
         self.assertIn('code=FULLSCREEN', result.stdout)
         self.assertEqual(1, state['start_dispatches'])
-        self.assertEqual([0,0,0,0], state['bounds'])
+        self.assertEqual([0,0,1280,720], state['bounds'])
 
     def test_n2_normal_task_converts_then_restores_same_home_before_map(self):
         result, state = self.run_helper(['present-native','0','app.organicmaps.incar',
@@ -235,10 +329,94 @@ class NavigationLifecycleTest(unittest.TestCase):
         self.assertIn('FOREGROUND_CHANGED', result.stdout)
         self.assertEqual([], state['commands'])
 
+    def test_broker_observed_map_uses_the_shared_shell_claim_completion(self):
+        result, state = self.run_helper(['reconcile-claim', '0', 'app.organicmaps.incar', '42'], seed_claim=True)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(0, state['claims_remaining'])
+        self.assertEqual([], state['commands'])
+
+    # Run 2 (v3.4.1): accepted bootstrap task 9235 lost its Activities while Maps' process stayed
+    # alive; Recents kept the empty task. Explicit Fullscreen alternated LAUNCH_PENDING and
+    # AUTOSTART_DISABLED until the operator resumed the SAME task from Recents.
+    RUN2_CLAIM = 'observed 16847 900 method=N2 transaction=2 uptime=124 task=42'
+    FULLSCREEN = ['fullscreen', '0', 'app.organicmaps.incar', '0', 'app.organicmaps.incar/app.organicmaps.SplashActivity']
+
+    def run2(self, **overrides):
+        values = dict(nav_alive=False, process_only=True, empty_recents=True, retained_recent=42,
+                      bridge_available=True, focus=7, method='N2')
+        values.update(overrides)
+        return self.run_helper(self.FULLSCREEN, **values)
+
+    def test_run2_explicit_fullscreen_resumes_same_retained_task_under_its_claim(self):
+        result, state = self.run2(seed_claim=self.RUN2_CLAIM)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('code=FULLSCREEN', result.stdout)
+        self.assertIn(' task=42 ', result.stdout)
+        self.assertEqual(0, state['start_dispatches'], 'ordinary launcher intent would create a second task')
+        self.assertEqual([['bridge', 'reacquire-recent', '0', 'app.organicmaps.incar', '42', '1']],
+                         [c for c in state['commands'] if c[:2] == ['bridge', 'reacquire-recent']])
+        self.assertEqual(0, state['claims_remaining'], 'observed map did not settle the original claim')
+
+    def test_explicit_fullscreen_without_claim_takes_one_claim_for_reacquisition(self):
+        result, state = self.run2()
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertEqual(0, state['claims_remaining'])
+
+    def test_reacquired_bootstrap_keeps_claim_until_map_is_observed(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, process_only=True, empty_recents=True, retained_recent=42,
+            bridge_available=True, focus=7, method='N2', transition='bridge', seed_claim=self.RUN2_CLAIM,
+            reacquired_component='app.organicmaps.SplashActivity')
+        self.assertIn('BOOTSTRAP_PENDING', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertEqual(1, state['claims_remaining'])
+        self.assertRegex(state['claim_states'][0], r'^observed .*method=N2 .*task=42$')
+
+    def test_uncertain_or_unbound_claim_is_never_reacquired(self):
+        for claim in ('uncertain 16847 900 method=N2 transaction=2 uptime=124 task=42',
+                      'accepted 16847 900 method=N2 transaction=2 uptime=124 task=unknown',
+                      'dispatching 16847 900 method=N2 transaction=2 uptime=124 task=42'):
+            result, state = self.run2(seed_claim=claim)
+            self.assertIn('LAUNCH_PENDING', result.stdout, claim)
+            self.assertEqual(0, state['start_dispatches'], claim)
+            self.assertFalse([c for c in state['commands'] if c[:2] == ['bridge', 'reacquire-recent']], claim)
+
+    def test_claim_bound_to_another_task_is_not_reacquired(self):
+        result, state = self.run2(seed_claim=self.RUN2_CLAIM.replace('task=42', 'task=41'))
+        self.assertIn('LAUNCH_PENDING', result.stdout)
+        self.assertFalse([c for c in state['commands'] if c[:2] == ['bridge', 'reacquire-recent']])
+
+    def test_automatic_policy_never_resumes_from_recents(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, process_only=True, empty_recents=True, retained_recent=42,
+            bridge_available=True, focus=7, method='N2', cold_policy='automatic', seed_claim=self.RUN2_CLAIM)
+        self.assertNotEqual(0, result.returncode, result.stdout)
+        self.assertFalse([c for c in state['commands'] if c[:1] == ['bridge'] and 'recent' in c[1]])
+        self.assertEqual(0, state['start_dispatches'])
+
+    def test_explicit_compact_retry_resumes_same_task_then_windows_it(self):
+        result, state = self.run_helper(['present-native', '0', 'app.organicmaps.incar',
+            'app.organicmaps.incar/app.organicmaps.SplashActivity', '0', '141', '1131', '702', '0', '1'],
+            nav_alive=False, process_only=True, empty_recents=True, retained_recent=42,
+            bridge_available=True, focus=7, method='N2', transition='bridge', seed_claim=self.RUN2_CLAIM)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertEqual(5, state['mode'])
+        self.assertEqual(0, state['claims_remaining'])
+
+    def test_framework_refusal_restores_the_original_claim_exactly(self):
+        result, state = self.run2(seed_claim=self.RUN2_CLAIM, reacquire_refused=True)
+        self.assertIn('LAUNCH_PENDING', result.stdout)
+        self.assertEqual(0, state['start_dispatches'])
+        self.assertEqual([self.RUN2_CLAIM], state['claim_states'])
+
     def test_fullscreen_clears_compact_override_bounds(self):
         result, state = self.run_helper(['fullscreen','0','app.organicmaps.incar','42'], bridge_available=True)
         self.assertEqual(0, result.returncode, result.stdout)
-        self.assertEqual([0,0,0,0], state['bounds'])
+        self.assertEqual([0,0,1280,720], state['bounds'])
 
     def test_fullscreen_rejects_mode_only_success_with_compact_bounds(self):
         result, state = self.run_helper(['fullscreen','0','app.organicmaps.incar','42'],

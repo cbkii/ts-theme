@@ -27,7 +27,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("contents: write", qualify)
 
     def test_release_build_occurs_once_and_never_in_publish_job(self):
-        self.assertEqual(1, MANUAL.count(":theme:assembleRelease"))
+        self.assertEqual(1, MANUAL.count(":launcher:assembleRelease"))
+        self.assertNotIn(":theme:", MANUAL)
         self.assertEqual(1, MANUAL.count('-PVERSION_NAME="$RELEASE_VERSION_NAME"'))
         self.assertEqual(1, MANUAL.count('-PVERSION_CODE="$RELEASE_VERSION_CODE"'))
         publish = MANUAL.split("  publish:", 1)[1]
@@ -45,29 +46,31 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("must equal the checked-in version", MANUAL)
 
     def test_release_assembly_has_a_fail_closed_signing_gate(self):
-        build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
+        build = (ROOT / "launcher" / "build.gradle.kts").read_text(encoding="utf-8")
         self.assertIn('it.name == "assembleRelease"', build)
         self.assertIn("dependsOn(verifyReleaseSigningEnvironment)", build)
         self.assertNotIn('tasks.named("preReleaseBuild")', build)
 
     def test_validate_exercises_the_signed_configuration_cache_path(self):
         self.assertIn("Exercise signed release build with configuration cache", VALIDATE)
-        self.assertIn(":theme:assembleRelease", VALIDATE)
+        self.assertIn(":launcher:assembleRelease", VALIDATE)
+        self.assertNotIn(":theme:", VALIDATE)
+        self.assertNotIn("fetch_replugin", VALIDATE)
         self.assertIn("ci-release-validation.jks", VALIDATE)
         self.assertNotIn("--no-configuration-cache", VALIDATE)
 
     def test_signing_gate_does_not_capture_gradle_script_objects(self):
-        build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
+        build = (ROOT / "launcher" / "build.gradle.kts").read_text(encoding="utf-8")
         action = build.split("    doLast {", 1)[1].split("    }\n}", 1)[0]
         self.assertNotIn("signingValues", action)
         self.assertNotIn("rootProject", action)
 
     def test_java_bytecode_remains_compatible_with_compile_sdk_29(self):
-        build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
+        build = (ROOT / "launcher" / "build.gradle.kts").read_text(encoding="utf-8")
         self.assertEqual(2, build.count("JavaVersion.VERSION_1_8"))
 
-    def test_lint_is_strict_for_owned_source_but_not_the_pinned_legacy_aar(self):
-        build = (ROOT / "theme" / "build.gradle.kts").read_text(encoding="utf-8")
+    def test_lint_is_strict_for_owned_source(self):
+        build = (ROOT / "launcher" / "build.gradle.kts").read_text(encoding="utf-8")
         self.assertIn("warningsAsErrors = true", build)
         self.assertIn("checkDependencies = false", build)
         self.assertIn("lint-results-debug.txt", VALIDATE)
@@ -84,7 +87,6 @@ class WorkflowContractTests(unittest.TestCase):
             ignored,
         )
         self.assertNotIn("UnusedResources", ignored)
-        self.assertTrue((ROOT / "theme" / "src" / "main" / "res" / "raw" / "keep.xml").is_file())
 
     def test_only_existing_signing_secrets_are_referenced(self):
         secrets = set(re.findall(r"secrets\.([A-Z0-9_]+)", MANUAL))
@@ -125,15 +127,11 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("verify_manifest.py qualified/release-manifest.json", MANUAL)
         self.assertIn("retention-days: 14", MANUAL)
 
-    def test_runtime_envelope_gate_preserves_historical_repairs(self):
-        self.assertIn("python3 scripts/release/runtime_envelope.py", MANUAL)
-        self.assertNotIn("python3 release-source/scripts/release/runtime_envelope.py", MANUAL)
-        self.assertIn('config.get("runtime_envelope")', MANUAL)
-        self.assertIn('RELEASE_MODE: ${{ inputs.release_mode }}', MANUAL)
-        self.assertIn('RELEASE_MODE" == "repair_existing_release"', MANUAL)
-        self.assertIn("Historical release source predates the runtime-envelope contract", MANUAL)
-        self.assertIn("New release source is missing runtime_envelope", MANUAL)
-
+    def test_release_runs_the_launcher_envelope_from_the_exact_source(self):
+        self.assertIn("python3 release-source/tools/launcher_apk_check.py", MANUAL)
+        self.assertIn("release-source/launcher/build/outputs/apk/release/launcher-release.apk", MANUAL)
+        self.assertNotIn("runtime_envelope.py", MANUAL)
+        self.assertNotIn("fetch_replugin", MANUAL)
 
 if __name__ == "__main__":
     unittest.main()

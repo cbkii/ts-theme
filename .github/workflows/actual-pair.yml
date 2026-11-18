@@ -1,0 +1,105 @@
+name: Actual Auxio launcher pair
+
+on:
+  pull_request:
+    paths:
+      - "launcher/**"
+      - "scripts/ci/api29-actual-pair-smoke.sh"
+      - "scripts/ci/paired-auxio-source.txt"
+      - ".github/workflows/actual-pair.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: actual-pair-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actual-pair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      LAUNCHER_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      SOURCE_REVISION: ${{ github.event.pull_request.head.sha }}
+      SOURCE_REF: ${{ github.head_ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Resolve immutable Auxio peer
+        id: peer
+        shell: bash
+        run: |
+          sha=$(cat scripts/ci/paired-auxio-source.txt)
+          [[ $sha =~ ^[a-f0-9]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "AUXIO_SOURCE_SHA=$sha" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: cbkii/Auxio-TS
+          ref: ${{ steps.peer.outputs.sha }}
+          path: paired-auxio
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
+        with:
+          gradle-version: "9.5.0"
+          cache-read-only: true
+      - name: Install exact Android inputs
+        shell: bash
+        run: |
+          "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-29" "platforms;android-35" "platforms;android-36" \
+            "build-tools;36.0.0" "ndk;28.2.13676358" "platform-tools" "emulator" \
+            "system-images;android-29;default;x86_64" >/dev/null
+          echo "${ANDROID_SDK_ROOT}/platform-tools" >> "$GITHUB_PATH"
+      - name: Build actual launcher and test peer
+        run: gradle --no-daemon :launcher:assembleDebug :launcher:assembleDebugAndroidTest
+      - name: Build actual Auxio and opt-in seed
+        working-directory: paired-auxio
+        env:
+          AUXIO_TS_SOURCE_SHA: ${{ steps.peer.outputs.sha }}
+        run: |
+          bash scripts/bootstrap-dependencies.sh --profile full-build
+          bash scripts/ci-gradle.sh :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Exercise actual restore and Next callbacks across UIDs
+        timeout-minutes: 10
+        shell: bash
+        env:
+          ANDROID_SERIAL: emulator-5554
+          ANDROID_AVD_HOME: ${{ runner.temp }}/actual-pair-avd
+        run: |
+          mkdir -p "$ANDROID_AVD_HOME"
+          if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
+          printf 'no\n' | timeout --kill-after=5s 60s "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/avdmanager" create avd --force \
+            -n actual-pair -k 'system-images;android-29;default;x86_64' >/dev/null
+          "${ANDROID_SDK_ROOT}/emulator/emulator" -avd actual-pair -port 5554 -no-window -no-audio \
+            -no-boot-anim -gpu swiftshader_indirect > "$RUNNER_TEMP/actual-pair-emulator.txt" 2>&1 &
+          emulator_pid=$!
+          trap 'kill "$emulator_pid" 2>/dev/null || true' EXIT
+          timeout 120s adb wait-for-device
+          for attempt in $(seq 1 90); do
+            [[ $(timeout --kill-after=2s 5s adb shell getprop sys.boot_completed | tr -d '\r') == 1 ]] && break
+            sleep 2
+          done
+          [[ $(timeout --kill-after=2s 5s adb shell getprop sys.boot_completed | tr -d '\r') == 1 ]]
+          bash scripts/ci/api29-actual-pair-smoke.sh \
+            launcher/build/outputs/apk/debug/launcher-debug.apk \
+            launcher/build/outputs/apk/androidTest/debug/launcher-debug-androidTest.apk \
+            paired-auxio/app/build/outputs/apk/debug/app-debug.apk \
+            paired-auxio/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+            "$RUNNER_TEMP/actual-pair-proof"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: actual-pair-${{ env.LAUNCHER_SOURCE_SHA }}
+          path: |
+            ${{ runner.temp }}/actual-pair-proof/*.txt
+            ${{ runner.temp }}/actual-pair-emulator.txt
+          if-no-files-found: ignore
+          retention-days: 14

@@ -11,7 +11,7 @@ parser.add_argument('output', type=Path)
 args = parser.parse_args()
 root = Path(__file__).resolve().parent
 names = ('ts18-startup-1.3.sh', 'capture-lib.sh', 'install.sh', 'analyse.py',
-         'README.md', 'QUALIFICATION.md')
+         'README.md', 'QUALIFICATION.md', 'campaign/campaign.py', 'campaign/START-HERE.md')
 input_paths = {(root / name).resolve() for name in names}
 output = args.output.resolve()
 if output in input_paths:

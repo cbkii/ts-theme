@@ -11,12 +11,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Bounded one-time setup for the launcher's own notification-listener authority.
+ * Connection upkeep for the launcher's own notification listener, plus an opt-in root grant.
  *
- * Android 10 does not expose notification-listener access as a normal runtime permission. On this
- * rooted TS18 the launcher may grant only its exact declared listener through NotificationManager's
- * shell command, verify the resulting secure state, and then ask the framework to rebind it. It
- * never rewrites enabled_notification_listeners or changes another package's listener access.
+ * Android 10 has no runtime permission for notification-listener access; the owner enables it on
+ * the system "Notification access" screen. Root is used only after the explicit, persisted opt-in
+ * described by MediaListenerAccessPolicy: then the launcher may enable exactly its own
+ * declared listener through NotificationManager's shell command, verify the secure state, and ask
+ * the framework to rebind. It never rewrites enabled_notification_listeners, never touches another
+ * package's access, and never restores access the owner has revoked.
  */
 final class MediaNotificationAccessBootstrapper {
     private static final long ROOT_TIMEOUT_MS = 2200L;
@@ -31,37 +33,136 @@ final class MediaNotificationAccessBootstrapper {
 
     private MediaNotificationAccessBootstrapper() {}
 
+    interface GrantCallback { void onResult(boolean granted, String detail); }
+
+    /** Process start: keep an existing grant connected; use root only under stored consent. */
     static void ensureEarly(Context context) {
         Context app = context.getApplicationContext();
-        ComponentName listener = new ComponentName(app, MediaListenerService.class);
+        MediaListenerAccessPolicy.Action action = MediaListenerAccessPolicy.decide(
+                MediaListenerService.hasNotificationAccess(app),
+                UiPersonalizationPrefs.mediaListenerRootGrant(app),
+                UiPersonalizationPrefs.mediaListenerRootGrantApplied(app), false);
+        switch (action) {
+            case ALREADY_GRANTED:
+                MediaEventTrace.record("listener-access", "already-granted");
+                ensureConnected(app);
+                ProcessMediaSessionMonitor.refresh(app);
+                return;
+            case WITHDRAW_CONSENT:
+                // Access was removed after our own grant: that is the owner's decision.
+                UiPersonalizationPrefs.setMediaListenerRootGrant(app, false);
+                MediaEventTrace.record("listener-access", "revocation-respected", "root consent withdrawn");
+                return;
+            case ROOT_GRANT:
+                rootGrant(app, null);
+                return;
+            case USE_SETTINGS:
+            default:
+                MediaEventTrace.record("listener-access", "not-granted", "awaiting Android Settings");
+        }
+    }
+
+    /** Settings: the owner turned the root option on. This is fresh consent for one grant. */
+    static void requestRootGrant(Context context, GrantCallback callback) {
+        Context app = context.getApplicationContext();
+        UiPersonalizationPrefs.setMediaListenerRootGrant(app, true);
         if (MediaListenerService.hasNotificationAccess(app)) {
-            MediaEventTrace.record("listener-access", "already-granted");
-            requestRebind(listener);
-            ProcessMediaSessionMonitor.refresh(app);
+            // Access pre-existed this opt-in: record it, so a later disappearance is read as
+            // the owner's revocation and never triggers an automatic root grant.
+            UiPersonalizationPrefs.markMediaListenerRootGrantApplied(app);
+            ensureConnected(app);
+            deliver(callback, true, "Notification access is already granted");
             return;
         }
+        rootGrant(app, callback);
+    }
 
+    private static void rootGrant(Context app, GrantCallback callback) {
+        ComponentName listener = new ComponentName(app, MediaListenerService.class);
         EXECUTOR.execute(() -> {
             int userId = AndroidUserId.current();
             String command = rootGrantCommand(listener, userId);
+            // Consent can be withdrawn while this request waited on the executor: re-check it
+            // before executing and again before committing the grant.
+            if (!UiPersonalizationPrefs.mediaListenerRootGrant(app)) {
+                MediaEventTrace.record("listener-access", "root-grant-withdrawn", "before request");
+                deliver(callback, false, "Root consent was withdrawn");
+                return;
+            }
             MediaEventTrace.record("listener-access", "root-grant-request",
                     "user=" + userId + " component=" + listener.flattenToShortString());
             RootShell.Result root = RootShell.runMillis(command, ROOT_TIMEOUT_MS);
             boolean granted = waitForGrant(app);
+            if (granted && !UiPersonalizationPrefs.mediaListenerRootGrant(app)) {
+                // The grant landed after consent was withdrawn: undo exactly our own grant.
+                revokeOwnListener(app, listener, userId);
+                MediaEventTrace.record("listener-access", "root-grant-withdrawn", "after landing");
+                deliver(callback, false, "Root consent was withdrawn; access removed");
+                return;
+            }
             if (!granted) {
                 MediaEventTrace.record("listener-access",
                         root.completed ? "root-grant-rejected" : "root-grant-unavailable",
                         "user=" + userId + " exit=" + root.exitCode);
+                deliver(callback, false, root.completed
+                        ? "Root did not enable notification access; use Notification access instead"
+                        : "Root is unavailable; use Notification access instead");
                 return;
             }
+            UiPersonalizationPrefs.markMediaListenerRootGrantApplied(app);
             MediaEventTrace.record("listener-access", "root-grant-verified",
                     "user=" + userId + " component=" + listener.flattenToShortString());
             MAIN.post(() -> {
-                requestRebind(listener);
+                ensureConnected(app);
                 ProcessMediaSessionMonitor.refresh(app);
                 MediaListenerService.refreshActiveSessions();
             });
+            deliver(callback, true, "Notification access granted with root");
         });
+    }
+
+    private static void deliver(GrantCallback callback, boolean granted, String detail) {
+        if (callback != null) MAIN.post(() -> callback.onResult(granted, detail));
+    }
+
+    private static int connectionEpoch;
+    private static boolean connectionPending;
+    private static final long[] REBIND_DELAYS = {0L, 1000L, 2500L, 5000L, 10000L};
+
+    static void connected() {
+        connectionEpoch++; connectionPending = false;
+    }
+
+    static void ensureConnected(Context context) {
+        Context app = context.getApplicationContext();
+        MAIN.post(() -> {
+            // Only the Legacy engine consumes the listener connection; Direct (M2) reads sessions
+            // through the approved component without it. TS18 capture 2026-11-14: with both
+            // sources on M2, 15 rebind requests in 130 s produced no connection and no use.
+            if (!MediaListenerService.legacyDemanded()) return;
+            if (MediaListenerService.isConnected() || connectionPending
+                    || !MediaListenerService.hasNotificationAccess(app)) return;
+            connectionPending = true;
+            recoverConnection(app, ++connectionEpoch, 0);
+        });
+    }
+
+    private static void recoverConnection(Context app, int epoch, int attempt) {
+        MAIN.postDelayed(() -> {
+            if (epoch != connectionEpoch) return;
+            if (MediaListenerService.isConnected() || !MediaListenerService.hasNotificationAccess(app)) {
+                connectionPending = false; return;
+            }
+            android.os.PowerManager power = (android.os.PowerManager) app.getSystemService(Context.POWER_SERVICE);
+            android.app.KeyguardManager keyguard = (android.app.KeyguardManager) app.getSystemService(Context.KEYGUARD_SERVICE);
+            if (power == null || !power.isInteractive() || keyguard == null || keyguard.isKeyguardLocked()) {
+                connectionPending = false; return; // Unlock/wake/HOME will re-arm, without any root mutation.
+            }
+            requestRebind(new ComponentName(app, MediaListenerService.class));
+            ProcessMediaSessionMonitor.refresh(app);
+            if (attempt + 1 < REBIND_DELAYS.length) recoverConnection(app, epoch, attempt + 1);
+            else connectionPending = false;
+        }, REBIND_DELAYS[attempt]);
     }
 
     static String rootGrantCommand(ComponentName listener, int userId) {
@@ -70,6 +171,14 @@ final class MediaNotificationAccessBootstrapper {
         if (component == null || component.isEmpty()) return "exit 1";
         return "/system/bin/cmd notification allow_listener "
                 + shellQuote(component) + " " + userId;
+    }
+
+    /** Undo exactly one grant this launcher landed after consent was withdrawn; nothing else. */
+    private static void revokeOwnListener(Context app, ComponentName listener, int userId) {
+        String component = listener.flattenToString();
+        if (component == null || component.isEmpty()) return;
+        RootShell.runMillis("/system/bin/cmd notification disallow_listener "
+                + shellQuote(component) + " " + userId, ROOT_TIMEOUT_MS);
     }
 
     private static boolean waitForGrant(Context context) {

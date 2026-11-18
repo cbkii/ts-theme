@@ -1,5 +1,7 @@
 # Navigation reliability R1 — launcher ownership and presentation
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 The candidate builds on PR15 (diagnostics), which builds on PR14/13/11/10. It changes
 only launcher-owned navigation and its regression coverage. No HOME default,
 protected package, vendor property, firmware or system component is changed.

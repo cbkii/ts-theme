@@ -12,7 +12,7 @@ class MediaPlaybackSemanticsTests(unittest.TestCase):
         self.assertIn("state == PlaybackState.STATE_PLAYING", media)
         self.assertIn("state == PlaybackState.STATE_BUFFERING", media)
         self.assertIn("state == PlaybackState.STATE_CONNECTING", media)
-        self.assertIn("this.playing = usesPauseAction(state);", media)
+        self.assertIn("this.playing = state == PlaybackState.STATE_PLAYING;", media)
         self.assertIn("boolean pauseSide = state != null && usesPauseAction(state.getState());", media)
         self.assertIn("if (pauseSide) controller.getTransportControls().pause();", media)
 

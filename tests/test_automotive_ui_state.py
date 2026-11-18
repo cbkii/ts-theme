@@ -69,7 +69,8 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn("MediaMetadataView", launcher)
         self.assertIn("SlowMarqueeTextView", metadata)
         self.assertIn("secondary.setSingleLine(true)", metadata)
-        self.assertIn("TruncateAt.END", metadata)
+        self.assertIn("MetadataFadeRow", metadata)
+        self.assertNotIn("TruncateAt.END", metadata)
         self.assertIn("KEY_RADIO_SIDE", prefs)
         self.assertIn('"Radio and music position"', settings)
         self.assertIn("LauncherPrefs.radioOnRight(this)", launcher)
@@ -122,9 +123,12 @@ class AutomotiveUiStateTests(unittest.TestCase):
         self.assertIn('setTitle("Choose icon")', editor)
         self.assertIn('"Sidebar shortcut "', editor)
         self.assertIn('"Drawer shortcut "', editor)
-        self.assertIn("getApplicationIcon(pkg)", editor)
+        self.assertIn("getApplicationIcon(AppResolver.packagePart(pkg))", editor)
         self.assertIn("preview.tint", editor)
-        self.assertIn("SlotIconCatalog.LABELS", editor)
+        self.assertIn("for (String value : SlotIconCatalog.VALUES)", editor)
+        self.assertIn("grid.setColumnCount(5)", editor)
+        self.assertIn("tile.setContentDescription(SlotIconCatalog.label(value))", editor)
+        self.assertNotIn("setSingleChoiceItems(SlotIconCatalog.LABELS", editor)
         self.assertIn("Curated visual-only quick-slot icon catalogue", catalog)
         self.assertIn("iconAppearance(context, key)", slot)
         self.assertGreaterEqual(catalog.count("static final String "), 25)
@@ -168,49 +172,27 @@ class AutomotiveUiStateTests(unittest.TestCase):
             luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
             self.assertGreaterEqual((luminance + 0.05) / 0.05, 4.5, value)
 
-    def test_appearance_supports_sensor_schedule_high_contrast_dim_and_night(self):
-        prefs = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherPrefs.java")
+    def test_appearance_is_binary_schedule_owned_and_sensorless(self):
         controller = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppearanceController.java")
         schedule = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AppearanceSchedule.java")
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
-        html = self.read("launcher/src/main/assets/map/map.html")
-        for marker in ("APPEARANCE_DAY", "APPEARANCE_HIGH_CONTRAST", "APPEARANCE_DIM", "APPEARANCE_NIGHT"):
-            self.assertIn(marker, prefs)
-        self.assertIn("Sensor.TYPE_LIGHT", controller)
-        self.assertIn("SENSOR_STALE_MS", controller)
+        self.assertNotIn("SensorManager", controller)
+        self.assertNotIn("APPEARANCE_DIM", schedule)
+        self.assertNotIn("TRANSITION_MINUTES", schedule)
         self.assertIn("AppearanceSchedule.resolve", controller)
-        self.assertIn("DEFAULT_DAY_START_MINUTES = 7 * 60", prefs)
-        self.assertIn("DEFAULT_NIGHT_START_MINUTES = 19 * 60", prefs)
-        self.assertIn("TRANSITION_MINUTES = 45", schedule)
-        self.assertIn('"Ambient light", "Schedule"', settings)
+        self.assertIn("ACTION_TIMEZONE_CHANGED", controller)
+        self.assertIn("registerOnSharedPreferenceChangeListener", controller)
+        self.assertNotIn('"Ambient light", "Schedule"', settings)
         self.assertIn("LauncherPrefs.APPEARANCE_AUTO.equals", settings)
-        self.assertIn("setMapAppearance", html)
-        self.assertIn("contrast(1.18)", html)
+        self.assertIn("AppearanceSchedule.valid", settings)
 
-    def test_map_controls_are_opposite_rail_no_duplicate_navigation_and_experimental_default_off(self):
-        panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
-        policy = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ExperimentalMapPolicy.java")
+    def test_retired_online_map_has_no_settings_or_home_surface(self):
         settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
         launcher = self.read("launcher/src/main/java/com/cbkii/ts18launcher/LauncherActivity.java")
-        self.assertIn("boolean controlsRight = !railRight", panel)
-        self.assertNotIn("openNavigation", panel)
-        self.assertNotIn("ic_navigation", panel)
-        self.assertIn('"Experimental Home map"', settings)
-        self.assertIn("if (mapEnabled)", settings)
-        self.assertIn("if (!LauncherPrefs.prefs(context).contains(LauncherPrefs.KEY_MAP_ENABLED)) return false", policy)
-        self.assertIn("return LauncherPrefs.mapEnabled(context)", policy)
+        for retired in ("Experimental Home map", "Map controls", "Legacy online map", "mapEnabled"):
+            self.assertNotIn(retired, settings)
+        self.assertNotIn("mapPanel", launcher)
         self.assertIn("styleRailButton(this, navigationButton, true)", launcher)
-
-    def test_map_follow_state_has_redundant_non_colour_cue_and_controls_can_hide(self):
-        ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
-        panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
-        settings = self.read("launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java")
-        self.assertIn("followModeBackground", ui)
-        self.assertIn("state_selected", ui)
-        self.assertIn("R.color.ui_accent, 3", ui)
-        self.assertIn("recenter.setBackground(AutomotiveUi.followModeBackground(activity))", panel)
-        self.assertIn("recenter.setImageTintList(AutomotiveUi.followTint(activity))", panel)
-        self.assertIn('"Map controls"', settings)
 
     def test_configuration_whitelists_icon_hue_warmup_and_home_shortcut_visibility(self):
         codec = self.read("launcher/src/main/java/com/cbkii/ts18launcher/ConfigurationCodec.java")
@@ -261,16 +243,11 @@ class AutomotiveUiStateTests(unittest.TestCase):
 
     def test_motion_contract_uses_confirmed_micro_timings(self):
         ui = self.read("launcher/src/main/java/com/cbkii/ts18launcher/AutomotiveUi.java")
-        panel = self.read("launcher/src/main/java/com/cbkii/ts18launcher/MapPanel.java")
-        html = self.read("launcher/src/main/assets/map/map.html")
         self.assertIn("STATE_CROSSFADE_MS = 120L", ui)
         self.assertIn("FEEDBACK_MS = 140L", ui)
         self.assertIn("PANEL_REVEAL_MS = 160L", ui)
         self.assertIn("DRAWER_MS = 180L", ui)
         self.assertIn("setIconWithCrossfade", ui)
-        self.assertIn("PANEL_REVEAL_MS", panel)
-        self.assertIn("STATE_CROSSFADE_MS", panel)
-        self.assertIn("transition:filter 120ms linear", html)
 
     def test_used_driver_tokens_and_focus_graph_exist(self):
         dimens = self.read("launcher/src/main/res/values/dimens.xml")

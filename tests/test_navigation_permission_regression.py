@@ -45,7 +45,9 @@ class NavigationPermissionRegressionTests(unittest.TestCase):
             "move_task_fullscreen()", 1
         )[0]
 
-        self.assertEqual(1, cold.count("am start "))
+        self.assertEqual(2, cold.count("am start "))
+        self.assertIn('if [ "$direct_options" = 0 ]; then', cold)
+        self.assertIn('Unknown option.*(--windowingMode|--display)', cold)
         self.assertIn('--user "$ANDROID_USER" --display 0 --windowingMode "$cold_mode"', cold)
         self.assertIn("cold_mode=5", cold)
         self.assertIn('[ "$METHOD" != N2 ] || cold_mode=1', cold)

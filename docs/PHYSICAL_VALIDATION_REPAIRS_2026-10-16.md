@@ -1,5 +1,7 @@
 # TS18 physical-validation second pass and repairs
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 ## Authority and scope
 
 Parent: PR #19, `integration/ts18-standalone-baseline`,

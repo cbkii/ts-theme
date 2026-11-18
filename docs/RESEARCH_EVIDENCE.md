@@ -1,5 +1,7 @@
 # Research evidence
 
+> **Historical binary/source evidence.** Hashes and inspected interface facts apply to the named inputs, not an assumed current installation. Theme implementation/discovery sections describe the retired product. Current launcher contracts are indexed in [README](README.md); protected DoFun remains a separate authority.
+
 ## Supplied theme plug-ins
 
 Static inspection was completed on 22 August 2026. Exact hashes are in

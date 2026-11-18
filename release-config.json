@@ -1,55 +1,32 @@
 {
   "schema_version": 1,
-  "product_name": "TS18 Dashboard Theme",
-  "asset_stem": "TS18-Dashboard-Theme",
-  "application_id": "launcher.variety.theme.plugin.sfp_cbk_black",
-  "plugin_id": "sfp_cbk_black",
-  "module": "theme",
-  "gradle_task": ":theme:assembleRelease",
-  "apk_path": "theme/build/outputs/apk/release/theme-release.apk",
+  "product_name": "TS18 Launcher",
+  "asset_stem": "TS18-Launcher",
+  "application_id": "com.cbkii.ts18launcher",
+  "module": "launcher",
+  "gradle_task": ":launcher:assembleRelease",
+  "apk_path": "launcher/build/outputs/apk/release/launcher-release.apk",
   "version_file": "gradle.properties",
   "version_name_property": "VERSION_NAME",
   "version_code_property": "VERSION_CODE",
-  "layout_profile": "config/ts18-layout.json",
   "install_tools": [
     "scripts/termux/README.md",
-    "scripts/termux/ts18-theme-install.sh",
-    "scripts/termux/ts18-theme-preflight.sh",
-    "scripts/termux/ts18-theme-rollback.sh",
-    "scripts/termux/lib/common.sh",
-    "scripts/termux/lib/dofun.sh",
-    "scripts/magisk/ts18-theme-runtime-diagnostic.sh",
-    "docs/INSTALL_TS18.md",
-    "docs/TS18_RUNTIME_DIAGNOSTIC.md",
-    "docs/TS18_LSPOSED_ROADMAP_PLAYBOOK.md"
+    "scripts/termux/install-standalone-launcher.sh",
+    "docs/STANDALONE_LAUNCHER.md"
   ],
   "sdk": {
-    "min": 16,
-    "target": 26,
+    "min": 29,
+    "target": 29,
     "compile": 29
   },
   "native_abis": [],
   "required_apk_entries": [
-    "assets/home/app_widget_view_config1.json",
-    "assets/home/view_config.json",
-    "assets/hotseat_config.json",
-    "assets/import_theme_info_config.json",
-    "assets/media/media_config.json",
-    "assets/media/media_view_config.json",
-    "assets/theme_config.json",
-    "assets/time/time2_config.json",
-    "assets/time/view2_config.json"
+    "AndroidManifest.xml",
+    "assets/licenses/MATERIAL_SYMBOLS_NOTICE.txt",
+    "assets/nav/nav-window.sh"
   ],
   "required_dex_classes": [
-    "Lcom/qihoo360/replugin/Entry;"
-  ],
-  "runtime_envelope": {
-    "expected_dex_files": 1,
-    "max_dex_classes": 64,
-    "allowed_class_prefixes": [
-      "Lcom/qihoo360/",
-      "Llibrary/",
-      "Llauncher/variety/theme/plugin/"
-    ]
-  }
+    "Lcom/cbkii/ts18launcher/LauncherActivity;",
+    "Lcom/cbkii/ts18launcher/MediaListenerService;"
+  ]
 }

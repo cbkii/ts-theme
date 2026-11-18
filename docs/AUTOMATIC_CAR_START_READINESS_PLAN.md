@@ -1,5 +1,7 @@
 # Automatic car-start readiness — engineering handoff
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 **Status: DESIGN / NOT_IMPLEMENTED / PHYSICAL FAIL REPORTED.** Prepared 16 October 2026 for the next `cbkii/ts-theme` code PR; this documentation commit changes no runtime behaviour.
 
 ## Authority and priority

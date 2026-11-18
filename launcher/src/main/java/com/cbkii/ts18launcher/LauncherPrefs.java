@@ -25,15 +25,11 @@ final class LauncherPrefs {
     static final String KEY_LAST_SOURCE = "media.last.explicit.source";
     static final String KEY_LAST_MUSIC = "media.last.explicit.package";
     static final String KEY_MEDIA_CONTROLS_SIDE = "ui.media.controls.side";
-    static final String KEY_MAP_ENABLED = "map.enabled";
-    static final String KEY_MAP_CONTROLS_ENABLED = "map.controls.enabled";
     static final String KEY_MEDIA_MODE = "media.selection.mode";
     static final String KEY_APPEARANCE_MODE = "ui.appearance.mode";
     static final String KEY_APPEARANCE_AUTO_SOURCE = "ui.appearance.auto.source";
     static final String KEY_APPEARANCE_DAY_START = "ui.appearance.day.start.minutes";
     static final String KEY_APPEARANCE_NIGHT_START = "ui.appearance.night.start.minutes";
-
-    static final String KEY_MAP_APPEARANCE = KEY_APPEARANCE_MODE;
 
     static final String MEDIA_MODE_AUTO = "auto";
     static final String MEDIA_MODE_PREFER_MUSIC = "prefer_music";
@@ -49,9 +45,6 @@ final class LauncherPrefs {
     static final String APPEARANCE_HIGH_CONTRAST = "high_contrast";
     static final String APPEARANCE_DIM = "dim";
     static final String APPEARANCE_NIGHT = "night";
-    static final String MAP_APPEARANCE_AUTO = APPEARANCE_AUTO;
-    static final String MAP_APPEARANCE_NORMAL = APPEARANCE_DAY;
-    static final String MAP_APPEARANCE_DIM = APPEARANCE_DIM;
     static final String AUTO_SOURCE_SENSOR = "sensor";
     static final String AUTO_SOURCE_SCHEDULE = "schedule";
     static final int SCHEDULE_UNSET = -1;
@@ -80,6 +73,7 @@ final class LauncherPrefs {
 
     static SharedPreferences prefs(Context context) { return context.getSharedPreferences(FILE, Context.MODE_PRIVATE); }
     static String packageFor(Context context, String key) { return prefs(context).getString(key, ""); }
+
     static void setPackage(Context context, String key, String packageName) {
         SharedPreferences.Editor editor = prefs(context).edit();
         if (packageName == null || packageName.isEmpty()) editor.remove(key);
@@ -98,7 +92,7 @@ final class LauncherPrefs {
     static String drawerQuickRole(Context context, int index) { return roleFor(context, DRAWER_ROLE_KEYS[index], RoleIconCatalog.defaultDrawerRole(index)); }
 
     static String mediaMode(Context context) {
-        String value = prefs(context).getString(KEY_MEDIA_MODE, MEDIA_MODE_AUTO);
+        String value = prefs(context).getString(KEY_MEDIA_MODE, MEDIA_MODE_PREFER_MUSIC);
         return MEDIA_MODE_PREFER_MUSIC.equals(value) ? MEDIA_MODE_PREFER_MUSIC : MEDIA_MODE_AUTO;
     }
     static void setMediaMode(Context context, String mode) {
@@ -147,38 +141,48 @@ final class LauncherPrefs {
         if (pkg != null && !pkg.isEmpty() && !pkg.equals(lastMusicPackage(context))) setPackage(context, KEY_LAST_MUSIC, pkg);
     }
 
-    static boolean mapEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_ENABLED, false); }
-    static void setMapEnabled(Context context, boolean enabled) { prefs(context).edit().putBoolean(KEY_MAP_ENABLED, enabled).apply(); }
-    static boolean mapControlsEnabled(Context context) { return prefs(context).getBoolean(KEY_MAP_CONTROLS_ENABLED, true); }
-    static void setMapControlsEnabled(Context context, boolean enabled) { prefs(context).edit().putBoolean(KEY_MAP_CONTROLS_ENABLED, enabled).apply(); }
-
     static String appearanceMode(Context context) {
         String value = prefs(context).getString(KEY_APPEARANCE_MODE, APPEARANCE_AUTO);
-        if (APPEARANCE_DAY.equals(value) || APPEARANCE_HIGH_CONTRAST.equals(value)
-                || APPEARANCE_DIM.equals(value) || APPEARANCE_NIGHT.equals(value)) return value;
+        return canonicalAppearance(value);
+    }
+    static String canonicalAppearance(String value) {
+        if (APPEARANCE_DAY.equals(value) || APPEARANCE_HIGH_CONTRAST.equals(value)) return APPEARANCE_DAY;
+        if (APPEARANCE_NIGHT.equals(value) || APPEARANCE_DIM.equals(value)) return APPEARANCE_NIGHT;
         return APPEARANCE_AUTO;
     }
     static void setAppearanceMode(Context context, String value) {
-        String safe = APPEARANCE_AUTO;
-        if (APPEARANCE_DAY.equals(value) || APPEARANCE_HIGH_CONTRAST.equals(value)
-                || APPEARANCE_DIM.equals(value) || APPEARANCE_NIGHT.equals(value)) safe = value;
-        prefs(context).edit().putString(KEY_APPEARANCE_MODE, safe).apply();
+        prefs(context).edit().putString(KEY_APPEARANCE_MODE, canonicalAppearance(value)).apply();
     }
-    static String mapAppearance(Context context) { return appearanceMode(context); }
-    static void setMapAppearance(Context context, String value) { setAppearanceMode(context, value); }
 
     static String appearanceAutoSource(Context context) {
-        return AUTO_SOURCE_SCHEDULE.equals(prefs(context).getString(KEY_APPEARANCE_AUTO_SOURCE, AUTO_SOURCE_SENSOR))
-                ? AUTO_SOURCE_SCHEDULE : AUTO_SOURCE_SENSOR;
+        // Legacy sensor preferences migrate to the schedule on this sensorless product.
+        return AUTO_SOURCE_SCHEDULE;
     }
     static void setAppearanceAutoSource(Context context, String value) {
-        prefs(context).edit().putString(KEY_APPEARANCE_AUTO_SOURCE,
-                AUTO_SOURCE_SCHEDULE.equals(value) ? AUTO_SOURCE_SCHEDULE : AUTO_SOURCE_SENSOR).apply();
+        prefs(context).edit().putString(KEY_APPEARANCE_AUTO_SOURCE, AUTO_SOURCE_SCHEDULE).apply();
     }
-    static int appearanceDayStartMinutes(Context context) { return prefs(context).getInt(KEY_APPEARANCE_DAY_START, SCHEDULE_UNSET); }
-    static int appearanceNightStartMinutes(Context context) { return prefs(context).getInt(KEY_APPEARANCE_NIGHT_START, SCHEDULE_UNSET); }
-    static void setAppearanceDayStartMinutes(Context context, int minutes) { prefs(context).edit().putInt(KEY_APPEARANCE_DAY_START, clampMinutes(minutes)).apply(); }
-    static void setAppearanceNightStartMinutes(Context context, int minutes) { prefs(context).edit().putInt(KEY_APPEARANCE_NIGHT_START, clampMinutes(minutes)).apply(); }
+    static int appearanceDayStartMinutes(Context context) {
+        SharedPreferences stored = prefs(context);
+        return AppearanceSchedule.effectiveDayStart(stored.getInt(KEY_APPEARANCE_DAY_START, SCHEDULE_UNSET),
+                stored.getInt(KEY_APPEARANCE_NIGHT_START, SCHEDULE_UNSET));
+    }
+    static int appearanceNightStartMinutes(Context context) {
+        SharedPreferences stored = prefs(context);
+        return AppearanceSchedule.effectiveNightStart(stored.getInt(KEY_APPEARANCE_DAY_START, SCHEDULE_UNSET),
+                stored.getInt(KEY_APPEARANCE_NIGHT_START, SCHEDULE_UNSET));
+    }
+    static void setAppearanceDayStartMinutes(Context context, int minutes) {
+        setAppearanceAnchors(context, clampMinutes(minutes), appearanceNightStartMinutes(context));
+    }
+    static void setAppearanceNightStartMinutes(Context context, int minutes) {
+        setAppearanceAnchors(context, appearanceDayStartMinutes(context), clampMinutes(minutes));
+    }
+    private static void setAppearanceAnchors(Context context, int day, int night) {
+        if (!AppearanceSchedule.valid(day, night)) return;
+        // Save the pair atomically, including recovery of a legacy invalid counterpart.
+        prefs(context).edit().putInt(KEY_APPEARANCE_DAY_START, day)
+                .putInt(KEY_APPEARANCE_NIGHT_START, night).apply();
+    }
     static void clearAppearanceSchedule(Context context) {
         prefs(context).edit().remove(KEY_APPEARANCE_DAY_START).remove(KEY_APPEARANCE_NIGHT_START).apply();
     }

@@ -5,3 +5,4 @@
 # Loaded by root app_process from the installed APK, outside normal Activity entrypoints.
 -keep class com.cbkii.ts18launcher.NavTaskBridge { *; }
 -keep class com.cbkii.ts18launcher.NavTaskBridge$* { *; }
+-keep class com.cbkii.ts18launcher.NavigationTaskStage { *; }

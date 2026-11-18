@@ -1,0 +1,93 @@
+"""Source contracts for the experimental N3 virtual-display navigation package."""
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+N3 = ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/navigation/n3"
+SHARED = ROOT / "shared/n3/java/com/cbkii/ts18launcher/navigation/n3"
+HOST = ROOT / "n3host"
+
+
+def code(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return re.sub(r"//[^\n]*", "", text)
+
+
+class N3ContractTests(unittest.TestCase):
+    def test_n3_is_independent_of_legacy_navigation_and_root(self):
+        legacy = ("NavigationWindowController", "NavigationRootHelper", "RootNavigationBackend",
+                  "RootTaskSession", "NavTaskBridge", "nav-window.sh", "setTaskWindowingMode")
+        for path in N3.glob("*.java"):
+            text = code(path)
+            for symbol in legacy:
+                self.assertNotIn(symbol, text, f"{path.name} must not use {symbol}")
+            for forbidden in ("Runtime.getRuntime", "\"su\"", "injectInputEvent", "InputManager",
+                              "VIRTUAL_DISPLAY_FLAG_PUBLIC", "VIRTUAL_DISPLAY_FLAG_TRUSTED"):
+                self.assertNotIn(forbidden, text, f"{path.name} must not contain {forbidden}")
+            # The only external start is the user-initiated launch on the owned, non-default display.
+            if path.name not in ("PublicDisplayPath.java", "N3TrampolineActivity.java"):
+                self.assertNotIn("startActivity(", text, path.name)
+        public = code(N3 / "PublicDisplayPath.java")
+        self.assertEqual(1, public.count("startActivity("))
+        self.assertIn("new Intent(app, N3TrampolineActivity.class)", public)
+        self.assertIn("setLaunchDisplayId(id)", public)
+        self.assertIn("reader.getSurface(), 0,", public)
+        trampoline = code(N3 / "N3TrampolineActivity.java")
+        self.assertEqual(1, trampoline.count("startActivity("))
+        self.assertIn("N3LaunchRelay.take(token)", trampoline)
+        self.assertIn("if (result == null || target == null || display == 0) { finish(); return; }", trampoline)
+        self.assertIn("setLaunchDisplayId(display)", trampoline)
+        manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text()
+        self.assertRegex(manifest, r'android:name="\.navigation\.n3\.N3TrampolineActivity"[^>]*android:exported="false"')
+
+    def test_probe_is_read_only_and_private(self):
+        probe = code(N3 / "N3DisplayProbe.java")
+        self.assertIn("isActivityStartAllowedOnDisplay(", probe)
+        self.assertIn("reader.getSurface(), 0)", probe)
+        self.assertIn("display.release()", probe)
+
+    def test_no_classification_claims_device_success(self):
+        feasibility = code(N3 / "N3Feasibility.java")
+        self.assertNotIn("DEVICE_FEASIBILITY_PASS", feasibility.split("public enum Result", 1)[1].split("}", 1)[0])
+        self.assertIn("LAUNCH_ADMITTED_UNVERIFIED", feasibility)
+
+    def test_settings_exposes_n3_only_behind_explicit_default_off_opt_in(self):
+        settings = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/SettingsActivity.java").read_text()
+        self.assertIn("Experimental · N3 display host", settings)
+        self.assertIn("N3DisplayProbe.run(this, pkg)", settings)
+        self.assertIn("if (navFacade.n3Enabled()) {", settings)
+        facade = code(ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/navigation/NavigationFeatureFacade.java")
+        self.assertIn("getBoolean(KEY_N3_ENABLED, false)", facade)
+        self.assertNotIn("KEY_N3_HOST", facade)
+        self.assertNotIn("Use optional display host", settings)
+        manifest = (ROOT / "launcher/src/main/AndroidManifest.xml").read_text()
+        self.assertRegex(manifest, r'android:name="\.N3Activity"\s+android:configChanges="[^"]+"\s+android:exported="false"')
+        policy = (ROOT / "launcher/src/main/java/com/cbkii/ts18launcher/HomeNavigationSurfacePolicy.java").read_text()
+        self.assertNotIn("n3", policy.lower(), "N3 is not a selectable surface until device feasibility passes")
+
+    def test_privileged_host_is_retired(self):
+        self.assertFalse(HOST.exists())
+        self.assertFalse((SHARED / "N3HostPolicy.java").exists())
+        self.assertFalse((ROOT / "shared/n3/aidl/com/cbkii/ts18launcher/navigation/n3/IN3DisplayHost.aidl").exists())
+        self.assertFalse((ROOT / "shared/n3/aidl/com/cbkii/ts18launcher/navigation/n3/IN3DisplayHostClient.aidl").exists())
+        self.assertFalse((N3 / "HostDisplayPath.java").exists())
+        self.assertNotIn('include(":n3host")', (ROOT / "settings.gradle.kts").read_text())
+
+    def test_input_mapper_never_routes_through_root_or_freeform(self):
+        mapper = code(SHARED / "N3InputMapper.java")
+        for banned in ("RootShell", "RootTaskSession", "NavTaskBridge", "windowingMode", "am start"):
+            self.assertNotIn(banned, mapper)
+
+    def test_emulator_smoke_runs_the_real_private_display_path(self):
+        smoke = (ROOT / "scripts/ci/api29-startup-boundary-smoke.sh").read_text()
+        self.assertIn("-e n3_path 1", smoke)
+        self.assertIn("grep -Fq 'PASS API29 N3 private display'", smoke)
+        probe = code(ROOT / "launcher/src/androidTest/java/com/cbkii/ts18launcher/navigation/n3/N3PathIpcProbe.java")
+        self.assertIn("non-embeddable target not refused", probe)
+        self.assertIn("no pixels from the launched fixture", probe)
+
+
+if __name__ == "__main__":
+    unittest.main()

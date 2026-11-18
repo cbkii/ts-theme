@@ -21,6 +21,9 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     private volatile long requestedDeadline;
     private long runningDeadline;
 
+    @Override public void setColdLaunchPolicy(String policy) { helper.setColdLaunchPolicy(policy); }
+    @Override public void setPresentationEpoch(long epoch) { helper.setPresentationEpoch(epoch); }
+
     @Override public void setDeadline(long deadline) { requestedDeadline = deadline; }
     private long remaining() { return Math.max(0L, runningDeadline - android.os.SystemClock.elapsedRealtime()); }
     private volatile NavigationHelperResult lastKnownTaskObservation;
@@ -51,6 +54,9 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
                             + "retaining authority without launching task=" + taskId);
                     return verified;
                 }
+                if ("LEGITIMATE_FOREIGN_ACTIVITY".equals(verified.code)
+                        || "BOOTSTRAP_PENDING".equals(verified.code)
+                        || "STARTUP_FOCUS_UNKNOWN".equals(verified.code)) return verified;
                 if ("TASK_NOT_FOUND".equals(verified.code)
                         || "TASK_AMBIGUOUS".equals(verified.code)
                         || "COMPONENT_MISMATCH".equals(verified.code)) return verified;
@@ -95,6 +101,11 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
     @Override public void status(String packageName, int taskId, Callback callback) {
         submit(() -> retryKnownTaskMiss(packageName, taskId, "status",
                 () -> helper.run("status", packageName, taskHint(taskId))), callback);
+    }
+
+    @Override public void returnHome(String packageName, int taskId, String homePackage, int homeTaskId, Callback callback) {
+        submit(() -> helper.run("return-home", packageName, Integer.toString(taskId),
+                homePackage, Integer.toString(homeTaskId)), callback);
     }
 
     @Override public void fullscreen(String packageName, String launchComponent, int taskId, Callback callback) {
@@ -213,10 +224,10 @@ abstract class RootNavigationBackend implements NavigationSurfaceBackend {
 
     private AbsenceEvidence corroborateKnownTask(String packageName, int taskId) {
         if (!safePackage(packageName) || taskId <= 0) return AbsenceEvidence.UNKNOWN;
-        // status already corroborates activities, structured ATM, live Recents and stacks.
-        // Do not let a weaker package process or empty historical Recents entry veto it.
+        // Explicitly bypass the broker: shell status inspects Activity dumps, Recents and stacks.
+        // Repeating getAllStackInfos is persistence over time, not independent absence evidence.
         if (remaining() < 1500L || destroyed) return AbsenceEvidence.UNKNOWN;
-        NavigationHelperResult live = helper.run("status", packageName, "0");
+        NavigationHelperResult live = helper.run("status-shell", packageName, "0");
         if (live.success) return AbsenceEvidence.TASK_PRESENT;
         return "TASK_NOT_FOUND".equals(live.code) ? AbsenceEvidence.ABSENT : AbsenceEvidence.UNKNOWN;
     }

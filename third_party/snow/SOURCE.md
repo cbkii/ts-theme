@@ -1,6 +1,6 @@
 # Snow icon source and licence
 
-This directory contains the four Snow icons used by the TS18 dashboard hotseat.
+This directory retains the four Snow icons used by the retired DoFun theme hotseat. They are not packaged in the current standalone launcher; its functional glyphs use Material Symbols Rounded.
 They are kept separate from the Apache-2.0 project-authored assets because Snow
 is licensed under **GNU GPL v3**.
 
@@ -23,9 +23,7 @@ The SVGs preserve the vector viewport, path data, fill and stroke attributes fro
 the compiled Android vector drawables. They were converted only from Android
 VectorDrawable XML representation to ordinary SVG and renamed for clarity.
 
-The app-drawer and playback-control glyphs remain project-authored assets because
-the supplied Snow pack does not provide a verified semantic match for those theme
-controls.
+The supplied Snow pack did not provide a verified semantic match for the historical theme app-drawer/playback controls; those controls used project-authored glyphs. Current launcher attribution is documented in `docs/ICON_SOURCES.md`.
 
 See `LICENSE` in this directory for GPL v3. The rest of this repository remains
 under its existing licence except where a file or generated asset explicitly

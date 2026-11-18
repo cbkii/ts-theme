@@ -1,5 +1,7 @@
 # Navigation surface roadmap
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 ## Product target
 
 Display the selected real navigation app as a large, fully functional map on standalone HOME while preserving launcher controls, offline navigation data, normal app lifecycle and DoFun recovery.

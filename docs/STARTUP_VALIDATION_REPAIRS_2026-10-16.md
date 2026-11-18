@@ -1,5 +1,7 @@
 # PR #24 startup corrections from physical validation
 
+> **Historical record.** Preserves the named revision's investigation, decisions or test procedure; statements such as “current”, “not implemented”, branch/PR status and build identity apply to that revision only. Do not run obsolete installation or recovery steps against the current launcher. Use the [documentation index](README.md), [current readiness contract](CONTINUOUS_READINESS.md) and [consolidated acceptance campaign](CONSOLIDATED_TESTING_PLAYBOOK.md) for current work.
+
 Scope: `cbkii/ts-theme`, PR #24, preserving its original head
 `6b4e6939a82fe2bbaaa116780291bcd20ce21705` and incorporating the reviewed
 PR #25 repair head `a9effde5fef9b1d52ec9f3e4d167a1629dcde210` by ancestry.

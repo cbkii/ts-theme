@@ -1,10 +1,7 @@
 package com.cbkii.ts18launcher;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -42,6 +39,9 @@ public final class SettingsActivity extends Activity {
 
     private final java.util.concurrent.ExecutorService configurationIo =
             java.util.concurrent.Executors.newSingleThreadExecutor();
+    private LinearLayout root;
+    private AppearanceController appearanceController;
+    private AppearanceDialogs appearanceDialogs;
     private LinearLayout navigation;
     private ScrollView contentScroll;
     private LinearLayout content;
@@ -49,13 +49,16 @@ public final class SettingsActivity extends Activity {
     private int selectedCategory = CATEGORY_HOME;
 
     @Override protected void onCreate(Bundle state) {
+        setTheme(AutomotiveUi.activityTheme(this));
         super.onCreate(state);
         if (state != null) {
             selectedCategory = Math.max(CATEGORY_HOME,
                     Math.min(CATEGORY_ADVANCED, state.getInt(STATE_CATEGORY, CATEGORY_HOME)));
         }
 
-        LinearLayout root = new LinearLayout(this);
+        appearanceDialogs = new AppearanceDialogs(this);
+        appearanceController = new AppearanceController(this, mode -> applyAppearance());
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.HORIZONTAL);
         root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
         int gap = AutomotiveUi.dimen(this, R.dimen.driver_gap);
@@ -94,6 +97,28 @@ public final class SettingsActivity extends Activity {
         if (content != null) render();
     }
 
+    @Override protected void onStart() {
+        super.onStart();
+        appearanceController.start();
+    }
+
+    @Override protected void onStop() {
+        appearanceController.stop();
+        super.onStop();
+    }
+
+    AppearanceDialogs appearanceDialogs() { return appearanceDialogs; }
+
+    private void applyAppearance() {
+        if (root == null) return;
+        setTheme(AutomotiveUi.activityTheme(this));
+        int scroll = contentScroll.getScrollY();
+        root.setBackgroundColor(AutomotiveUi.color(this, R.color.ui_black));
+        render();
+        contentScroll.post(() -> contentScroll.scrollTo(0, scroll));
+        appearanceDialogs.refresh();
+    }
+
     private void render() {
         renderNavigation();
         content.removeAllViews();
@@ -119,8 +144,8 @@ public final class SettingsActivity extends Activity {
             item.setText(CATEGORY_LABELS[i]);
             item.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                     getResources().getDimension(R.dimen.ui_settings_label));
-            item.setTextColor(AutomotiveUi.color(this,
-                    selectedCategory == i ? R.color.ui_accent : R.color.ui_text));
+            item.setTextColor(selectedCategory == i ? AutomotiveUi.accentForeground(this)
+                    : AutomotiveUi.color(this, R.color.ui_text));
             item.setGravity(Gravity.CENTER_VERTICAL);
             item.setSingleLine(true);
             item.setMaxLines(1);
@@ -167,11 +192,9 @@ public final class SettingsActivity extends Activity {
                 HomeNavigationSurfacePolicy.label(HomeNavigationSurfacePolicy.mode(this)),
                 v -> choose("Navigation display",
                         new String[] {"Native navigation window · TESTING",
-                                "Fullscreen only · safe fallback",
-                                "Legacy online map fallback · Internet required"},
+                                "Fullscreen only · safe fallback"},
                         new String[] {HomeNavigationSurfacePolicy.NATIVE_WINDOW,
-                                HomeNavigationSurfacePolicy.FULLSCREEN,
-                                HomeNavigationSurfacePolicy.LEAFLET},
+                                HomeNavigationSurfacePolicy.FULLSCREEN},
                         HomeNavigationSurfacePolicy.mode(this), value -> {
                             HomeNavigationSurfacePolicy.setMode(this, value); recreate();
                         }));
@@ -217,39 +240,34 @@ public final class SettingsActivity extends Activity {
     }
 
     private void renderAppearance() {
-        addChoiceRow(R.drawable.ic_settings, "Display mode", appearanceLabel(),
-                v -> choose("Display mode",
-                        new String[] {"Automatic", "Day", "High contrast", "Dim", "Night"},
+        addChoiceRow(R.drawable.ic_settings, getString(R.string.display_mode), appearanceLabel(),
+                v -> choose(getString(R.string.display_mode),
+                        new String[] {getString(R.string.appearance_scheduled), getString(R.string.appearance_day),
+                                getString(R.string.appearance_night)},
                         new String[] {LauncherPrefs.APPEARANCE_AUTO, LauncherPrefs.APPEARANCE_DAY,
-                                LauncherPrefs.APPEARANCE_HIGH_CONTRAST, LauncherPrefs.APPEARANCE_DIM,
                                 LauncherPrefs.APPEARANCE_NIGHT},
                         LauncherPrefs.appearanceMode(this), value -> {
-                            LauncherPrefs.setAppearanceMode(this, value); recreate();
+                            LauncherPrefs.setAppearanceMode(this, value); applyAppearance();
                         }));
         addAccentPaletteRow();
-
         if (LauncherPrefs.APPEARANCE_AUTO.equals(LauncherPrefs.appearanceMode(this))) {
-            addChoiceRow(R.drawable.ic_utility, "Automatic switching", autoSourceLabel(),
-                    v -> choose("Automatic switching",
-                            new String[] {"Ambient light", "Schedule"},
-                            new String[] {LauncherPrefs.AUTO_SOURCE_SENSOR, LauncherPrefs.AUTO_SOURCE_SCHEDULE},
-                            LauncherPrefs.appearanceAutoSource(this), value -> {
-                                LauncherPrefs.setAppearanceAutoSource(this, value); render();
-                            }));
-            if (LauncherPrefs.AUTO_SOURCE_SENSOR.equals(LauncherPrefs.appearanceAutoSource(this))) {
-                addInfoRow(R.drawable.ic_lightbulb, "Ambient light",
-                        AppearanceController.sensorAvailable(this) ? "Available" : "Unavailable");
-            } else {
-                addChoiceRow(R.drawable.ic_utility, "Day starts", scheduleValue(true), v -> chooseTime(true));
-                addChoiceRow(R.drawable.ic_utility, "Night starts", scheduleValue(false), v -> chooseTime(false));
-                addActionRow(R.drawable.ic_close, "Reset schedule",
-                        "Use 07:00 for day and 19:00 for night.",
-                        v -> { LauncherPrefs.clearAppearanceSchedule(this); render(); });
-            }
+            addChoiceRow(R.drawable.ic_utility, getString(R.string.appearance_dawn), scheduleValue(true), v -> chooseTime(true));
+            addChoiceRow(R.drawable.ic_utility, getString(R.string.appearance_dusk), scheduleValue(false), v -> chooseTime(false));
+            addActionRow(R.drawable.ic_close, getString(R.string.appearance_reset),
+                    getString(R.string.appearance_defaults),
+                    v -> { LauncherPrefs.clearAppearanceSchedule(this); render(); });
         }
     }
 
     private void renderMedia() {
+        // The only window mask is the explicit, bounded assisted Radio start; it needs overlay
+        // access to cover the source app. There is no automatic startup splash to configure.
+        addSection(getString(R.string.startup_loader_title));
+        addSystemRow(R.drawable.ic_settings, getString(R.string.startup_loader_overlay),
+                Settings.canDrawOverlays(this) ? getString(R.string.startup_loader_overlay_granted)
+                        : getString(R.string.startup_loader_overlay_missing),
+                v -> startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:" + getPackageName()))));
         addSection("Playback");
         addSwitchRow(R.drawable.ic_power, "Prepare music and radio at startup",
                 "Prepares the selected sources automatically. The startup testing method may briefly open "
@@ -258,7 +276,7 @@ public final class SettingsActivity extends Activity {
                 checked -> UiPersonalizationPrefs.setMediaStartupWarmup(this, checked));
         addChoiceRow(R.drawable.ic_music, "Media control priority", mediaModeLabel(),
                 v -> choose("Media control priority",
-                        new String[] {"Automatic", "Prefer music"},
+                        new String[] {"Follow active media", "Configured Music only"},
                         new String[] {LauncherPrefs.MEDIA_MODE_AUTO, LauncherPrefs.MEDIA_MODE_PREFER_MUSIC},
                         LauncherPrefs.mediaMode(this), value -> {
                             LauncherPrefs.setMediaMode(this, value);
@@ -266,12 +284,28 @@ public final class SettingsActivity extends Activity {
                             MediaListenerService.refreshActiveSessions(); render();
                         }));
 
+        addSection("Control engine");
+        addEngineRow(com.cbkii.ts18launcher.media.MediaSourceKey.MUSIC, R.drawable.ic_music, "Music control engine");
+        addEngineRow(com.cbkii.ts18launcher.media.MediaSourceKey.RADIO, R.drawable.ic_radio, "Radio control engine");
+
         addSection("Access");
         addSystemRow(R.drawable.ic_notifications, "Notification access",
                 MediaListenerService.hasNotificationAccess(this)
                         ? "Granted · active MediaSessions can be observed"
                         : "Allow access for active media sessions and notification metadata.",
                 v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        addSwitchRow(R.drawable.ic_notifications, "Grant notification access with root",
+                "Optional and off by default. When on, the launcher may enable only its own listener "
+                        + "using root. If you later remove access in Android Settings, this turns itself "
+                        + "off and access is not restored. Turning it off does not remove existing access.",
+                UiPersonalizationPrefs.mediaListenerRootGrant(this), checked -> {
+                    if (!checked) { UiPersonalizationPrefs.setMediaListenerRootGrant(this, false); return; }
+                    MediaNotificationAccessBootstrapper.requestRootGrant(this, (granted, detail) -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        Toast.makeText(this, detail, Toast.LENGTH_LONG).show();
+                        render();
+                    });
+                });
     }
 
     private void renderAdvanced() {
@@ -284,23 +318,50 @@ public final class SettingsActivity extends Activity {
                             Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show());
                 });
 
-        addSection("Experimental map");
-        boolean mapEnabled = ExperimentalMapPolicy.enabled(this);
-        addInfoRow(R.drawable.ic_map, "Experimental Home map",
-                mapEnabled ? "Enabled as the legacy navigation display." : "Off");
-        if (mapEnabled) {
-            addSwitchRow(R.drawable.ic_my_location, "Map controls", "Show zoom and follow controls.",
-                    LauncherPrefs.mapControlsEnabled(this),
-                    checked -> LauncherPrefs.setMapControlsEnabled(this, checked));
-            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                addActionRow(R.drawable.ic_my_location, "Location access",
-                        "Allow location while using the experimental map.",
-                        v -> requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION}, 9201));
-            } else {
-                addInfoRow(R.drawable.ic_my_location, "Location access", "Granted");
+        addSection("Experimental · N3 display host");
+        addActionRow(R.drawable.ic_map, "Test N3 feasibility on this unit",
+                n3Result == null ? "Not tested. Creates and releases a private display; launches nothing."
+                        : n3Result,
+                v -> runN3Probe());
+        com.cbkii.ts18launcher.navigation.NavigationFeatureFacade navFacade =
+                com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.get(this);
+        addSwitchRow(R.drawable.ic_map, "Enable experimental N3 navigation",
+                "Off by default. Legacy navigation stays in charge unless you open the N3 screen.",
+                navFacade.n3Enabled(), checked -> { navFacade.setN3Enabled(checked); render(); });
+        if (navFacade.n3Enabled()) {
+            addActionRow(R.drawable.ic_map, "Open N3 navigation screen",
+                    "Shows the navigator on the N3 display with Retry, Open normally and Use legacy.",
+                    v -> startActivity(new android.content.Intent(this, N3Activity.class)));
+        }
+
+        addSection("Experimental · Topway services (read-only)");
+        addActionRow(R.drawable.ic_car, "Check Topway services",
+                topwayRunning ? "Checking…" : "Identifies the Topway command service and verifies its interface. Changes nothing.",
+                v -> runTopwayCheck(false));
+        boolean observeAllowed = getSharedPreferences("oem_probe", MODE_PRIVATE)
+                .getBoolean("observe_acknowledged", false);
+        addSwitchRow(R.drawable.ic_radio, "Allow one-off Topway source observation",
+                "Off by default. Whether the Topway service keeps one shared status listener or one per "
+                        + "app is not established; observing could briefly displace another app's listener.",
+                observeAllowed, checked -> {
+                    getSharedPreferences("oem_probe", MODE_PRIVATE).edit()
+                            .putBoolean("observe_acknowledged", checked).apply();
+                    render();
+                });
+        if (observeAllowed) {
+            addActionRow(R.drawable.ic_radio, "Observe Topway source once",
+                    "Briefly registers a status listener, asks which source is active, then removes it. "
+                            + "Only on the verified service version.",
+                    v -> runTopwayCheck(true));
+        }
+        if (topwayCapabilities != null) {
+            for (com.cbkii.ts18launcher.oem.Capability capability : topwayCapabilities) {
+                addInfoRow(R.drawable.ic_utility, capability.id, capability.status + " · " + capability.detail);
             }
         }
+
+        addActionRow(R.drawable.ic_settings, getString(R.string.setup_run_again),
+                getString(R.string.setup_run_again_hint), v -> startActivity(new Intent(this, SetupActivity.class)));
 
         addSection("Backup & reset");
         addActionRow(R.drawable.ic_download, "Export settings", "Save a settings file.",
@@ -309,14 +370,14 @@ public final class SettingsActivity extends Activity {
                 v -> chooseConfigurationDocument(false));
         addDestructiveRow(R.drawable.ic_close, "Reset settings",
                 "Restore launcher settings to their defaults.",
-                v -> new AlertDialog.Builder(this).setTitle("Reset settings?")
+                v -> appearanceDialogs.builder().setTitle("Reset settings?")
                         .setMessage("This resets Home apps, shortcuts, layout, media and appearance. "
                                 + "Your Android Home app choice will not change.")
                         .setNegativeButton("Cancel", null).setPositiveButton("Reset", (dialog, which) ->
                                 commitConfiguration(java.util.Collections.emptyMap(), true)).show());
 
         addSection("Diagnostics & system");
-        addActionRow(R.drawable.ic_settings, "Testing methods", "Compare launch and readiness methods; view build identity.",
+        addActionRow(R.drawable.ic_settings, "Startup diagnostics", "View the selected startup profile and build identity.",
                 v -> showTestingMethods());
         addActionRow(R.drawable.ic_shortcut, "Media diagnostics", "View active media sessions.",
                 v -> showMediaDiagnostics());
@@ -337,53 +398,23 @@ public final class SettingsActivity extends Activity {
 
     private void showTestingMethods() {
         String identity = getString(R.string.build_source_revision) + "\n" + getString(R.string.build_source_ref);
-        String[] choices = {"Navigation: " + TestingProfiles.navigation(this),
-                "Task transition: " + TestingProfiles.transition(this),
-                "Departure: " + (TestingProfiles.retainCompact(this) ? "retain compact" : "background fullscreen"),
-                "Music: " + (TestingProfiles.prepareAuxio(this) ? "bind + supported PREPARE" : "bind only"),
-                "Radio: " + TestingProfiles.radio(this), "Open navigation normally",
-                "Startup: " + TestingProfiles.startup(this), "Build and test identity"};
-        new AlertDialog.Builder(this).setTitle("Testing methods")
-                .setItems(choices, (dialog, which) -> {
-                    switch (which) {
-                        case 0: chooseTesting("navigation", new String[]{"N0", "N1", "N2"},
-                                new String[]{"N0 · Normal open; compact disabled", "N1 · Direct compact cold launch",
-                                        "N2 · Normal bootstrap then compact (Bridge)"}); break;
-                        case 1: chooseTesting("transition", new String[]{"bridge", "intent"},
-                                new String[]{"Bridge · Same task; no Activity redelivery", "Intent comparator · May redeliver current Activity"}); break;
-                        case 2: chooseTesting("departure", new String[]{"fullscreen", "retain"},
-                                new String[]{"L2 · Background fullscreen outside HOME", "L1 · Retain compact outside HOME"}); break;
-                        case 3: chooseTesting("music", new String[]{"prepare", "bind"},
-                                new String[]{"M1 · Auxio bind + advertised PREPARE", "M0 · Browser bind only"}); break;
-                        case 4: chooseTesting("radio", new String[]{"auto", "root", "normal"},
-                                new String[]{"R0 · Root; normal only after definite refusal", "R1 · Root only", "R2 · Normal Android only"}); break;
-                        case 5:
-                            String navigationPackage = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
-                            if (navigationPackage.isEmpty() && NavigationProvider.hasLauncherActivity(this, NavigationProvider.ORGANIC_MAPS_INCAR))
-                                navigationPackage = NavigationProvider.ORGANIC_MAPS_INCAR;
-                            if (!NavigationProvider.open(this, navigationPackage, null))
-                                Toast.makeText(this, "Navigation could not open. Choose an installed Navigation app.", Toast.LENGTH_LONG).show();
-                            break;
-                        case 6: chooseTesting("startup", new String[]{"background", "auto", "aggressive"},
-                                new String[]{"Background only · no foreground bootstrap", "Automatic fallback · foreground bootstrap then HOME restore",
-                                        "Aggressive · guarded root-first staging; no uncertain replay"}); break;
-                        default: new AlertDialog.Builder(this).setTitle("Build and test identity")
-                                .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
-                                        + "\n\n" + StartupReadinessCoordinator.get(this).summary()
-                                        + "\n\nReturn HOME after selecting a method. Keep the Maps APK fixed. "
-                                        + "N2 starts once normally, then compacts the same map task; select Bridge. Complete any real permission/setup screens. "
-                                        + "Use the guided collector for P/F/N results and export. No test clears app data.")
-                                .setPositiveButton("Done", null).show();
-                    }
-                }).setNegativeButton("Done", null).show();
-    }
-
-    private void chooseTesting(String key, String[] values, String[] labels) {
-        new AlertDialog.Builder(this).setTitle("Select " + key + " method")
-                .setItems(labels, (dialog, which) -> {
-                    TestingProfiles.set(this, key, values[which]);
-                    Toast.makeText(this, "Method saved · return HOME to test", Toast.LENGTH_LONG).show();
-                }).setNegativeButton("Cancel", null).show();
+        appearanceDialogs.builder().setTitle("Startup and return diagnostics")
+                .setMessage(identity + "\n\n" + TestingProfiles.summary(this)
+                        + "\n\n" + StartupReadinessCoordinator.get(this).summary()
+                        + "\n\nBackground source readiness; N2 task reuse / fullscreen recovery. "
+                        + "Use the matching Auxio prepare-only build. Complete any real permission/setup screens. "
+                        + "The guided kit records actual map/audio readiness and return reliability. "
+                        + "About three seconds is the speed target; small overruns are not automatic failures.")
+                .setNegativeButton("Navigation method", (dialog, which) -> choose("Navigation method",
+                        new String[] {"N2 · task reuse (default)", "N1 · direct window fallback", "N0 · fullscreen only"},
+                        new String[] {"N2", "N1", "N0"}, TestingProfiles.navigation(this), value -> {
+                            TestingProfiles.setNavigation(this, value); recreate();
+                        }))
+                .setNeutralButton("Sample 10s", (dialog, which) -> {
+                    boolean started = PerfSampler.start();
+                    Toast.makeText(this, started ? "Local frame/CPU sample started for 10 seconds"
+                            : "A sample is already running", Toast.LENGTH_SHORT).show();
+                }).setPositiveButton("Done", null).show();
     }
 
     private void addAccentPaletteRow() {
@@ -405,7 +436,7 @@ public final class SettingsActivity extends Activity {
         Intent intent = new Intent(export ? Intent.ACTION_CREATE_DOCUMENT : Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/json");
-        if (export) intent.putExtra(Intent.EXTRA_TITLE, "TS18-launcher-settings-v1.json");
+        if (export) intent.putExtra(Intent.EXTRA_TITLE, "TS18-launcher-settings-v2.json");
         try { startActivityForResult(intent, export ? EXPORT_CONFIG : IMPORT_CONFIG); }
         catch (RuntimeException ignored) { configurationMessage("Document picker unavailable"); }
     }
@@ -450,7 +481,7 @@ public final class SettingsActivity extends Activity {
     }
 
     private boolean configurationPackageAvailable(String name) {
-        return !getPackageName().equals(name) && getPackageManager().getLaunchIntentForPackage(name) != null;
+        return AppResolver.configurationAvailable(this, name);
     }
 
     private void showConfigurationPreview(ConfigurationCodec.Preview preview) {
@@ -458,7 +489,7 @@ public final class SettingsActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         TextView detail = text(importSummary(preview), R.dimen.ui_settings_value, R.color.ui_text);
         scroll.addView(detail);
-        new AlertDialog.Builder(this).setTitle("Import settings?").setView(scroll)
+        appearanceDialogs.builder().setTitle("Import settings?").setView(scroll)
                 .setNegativeButton("Cancel", null)
                 .setPositiveButton("Import", (dialog, which) -> commitConfiguration(preview.values, false)).show();
     }
@@ -474,6 +505,7 @@ public final class SettingsActivity extends Activity {
                             ? " app selection is not available and will return to its default."
                             : " app selections are not available and will return to their defaults.");
         }
+        if (!preview.warnings.isEmpty()) text.append("\n\n").append(String.join("\n", preview.warnings));
         return text.toString();
     }
 
@@ -515,6 +547,7 @@ public final class SettingsActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (appearanceDialogs != null) appearanceDialogs.close();
         configurationIo.shutdownNow();
         super.onDestroy();
     }
@@ -523,12 +556,18 @@ public final class SettingsActivity extends Activity {
         int stored = day ? LauncherPrefs.appearanceDayStartMinutes(this) : LauncherPrefs.appearanceNightStartMinutes(this);
         int fallback = day ? LauncherPrefs.DEFAULT_DAY_START_MINUTES : LauncherPrefs.DEFAULT_NIGHT_START_MINUTES;
         int initial = stored < 0 ? fallback : stored;
-        new TimePickerDialog(this, (view, hour, minute) -> {
+        appearanceDialogs.showTimePicker((view, hour, minute) -> {
             int value = hour * 60 + minute;
+            int other = day ? LauncherPrefs.appearanceNightStartMinutes(this) : LauncherPrefs.appearanceDayStartMinutes(this);
+            if (!AppearanceSchedule.valid(day ? value : other, day ? other : value)) {
+                appearanceDialogs.builder().setMessage(R.string.appearance_invalid_schedule)
+                        .setPositiveButton(android.R.string.ok, null).show();
+                return;
+            }
             if (day) LauncherPrefs.setAppearanceDayStartMinutes(this, value);
             else LauncherPrefs.setAppearanceNightStartMinutes(this, value);
             render();
-        }, initial / 60, initial % 60, true).show();
+        }, initial / 60, initial % 60);
     }
 
     private void addSection(String title) {
@@ -542,6 +581,11 @@ public final class SettingsActivity extends Activity {
         LinearLayout row = baseRow(icon, title, value);
         Switch toggle = new Switch(this);
         toggle.setChecked(checked); toggle.setShowText(false);
+        android.content.res.ColorStateList switchColours = new android.content.res.ColorStateList(
+                new int[][] {new int[] {android.R.attr.state_checked}, new int[] {}},
+                new int[] {AutomotiveUi.accentForeground(this), AutomotiveUi.color(this, R.color.ui_text_secondary)});
+        toggle.setThumbTintList(switchColours);
+        toggle.setTrackTintList(switchColours);
         toggle.setOnCheckedChangeListener((buttonView, isChecked) -> listener.set(isChecked));
         row.addView(toggle, new LinearLayout.LayoutParams(88, ViewGroup.LayoutParams.MATCH_PARENT));
         makeInteractive(row, v -> toggle.setChecked(!toggle.isChecked()));
@@ -571,6 +615,47 @@ public final class SettingsActivity extends Activity {
         addRow(row);
     }
 
+    private java.util.List<com.cbkii.ts18launcher.oem.Capability> topwayCapabilities;
+    private boolean topwayRunning;
+
+    /** Operator-initiated; never automatic, never a write. Results stay in this screen and the trace. */
+    private void runTopwayCheck(boolean observe) {
+        if (topwayRunning) return;
+        // Observation registers a vendor callback: only after the explicit acknowledgement above.
+        if (observe && !getSharedPreferences("oem_probe", MODE_PRIVATE).getBoolean("observe_acknowledged", false)) return;
+        boolean started = com.cbkii.ts18launcher.oem.TopwayCapabilityCheck.run(this, observe, capabilities -> {
+            topwayRunning = false;
+            topwayCapabilities = capabilities;
+            for (com.cbkii.ts18launcher.oem.Capability capability : capabilities) {
+                MediaEventTrace.record("oem", capability.id, capability.toString());
+            }
+            if (!isFinishing() && !isDestroyed()) render();
+        });
+        if (started) {
+            topwayRunning = true;
+            render();
+        }
+    }
+
+    private String n3Result;
+
+    /**
+     * Read-only N3 probe for the selected navigation app. It never changes the navigation surface;
+     * N3 presentation stays unavailable until a device result proves pixels and input.
+     */
+    private void runN3Probe() {
+        String pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
+        com.cbkii.ts18launcher.navigation.n3.N3Feasibility.Observation observation =
+                com.cbkii.ts18launcher.navigation.n3.N3DisplayProbe.run(this, pkg);
+        com.cbkii.ts18launcher.navigation.n3.N3Feasibility.Result result =
+                com.cbkii.ts18launcher.navigation.n3.N3Feasibility.classify(observation);
+        n3Result = result.name() + " · "
+                + com.cbkii.ts18launcher.navigation.n3.N3Feasibility.describe(result);
+        MediaEventTrace.record("n3", "probe", result.name() + " pkg=" + pkg
+                + " allowed=" + observation.startAllowed + " failure=" + observation.failure);
+        render();
+    }
+
     private void addActionRow(int icon, String title, String value, View.OnClickListener listener) {
         LinearLayout row = baseRow(icon, title, value);
         makeInteractive(row, listener);
@@ -594,7 +679,8 @@ public final class SettingsActivity extends Activity {
     private void addTrailingIcon(LinearLayout row, int drawable, int color) {
         ImageView trailing = new ImageView(this);
         trailing.setImageResource(drawable);
-        trailing.setColorFilter(AutomotiveUi.color(this, color));
+        trailing.setColorFilter(color == R.color.ui_accent ? AutomotiveUi.accentForeground(this)
+                : AutomotiveUi.color(this, color));
         int pad = AutomotiveUi.dimen(this, R.dimen.driver_gap) * 2;
         trailing.setPadding(pad, pad, pad, pad);
         row.addView(trailing, new LinearLayout.LayoutParams(64, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -641,7 +727,8 @@ public final class SettingsActivity extends Activity {
 
     private TextView text(String value, int dimenId, int colorId) {
         TextView view = new TextView(this); view.setText(value);
-        view.setTextColor(AutomotiveUi.color(this, colorId));
+        view.setTextColor(colorId == R.color.ui_accent ? AutomotiveUi.accentForeground(this)
+                : AutomotiveUi.color(this, colorId));
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, getResources().getDimension(dimenId));
         view.setPadding(0, 4, 0, 4); return view;
     }
@@ -649,7 +736,7 @@ public final class SettingsActivity extends Activity {
     private void choose(String title, String[] labels, String[] values, String current, ChoiceSetter setter) {
         int checked = -1;
         for (int i = 0; i < values.length; i++) if (values[i].equals(current)) checked = i;
-        new AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(labels, checked, (dialog, which) -> {
+        appearanceDialogs.builder().setTitle(title).setSingleChoiceItems(labels, checked, (dialog, which) -> {
             setter.set(values[which]); dialog.dismiss();
         }).setNegativeButton("Cancel", null).show();
     }
@@ -663,16 +750,9 @@ public final class SettingsActivity extends Activity {
 
     private String appearanceLabel() {
         String value = LauncherPrefs.appearanceMode(this);
-        if (LauncherPrefs.APPEARANCE_DAY.equals(value)) return "Day";
-        if (LauncherPrefs.APPEARANCE_HIGH_CONTRAST.equals(value)) return "High contrast";
-        if (LauncherPrefs.APPEARANCE_DIM.equals(value)) return "Dim";
-        if (LauncherPrefs.APPEARANCE_NIGHT.equals(value)) return "Night";
-        return "Automatic";
-    }
-
-    private String autoSourceLabel() {
-        return LauncherPrefs.AUTO_SOURCE_SCHEDULE.equals(LauncherPrefs.appearanceAutoSource(this))
-                ? "Schedule" : "Ambient light";
+        if (LauncherPrefs.APPEARANCE_DAY.equals(value)) return getString(R.string.appearance_day);
+        if (LauncherPrefs.APPEARANCE_NIGHT.equals(value)) return getString(R.string.appearance_night);
+        return getString(R.string.appearance_scheduled);
     }
 
     private String scheduleValue(boolean day) {
@@ -681,9 +761,34 @@ public final class SettingsActivity extends Activity {
         return String.format(Locale.US, "%02d:%02d", value / 60, value % 60);
     }
 
+    /**
+     * Direct is the TESTING default: it controls the selected app's own session and starts the
+     * app only through its own media browser service. Legacy is the explicit rollback.
+     */
+    private void addEngineRow(com.cbkii.ts18launcher.media.MediaSourceKey key, int icon, String title) {
+        com.cbkii.ts18launcher.media.MediaEngine current =
+                Ts18LauncherApplication.mediaFacade(this).engine(key);
+        String legacy = com.cbkii.ts18launcher.media.MediaEngine.LEGACY.storedValue();
+        String direct = com.cbkii.ts18launcher.media.MediaEngine.DIRECT.storedValue();
+        addChoiceRow(icon, title,
+                current == com.cbkii.ts18launcher.media.MediaEngine.DIRECT
+                        ? "Direct · TESTING default · exact app, one action per tap"
+                        : "Legacy · compatibility",
+                v -> choose(title,
+                        new String[] {"Legacy · compatibility, can start the app",
+                                "Direct · TESTING default · exact app, one action per tap"},
+                        new String[] {legacy, direct}, current.storedValue(), value -> {
+                            MediaEngineSelector.setRequested(this, key,
+                                    com.cbkii.ts18launcher.media.MediaEngine.fromStored(value));
+                            // Re-selects engines now: the deselected one is detached first.
+                            Ts18LauncherApplication.mediaFacade(this).refresh();
+                            render();
+                        }));
+    }
+
     private String mediaModeLabel() {
         return LauncherPrefs.MEDIA_MODE_PREFER_MUSIC.equals(LauncherPrefs.mediaMode(this))
-                ? "Prefer music" : "Automatic";
+                ? "Configured Music only" : "Follow active media";
     }
 
     private String pickerFallback(String key) {
@@ -706,7 +811,7 @@ public final class SettingsActivity extends Activity {
         MediaListenerService.refreshActiveSessions();
         String sessions = MediaListenerService.sessionDiagnostics(this);
         String trace = MediaEventTrace.dump(40);
-        new AlertDialog.Builder(this).setTitle("Media diagnostics")
+        appearanceDialogs.builder().setTitle("Media diagnostics")
                 .setMessage(sessions
                         + "\n\nRecent media events"
                         + "\nPlayback acknowledgement is not audible-output proof.\n"
@@ -715,14 +820,14 @@ public final class SettingsActivity extends Activity {
     }
 
     private void confirmRootHome() {
-        new AlertDialog.Builder(this).setTitle("Set TS18 Launcher as Home?")
+        appearanceDialogs.builder().setTitle("Set TS18 Launcher as Home?")
                 .setMessage("This uses Magisk root to set TS18 Launcher as the default Home app. "
                         + "DoFun stays installed for recovery.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Continue", (dialog, which) -> setHomeWithRoot()).show();
     }
 
     private void confirmDisableHome() {
-        new AlertDialog.Builder(this).setTitle("Disable TS18 Launcher as a Home app?")
+        appearanceDialogs.builder().setTitle("Disable TS18 Launcher as a Home app?")
                 .setMessage("The app stays installed. DoFun remains available as a recovery Home app.")
                 .setNegativeButton("Cancel", null).setPositiveButton("Disable", (dialog, which) -> {
                     HomeMode.setHomeAliasEnabled(this, false);
