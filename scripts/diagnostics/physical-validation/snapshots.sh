@@ -14,7 +14,7 @@ capture "$OUT/snapshots/modules.txt" 3 32768 "$BB" sh -c 'for d in /data/adb/mod
 # Hash actual installed packages, including split APKs. Expected source refs are
 # labels, not proof that these APK bytes were built from those revisions.
 inspect_apps() {
-for pkg in com.cbkii.ts18launcher com.tw.media app.organicmaps.incar com.navimods.radio com.tw.radio com.tw.service.xt com.tw.service com.dofun.variety; do
+for pkg in com.cbkii.ts18launcher com.tw.media app.organicmaps.incar com.navimods.radio com.tw.radio com.tw.service.xt com.tw.service com.dofun.variety com.android.systemui; do
   [ ! -f "$OUT/STOP" ] || exit 0
   [ ! -f "$OUT/apps/$pkg-hash-complete" ] || continue
   capture "$OUT/apps/$pkg-package.txt" 3 131072 /system/bin/dumpsys package "$pkg"
@@ -47,6 +47,9 @@ while [ ! -f "$OUT/STOP" ] && [ "$i" -lt 8 ]; do
   capture "$OUT/snapshots/$n-windows.txt" 2 131072 /system/bin/dumpsys window windows
   capture "$OUT/snapshots/$n-window-policy.txt" 2 32768 /system/bin/dumpsys window policy
   capture "$OUT/snapshots/$n-statusbar.txt" 2 32768 /system/bin/dumpsys statusbar
+  if [ "$i" -eq 0 ] || [ "$i" -eq 1 ] || [ "$i" -eq 2 ] || [ "$i" -eq 4 ] || [ "$i" -eq 7 ]; then
+    capture "$OUT/snapshots/$n-radio-services.txt" 2 32768 /system/bin/dumpsys activity services com.navimods.radio
+  fi
   if [ "$i" -eq 0 ] || [ "$i" -eq 7 ]; then
     capture "$OUT/snapshots/$n-overlays.txt" 2 32768 /system/bin/cmd overlay list --user "$USERID"
   fi
