@@ -22,12 +22,4 @@ final class AuxioPreparationContract {
                     && entry.applicationInfo != null && entry.applicationInfo.uid == app.uid;
         } catch (PackageManager.NameNotFoundException | RuntimeException unavailable) { return false; }
     }
-
-    static String canonicalEntry(Context context, ComponentName component) {
-        try {
-            ActivityInfo info = context.getPackageManager().getActivityInfo(component, 0);
-            String target = info.targetActivity == null ? info.name : info.targetActivity;
-            return new ComponentName(component.getPackageName(), target).flattenToString();
-        } catch (PackageManager.NameNotFoundException | RuntimeException unavailable) { return ""; }
-    }
 }

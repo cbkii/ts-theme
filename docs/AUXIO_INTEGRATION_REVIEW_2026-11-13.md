@@ -2,6 +2,10 @@
 
 Scope: the maintained `com.tw.media` player and the M2 Music path in ts-theme. The inspected starting heads were ts-theme `0054278428194e075b310a9c828958fb7f6ce5a0` (PR #44) and Auxio `bc17429a0577d3c54248fec37fe87f368e7770f5` (PR #287). These are evidence pins, not permanent latest revisions. No installation, audible output, cold power or ACC result is claimed here.
 
+**Later owning contract:** Auxio #287 replaced the MainActivity nonce handoff with direct,
+service-only preparation; launcher #56 admits its ready session at HOME. The transaction below
+describes that current contract. Earlier findings remain attributed to the inspected revisions.
+
 ## Required behaviour and owners
 
 - HOME automatically prepares Music after Maps admission without blocking independent sources. A committed paused item and advertised controls, rather than process/bind/token existence, establish readiness.
@@ -30,7 +34,7 @@ The attached independent review was supporting analysis. Its blanket prohibition
 
 ## Preparation transaction
 
-The existing source transaction remains the sole owner. It validates the installed capability and current configuration, default HOME/root consent/unlocked state, exact task/display and a drawn opaque mask. It waits boundedly for accepted navigation work, then launches only `com.tw.media/org.oxycblt.auxio.headunit.LauncherPreparationActivity`. The shell edge independently rejects an ordinary Auxio alias. Auxio issues its one-use internal nonce and restores without autoplay or new scan authority. The transient preparation Activity is observed through its handoff to MainActivity.
+The existing source transaction remains the sole owner. It validates the installed capability and current configuration, default HOME/root consent/unlocked state, exact task/display and a drawn opaque mask. It waits boundedly for accepted navigation work, then launches only `com.tw.media/org.oxycblt.auxio.headunit.LauncherPreparationActivity`. The shell edge independently rejects an ordinary Auxio alias. The preparation Activity checks the original expiry, starts only Auxio's existing canonical playback service from its own UID with Background Ready, then finishes. It does not require a MainActivity/Compose or nonce handoff. The launcher accepts the exact ready Music session at HOME and rechecks HOME and the surviving token after settling. Legitimate foreign permission/setup Activities still yield rather than being hidden.
 
 Once admitted, the launcher reconnects the same package's browser once; it does not create a player/session or send Play during automatic preparation. It waits for a usable source-owned item, returns the existing HOME task, and verifies the same source token survives backgrounding. User demand can join that transaction, then resume with the original request deadline. Foreign permission/setup Activities remain visible; timeout, cancellation or uncertain admission never authorise a second Activity launch. Accepted/uncertain automatic recovery is not repeated merely because a callback remains negative.
 
