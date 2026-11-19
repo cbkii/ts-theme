@@ -98,12 +98,10 @@ def analyse(path: Path) -> dict:
         r['packages_with_pm_paths']=sorted(pkg for pkg,status in r['package_scope'].items() if status=='OBSERVED_PATH')
         r['package_queries_without_pm_path']=sorted(pkg for pkg,status in r['package_scope'].items() if status!='OBSERVED_PATH')
         r['critical_gaps']={k:v['status'] for k,v in r['capabilities'].items() if k in {
-            'M2_SESSIONS','M2_TRANSPORT','TOPWAY_RADIO_CONTROL','N3_VIRTUAL_DISPLAY','N3_CROSS_UID_LAUNCH',
-            'N3_INPUT_INJECTION','N3_SURFACE_RENDER','GNSS_TTFF','WAKE_ACC_ONLY'}}
+            'M2_SESSIONS','M2_TRANSPORT','TOPWAY_RADIO_CONTROL','GNSS_TTFF','WAKE_ACC_ONLY'}}
         normalized.append(r)
     return {'source':str(path),'run_count':len(normalized),'runs':normalized,
-            'qualifications':{'native_N3_virtual_display':'NOT_RUN by observer',
-                              'M2_transport_actions':'NOT_RUN by observer','stock_tuner_mutations':'NOT_RUN by observer',
+            'qualifications':{'M2_transport_actions':'NOT_RUN by observer','stock_tuner_mutations':'NOT_RUN by observer',
                               'GNSS_fresh_fix':'NOT_RUN by observer','audible_output':'NOT_RUN by observer',
                               'ACC_sleep_wake':'NOT_RUN unless externally recorded','device_qualification':'NOT_RUN by builder'},
             'note':'Manifest presence does not prove integrity. Verify MANIFEST.sha256 and SHA-256 archive separately.'}
@@ -124,7 +122,7 @@ def markdown(report: dict):
         out.append('')
     out += ['## Unresolved regardless of successful capture','',
             'A normal Magisk-root snapshot cannot establish that the launcher UID can invoke a private OEM binder, '
-            'that an N3 virtual display has usable pixels/input, that audio is audible, or that Organic Maps received '
+            'that a map has usable pixels/input, that audio is audible, or that Organic Maps received '
             'a fresh GNSS fix. Those require appropriately scoped POC/runtime and physical tests.','',
             '**Privacy:** The raw archive may contain locations, accounts or notifications. Review before sharing.','']
     return '\n'.join(out)

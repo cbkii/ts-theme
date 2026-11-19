@@ -17,29 +17,27 @@ import org.robolectric.annotation.Config;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 29, manifest = Config.NONE, application = android.app.Application.class)
 public class NavigationDispatchAdmissionTest {
+    private NavigationRootHelper helper;
     @After public void releaseDirectAdmission() {
         // These tests call admission without run(), whose finally normally releases the claim.
-        com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.endLegacyAutomaticLaunch(
-                RuntimeEnvironment.getApplication());
+        if (helper != null) helper.releaseAutomaticLaunchClaim();
     }
 
     @Test public void automaticIsDowngradedWhenHomeAdmissionNoLongerHolds() {
         Context context = RuntimeEnvironment.getApplication();
-        NavigationRootHelper helper = new NavigationRootHelper(context);
+        helper = new NavigationRootHelper(context);
         boolean[] admitted = {true};
         helper.admission = ignored -> admitted[0];
         helper.setColdLaunchPolicy("automatic");
         assertEquals("automatic", helper.dispatchColdPolicy());
-        assertFalse(com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.get(context)
-                .n3MayAcquireDisplay());
+        assertTrue(com.cbkii.ts18launcher.navigation.NavigationAutomaticAdmission.isActive());
         assertEquals("deny", helper.dispatchColdPolicy());
         // Complete the first dispatch before testing a new admission after consent changes.
         releaseDirectAdmission();
         // A call, lock or HOME change after the policy was set must stop the spawn.
         admitted[0] = false;
         assertEquals("deny", helper.dispatchColdPolicy());
-        assertTrue(com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.get(context)
-                .n3MayAcquireDisplay());
+        assertFalse(com.cbkii.ts18launcher.navigation.NavigationAutomaticAdmission.isActive());
     }
 
     @Test public void explicitAndDeniedPoliciesAreUnchangedAtDispatch() {

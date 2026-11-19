@@ -318,22 +318,6 @@ public final class SettingsActivity extends Activity {
                             Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show());
                 });
 
-        addSection("Experimental · N3 display host");
-        addActionRow(R.drawable.ic_map, "Test N3 feasibility on this unit",
-                n3Result == null ? "Not tested. Creates and releases a private display; launches nothing."
-                        : n3Result,
-                v -> runN3Probe());
-        com.cbkii.ts18launcher.navigation.NavigationFeatureFacade navFacade =
-                com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.get(this);
-        addSwitchRow(R.drawable.ic_map, "Enable experimental N3 navigation",
-                "Off by default. Legacy navigation stays in charge unless you open the N3 screen.",
-                navFacade.n3Enabled(), checked -> { navFacade.setN3Enabled(checked); render(); });
-        if (navFacade.n3Enabled()) {
-            addActionRow(R.drawable.ic_map, "Open N3 navigation screen",
-                    "Shows the navigator on the N3 display with Retry, Open normally and Use legacy.",
-                    v -> startActivity(new android.content.Intent(this, N3Activity.class)));
-        }
-
         addSection("Experimental · Topway services (read-only)");
         addActionRow(R.drawable.ic_car, "Check Topway services",
                 topwayRunning ? "Checking…" : "Identifies the Topway command service and verifies its interface. Changes nothing.",
@@ -635,25 +619,6 @@ public final class SettingsActivity extends Activity {
             topwayRunning = true;
             render();
         }
-    }
-
-    private String n3Result;
-
-    /**
-     * Read-only N3 probe for the selected navigation app. It never changes the navigation surface;
-     * N3 presentation stays unavailable until a device result proves pixels and input.
-     */
-    private void runN3Probe() {
-        String pkg = LauncherPrefs.packageFor(this, LauncherPrefs.KEY_NAV);
-        com.cbkii.ts18launcher.navigation.n3.N3Feasibility.Observation observation =
-                com.cbkii.ts18launcher.navigation.n3.N3DisplayProbe.run(this, pkg);
-        com.cbkii.ts18launcher.navigation.n3.N3Feasibility.Result result =
-                com.cbkii.ts18launcher.navigation.n3.N3Feasibility.classify(observation);
-        n3Result = result.name() + " · "
-                + com.cbkii.ts18launcher.navigation.n3.N3Feasibility.describe(result);
-        MediaEventTrace.record("n3", "probe", result.name() + " pkg=" + pkg
-                + " allowed=" + observation.startAllowed + " failure=" + observation.failure);
-        render();
     }
 
     private void addActionRow(int icon, String title, String value, View.OnClickListener listener) {

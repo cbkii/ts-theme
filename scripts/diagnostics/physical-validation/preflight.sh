@@ -15,7 +15,7 @@ sub() { name=$1; sec=$2; cap=$3; shift 3; [ ! -f "$OUT/STOP" ] || return 1; capt
 record() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$P/CAPABILITY_MATRIX.tsv"; }
 printf 'id\tstatus\tartifact\tinterpretation\n' > "$P/CAPABILITY_MATRIX.tsv"
 
-# PR#31, M2 and N3 implementation need APK/user/signing/exact HOME first.
+# PR#31 and M2 implementation need APK/user/signing/exact HOME first.
 probe identity/context 2 8192 "$BB" sh -c 'id; cat /proc/self/attr/current; readlink /proc/self/ns/mnt; cat /proc/sys/kernel/random/boot_id; cat /proc/uptime'
 probe identity/build 2 12288 "$BB" sh "$MODDIR/props.sh"
 probe identity/users 3 12288 /system/bin/pm list users
@@ -74,7 +74,7 @@ record TWUTIL_NATIVE INSPECT topway/xtservice-package.txt 'Static framework API 
 record TOPWAY_RADIO_CONTROL NOT_RUN topway/radio-package.txt 'Tuner/source mutation intentionally excluded without exact contract and approval'
 record ILLUMINATION_READONLY PENDING topway/related-properties.txt 'Property state does not prove headlight event or true actuator'
 
-# Navigation: installed Activities, real task and window, alternate N3 feasibility preconditions.
+# Navigation: installed Activities, real task, touch target and windows (N0/N1/N2).
 probe n3/activity 3 131072 /system/bin/dumpsys activity activities
 probe n3/recents 3 98304 /system/bin/dumpsys activity recents
 probe n3/activity-stacks-help 2 12288 /system/bin/am help
@@ -84,7 +84,6 @@ probe n3/display 3 131072 /system/bin/dumpsys display
 probe n3/input 3 131072 /system/bin/dumpsys input
 probe n3/surfaceflinger-list 3 98304 /system/bin/dumpsys SurfaceFlinger --list
 probe n3/window-help 2 16384 /system/bin/wm help
-probe n3/virtual-display-help 2 16384 /system/bin/cmd display help
 probe n3/platform-features 2 32768 /system/bin/pm list features
 probe n3/geo-activity-resolve 3 32768 /system/bin/cmd package query-activities --brief --user "$USERID" -a android.intent.action.VIEW -d 'geo:0,0'
 probe n3/map-navigation-props 2 8192 /system/bin/settings get global enable_freeform_support
@@ -94,11 +93,6 @@ record WP2_FULLSCREEN TASK_GEOMETRY n3/activity.txt 'Compare current task user/d
 record WP3_RETAINED_RECENTS USER_OBSERVATION n3/recents.txt 'Back once from fullscreen map root; if screen exits while task remains in Recents, one explicit Retry/Fullscreen must reuse exact task ID; do not auto-retry'
 record WP3_TASK_EVENTS OBSERVE n3/recents.txt 'Correlate am_finish_activity/am_destroy_activity/am_create_activity/am_task_removed from dedicated events stream and task snapshots'
 
-record N3_VIRTUAL_DISPLAY STATIC_ONLY n3/display.txt 'Static display inventory cannot prove creation/accessibility/frames on private virtual display'
-record N3_CROSS_UID_LAUNCH NOT_RUN n3/geo-activity-resolve.txt 'No Activity or virtual display is created; app UID/launch display authority remains unknown'
-record N3_INPUT_INJECTION NOT_RUN n3/input.txt 'No injection or cross-display touch exercised; system root != app caller'
-record N3_SURFACE_RENDER USER_VIDEO_REQUIRED n3/surfaceflinger-list.txt 'Pixel composition/secure overlay needs real-device N3 POC with pixels and input'
-record N3_HOST_PRIVILEGE NOT_RUN topway/service-list.txt 'No privileged helper installed or started; no root adbd enabled'
 
 # GNSS/location to support Organic Maps, without leaking coordinate fixes from dumpsys location.
 probe gnss/location-flags 2 8192 /system/bin/settings get secure location_mode
@@ -141,7 +135,6 @@ record CURRENT_REPO_SHA NOT_RUN packages/com.cbkii.ts18launcher.path.txt 'Instal
  echo '# Details: CAPABILITY_MATRIX.tsv, package scope, snapshot metadata and run log.'
  echo 'M2: pin Music and Radio by exact installed package/usable MediaSession token; prepare cold adapters only after source-specific runtime evidence.'
  echo 'Native Topway radio: only inspect service descriptors and APK package metadata; ordinary launcher Binder access UNKNOWN.'
- echo 'N3: real virtual-display pixels, cross-UID Activity launch and touch injection NOT_RUN; implement a gated POC rather than inferring feasibility.'
  echo 'GPS: provider/location and permissions collected where available, true fresh first fix to navigation NOT_RUN.'
  echo 'Lifecycle: boot trace observable; ACC and physical fullscreen interactions NOT_RUN without a genuine event.'
  echo 'Source rights are not part of device diagnostics.'
