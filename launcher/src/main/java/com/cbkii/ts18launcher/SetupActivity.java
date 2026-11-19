@@ -11,7 +11,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.cbkii.ts18launcher.navigation.NavigationFeatureFacade;
 
 /**
  * Short, skippable, repeatable setup. One screen of steps, each with its current state and one
@@ -86,12 +85,10 @@ public final class SetupActivity extends Activity {
                         : getString(R.string.setup_root_off),
                 getString(R.string.setup_review_in_settings),
                 v -> startActivity(new Intent(this, SettingsActivity.class)));
-        boolean n3 = NavigationFeatureFacade.get(this).n3Enabled();
         boolean m2 = !Ts18LauncherApplication.legacyMediaEngineOwns(this, false)
                 || !Ts18LauncherApplication.legacyMediaEngineOwns(this, true);
         step(getString(R.string.setup_experimental),
-                getString(n3 ? R.string.setup_n3_on : R.string.setup_n3_off) + " · "
-                        + getString(m2 ? R.string.setup_m2_on : R.string.setup_m2_off),
+                getString(m2 ? R.string.setup_m2_on : R.string.setup_m2_off),
                 getString(R.string.setup_review_in_settings),
                 v -> startActivity(new Intent(this, SettingsActivity.class)));
         step(getString(R.string.setup_rollback), getString(R.string.setup_rollback_text), null, null);

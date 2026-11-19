@@ -49,31 +49,32 @@ final class NavigationRootHelper {
     java.util.function.Predicate<Context> admission = CompactStartupClient::automaticAllowed;
 
     /** Held only while an automatic-policy dispatch executes; released on every exit. */
-    private boolean legacyLaunchClaimed;
+    private Object automaticLaunchClaim;
 
     String dispatchColdPolicy() {
         String policy = coldPolicy;
         if (!"automatic".equals(policy)) return policy;
-        // The N3 check and the launch admission are one atomic claim: N3 display acquisition is
-        // refused for the bounded lifetime of this dispatch, not merely observed before it.
-        if (!com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.beginLegacyAutomaticLaunch(context)) {
-            // N3 owns a display for navigation: legacy must not launch a competing task.
-            MediaEventTrace.record("compact-startup", "dispatch-denied-n3-owner", "");
+        // Process-local claim prevents parallel automatic dispatch. The per-boot journal
+        // independently protects accepted or uncertain Android task launches.
+        Object claim = com.cbkii.ts18launcher.navigation.NavigationAutomaticAdmission.tryAcquire();
+        if (claim == null) {
+            MediaEventTrace.record("compact-startup", "dispatch-already-in-flight", "");
             return "deny";
         }
         if (!admission.test(context)) {
-            com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.endLegacyAutomaticLaunch(context);
+            com.cbkii.ts18launcher.navigation.NavigationAutomaticAdmission.release(claim);
             MediaEventTrace.record("compact-startup", "dispatch-readmission-denied", "");
             return "deny";
         }
-        legacyLaunchClaimed = true;
+        automaticLaunchClaim = claim;
         return policy;
     }
 
-    private void releaseLegacyLaunchClaim() {
-        if (!legacyLaunchClaimed) return;
-        legacyLaunchClaimed = false;
-        com.cbkii.ts18launcher.navigation.NavigationFeatureFacade.endLegacyAutomaticLaunch(context);
+    void releaseAutomaticLaunchClaim() {
+        Object claim = automaticLaunchClaim;
+        automaticLaunchClaim = null;
+        if (claim != null)
+            com.cbkii.ts18launcher.navigation.NavigationAutomaticAdmission.release(claim);
     }
     void setDeadline(long elapsedDeadlineMs) { deadline = elapsedDeadlineMs; }
     private long remaining() {
@@ -143,7 +144,7 @@ final class NavigationRootHelper {
         try {
             result = executeRoot(command.toString(), budget);
         } finally {
-            releaseLegacyLaunchClaim();
+            releaseAutomaticLaunchClaim();
         }
         android.util.Log.i("TS18Nav", "helper action=" + action + " deadline=" + deadline
                 + " method=" + TestingProfiles.summary(context) + " elapsedMs="

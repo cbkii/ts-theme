@@ -6,7 +6,7 @@ Use the current user task as the scope/authorisation. Search relevant symbols be
 
 - Reconcile live repository, PR/base/head, ancestry, review feedback, relevant workflows and artefact identity before mutation. Current code and original exact-device evidence outrank historical reports.
 - Read [the documentation index](docs/README.md) before specialist guides. It distinguishes current contracts from historical investigations and old test instructions. Refresh the live integration PR and its head rather than assuming the default branch contains the candidate. Preserve integration ancestry and previous signed TESTING recovery artefacts; do not merge or publish production unless requested.
-- The owner approved M2 defaults, source-owned browser sessions without notification access, removal of inert n3host, and a bounded N3 investigation. Physical TS18 testing is final acceptance, not an implementation prerequisite. Isolate uncertain contracts and continue independent work.
+- The owner approved M2 defaults, source-owned browser sessions without notification access, removal of N3 private-display experimentation and its privileged n3host prototype. Physical TS18 testing is final acceptance, not an implementation prerequisite. Isolate uncertain contracts and continue independent work.
 
 - Local/offline/private by default. No analytics, tracking, remote configuration or automatic uploads. Diagnostics are explicit, bounded and local.
 - Source adapters must not retry the rejected Auxio root `startservice` route; use its evidenced browser/deadline contract.
@@ -32,7 +32,7 @@ Use the current user task as the scope/authorisation. Search relevant symbols be
 - Maps, Music and Radio maintain independent observed readiness, admitted in that priority order. Authorisation for the bounded loader feature is already established; normal operation does not require repeated approval prompts. A user request may use the bounded authenticated overlay/source-task transaction when service preparation is insufficient; never launch an automatic source without a drawn mask or steal unrelated focus. Passive readiness must remain silent and must not select the tuner.
 - NavRadio's installed service protocol must be substantiated; a plain Media3 service bind does not establish a controller/session. An incompatible reference APK is not exact-device proof. Qualify its real legacy browser handshake; the authorised bounded mask may initialise its Activity on explicit Radio demand without a second Play tap.
 - N2 task/window control is primary. Reuse valid warm tasks; preserve user/display/task/bounds authority, legitimate permission/settings flows and unrelated foreground tasks. A transient missing task or failed focus read is inconclusive. Retain the stateful shell cold-claim/fullscreen compatibility path until broker parity covers its responsibilities. No repeated uncertain mutation or launch.
-- N3 remains a default-off isolated public-API private-display experiment. The privileged n3host skeleton and its protocol are retired. Do not infer input/embedding privileges from root or from a created VirtualDisplay.
+- N3 is retired from the current product and CI. Preserve N0/N1/N2, exact task authority and exclusive automatic-launch admission; do not read or erase the inert historical N3 user preference.
 
 ## Protected boundaries
 

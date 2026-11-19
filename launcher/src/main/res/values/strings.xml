@@ -29,14 +29,6 @@
     <string name="navigation_retry_status">%1$s · Tap to retry</string>
     <string name="navigation_startup_unavailable">Maps startup unavailable. Tap to retry.</string>
     <string name="navigation_retry_action">Retry Maps</string>
-    <string name="n3_start">Start N3</string>
-    <string name="n3_retry">Retry N3</string>
-    <string name="n3_back">Back in map</string>
-    <string name="n3_expand">Expand</string>
-    <string name="n3_compact">Compact</string>
-    <string name="n3_open_normally">Open navigation normally</string>
-    <string name="n3_use_legacy">Use legacy navigation</string>
-    <string name="n3_open_failed">Navigation app could not be opened</string>
     <string name="setup_title">Set up TS18 Launcher</string>
     <string name="setup_intro">Every step is optional and can be skipped. Home works without any of them. Run this again any time from Settings.</string>
     <string name="setup_done">Done</string>
@@ -57,9 +49,7 @@
     <string name="setup_root_on">On: the launcher may re-enable only its own listener with root</string>
     <string name="setup_root_off">Off (default). Read the details before turning it on.</string>
     <string name="setup_review_in_settings">Review in Settings</string>
-    <string name="setup_experimental">Experimental features</string>
-    <string name="setup_n3_on">N3 navigation on</string>
-    <string name="setup_n3_off">N3 navigation off</string>
+    <string name="setup_experimental">Media control methods</string>
     <string name="setup_m2_on">Direct media engine in use</string>
     <string name="setup_m2_off">Legacy media engine (compatibility)</string>
     <string name="setup_rollback">If something goes wrong</string>

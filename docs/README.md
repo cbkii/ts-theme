@@ -13,7 +13,7 @@ Consolidated on 18 November 2026: [PR #44](https://github.com/cbkii/ts-theme/pul
 - `launcher/` is the only product: `com.cbkii.ts18launcher`, Android10/API29, Java/Views, one-DEX/no-native/no launcher runtime dependencies. `media-fixture/` is CI-only. Theme/RePlugin, Leaflet/WebView and privileged n3host product paths are retired; installed DoFun remains protected recovery HOME.
 - M2 is the per-source TESTING default when unset; explicit Legacy remains rollback. Source-owned browser tokens do not require notification access; listener-only discovery does. Playback/queue/focus belong to the source app.
 - Prepare Maps → Music → Radio with independent progress, bounded recovery and explicit opt-outs. One-tap requests survive initialisation; process/bind/title is not usability. NavRadio passive tuner activation remains unqualified; explicit pre-dispatch Play may use the implemented drawn-mask fallback.
-- N2 real-task presentation is primary; fullscreen remains the fallback. N3 is separate/default-off and input/embedding-limited, not an alternative production requirement.
+- N2 real-task presentation is primary; fullscreen remains the fallback. The experimental private-display N3 path is retired; N0/N1/N2 and single-flight admission remain.
 - Appearance has two effective modes, Day/Night, with scheduled Auto. Old High contrast/Dim/Sensor values migrate; no launcher map or lux-sensor integration remains.
 - Current HOME and measured display/decor/insets are live authorities. Historical 55 px/x=1225/y=702 geometry is a conservative profile, not a licence to overwrite actual bounds or HOME.
 - Latest integrated TS18 pixels, touch, audible playback, cold power and genuine ACC acceptance remain NOT_RUN here. Preserve historical physical evidence under its revision. Source/tests/CI/APK/install/runtime are separate.
@@ -28,7 +28,7 @@ Consolidated on 18 November 2026: [PR #44](https://github.com/cbkii/ts-theme/pul
 | [MEDIA.md](MEDIA.md) | M2/Legacy, package/token authority, capability waits, deadline and handover |
 | [MEDIA_BACKGROUND_READINESS.md](MEDIA_BACKGROUND_READINESS.md) | Per-source adapters, binary provenance and diagnostic limits |
 | [MEDIA_CONTROLLER_SIMPLIFICATION.md](MEDIA_CONTROLLER_SIMPLIFICATION.md) | Ordinary transport and truthful metadata rules |
-| [NAVIGATION.md](NAVIGATION.md) | N0/N2 and isolated N3; retired host boundary |
+| [NAVIGATION.md](NAVIGATION.md) | N0/N1/N2 task/window control; retired N3 provenance |
 | [NATIVE_NAVIGATION_WINDOW.md](NATIVE_NAVIGATION_WINDOW.md) | Task/broker/shell ownership, current surfaces and recovery |
 | [COMPACT_STARTUP_PROTOCOL.md](COMPACT_STARTUP_PROTOCOL.md) | Versioned launcher/Maps protocol; verify current companion/signers |
 | [STANDALONE_LAUNCHER.md](STANDALONE_LAUNCHER.md) | Build envelope, TESTING workflow, UI, configuration and HOME rollout |

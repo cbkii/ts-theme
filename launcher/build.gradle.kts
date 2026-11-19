@@ -32,9 +32,6 @@ android {
         resValue("string", "build_source_ref", sourceRef)
     }
 
-    // Default-off N3 experiment: pure input geometry only.
-    sourceSets.getByName("main").java.srcDir("../shared/n3/java")
-
     signingConfigs {
         if (releaseSigningReady) {
             create("release") {

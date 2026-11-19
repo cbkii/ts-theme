@@ -145,7 +145,7 @@ class Tests(unittest.TestCase):
             self.assertIn('AI-EVENTS.tsv',(run/'AI-READ-FIRST.md').read_text())
 
     def test_module_scope(self):
-        for term in ('M2_SESSIONS','N3_VIRTUAL_DISPLAY','TOPWAY_RADIO_CONTROL','GNSS_TTFF','com.navimods.radio'):
+        for term in ('M2_SESSIONS','N0_N2_TASK_STATE','TOPWAY_RADIO_CONTROL','GNSS_TTFF','com.navimods.radio'):
             self.assertIn(term,(ROOT/'preflight.sh').read_text())
         self.assertIn('CAPTURE_MODE=logs_only',(ROOT/'README.md').read_text())
         self.assertIn('20000000',(ROOT/'README.md').read_text().replace(',',''))
